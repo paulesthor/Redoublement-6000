@@ -14,15 +14,23 @@ active_scrapers = {}
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    
+    # --- LE NETTOYAGE (Important pour corriger l'erreur 500) ---
+    # On supprime les vieilles tables pour éviter les conflits de colonnes
+    # (On ne le fera qu'une fois, après tu pourras enlever ces lignes si tu veux)
+    c.execute("DROP TABLE IF EXISTS courses")
+    c.execute("DROP TABLE IF EXISTS grades")
+    # On garde la table 'settings' si elle existe pour ne pas perdre tes réglages
+    
+    # --- LA CRÉATION (Nouvelle structure propre) ---
     c.execute('''CREATE TABLE IF NOT EXISTS courses 
                  (id TEXT PRIMARY KEY, moodle_name TEXT, display_name TEXT, ue TEXT, coef REAL, average REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS grades 
                  (id INTEGER PRIMARY KEY, course_id TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
+    
     conn.commit()
     conn.close()
-
-init_db()
 
 # --- FONCTIONS UTILITAIRES ---
 
@@ -177,3 +185,4 @@ def refresh_ui(request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(url="/", status_code=303)
+
