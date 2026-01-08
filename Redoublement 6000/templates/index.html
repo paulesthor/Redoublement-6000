@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mes Notes</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding-bottom: 80px; }
+        .grade-badge { font-size: 1.1em; font-weight: bold; }
+        .course-card { margin-bottom: 15px; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .refresh-btn { position: fixed; bottom: 20px; right: 20px; z-index: 1000; border-radius: 50%; width: 60px; height: 60px; font-size: 24px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        .is-total { background-color: #e8f5e9; border-left: 4px solid #28a745; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary sticky-top mb-3">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">🎓 Mes Notes</span>
+            <a href="/logout" class="btn btn-sm btn-outline-light">Déconnexion</a>
+        </div>
+    </nav>
+
+    <div class="container" id="content">
+        <div id="loader" class="text-center my-5" style="display:none;">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Mise à jour des notes...<br><small class="text-muted">Cela peut prendre 30 sec</small></p>
+        </div>
+
+        {% if courses %}
+            {% for course in courses %}
+            <div class="card course-card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 text-primary text-truncate" style="max-width: 70%;">{{ course.name }}</h6>
+                    {% if course.average %}
+                        <span class="badge bg-success rounded-pill">{{ "%.2f"|format(course.average) }}/20</span>
+                    {% endif %}
+                </div>
+                <ul class="list-group list-group-flush">
+                    {% for grade in course.grades %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center {% if grade.is_total %}is-total{% endif %}">
+                        <span style="font-size: 0.9em;">{{ grade.name }}</span>
+                        <span class="badge bg-light text-dark border grade-badge">
+                            {{ grade.grade }}
+                            <small class="text-muted" style="font-size:0.6em">/{{ grade.max_grade|int }}</small>
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info text-center mt-5">
+                👋 Bienvenue {{ user }} !<br><br>
+                Aucune note n'est affichée pour l'instant.<br>
+                Appuie sur le bouton <strong>Actualiser</strong> en bas à droite pour lancer le premier scan.
+            </div>
+        {% endif %}
+    </div>
+
+    <button onclick="refreshData()" class="btn btn-primary refresh-btn">🔄</button>
+
+    <script>
+        function refreshData() {
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('content').style.opacity = '0.5';
+            window.location.href = "/refresh-ui"; 
+        }
+    </script>
+</body>
+</html>
