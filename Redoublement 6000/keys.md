@@ -1,0 +1,18 @@
+✅ Maquette loaded for S3 EMS FA
+Available Canonical Names:
+ - 'AL - Régression linéaire simple' (Coefs: {'Compétence 2 :\nAnalyser statistiquement les données': 15.0})
+ - 'Algèbre linéaire' (Coefs: {'Compétence 2 :\nAnalyser statistiquement les données': 15.0})
+ - 'Anglais professionnel' (Coefs: {'Compétence 3 :\nValoriser une production dans un contexte professionnel': 15.0})
+ - 'Communication organisationnelle et professionnelle' (Coefs: {'Compétence 3 :\nValoriser une production dans un contexte professionnel': 15.0})
+ - 'EMS - AL -  Programmation objet' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 10.0})
+ - 'EMS - Techniques de sondage et méthologie de l'enquête' (Coefs: {'Compétence 2 :\nAnalyser statistiquement les données': 15.0, 'Compétence 4 : Modéliser les données dans un cadre statistique': 40.0})
+ - 'Les données de l’environnement entrepreneurial et économique pour l’aide à la décision' (Coefs: {'Compétence 3 :\nValoriser une production dans un contexte professionnel': 25.0})
+ - 'Programmation statistique automatisée' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 10.0})
+ - 'SAÉ - Description et prévision de données temporelles' (Coefs: {'Compétence 2 :\nAnalyser statistiquement les données': 19.0, 'Compétence 3 :\nValoriser une production dans un contexte professionnel': 15.0, 'Compétence 4 : Modéliser les données dans un cadre statistique': 10.0})
+ - 'SAÉ - EMS - Conformité réglementaire pour analyser des données' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 2.0, 'Compétence 2 :\nAnalyser statistiquement les données': 2.0, 'Compétence 3 :\nValoriser une production dans un contexte professionnel': 20.0})
+ - 'SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 14.0, 'Compétence 2 :\nAnalyser statistiquement les données': 19.0, 'Compétence 3 :\nValoriser une production dans un contexte professionnel': 5.0, 'Compétence 4 : Modéliser les données dans un cadre statistique': 50.0})
+ - 'SAÉ - Intégration de données dans un Datawarehouse - Talend' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 24.0, 'Compétence 3 :\nValoriser une production dans un contexte professionnel': 5.0})
+ - 'Systèmes d'information décisionnels' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 10.0})
+ - 'Technologies web' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 15.0})
+ - 'Tests d’hypothèses pour l’analyse bi-variée' (Coefs: {'Compétence 2 :\nAnalyser statistiquement les données': 15.0})
+ - 'Utilisation avancée d'outils de reporting' (Coefs: {'Compétence 1 :\nTraiter des données à des fins décisionnelles': 15.0})
