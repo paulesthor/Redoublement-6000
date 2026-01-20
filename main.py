@@ -1,6 +1,5 @@
 import sqlite3
 import re
-print("🚀 DEBUG: Imports starting...")
 from fastapi import FastAPI, Request, Form, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -8,29 +7,24 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from scraper import MoodleScraper
 from maquette_service import MaquetteService
 from difflib import get_close_matches
+
 app = FastAPI(title="Redoublement 8000")
+
 # Serveur d'icône (User provided JPG)
 @app.get("/icon.png")
 async def get_icon():
     # Use relative path for deployment compatibility
     icon_path = "icone/IMG_20210714_141401_515.jpg"
     return FileResponse(icon_path)
+
 templates = Jinja2Templates(directory="templates")
-# On s'assure que le dossier static existe pour éviter le crash au démarrage
-import os
-os.makedirs("static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-@app.get("/health")
-async def health_check():
-    """Endpoint léger pour le robot de ping (économise les ressources)"""
-    return {"status": "alive"}
-print("🚀 DEBUG: Imports done. Defining constants...")
+app.mount("/static", StaticFiles(directory="templates"), name="static") # Hack since we don't have static dir
+
 DB_FILE = "notes.db"
 # Stockage temporaire des scrapers connectés (en mémoire RAM)
 active_scrapers = {} 
-print("🚀 DEBUG: Initializing MaquetteService...")
 maquette_service = MaquetteService()
-print("🚀 DEBUG: MaquetteService initialized.")
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -46,13 +40,15 @@ def init_db():
         
     conn.commit()
     conn.close()
-print("🚀 DEBUG: Starting init_db()...")
+
 init_db()
-print("🚀 DEBUG: init_db() complete.")
+
 # --- ROUTES ---
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
+
 @app.post("/login")
 def login_action(username: str = Form(...), password: str = Form(...)):
     # On teste la connexion à l'ENT
@@ -68,16 +64,19 @@ def login_action(username: str = Form(...), password: str = Form(...)):
         return response
     else:
         return RedirectResponse(url="/login?error=1", status_code=303)
+
 @app.get("/logout")
 def logout():
     response = RedirectResponse(url="/login")
     response.delete_cookie("session_user")
     return response
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     username = request.cookies.get("session_user")
     if not username:
         return RedirectResponse(url="/login")
+
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -94,6 +93,7 @@ def home(request: Request):
         course['grades'] = [dict(g) for g in grades]
         courses_list.append(course)
     conn.close()
+
     # 2. Logique Maquette / Coefficients
     competences_data = {} # { "Compétence 1": { "courses": [], "total_grade*coef": 0, "total_coef": 0 } }
     global_average = None
@@ -117,6 +117,7 @@ def home(request: Request):
             # { "Nom Canonique": { "grades": [], "matches": ["Nom Scrapé 1", "Nom Scrapé 2"] } }
             
             unmatched_items = []
+
             for course in courses_list:
                 # Gestion des "Meta-Courses" (Espace Promo, Département SD...)
                 is_meta_course = "département sd" in course['name'].lower() or "espace promo" in course['name'].lower()
@@ -196,11 +197,13 @@ def home(request: Request):
                                         break
                                 if is_duplicate:
                                     continue
+
                             canonical_registry[best_match]["grades"].append(g)
                             
                         canonical_registry[best_match]["matches"].append(item['name'])
                     else:
                         unmatched_items.append(item)
+
             # --- PHASE 2: DISTRIBUTION ---
             # A. Traitement des matières RECONNUES (Aggregées)
             for c_name, data in canonical_registry.items():
@@ -243,12 +246,15 @@ def home(request: Request):
                             if final_avg is not None:
                                 competences_data[comp]["weighted_sum"] += final_avg * coef
                                 competences_data[comp]["coef_sum"] += coef
+
             # B. Traitement des matières NON RECONNUES
             for item in unmatched_items:
                  if "Matières non classées" not in competences_data:
                      competences_data["Matières non classées"] = {"courses": [], "weighted_sum": 0, "coef_sum": 0}
                  competences_data["Matières non classées"]["courses"].append(item)
             
+            # Calcul moyennes par compétence
+
             # Calcul moyennes par compétence
             final_weighted_sum = 0
             final_coef_sum = 0
@@ -262,6 +268,7 @@ def home(request: Request):
                    # Simplification: Moyenne arithmétique des compétences si pas d'info
                    final_weighted_sum += data["average"]
                    final_coef_sum += 1 
+
             if final_coef_sum > 0:
                 global_average = final_weighted_sum / final_coef_sum
         else:
@@ -270,6 +277,8 @@ def home(request: Request):
     else:
         # Pas de settings
         competences_data["Toutes les matières"] = {"courses": courses_list, "average": None}
+
+
     return templates.TemplateResponse("index.html", {
         "request": request,
         "competences": competences_data,
@@ -277,6 +286,7 @@ def home(request: Request):
         "global_average": global_average,
         "settings": settings
     })
+
 @app.get("/refresh-ui")
 def refresh_ui(request: Request):
     username = request.cookies.get("session_user")
@@ -307,6 +317,7 @@ def refresh_ui(request: Request):
         })
         
     print("✅ Scraping terminé. Mise à jour de la BDD...")
+
     # 2. Mise à jour Base de données (Opération rapide)
     try:
         conn = sqlite3.connect(DB_FILE, timeout=10) # Timeout plus long
@@ -329,6 +340,7 @@ def refresh_ui(request: Request):
         from datetime import datetime
         now = datetime.now().strftime("%d/%m/%Y à %H:%M")
         c.execute("UPDATE user_settings SET last_updated = ? WHERE username = ?", (now, username))
+
         conn.commit()
     except Exception as e:
         print(f"❌ Erreur BDD: {e}")
@@ -353,6 +365,7 @@ def save_config(request: Request, semester: str = Form(...), option: str = Form(
     conn.close()
     
     return RedirectResponse(url="/", status_code=303)
+
 def find_best_match(scraped_name, canonical_names, teacher_map=None):
     """Trouve le nom canonique le plus proche avec heuristiques intelligentes"""
     clean_scraped = scraped_name.lower().strip()
@@ -390,6 +403,7 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
             
     if "prou" in clean_scraped:
         print(f"🐛 DEBUG PROU: 'prou' in name but NO manual match found! Keys checked: {list(manual_map.keys())}")
+
     # 2. Correspondance par Enseignant (TRÈS FIABLE)
     if teacher_map:
         for c_name, teacher in teacher_map.items():
@@ -402,6 +416,7 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
                 if len(part) > 3 and part.lower() in clean_scraped:
                     # BINGO
                     return c_name
+
     # 3. Correspondance par Mots-clés Canoniqes (Dictionnaire Inversé)
     # On éclate chaque nom canonique en mots-clés significatifs
     # Ex: "Systèmes d'information décisionnels" -> ["systèmes", "information", "décisionnels", "architecture"]
@@ -417,6 +432,7 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
     semester_boost = False
     if "s3" in clean_scraped or "s4" in clean_scraped:
          semester_boost = True
+
     for canonical in canonical_names:
         score = 0
         clean_canonical = canonical.lower()
@@ -446,6 +462,7 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
             
     if best_score >= 2: # Seuil minimum de pertinence
         return best_candidate
+
     # 4. Fallback Fuzzy Match (Dernier recours)
     matches = get_close_matches(clean_scraped, [n.lower() for n in canonical_names], n=1, cutoff=0.4)
     if matches:
@@ -454,6 +471,7 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
                 return name
                 
     return None
+
 if __name__ == "__main__":
     import uvicorn
     # Ecoute sur 0.0.0.0 pour être accessible depuis le réseau local
