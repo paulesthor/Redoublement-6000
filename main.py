@@ -235,9 +235,11 @@ def home(request: Request):
     global_average = None
     
     if settings:
+        print(f"🔧 Settings loaded: {dict(settings)}")
         maquette = maquette_service.load_maquette(settings['semester'], settings['option'], settings['status'])
         
         if maquette:
+            print("📦 Maquette loaded successfully")
             # Init competences
             for comp in maquette['competences']:
                 competences_data[comp] = {"courses": [], "weighted_sum": 0, "coef_sum": 0}
