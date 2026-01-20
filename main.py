@@ -30,7 +30,8 @@ class DBCursor:
         if self.is_postgres:
             # Conversion de la syntaxe SQLite (?) vers Postgres (%s)
             query = query.replace("?", "%s")
-        return self.cursor.execute(query, params)
+        self.cursor.execute(query, params)
+        return self
 
     def fetchone(self):
         return self.cursor.fetchone()
