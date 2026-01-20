@@ -1,5 +1,6 @@
 import sqlite3
 import re
+print("🚀 DEBUG: Imports starting...")
 from fastapi import FastAPI, Request, Form, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +9,33 @@ from scraper import MoodleScraper
 from maquette_service import MaquetteService
 from difflib import get_close_matches
 
-app = FastAPI(title="Redoublement 8000")
+from contextlib import asynccontextmanager
+
+DB_FILE = "notes.db"
+# Stockage temporaire des scrapers connectés (en mémoire RAM)
+active_scrapers = {} 
+maquette_service = None # Sera initialisé au démarrage
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- STARTUP ---
+    print("🚀 DEBUG: Starting up... Initializing services.")
+    
+    # 1. Init DB
+    print("🚀 DEBUG: initializing DB...")
+    init_db()
+    
+    # 2. Init Maquette Service (Lazy Load)
+    global maquette_service
+    print("🚀 DEBUG: Loading MaquetteService...")
+    maquette_service = MaquetteService()
+    print("🚀 DEBUG: Startup complete! Server is ready.")
+    
+    yield
+    # --- SHUTDOWN ---
+    print("🚀 DEBUG: Shutting down.")
+
+app = FastAPI(title="Redoublement 8000", lifespan=lifespan)
 
 # Serveur d'icône (User provided JPG)
 @app.get("/icon.png")
@@ -18,12 +45,16 @@ async def get_icon():
     return FileResponse(icon_path)
 
 templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="templates"), name="static") # Hack since we don't have static dir
 
-DB_FILE = "notes.db"
-# Stockage temporaire des scrapers connectés (en mémoire RAM)
-active_scrapers = {} 
-maquette_service = MaquetteService()
+# On s'assure que le dossier static existe pour éviter le crash au démarrage
+import os
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/health")
+async def health_check():
+    """Endpoint léger pour le robot de ping (économise les ressources)"""
+    return {"status": "alive"}
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -41,7 +72,8 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
+    conn.commit()
+    conn.close()
 
 # --- ROUTES ---
 
