@@ -139,14 +139,21 @@ def init_db():
     c.execute(f'''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
     c.execute(f'''CREATE TABLE IF NOT EXISTS grade_exclusions (id {pk_type}, username TEXT, course_canonical_name TEXT, grade_name TEXT, grade_value REAL)''')
     
+    # On valide d'abord la création des tables pour éviter qu'un fail dans la migration annule tout
+    conn.commit()
+    
     # Migration pour ajouter la colonne last_updated si elle n'existe pas
     try:
         c.execute("ALTER TABLE user_settings ADD COLUMN last_updated TEXT")
         conn.commit()
     except (sqlite3.OperationalError, psycopg2.errors.DuplicateColumn):
-        pass # La colonne existe déjà
+        # En Postgres, si une erreur survient dans une transaction, il faut rollback pour pouvoir continuer
+        if conn.is_postgres:
+            conn.rollback()
     except Exception as e:
         print(f"⚠️ Migration warning: {e}")
+        if conn.is_postgres:
+            conn.rollback()
         
     conn.commit()
     conn.close()
