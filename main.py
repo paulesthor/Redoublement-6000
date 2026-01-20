@@ -601,7 +601,6 @@ def save_config(request: Request, semester: str = Form(...), option: str = Form(
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("""
-    c.execute("""
         INSERT INTO user_settings (username, semester, option, status) VALUES (?, ?, ?, ?)
         ON CONFLICT(username) DO UPDATE SET semester=excluded.semester, option=excluded.option, status=excluded.status
     """, (username, semester, option, status))
