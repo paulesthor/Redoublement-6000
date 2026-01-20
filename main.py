@@ -202,6 +202,14 @@ def home(request: Request):
     # 1. Récupérer config utilisateur
     settings = c.execute("SELECT * FROM user_settings WHERE username = ?", (username,)).fetchone()
     
+    # REPAIR: Correction immédiate si réglages par défaut invalides détectés
+    if settings and settings['status'] == 'Initial':
+        print("🔧 REPAIR: Updating invalid 'Initial' settings to S3/EMS/FI")
+        c.execute("UPDATE user_settings SET semester='S3', option='EMS', status='FI' WHERE username = ?", (username,))
+        conn.commit()
+        # On recharge les settings mis à jour
+        settings = c.execute("SELECT * FROM user_settings WHERE username = ?", (username,)).fetchone()
+
     courses_list = []
     # Récupération des données locales
     rows = c.execute("SELECT * FROM courses").fetchall()
