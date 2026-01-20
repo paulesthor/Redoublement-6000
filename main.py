@@ -511,10 +511,17 @@ def refresh_ui(request: Request):
                 c.execute("INSERT INTO grades (course_id, name, grade, max_grade, is_total) VALUES (?, ?, ?, ?, ?)", 
                           (c_info['id'], g['name'], g['grade'], g['max_grade'], g['is_total']))
         
-        # Mise à jour date
+        # Mise à jour date et Defaults si vide
         from datetime import datetime
         now = datetime.now().strftime("%d/%m/%Y à %H:%M")
-        c.execute("UPDATE user_settings SET last_updated = ? WHERE username = ?", (now, username))
+        
+        # On s'assure qu'une ligne existe pour l'utilisateur
+        # Si c'est la première fois, on met des valeurs par défaut (S5 / INFO)
+        c.execute("""
+            INSERT INTO user_settings (username, semester, option, status, last_updated)
+            VALUES (?, 'S5', 'INFO', 'Initial', ?)
+            ON CONFLICT(username) DO UPDATE SET last_updated = excluded.last_updated
+        """, (username, now))
 
         conn.commit()
     except Exception as e:
