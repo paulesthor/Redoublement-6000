@@ -11,10 +11,73 @@ from difflib import get_close_matches
 from pydantic import BaseModel
 from typing import Optional
 
-from contextlib import asynccontextmanager
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
+# Configuration DB
+DATABASE_URL = os.getenv("DATABASE_URL")
 DB_FILE = "notes.db"
-# Stockage temporaire des scrapers connectés (en mémoire RAM)
+
+# --- DB ABSTRACTION LAYER ---
+class DBCursor:
+    def __init__(self, cursor, is_postgres=False):
+        self.cursor = cursor
+        self.is_postgres = is_postgres
+
+    def execute(self, query, params=()):
+        if self.is_postgres:
+            # Conversion de la syntaxe SQLite (?) vers Postgres (%s)
+            query = query.replace("?", "%s")
+        return self.cursor.execute(query, params)
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+    def __getattr__(self, name):
+        return getattr(self.cursor, name)
+
+class DBConnection:
+    def __init__(self, connection, is_postgres=False):
+        self.connection = connection
+        self.is_postgres = is_postgres
+
+    def cursor(self):
+        return DBCursor(self.connection.cursor(), self.is_postgres)
+
+    def commit(self):
+        self.connection.commit()
+
+    def close(self):
+        self.connection.close()
+    
+    @property
+    def row_factory(self):
+        return self.connection.row_factory
+        
+    @row_factory.setter
+    def row_factory(self, value):
+        self.connection.row_factory = value
+
+def get_db_connection():
+    if DATABASE_URL:
+        # Postgres Mode
+        try:
+            conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+            return DBConnection(conn, is_postgres=True)
+        except Exception as e:
+            print(f"❌ Erreur connexion Postgres: {e}")
+            # Fallback to sqlite if needed, but better to fail explicitly
+            raise e
+    else:
+        # SQLite Mode
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        return DBConnection(conn, is_postgres=False)
+
 active_scrapers = {} 
 maquette_service = None # Sera initialisé au démarrage
 
@@ -59,14 +122,21 @@ async def health_check():
     return {"status": "alive"}
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS courses (id TEXT PRIMARY KEY, name TEXT, average REAL)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, course_id TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS manual_grades (id INTEGER PRIMARY KEY, username TEXT, course_canonical_name TEXT, name TEXT, grade REAL, max_grade REAL, coef REAL)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
-    c.execute('''CREATE TABLE IF NOT EXISTS grade_exclusions (id INTEGER PRIMARY KEY, username TEXT, course_canonical_name TEXT, grade_name TEXT, grade_value REAL)''')
+    
+    # Types adaptés
+    pk_type = "SERIAL PRIMARY KEY" if conn.is_postgres else "INTEGER PRIMARY KEY"
+    
+    # Postgres ne supporte pas "CREATE TABLE IF NOT EXISTS" pour les types... mais pour les tables oui.
+    # On reste simple.
+    
+    c.execute(f'''CREATE TABLE IF NOT EXISTS courses (id TEXT PRIMARY KEY, name TEXT, average REAL)''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS grades (id {pk_type}, course_id TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS manual_grades (id {pk_type}, username TEXT, course_canonical_name TEXT, name TEXT, grade REAL, max_grade REAL, coef REAL)''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS grade_exclusions (id {pk_type}, username TEXT, course_canonical_name TEXT, grade_name TEXT, grade_value REAL)''')
     
     # Migration pour ajouter la colonne last_updated si elle n'existe pas
     try:
@@ -111,8 +181,7 @@ def home(request: Request):
     if not username:
         return RedirectResponse(url="/login")
 
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection()
     c = conn.cursor()
     
     # 1. Récupérer config utilisateur
@@ -411,7 +480,7 @@ def refresh_ui(request: Request):
 
     # 2. Mise à jour Base de données (Opération rapide)
     try:
-        conn = sqlite3.connect(DB_FILE, timeout=10) # Timeout plus long
+        conn = get_db_connection()
         c = conn.cursor()
         
         # On vide tout
@@ -468,7 +537,7 @@ async def add_manual_grade(request: Request, data: ManualGradeRequest):
     username = request.cookies.get("session_user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("INSERT INTO manual_grades (username, course_canonical_name, name, grade, max_grade, coef) VALUES (?, ?, ?, ?, ?, ?)",
               (username, data.course_name, data.grade_name, data.grade_value, data.max_value, data.coef))
@@ -481,11 +550,9 @@ async def delete_manual_grade(request: Request, data: DeleteGradeRequest):
     username = request.cookies.get("session_user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("DELETE FROM manual_grades WHERE id = ? AND username = ?", (data.grade_id, username))
-    conn.commit()
-    conn.close()
     conn.commit()
     conn.close()
     return {"status": "ok"}
@@ -495,7 +562,7 @@ async def exclude_grade(request: Request, data: ExcludeGradeRequest):
     username = request.cookies.get("session_user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     c = conn.cursor()
     # On ajoute à la liste des exclusions
     # On nettoie le nom (enlève l'icone si présent par erreur, même si le front l'envoie propre normalement)
@@ -512,7 +579,7 @@ async def customize_course(request: Request, data: CustomCourseRequest):
     username = request.cookies.get("session_user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     c = conn.cursor()
     # Upsert logic
     c.execute("""
@@ -531,8 +598,9 @@ def save_config(request: Request, semester: str = Form(...), option: str = Form(
     if not username:
         return RedirectResponse(url="/login", status_code=303)
         
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     c = conn.cursor()
+    c.execute("""
     c.execute("""
         INSERT INTO user_settings (username, semester, option, status) VALUES (?, ?, ?, ?)
         ON CONFLICT(username) DO UPDATE SET semester=excluded.semester, option=excluded.option, status=excluded.status
