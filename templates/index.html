@@ -304,7 +304,7 @@
                                     <div class="d-flex align-items-center">
                                         <!-- Customization Button -->
                                         <button class="btn btn-sm btn-link text-secondary p-0 me-3"
-                                            onclick="event.stopPropagation(); openCustomizeModal('{{ course.name }}', {{ course.coef|default('null') }})">
+                                            onclick="event.stopPropagation(); openCustomizeModal('{{ course.name | replace('\'', '\\\'') }}', {{ course.coef|default('null') }})">
                                             ⚙️
                                         </button>
 
@@ -330,12 +330,15 @@
                                     <ul class="list-group list-group-flush">
                                         {% for g in course.grades %}
                                         <li
-                                            class="list-group-item ps-4 py-2 border-0 d-flex justify-content-between align-items-center">
+                                            class="list-group-item ps-4 py-2 border-0 d-flex justify-content-between align-items-center {% if g.is_excluded %}opacity-50 text-decoration-line-through{% endif %}">
                                             <div class="text-truncate me-2">
                                                 <small class="text-secondary">{{ g.name }}</small>
                                                 {% if g.is_manual %}
                                                 <span class="badge bg-info text-dark"
                                                     style="font-size: 0.6em;">MANUEL</span>
+                                                {% endif %}
+                                                {% if g.is_excluded %}
+                                                <span class="badge bg-secondary" style="font-size: 0.6em;">IGNORÉ</span>
                                                 {% endif %}
                                             </div>
                                             <div class="d-flex align-items-center">
@@ -347,6 +350,10 @@
                                                 {% if g.is_manual %}
                                                 <button onclick="deleteManualGrade({{ g.id }})"
                                                     class="btn btn-sm btn-link text-danger p-0">✖</button>
+                                                {% elif not g.is_excluded %}
+                                                <button
+                                                    onclick="excludeGrade('{{ course.name | replace('\'', '\\\'') }}', '{{ g.name | replace('\'', '\\\'') }}', {{ g.grade }})"
+                                                    class="btn btn-sm btn-link text-danger p-0">✖</button>
                                                 {% endif %}
                                             </div>
                                         </li>
@@ -354,7 +361,8 @@
 
                                         <!-- Add Grade Button Item -->
                                         <li class="list-group-item ps-4 py-2 border-0 text-center">
-                                            <button onclick="openManualGradeModal('{{ course.name }}')"
+                                            <button
+                                                onclick="openManualGradeModal('{{ course.name | replace('\'', '\\\'') }}')"
                                                 class="btn btn-sm btn-outline-success rounded-pill py-0 px-3"
                                                 style="font-size: 0.8em;">
                                                 + Ajouter une note
@@ -536,6 +544,18 @@
             fetch("/api/manual-grade/delete", {
                 method: "POST", headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ grade_id: id })
+            }).then(() => window.location.reload());
+        }
+
+        function excludeGrade(course, name, value) {
+            if (!confirm("Masquer cette note du calcul ?")) return;
+            fetch("/api/grade/exclude", {
+                method: "POST", headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    course_name: course,
+                    grade_name: name,
+                    grade_value: value
+                })
             }).then(() => window.location.reload());
         }
 
