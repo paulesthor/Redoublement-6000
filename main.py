@@ -515,11 +515,15 @@ def refresh_ui(request: Request):
         from datetime import datetime
         now = datetime.now().strftime("%d/%m/%Y à %H:%M")
         
+        
         # On s'assure qu'une ligne existe pour l'utilisateur
-        # Si c'est la première fois, on met des valeurs par défaut (S5 / INFO)
+        # REPAIR: Si l'utilisateur a les mauvais defaults du dernier patch ('Initial'), on corrige
+        c.execute("UPDATE user_settings SET semester='S3', option='EMS', status='FI' WHERE username = ? AND status = 'Initial'", (username,))
+        
+        # Si c'est la première fois, on met des valeurs par défaut VALIDES (S3 - BUT2 - EMS - FI)
         c.execute("""
             INSERT INTO user_settings (username, semester, option, status, last_updated)
-            VALUES (?, 'S5', 'INFO', 'Initial', ?)
+            VALUES (?, 'S3', 'EMS', 'FI', ?)
             ON CONFLICT(username) DO UPDATE SET last_updated = excluded.last_updated
         """, (username, now))
 
