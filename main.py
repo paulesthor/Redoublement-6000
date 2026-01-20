@@ -72,9 +72,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-    conn.commit()
-    conn.close()
-
 # --- ROUTES ---
 
 @app.get("/login", response_class=HTMLResponse)
