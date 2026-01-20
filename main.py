@@ -1,13 +1,15 @@
 import sqlite3
 import re
 print("🚀 DEBUG: Imports starting...")
-from fastapi import FastAPI, Request, Form, Response
+from fastapi import FastAPI, Request, Form, Response, Body
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from scraper import MoodleScraper
 from maquette_service import MaquetteService
 from difflib import get_close_matches
+from pydantic import BaseModel
+from typing import Optional
 
 from contextlib import asynccontextmanager
 
@@ -62,6 +64,8 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS courses (id TEXT PRIMARY KEY, name TEXT, average REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, course_id TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
     c.execute('''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS manual_grades (id INTEGER PRIMARY KEY, username TEXT, course_canonical_name TEXT, name TEXT, grade REAL, max_grade REAL, coef REAL)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
     
     # Migration pour ajouter la colonne last_updated si elle n'existe pas
     try:
@@ -121,6 +125,14 @@ def home(request: Request):
         grades = c.execute("SELECT * FROM grades WHERE course_id = ?", (course['id'],)).fetchall()
         course['grades'] = [dict(g) for g in grades]
         courses_list.append(course)
+
+    # 1b. Fetch User Overrides & Manual Grades
+    manual_grades_rows = c.execute("SELECT * FROM manual_grades WHERE username = ?", (username,)).fetchall()
+    overrides_rows = c.execute("SELECT * FROM course_overrides WHERE username = ?", (username,)).fetchall()
+    
+    manual_grades = [dict(r) for r in manual_grades_rows]
+    overrides_map = {r['course_canonical_name']: dict(r) for r in overrides_rows}
+    
     conn.close()
 
     # 2. Logique Maquette / Coefficients
@@ -194,87 +206,117 @@ def home(request: Request):
                         if best_match not in canonical_registry:
                             canonical_registry[best_match] = {"grades": [], "matches": []}
                         
-                        # On ajoute les notes
+                        # On ajoute les notes scrapées
                         for g in item.get('grades', []):
                             g_name_lower = g['name'].lower()
                             if "tendance" in g_name_lower: continue
                             
-                            # FIX: Tableau Software - Remove 'devoir note' if keeping only 'S3 tableau software'
-                            # The user said: "S3 tableau software" is the one to keep.
-                            # So if matches Tableau, we skip "devoir note".
-                            # "Utilisation avancée..." is the canonical name for Tableau
+                            # FIX: Tableau Software
                             if "tableau software" in best_match.lower() or "utilisation avancée" in best_match.lower():
-                                print(f"🔍 DEBUG TABLEAU: Checking grade '{g_name_lower}'")
                                 if "devoir note" in g_name_lower:
-                                    print("❌ SKIPPING 'devoir note' for Tableau")
                                     continue
                                     
-                            # FIX: Anglais - Deduplicate Oral grades
-                            # We will handle deduplication JUST BEFORE adding, by checking if a similar grade exists in 'grades' list of registry
+                            # FIX: Anglais - Deduplication
                             if "anglais" in best_match.lower():
-                                # Check if same name and grade value already exists
                                 is_duplicate = False
                                 for existing_g in canonical_registry[best_match]["grades"]:
-                                    # Relaxed check: if name contains 'oral' and grade matches
                                     if "oral" in g_name_lower and "oral" in existing_g['name'].lower() and existing_g['grade'] == g['grade']:
-                                         print(f"❌ SKIPPING DUPLICATE ANGLAIS ORAL: {g['name']} ({g['grade']})")
-                                         is_duplicate = True
-                                         break
-                                    # Strict check for others
+                                         is_duplicate = True; break
                                     if existing_g['name'] == g['name'] and existing_g['grade'] == g['grade']:
-                                        is_duplicate = True
-                                        break
-                                if is_duplicate:
-                                    continue
+                                        is_duplicate = True; break
+                                if is_duplicate: continue
 
                             canonical_registry[best_match]["grades"].append(g)
                             
                         canonical_registry[best_match]["matches"].append(item['name'])
                     else:
                         unmatched_items.append(item)
+            
+            # --- PHASE 1.5: INJECT MANUAL GRADES ---
+            for c_name in canonical_names:
+                # Find manual grades for this course
+                my_manuals = [mg for mg in manual_grades if mg['course_canonical_name'] == c_name]
+                if my_manuals:
+                    if c_name not in canonical_registry:
+                         canonical_registry[c_name] = {"grades": [], "matches": ["[MANUAL ONLY]"]}
+                    
+                    for mg in my_manuals:
+                        # Convert to format expected by logic (grade, max_grade, is_total=False)
+                        canonical_registry[c_name]["grades"].append({
+                            "name": "📝 " + mg['name'], # Icon to distinguish
+                            "grade": mg['grade'],
+                            "max_grade": mg['max_grade'],
+                            "is_total": False,
+                            "is_manual": True, # Tag for frontend
+                            "id": mg['id'] # For delete btn
+                        })
 
             # --- PHASE 2: DISTRIBUTION ---
             # A. Traitement des matières RECONNUES (Aggregées)
             for c_name, data in canonical_registry.items():
-                if c_name in maquette['courses']:
-                    coefs = maquette['courses'][c_name]
+                # Default coefs from maquette
+                base_coefs = maquette.get('courses', {}).get(c_name, {})
+                
+                # Check Overrides
+                override_data = overrides_map.get(c_name)
+                
+                target_destinations = {} # { "Nom Competence": coef }
+                
+                if override_data and override_data.get('target_competence'):
+                    # User MOVED the course to a specific block
+                    target_comp = override_data['target_competence']
+                    custom_coef = override_data.get('custom_coef')
                     
-                    # Recalcul de la moyenne unique pour cette matière canonique
-                    all_grades_vals = []
-                    for g in data['grades']:
-                        if g['grade'] is not None and not g['is_total']:
-                            # Normalisation /20
-                            local_max = g['max_grade']
-                            local_grade = g['grade']
-                            
-                            # Heuristique : Si note sur 100 mais <= 20, c'est probablement une erreur de config Moodle (prof a mis sur 100 mais noté sur 20)
-                            if local_max == 100 and local_grade <= 20:
-                                local_max = 20.0
-                            
-                            if local_max > 0:
-                                normalized = (local_grade / local_max) * 20
-                                all_grades_vals.append(normalized)
-                            else:
-                                all_grades_vals.append(local_grade)
-                            
-                    if all_grades_vals:
-                        final_avg = sum(all_grades_vals) / len(all_grades_vals)
-                    else:
-                        final_avg = None
-                    
-                    # Ajout aux compétences
-                    for comp, coef in coefs.items():
-                        if comp in competences_data:
-                            competences_data[comp]["courses"].append({
-                                "name": c_name, # On affiche le NOM OFFICIEL propre
-                                "average": final_avg,
-                                "coef": coef,
-                                "grades": data['grades']
-                            })
-                            
-                            if final_avg is not None:
-                                competences_data[comp]["weighted_sum"] += final_avg * coef
-                                competences_data[comp]["coef_sum"] += coef
+                    # If custom_coef is not set, what to use? Default 1.0 implies generic weight.
+                    final_coef = custom_coef if custom_coef is not None else 1.0
+                    target_destinations[target_comp] = final_coef
+                else:
+                    # Use standard Maquette logic
+                    target_destinations = base_coefs.copy()
+                    # Apply custom coef override if present (but not moved)
+                    if override_data and override_data.get('custom_coef') is not None:
+                         for cmp in target_destinations:
+                             target_destinations[cmp] = override_data['custom_coef']
+
+                if not target_destinations and c_name in maquette['courses']:
+                     # Should not happen if logic above matches, but fallback
+                     target_destinations = maquette['courses'][c_name]
+
+                # Recalcul de la moyenne unique pour cette matière canonique
+                all_grades_vals = []
+                for g in data['grades']:
+                    if g.get('grade') is not None and not g.get('is_total'):
+                        # Normalisation /20
+                        local_max = g.get('max_grade', 20)
+                        local_grade = g['grade']
+                        
+                        if local_max == 100 and local_grade <= 20: local_max = 20.0
+                        
+                        if local_max > 0:
+                            normalized = (local_grade / local_max) * 20
+                            all_grades_vals.append(normalized)
+                        else:
+                            all_grades_vals.append(local_grade)
+                        
+                if all_grades_vals:
+                    final_avg = sum(all_grades_vals) / len(all_grades_vals)
+                else:
+                    final_avg = None
+                
+                # Ajout aux compétences cibles
+                for comp, coef in target_destinations.items():
+                    if comp in competences_data:
+                        competences_data[comp]["courses"].append({
+                            "name": c_name, # On affiche le NOM OFFICIEL propre
+                            "average": final_avg,
+                            "coef": coef,
+                            "grades": data['grades'],
+                            "is_custom": bool(override_data) # Tag for UI
+                        })
+                        
+                        if final_avg is not None:
+                            competences_data[comp]["weighted_sum"] += final_avg * coef
+                            competences_data[comp]["coef_sum"] += coef
 
             # B. Traitement des matières NON RECONNUES
             for item in unmatched_items:
@@ -377,7 +419,68 @@ def refresh_ui(request: Request):
         conn.close()
     
     return RedirectResponse(url="/", status_code=303)
+
+# --- API MODELS ---
+class ManualGradeRequest(BaseModel):
+    course_name: str
+    grade_name: str
+    grade_value: float
+    max_value: float = 20.0
+    coef: float = 1.0
+
+class CustomCourseRequest(BaseModel):
+    course_name: str
+    target_competence: Optional[str] = None
+    custom_coef: Optional[float] = None
+
+class DeleteGradeRequest(BaseModel):
+    grade_id: int
+
+# --- API ROUTES ---
+
+@app.post("/api/manual-grade/add")
+async def add_manual_grade(request: Request, data: ManualGradeRequest):
+    username = request.cookies.get("session_user")
+    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO manual_grades (username, course_canonical_name, name, grade, max_grade, coef) VALUES (?, ?, ?, ?, ?, ?)",
+              (username, data.course_name, data.grade_name, data.grade_value, data.max_value, data.coef))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+@app.post("/api/manual-grade/delete")
+async def delete_manual_grade(request: Request, data: DeleteGradeRequest):
+    username = request.cookies.get("session_user")
+    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM manual_grades WHERE id = ? AND username = ?", (data.grade_id, username))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+@app.post("/api/course/customize")
+async def customize_course(request: Request, data: CustomCourseRequest):
+    username = request.cookies.get("session_user")
+    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # Upsert logic
+    c.execute("""
+        INSERT INTO course_overrides (username, course_canonical_name, target_competence, custom_coef) 
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(username, course_canonical_name) 
+        DO UPDATE SET target_competence=excluded.target_competence, custom_coef=excluded.custom_coef
+    """, (username, data.course_name, data.target_competence, data.custom_coef))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
 @app.post("/save-config")
 def save_config(request: Request, semester: str = Form(...), option: str = Form(...), status: str = Form(...)):
     username = request.cookies.get("session_user")
