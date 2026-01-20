@@ -66,6 +66,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS manual_grades (id INTEGER PRIMARY KEY, username TEXT, course_canonical_name TEXT, name TEXT, grade REAL, max_grade REAL, coef REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS grade_exclusions (id INTEGER PRIMARY KEY, username TEXT, course_canonical_name TEXT, grade_name TEXT, grade_value REAL)''')
     
     # Migration pour ajouter la colonne last_updated si elle n'existe pas
     try:
@@ -132,6 +133,16 @@ def home(request: Request):
     
     manual_grades = [dict(r) for r in manual_grades_rows]
     overrides_map = {r['course_canonical_name']: dict(r) for r in overrides_rows}
+    
+    # 1c. Fetch Grade Exclusions
+    exclusions_rows = c.execute("SELECT * FROM grade_exclusions WHERE username = ?", (username,)).fetchall()
+    
+    # Helper pour vérifier si une note est exclue
+    def is_excluded(course_name, g_name, g_val):
+        for ex in exclusions_rows:
+            if ex['course_canonical_name'] == course_name and ex['grade_name'] == g_name and abs(ex['grade_value'] - g_val) < 0.01:
+                return True
+        return False
     
     conn.close()
 
@@ -232,24 +243,32 @@ def home(request: Request):
                     else:
                         unmatched_items.append(item)
             
-            # --- PHASE 1.5: INJECT MANUAL GRADES ---
+            # --- PHASE 1.5: INJECT MANUAL GRADES & FILTER EXCLUSIONS ---
             for c_name in canonical_names:
-                # Find manual grades for this course
+                # 1. Inject Manuals
                 my_manuals = [mg for mg in manual_grades if mg['course_canonical_name'] == c_name]
                 if my_manuals:
                     if c_name not in canonical_registry:
                          canonical_registry[c_name] = {"grades": [], "matches": ["[MANUAL ONLY]"]}
                     
                     for mg in my_manuals:
-                        # Convert to format expected by logic (grade, max_grade, is_total=False)
-                        canonical_registry[c_name]["grades"].append({
-                            "name": "📝 " + mg['name'], # Icon to distinguish
+                         canonical_registry[c_name]["grades"].append({
+                            "name": "📝 " + mg['name'], 
                             "grade": mg['grade'],
                             "max_grade": mg['max_grade'],
                             "is_total": False,
-                            "is_manual": True, # Tag for frontend
-                            "id": mg['id'] # For delete btn
+                            "is_manual": True,
+                            "id": mg['id'] 
                         })
+                
+                # 2. MARK EXCLUDED
+                if c_name in canonical_registry:
+                    for g in canonical_registry[c_name]["grades"]:
+                        # Vérif exclusion
+                        # Note: pour les manuelles, on a un ID, mais pour les scrapées on utilise (Name + Value)
+                        g_clean_name = g['name'].replace("📝 ", "") 
+                        if is_excluded(c_name, g_clean_name, g['grade']):
+                            g['is_excluded'] = True
 
             # --- PHASE 2: DISTRIBUTION ---
             # A. Traitement des matières RECONNUES (Aggregées)
@@ -285,7 +304,8 @@ def home(request: Request):
                 # Recalcul de la moyenne unique pour cette matière canonique
                 all_grades_vals = []
                 for g in data['grades']:
-                    if g.get('grade') is not None and not g.get('is_total'):
+                    if g.get('grade') is not None and not g.get('is_total') and not g.get('is_excluded'):
+                        # Normalisation /20
                         # Normalisation /20
                         local_max = g.get('max_grade', 20)
                         local_grade = g['grade']
@@ -436,6 +456,11 @@ class CustomCourseRequest(BaseModel):
 class DeleteGradeRequest(BaseModel):
     grade_id: int
 
+class ExcludeGradeRequest(BaseModel):
+    course_name: str
+    grade_name: str
+    grade_value: float
+
 # --- API ROUTES ---
 
 @app.post("/api/manual-grade/add")
@@ -459,6 +484,25 @@ async def delete_manual_grade(request: Request, data: DeleteGradeRequest):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM manual_grades WHERE id = ? AND username = ?", (data.grade_id, username))
+    conn.commit()
+    conn.close()
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+@app.post("/api/grade/exclude")
+async def exclude_grade(request: Request, data: ExcludeGradeRequest):
+    username = request.cookies.get("session_user")
+    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # On ajoute à la liste des exclusions
+    # On nettoie le nom (enlève l'icone si présent par erreur, même si le front l'envoie propre normalement)
+    clean_name = data.grade_name.replace("📝 ", "")
+    
+    c.execute("INSERT INTO grade_exclusions (username, course_canonical_name, grade_name, grade_value) VALUES (?, ?, ?, ?)",
+              (username, data.course_name, clean_name, data.grade_value))
     conn.commit()
     conn.close()
     return {"status": "ok"}
