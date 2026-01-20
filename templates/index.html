@@ -284,25 +284,44 @@
                             {% for course in data.courses %}
                             <li class="list-group-item p-0 border-bottom border-secondary-subtle">
                                 <div class="d-flex justify-content-between align-items-center p-3"
-                                    data-bs-toggle="collapse"
-                                    data-bs-target="#course-detail-{{ loop.index }}-{{ outer_loop.index }}"
                                     style="cursor: pointer;">
-                                    <div class="text-truncate" style="max-width: 70%;">
-                                        <div class="text-light fw-normal">{{ course.name }}</div>
-                                        {% if course.coef %}<small class="text-secondary" style="font-size: 0.8em;">Coef
-                                            {{ course.coef|int }}</small>{% endif %}
+
+                                    <!-- Course Title Clickable for Collapse -->
+                                    <div class="flex-grow-1" data-bs-toggle="collapse"
+                                        data-bs-target="#course-detail-{{ loop.index }}-{{ outer_loop.index }}">
+                                        <div class="text-light fw-normal">
+                                            {{ course.name }}
+                                            {% if course.is_custom %} <span class="badge bg-warning text-dark ms-1"
+                                                style="font-size: 0.6em;">MODIFIÉ</span> {% endif %}
+                                        </div>
+                                        <div class="d-flex align-items-center">
+                                            {% if course.coef %}<small class="text-secondary me-2"
+                                                style="font-size: 0.8em;">Coef {{ course.coef }}</small>{% endif %}
+                                        </div>
                                     </div>
-                                    {% if course.average %}
-                                    <span class="badge grade-badge rounded-pill">
-                                        {{ "%.2f"|format(course.average) }}
-                                    </span>
-                                    {% else %}
-                                    {% if course.grades %}
-                                    <small class="text-secondary">{{ course.grades|length }} notes</small>
-                                    {% else %}
-                                    <small class="text-secondary opacity-50">-</small>
-                                    {% endif %}
-                                    {% endif %}
+
+                                    <!-- Right Actions -->
+                                    <div class="d-flex align-items-center">
+                                        <!-- Customization Button -->
+                                        <button class="btn btn-sm btn-link text-secondary p-0 me-3"
+                                            onclick="event.stopPropagation(); openCustomizeModal('{{ course.name }}', {{ course.coef|default('null') }})">
+                                            ⚙️
+                                        </button>
+
+                                        <!-- Grade Badge -->
+                                        {% if course.average %}
+                                        <span class="badge grade-badge rounded-pill" data-bs-toggle="collapse"
+                                            data-bs-target="#course-detail-{{ loop.index }}-{{ outer_loop.index }}">
+                                            {{ "%.2f"|format(course.average) }}
+                                        </span>
+                                        {% else %}
+                                        {% if course.grades %}
+                                        <small class="text-secondary">{{ course.grades|length }} notes</small>
+                                        {% else %}
+                                        <small class="text-secondary opacity-50">-</small>
+                                        {% endif %}
+                                        {% endif %}
+                                    </div>
                                 </div>
 
                                 <!-- Détails des notes -->
@@ -312,18 +331,35 @@
                                         {% for g in course.grades %}
                                         <li
                                             class="list-group-item ps-4 py-2 border-0 d-flex justify-content-between align-items-center">
-                                            <small class="text-secondary text-truncate me-2">{{ g.name }}</small>
-                                            <span class="badge rounded shadow-none text-light border border-secondary"
-                                                style="background: rgba(255,255,255,0.05);">
-                                                {{ g.grade }}/{{ g.max_grade|int }}
-                                            </span>
+                                            <div class="text-truncate me-2">
+                                                <small class="text-secondary">{{ g.name }}</small>
+                                                {% if g.is_manual %}
+                                                <span class="badge bg-info text-dark"
+                                                    style="font-size: 0.6em;">MANUEL</span>
+                                                {% endif %}
+                                            </div>
+                                            <div class="d-flex align-items-center">
+                                                <span
+                                                    class="badge rounded shadow-none text-light border border-secondary me-2"
+                                                    style="background: rgba(255,255,255,0.05);">
+                                                    {{ g.grade }}/{{ g.max_grade|int }}
+                                                </span>
+                                                {% if g.is_manual %}
+                                                <button onclick="deleteManualGrade({{ g.id }})"
+                                                    class="btn btn-sm btn-link text-danger p-0">✖</button>
+                                                {% endif %}
+                                            </div>
                                         </li>
                                         {% endfor %}
-                                        {% if not course.grades %}
-                                        <li class="list-group-item ps-4 py-2 border-0 text-center text-secondary">
-                                            <small>Aucune note</small>
+
+                                        <!-- Add Grade Button Item -->
+                                        <li class="list-group-item ps-4 py-2 border-0 text-center">
+                                            <button onclick="openManualGradeModal('{{ course.name }}')"
+                                                class="btn btn-sm btn-outline-success rounded-pill py-0 px-3"
+                                                style="font-size: 0.8em;">
+                                                + Ajouter une note
+                                            </button>
                                         </li>
-                                        {% endif %}
                                     </ul>
                                 </div>
                             </li>
@@ -393,6 +429,74 @@
         </div>
     </div>
 
+    <!-- Modal MANUAL GRADE -->
+    <div class="modal fade" id="manualGradeModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0 text-light" style="background: #1e293b;">
+                <div class="modal-header border-bottom border-secondary">
+                    <h5 class="modal-title">Ajouter une note</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="mg_course_name">
+                    <div class="mb-3">
+                        <label class="form-label">Nom du devoir (ex: Oral)</label>
+                        <input type="text" id="mg_name" class="form-control bg-dark text-light border-secondary">
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Note</label>
+                            <input type="number" step="0.01" id="mg_value"
+                                class="form-control bg-dark text-light border-secondary">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Sur</label>
+                            <input type="number" step="0.1" id="mg_max" value="20"
+                                class="form-control bg-dark text-light border-secondary">
+                        </div>
+                    </div>
+                    <button onclick="submitManualGrade()" class="btn btn-success w-100 rounded-pill">Ajouter</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal CUSTOMIZE COURSE -->
+    <div class="modal fade" id="customizeCourseModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0 text-light" style="background: #1e293b;">
+                <div class="modal-header border-bottom border-secondary">
+                    <h5 class="modal-title">Personnaliser la matière</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="cc_course_name">
+                    <div class="mb-3">
+                        <label class="form-label text-info">Déplacer vers le bloc :</label>
+                        <select id="cc_target" class="form-select bg-dark text-light border-secondary">
+                            <option value="">-- Ne pas déplacer --</option>
+                            {% if competences %}
+                            {% for comp in competences.keys() %}
+                            <option value="{{ comp }}">{{ comp }}</option>
+                            {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-info">Modifier le Coefficient :</label>
+                        <input type="number" step="0.1" id="cc_coef" placeholder="Laisser vide pour défaut"
+                            class="form-control bg-dark text-light border-secondary">
+                        <small class="text-secondary">Laissez vide pour garder le coef officiel.</small>
+                    </div>
+                    <button onclick="submitCustomizeCourse()"
+                        class="btn btn-primary w-100 rounded-pill">Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
@@ -401,6 +505,60 @@
             document.getElementById('content').style.opacity = '0.3';
             document.getElementById('content').style.filter = 'blur(4px)';
             window.location.href = "/refresh-ui";
+        }
+
+        // --- MANUAL GRADES ---
+        function openManualGradeModal(courseName) {
+            document.getElementById('mg_course_name').value = courseName;
+            document.getElementById('mg_name').value = "Oral";
+            document.getElementById('mg_value').value = "";
+            new bootstrap.Modal(document.getElementById('manualGradeModal')).show();
+        }
+
+        function submitManualGrade() {
+            const data = {
+                course_name: document.getElementById('mg_course_name').value,
+                grade_name: document.getElementById('mg_name').value || "Note manuelle",
+                grade_value: parseFloat(document.getElementById('mg_value').value),
+                max_value: parseFloat(document.getElementById('mg_max').value),
+                coef: 1.0
+            };
+            if (isNaN(data.grade_value)) return alert("Note invalide");
+
+            fetch("/api/manual-grade/add", {
+                method: "POST", headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(() => window.location.reload());
+        }
+
+        function deleteManualGrade(id) {
+            if (!confirm("Supprimer cette note manuelle ?")) return;
+            fetch("/api/manual-grade/delete", {
+                method: "POST", headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ grade_id: id })
+            }).then(() => window.location.reload());
+        }
+
+        // --- CUSTOMIZE COURSE ---
+        function openCustomizeModal(courseName, currentCoef) {
+            document.getElementById('cc_course_name').value = courseName;
+            document.getElementById('cc_coef').value = currentCoef ? currentCoef : "";
+            document.getElementById('cc_target').value = ""; // Default to no move
+            new bootstrap.Modal(document.getElementById('customizeCourseModal')).show();
+        }
+
+        function submitCustomizeCourse() {
+            const valCoef = document.getElementById('cc_coef').value;
+            const data = {
+                course_name: document.getElementById('cc_course_name').value,
+                target_competence: document.getElementById('cc_target').value || null,
+                custom_coef: valCoef ? parseFloat(valCoef) : null
+            };
+
+            fetch("/api/course/customize", {
+                method: "POST", headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(() => window.location.reload());
         }
     </script>
 </body>
