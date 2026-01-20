@@ -142,8 +142,11 @@ def init_db():
     # Migration pour ajouter la colonne last_updated si elle n'existe pas
     try:
         c.execute("ALTER TABLE user_settings ADD COLUMN last_updated TEXT")
-    except sqlite3.OperationalError:
+        conn.commit()
+    except (sqlite3.OperationalError, psycopg2.errors.DuplicateColumn):
         pass # La colonne existe déjà
+    except Exception as e:
+        print(f"⚠️ Migration warning: {e}")
         
     conn.commit()
     conn.close()
