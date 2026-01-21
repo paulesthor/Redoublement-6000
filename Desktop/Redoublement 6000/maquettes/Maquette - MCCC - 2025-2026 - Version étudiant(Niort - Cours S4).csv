@@ -1,0 +1,45 @@
+﻿Semestre 4;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;Heures étudiants;Projet;;Enseignant;Modalités de contrôle envisagées;Référent;Calendrier;Mots-clés;
+Compétence transversale;Projet Personnel et Professionnel 4;8;;;N. Huche;Non évalué;H. Bieber;;Bataille de la tech (séance de 2h par groupe);
+;;;;;H. Bieber;1 dossier;;;;
+"Compétence 1 :
+Traiter des données à des fins décisionnelles";Automatisation et test en programmation;18;;;A. Mesmoudi;2 devoirs machine;A. Mesmoudi;;Scala / shell linux / git;
+;AL -  Système d'information géographique;15;;;B. Pellerin;1 production technique;A. Mesmoudi;;QGIS;
+"Compétence 2 :
+Analyser statistiquement les données";Méthodes factorielles;30;;;A. Qannari;1 devoir écrit;A. Qannari;;ACP/AFC/AFCM;
+;Classification automatique;25;;;L. Cadra;1 devoir écrit;A. Qannari;;Régression logistique - Python;
+;;;;;H. Perrier;1 devoir écrit;;;Classification non supervisée : CAH / k means - Python;
+"Compétence 3 :
+Valoriser une production dans un contexte professionnel";Anglais scientifique et argumentation;15;;;E. Payet;épreuves orales et écrites en individuel et par groupe;E. Payet;;;
+;Communication scientifique et argumentation;15;;;H. Bieber;;H. Bieber;;;
+;Exploration et valorisation de la donnée dans un cadre juridique et économique;20;;;S. Laurent;;S. Laurent;;;
+"Compétence 4 :
+- VCOD : Développer un outil décisionnel
+- EMS : Modéliser les données dans un cadre statistique";VCOD - Préparation/Intégration de données;35;;;P. Dedieu;1 devoir machine;A. Mesmoudi;;Talend avancé;
+;VCOD - Programmation web;;;;F. Garnier;1 production technique;F. Garnier;;Programmation client-serveur en javascript D3JS;
+;EMS - Modèle linéaire;;;;A. Qannari;1 devoir écrit;A. Qannari;;;
+;EMS - AL - Compléments d'analyse;;;;L. Bureau;1 devoir écrit;L. Bureau;;;
+;;181;;;;;;;;
+SAÉ;SAÉ - VCOD - Développement d'un composant d'une solution décisionnelle;6;30;;A. Mesmoudi;1 devoir machine;A. Mesmoudi;Février;API REST / PHP;
+;SAÉ - EMS - Expliquer ou prédire une variable quantitative à partir de plusieurs facteurs;;;;A. Qannari;1 rapport + éventuellement un oral;A. Qannari;;Un peu de ML;
+;SAÉ - Reporting d'une analyse multivariée;12;30;;T. Agbahoungbata;"1 QCM
+1 production technique";A. Mesmoudi;;R shiny;
+;;;;;;;;Mars;;
+;SAÉ - AL - Métiers de la donnée : répondre aux besoins du territoire;;16;;H. Bieber;1 présentation orale et 1 évaluation globale de la réalisation de la mission;F. Garnier;;;
+;;;;;F. Garnier;;;;;
+;;;;;L. Bureau;;;;;
+;Stage / Alternance;;;;;"Stage : 1 note composée d'un rapport écrit, d'une soutenance orale et d'une évaluation globale des missions réalisées en entreprise par les tuteurs professionnel et enseignant
+
+Alternance : 1 note composée d'un rapport écrit, de compte-rendus réguliers sur les missions (LEA) et d'une évaluation globale des missions réalisées en entreprise par les tuteurs professionnel et enseignant";A. Mesmoudi & L. Ali;;;
+;Portfolio;1;;;H. Bieber;;H. Bieber;;;
+;;19;76;;;;;;;
+;;;;;;;;;;
+Total;;200;76;;;;;;;
+;;;;;;;;;;
+Non suivi par les alternants;;;;;;;;;;
+Semaines bloquées;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;

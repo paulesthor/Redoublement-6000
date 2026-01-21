@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bilan Annuel - Redoublement 8000</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="/icon.png">
+    <link rel="apple-touch-icon" href="/icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f172a">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at top left, #2e1065, #0f172a);
+            /* Purple tint for Year View */
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            padding-bottom: 80px;
+            overflow-x: hidden;
+            /* For drawer */
+        }
+
+        /* --- Shared Header & Drawer Styles (To be duplicated in index.html) --- */
+        .glass-header {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 15px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .menu-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .app-title {
+            font-weight: 700;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+
+        /* Drawer */
+        .drawer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1040;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .drawer-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+
+        .drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 280px;
+            background: #1e293b;
+            z-index: 1050;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease-out;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5);
+            padding-top: 60px;
+        }
+
+        .drawer.active {
+            transform: translateX(0);
+        }
+
+        .drawer-link {
+            display: block;
+            padding: 15px 25px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 1.1rem;
+            font-weight: 500;
+            border-left: 4px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .drawer-link:hover,
+        .drawer-link.active {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-left-color: var(--accent-purple);
+        }
+
+        .drawer-header {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            padding: 20px;
+            font-weight: bold;
+            color: var(--accent-purple);
+            font-size: 1.2rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        /* --- Page Content --- */
+        .stat-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 25px;
+            margin: 20px;
+            text-align: center;
+        }
+
+        .big-average {
+            font-size: 3.5rem;
+            font-weight: 700;
+            line-height: 1;
+            margin: 10px 0;
+            background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .ue-card {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 15px 20px;
+            margin: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .ue-name {
+            font-weight: 600;
+            font-size: 1rem;
+            color: #e2e8f0;
+        }
+
+        .ue-grade {
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: var(--accent-purple);
+        }
+
+        .section-header {
+            margin: 30px 20px 15px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Drawer Overlay & Menu -->
+    <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">Navigation</div>
+        <a href="/?view=s3" class="drawer-link">Semestre 3</a>
+        <a href="/?view=s4" class="drawer-link">Semestre 4</a>
+        <a href="/?view=year" class="drawer-link active">Bilan Annuel</a>
+        <div style="height: 1px; background: var(--glass-border); margin: 10px 0;"></div>
+        <a href="/?view=settings" class="drawer-link">Paramètres</a>
+        <a href="/logout" class="drawer-link text-danger">Déconnexion</a>
+    </div>
+
+    <!-- Header -->
+    <header class="glass-header">
+        <button class="menu-btn" onclick="openDrawer()">☰</button>
+        <h1 class="app-title">Bilan Annuel</h1>
+        <div style="width: 32px;"></div>
+    </header>
+
+    <!-- Global Average -->
+    <div class="stat-card">
+        <div style="font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8;">Moyenne Générale
+        </div>
+        {% if global_average %}
+        <div class="big-average">{{ "%.2f"|format(global_average) }}</div>
+        <div
+            class="badge rounded-pill bg-success bg-opacity-25 text-success border border-success border-opacity-25 px-3 py-2">
+            Passage Validé ✅
+        </div>
+        {% else %}
+        <div class="big-average">--</div>
+        <p class="text-muted">Données insuffisantes</p>
+        {% endif %}
+    </div>
+
+    <!-- Annual UEs -->
+    <div class="section-header">Moyennes par UE (Annuelle)</div>
+
+    {% for ue, grade in annual_competences.items() %}
+    <div class="ue-card">
+        <div class="ue-name">{{ ue }}</div>
+        <div class="ue-grade"
+            class="{% if grade < 10 %}text-danger{% elif grade < 12 %}text-warning{% else %}text-success{% endif %}">
+            {{ "%.2f"|format(grade) }}
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center text-muted mt-4">Aucune UE calculée pour le moment.</div>
+    {% endfor %}
+
+    <!-- Info -->
+    <div class="text-center mt-5 px-4 text-muted" style="font-size: 0.8rem;">
+        * La moyenne annuelle est calculée sur la base des 4 UEs, elles-mêmes moyennées entre le S3 et le S4.
+    </div>
+
+    <script>
+        // Drawer Logic
+        const drawer = document.getElementById('drawer');
+        const overlay = document.getElementById('drawerOverlay');
+        let startX = 0;
+
+        function openDrawer() {
+            drawer.classList.add('active');
+            overlay.classList.add('active');
+        }
+
+        function closeDrawer() {
+            drawer.classList.remove('active');
+            overlay.classList.remove('active');
+        }
+
+        // Swipe Gestures
+        document.addEventListener('touchstart', e => {
+            startX = e.touches[0].clientX;
+        }, { passive: true });
+
+        document.addEventListener('touchend', e => {
+            const endX = e.changedTouches[0].clientX;
+            const diffX = endX - startX;
+
+            // Swipe Right to Open (from left edge)
+            if (startX < 50 && diffX > 50) {
+                openDrawer();
+            }
+            // Swipe Left to Close (if open)
+            if (drawer.classList.contains('active') && diffX < -50) {
+                closeDrawer();
+            }
+        }, { passive: true });
+    </script>
+</body>
+
+</html>

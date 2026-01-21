@@ -1,0 +1,49 @@
+﻿Semestre 3;;;;;;;;;;;;
+;;;;;;;;;;;;
+;;Heures étudiants;Projet;;Enseignant;Modalités de contrôle envisagées;Référent;Calendrier;Mots-clés;;;
+Compétence transversale;Projet Personnel et Professionnel 3;14;;;H. Bieber;1 devoir écrit;H. Bieber;;;;;
+"Compétence 1 :
+Traiter des données à des fins décisionnelles";Utilisation avancée d'outils de reporting;34;;;F. Brangier;1 QCM et 1 devoir machine;A. Mesmoudi;;BO;;;
+;;;;;C. Sibottier;1 production technique;;;PowerBi Avancé;;;
+;;;;;M. Gouméziane;1 production technique;;;Tableau Software;;;
+;Systèmes d'information décisionnels;24;;;A. Mesmoudi;1 devoir écrit;A. Mesmoudi;;Rappel SQL / Modélisation;;;
+;;;;;N. Huche;1 QCM;;;Architecture SID;;;
+;Technologies web;24;;;F. Garnier;"1 écrit
+1 production technique";F. Garnier;;php/javascript/d3js;;;
+;Programmation statistique automatisée;15;;;B. Gasnier;1    devoir écrit;A. Mesmoudi;;SAS macro;;;
+"Compétence 2 :
+Analyser statistiquement les données";Algèbre linéaire;30;;;L. Bureau;2 devoirs écrits;L. Bureau;;;;;
+;Tests d’hypothèses pour l’analyse bi-variée;30;;;M. Ibazizen;2 devoirs écrits;M. Ibazizen;;;;;
+;AL - Régression linéaire simple;24;;;A. Qannari;1 devoir écrit;A. Qannari;;;;;
+"Compétence 3 :
+Valoriser une production dans un contexte professionnel";Anglais professionnel;30;;;E. Payet;épreuves orales et écrites en individuel et en groupe;E. Payet;;;;;
+;Communication organisationnelle et professionnelle;30;;;H. Bieber;1 devoir écrit + 1 oral;H. Bieber;;;;;
+;Les données de l’environnement entrepreneurial et économique pour l’aide à la décision;40;;;S. Laurent;;S. Laurent;;;;;
+"Compétence 4 :
+- VCOD : Développer un outil décisionnel
+- EMS : Modéliser les données dans un cadre statistique";EMS - AL -  Programmation objet;15;;;A. Mesmoudi;1 devoir machine;A. Mesmoudi;;Scala / git;;;
+;VCOD - Programmation objet;;;;A. Mesmoudi;;;;Scala / git;;;
+;EMS - Techniques de sondage et méthodologie de l'enquête;24;;;G. Prou;1 devoir écrit;S. Laurent;;Sondage;;;
+;;;;;S. Laurent;;;;Enquête / sphinx;;;
+;VCOD - AL - Automatisation du traitement des données dans un tableur;;;;F. Garnier;1 TP noté et 1 production technique;F. Garnier;;VBA;;;
+;;334;;;;;;;;;;
+SAÉ;SAÉ - VCOD - Collecte automatisée de données web ;6;30;;F. Garnier;1 production technique;F. Garnier;"Toussaint 
+(fil de l'eau pour les alternants)";Webscrapping / Python / git;;;
+;SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience;;;;A. Qannari;1 projet + éventuellement un oral;A. Qannari;;;;;
+;SAÉ - Intégration de données dans un Datawarehouse ;18;30;;G. Vicien;1 production technique;A. Mesmoudi;;Talend;;;
+;;;;;A. Mesmoudi;1 devoir machine;;Noël;;;;
+;SAÉ - Description et prévision de données temporelles;30;;;M. Ibazizen;1 devoir écrit;M. Ibazizen;;Excel / R;;;
+;;;;;L. Ali;1 rapport écrit;;;;;;
+;SAÉ - VCOD/EMS - Conformité réglementaire pour traiter/analyser des données;12;5;;S. Quinault;;A. Mesmoudi;;;;;
+;;;;;F. Grégoire;1 écrit et 1 rapport;;;;;;
+;"SAÉ - AL - Métiers de la donnée : répondre aux besoins du territoire
+";;35;;H. Bieber;1 présentation orale en anglais, 1 évaluation intermédiaire par le donneur d'ordre, 1 écrit;F. Garnier;;;;;
+;;;;;F. Garnier;;;;;;;
+;;;;;L. Bureau;;;;;;;
+;;;;;E. Payet;;;;;;;
+;;66;100;;;;;;;;;
+;;;;;;;;;;;;
+Total;;400;100;;;;;;;;;
+;;;;;;;;;;;;
+Non suivi par les alternants;;;;;;;;;;;;
+Semaines bloquées;;;;;;;;;;;;
