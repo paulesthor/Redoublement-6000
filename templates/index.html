@@ -258,8 +258,10 @@
         <a href="/?view=year" class="drawer-link">Bilan Annuel</a>
         <div style="height: 1px; background: var(--glass-border); margin: 10px 0;"></div>
         <a href="/?view=settings" class="drawer-link">Paramètres</a>
+        {% if is_admin %}
         <button onclick="exportMaquette()" class="drawer-link btn btn-link text-start text-warning w-100"
             style="text-decoration: none;">Exporter Maquette (Log)</button>
+        {% endif %}
         <a href="/logout" class="drawer-link text-danger">Déconnexion</a>
     </div>
 
