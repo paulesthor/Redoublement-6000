@@ -24,33 +24,122 @@
             --accent-blue: #3b82f6;
             --accent-success: #10b981;
             --accent-danger: #ef4444;
-            --neon-glow: 0 0 10px rgba(59, 130, 246, 0.5);
+            --accent-purple: #8b5cf6;
         }
 
         html {
             height: 100%;
             background-color: #0f172a;
-            /* Solid color fallback for overscroll */
             background-image: radial-gradient(circle at top left, #1e1b4b, #0f172a);
             background-repeat: no-repeat;
             background-attachment: fixed;
-            background-position: center;
             background-size: cover;
         }
 
         body {
-            background-color: #0f172a;
-            /* Ensure body also has color */
             background: transparent;
             min-height: 100vh;
             color: var(--text-primary);
             font-family: 'Outfit', sans-serif;
             padding-bottom: 80px;
+            overflow-x: hidden;
             overscroll-behavior-y: none;
-            /* Prevent bounce if supported */
         }
 
-        /* Glassmorphism Cards */
+        /* --- Sidebar / Drawer --- */
+        .drawer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1040;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .drawer-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+
+        .drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 280px;
+            background: #1e293b;
+            z-index: 1050;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease-out;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5);
+            padding-top: 60px;
+        }
+
+        .drawer.active {
+            transform: translateX(0);
+        }
+
+        .drawer-link {
+            display: block;
+            padding: 15px 25px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 1.1rem;
+            font-weight: 500;
+            border-left: 4px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .drawer-link:hover,
+        .drawer-link.active {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-left-color: var(--accent-purple);
+        }
+
+        .drawer-header {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            padding: 20px;
+            font-weight: bold;
+            color: var(--accent-purple);
+            font-size: 1.2rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        /* --- Header --- */
+        .navbar {
+            background: rgba(15, 23, 42, 0.85) !important;
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 10px 20px;
+        }
+
+        .menu-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+            margin-right: 15px;
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 1.2rem;
+        }
+
+        /* --- Cards & UI --- */
         .glass-card {
             background: var(--glass-bg);
             backdrop-filter: blur(16px);
@@ -60,28 +149,6 @@
             box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
         }
 
-        .navbar {
-            background: rgba(15, 23, 42, 0.8) !important;
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid var(--glass-border);
-        }
-
-        .navbar-brand {
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        /* Accordion Customization */
-        .accordion-item {
-            background: transparent;
-            border: none;
-            margin-bottom: 12px;
-        }
-
-        /* Accordion Customization */
         .accordion-button {
             background: var(--glass-bg);
             backdrop-filter: blur(12px);
@@ -89,78 +156,31 @@
             border: 1px solid var(--glass-border);
             border-radius: 12px !important;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-            position: relative;
-            padding-right: 4rem;
-            /* More space for chevron */
-            background-position: right 1.5rem center;
-            /* Move chevron inward */
         }
-
-        /* ... existing styles ... */
-
-        /* ... existing styles ... */
-
 
         .accordion-button:not(.collapsed) {
             background: rgba(59, 130, 246, 0.15);
             color: #60a5fa;
-            border-color: rgba(59, 130, 246, 0.3);
-            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.15);
         }
 
-        .accordion-button::after {
-            filter: invert(1) brightness(1.2);
+        .accordion-item {
+            background: transparent;
+            border: none;
+            margin-bottom: 12px;
         }
 
         .accordion-collapse {
             background: rgba(15, 23, 42, 0.4);
             border-radius: 0 0 12px 12px;
-            margin-top: -5px;
             border: 1px solid var(--glass-border);
             border-top: none;
         }
 
-        .list-group-item {
-            background: transparent;
-            color: var(--text-secondary);
-            border-color: var(--glass-border);
-        }
-
-        /* Badges & Notes */
-        .badge {
-            font-weight: 600;
-            padding: 8px 12px;
-        }
-
-        .badge.bg-success {
-            background: rgba(16, 185, 129, 0.15) !important;
-            color: #34d399 !important;
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            box-shadow: 0 0 8px rgba(16, 185, 129, 0.2);
-        }
-
-        .badge.bg-danger {
-            background: rgba(239, 68, 68, 0.15) !important;
-            color: #f87171 !important;
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            box-shadow: 0 0 8px rgba(239, 68, 68, 0.2);
-        }
-
-        .grade-badge {
-            background: rgba(255, 255, 255, 0.05) !important;
-            color: var(--text-primary) !important;
-            border: 1px solid var(--glass-border) !important;
-        }
-
-        /* Refresh Button */
         .refresh-btn {
             background: var(--glass-bg);
             backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.2);
             color: #60a5fa;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             position: fixed;
             bottom: 30px;
             right: 30px;
@@ -168,33 +188,10 @@
             height: 64px;
             border-radius: 50%;
             font-size: 28px;
-            z-index: 1000;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 900;
             display: flex;
             align-items: center;
             justify-content: center;
-        }
-
-        .refresh-btn:hover {
-            transform: scale(1.1) rotate(180deg);
-            background: rgba(59, 130, 246, 0.2);
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
-            border-color: #60a5fa;
-            color: white;
-        }
-
-        .refresh-btn:active {
-            transform: scale(0.95);
-        }
-
-        .animate-in {
-            animation: fadeUp 0.6s ease backwards;
-        }
-
-        /* Global Average Card */
-        .global-avg-card {
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%);
-            border: 1px solid rgba(59, 130, 246, 0.3);
         }
 
         .global-avg-value {
@@ -203,47 +200,97 @@
             background: linear-gradient(to right, #60a5fa, #c084fc);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            text-shadow: 0 10px 30px rgba(96, 165, 250, 0.2);
         }
 
-        #loader .spinner-border {
-            width: 3rem;
-            height: 3rem;
-            border-width: 0.2em;
-            color: #60a5fa !important;
+        .list-group-item {
+            background: transparent;
+            color: var(--text-secondary);
+            border-color: var(--glass-border);
+        }
+
+        .grade-badge {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
+            padding: 5px 10px;
+            border-radius: 20px;
+        }
+
+        .badge {
+            font-weight: 600;
+        }
+
+        .badge.bg-success {
+            background: rgba(16, 185, 129, 0.15) !important;
+            color: #34d399 !important;
+        }
+
+        .badge.bg-danger {
+            background: rgba(239, 68, 68, 0.15) !important;
+            color: #f87171 !important;
+        }
+
+        .animate-in {
+            animation: fadeUp 0.6s ease backwards;
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 </head>
 
 <body>
+    <!-- Drawer -->
+    <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">Navigation</div>
+        <a href="/?view=s3" class="drawer-link {% if view == 's3' %}active{% endif %}">Semestre 3</a>
+        <a href="/?view=s4" class="drawer-link {% if view == 's4' %}active{% endif %}">Semestre 4</a>
+        <a href="/?view=year" class="drawer-link">Bilan Annuel</a>
+        <div style="height: 1px; background: var(--glass-border); margin: 10px 0;"></div>
+        <a href="/?view=settings" class="drawer-link">Paramètres</a>
+        <a href="/logout" class="drawer-link text-danger">Déconnexion</a>
+    </div>
+
+    <!-- Navbar -->
     <nav class="navbar navbar-dark sticky-top mb-4">
-        <div class="container-fluid px-4">
-            <span class="navbar-brand mb-0 h1 fs-3">🚀 Redoublement 8000</span>
-            <div>
-                <button class="btn btn-sm btn-outline-light me-2 rounded-pill px-3" data-bs-toggle="modal"
-                    data-bs-target="#configModal" style="border-color: var(--glass-border);">
-                    ⚙️ Config
-                </button>
-                <a href="/logout" class="btn btn-sm btn-outline-danger rounded-pill px-3">Déconnexion</a>
-            </div>
+        <div class="d-flex align-items-center">
+            <button class="menu-btn" onclick="openDrawer()">☰</button>
+            <span class="navbar-brand">
+                {% if view == 's3' %}Semestre 3
+                {% elif view == 's4' %}Semestre 4
+                {% else %}Redoublement 8000{% endif %}
+            </span>
         </div>
     </nav>
 
     <div class="container" id="content">
+        <!-- Loader -->
         <div id="loader" class="text-center my-5 animate-in" style="display:none;">
-            <div class="spinner-border" role="status"></div>
-            <p class="mt-3 text-secondary animate-pulse">Récupération des données en cours...</p>
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 text-secondary">Récupération des données en cours...</p>
         </div>
 
+        <!-- Global Average Card -->
         {% if global_average %}
-        <div class="card mb-3 glass-card global-avg-card animate-in">
+        <div class="card mb-3 glass-card animate-in border-primary border-opacity-25"
+            style="background: rgba(59, 130, 246, 0.05);">
             <div class="card-body text-center py-4">
-                <h6 class="text-uppercase text-secondary fw-bold fs-7 mb-2 tracking-wider">Moyenne Générale</h6>
+                <h6 class="text-uppercase text-secondary fw-bold fs-7 mb-2 tracking-wider">Moyenne Générale ({{
+                    view|upper }})</h6>
                 <div class="global-avg-value">{{ "%.2f"|format(global_average) }}</div>
             </div>
         </div>
-
-        <!-- DATE MISE A JOUR (SOUS LA MOYENNE) -->
+        <!-- Date Update -->
         {% if settings and settings.last_updated %}
         <div class="text-center mb-4 animate-in" style="animation-delay: 0.1s;">
             <span
@@ -254,14 +301,16 @@
         {% endif %}
         {% endif %}
 
-        {% if settings %}
-        <div class="text-center mb-4 animate-in" style="animation-delay: 0.2s;">
-            <span class="badge rounded-pill bg-dark border border-secondary text-secondary fw-normal px-3 py-2">
-                {{ settings.semester }} • {{ settings.option }} • {{ settings.status }}
-            </span>
+        <!-- Welcome Empty State -->
+        {% if not competences and not global_average %}
+        <div class="glass-card p-5 text-center mt-5 animate-in">
+            <h3 class="mb-3">👋 Bienvenue {{ user }}</h3>
+            <p class="text-secondary mb-4">Configure ton parcours pour commencer.</p>
+            <a href="/?view=settings" class="btn btn-primary rounded-pill px-4">Configurer maintenant</a>
         </div>
         {% endif %}
 
+        <!-- Competences Accordion -->
         {% if competences %}
         <div class="accordion" id="accordionCompetences">
             {% for comp_name, data in competences.items() %}
@@ -282,7 +331,7 @@
                     </button>
                 </h2>
                 <div id="collapse{{ loop.index }}"
-                    class="accordion-collapse collapse {% if loop.first and not settings %}show{% endif %}"
+                    class="accordion-collapse collapse {% if loop.first and global_average %}show{% endif %}"
                     data-bs-parent="#accordionCompetences">
                     <div class="accordion-body p-0">
                         <ul class="list-group list-group-flush">
@@ -291,7 +340,7 @@
                                 <div class="d-flex justify-content-between align-items-center p-3"
                                     style="cursor: pointer;">
 
-                                    <!-- Course Title Clickable for Collapse -->
+                                    <!-- Course Info -->
                                     <div class="flex-grow-1" data-bs-toggle="collapse"
                                         data-bs-target="#course-detail-{{ loop.index }}-{{ outer_loop.index }}">
                                         <div class="text-light fw-normal">
@@ -305,31 +354,23 @@
                                         </div>
                                     </div>
 
-                                    <!-- Right Actions -->
+                                    <!-- Actions & Grade -->
                                     <div class="d-flex align-items-center">
-                                        <!-- Customization Button -->
                                         <button class="btn btn-sm btn-link text-secondary p-0 me-3"
-                                            onclick="event.stopPropagation(); openCustomizeModal('{{ course.name | replace('\'', '\\\'') }}', {{ course.coef|default('null') }})">
-                                            ⚙️
-                                        </button>
+                                            onclick="event.stopPropagation(); openCustomizeModal('{{ course.name | replace('\'', '\\\'') }}', {{ course.coef|default('null') }})">⚙️</button>
 
-                                        <!-- Grade Badge -->
                                         {% if course.average %}
                                         <span class="badge grade-badge rounded-pill" data-bs-toggle="collapse"
                                             data-bs-target="#course-detail-{{ loop.index }}-{{ outer_loop.index }}">
                                             {{ "%.2f"|format(course.average) }}
                                         </span>
                                         {% else %}
-                                        {% if course.grades %}
-                                        <small class="text-secondary">{{ course.grades|length }} notes</small>
-                                        {% else %}
                                         <small class="text-secondary opacity-50">-</small>
-                                        {% endif %}
                                         {% endif %}
                                     </div>
                                 </div>
 
-                                <!-- Détails des notes -->
+                                <!-- Grades Detail -->
                                 <div id="course-detail-{{ loop.index }}-{{ outer_loop.index }}" class="collapse"
                                     style="background: rgba(0,0,0,0.2);">
                                     <ul class="list-group list-group-flush">
@@ -338,13 +379,8 @@
                                             class="list-group-item ps-4 py-2 border-0 d-flex justify-content-between align-items-center {% if g.is_excluded %}opacity-50 text-decoration-line-through{% endif %}">
                                             <div class="text-truncate me-2">
                                                 <small class="text-secondary">{{ g.name }}</small>
-                                                {% if g.is_manual %}
-                                                <span class="badge bg-info text-dark"
-                                                    style="font-size: 0.6em;">MANUEL</span>
-                                                {% endif %}
-                                                {% if g.is_excluded %}
-                                                <span class="badge bg-secondary" style="font-size: 0.6em;">IGNORÉ</span>
-                                                {% endif %}
+                                                {% if g.is_manual %}<span class="badge bg-info text-dark"
+                                                    style="font-size: 0.6em;">MANUEL</span>{% endif %}
                                             </div>
                                             <div class="d-flex align-items-center">
                                                 <span
@@ -363,15 +399,11 @@
                                             </div>
                                         </li>
                                         {% endfor %}
-
-                                        <!-- Add Grade Button Item -->
                                         <li class="list-group-item ps-4 py-2 border-0 text-center">
                                             <button
                                                 onclick="openManualGradeModal('{{ course.name | replace('\'', '\\\'') }}')"
                                                 class="btn btn-sm btn-outline-success rounded-pill py-0 px-3"
-                                                style="font-size: 0.8em;">
-                                                + Ajouter une note
-                                            </button>
+                                                style="font-size: 0.8em;">+ Ajouter une note</button>
                                         </li>
                                     </ul>
                                 </div>
@@ -383,91 +415,32 @@
             </div>
             {% endfor %}
         </div>
-        {% else %}
-        <div class="glass-card p-5 text-center mt-5 animate-in">
-            <h3 class="mb-3">👋 Bienvenue {{ user }}</h3>
-            <p class="text-secondary mb-4">Configure ton parcours pour commencer.</p>
-            <button class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal"
-                data-bs-target="#configModal">Configurer maintenant</button>
-        </div>
         {% endif %}
     </div>
 
-    <button onclick="refreshData()"
-        class="btn btn-primary refresh-btn d-flex align-items-center justify-content-center">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
-    </button>
+    <!-- Refresh FAB -->
+    <button onclick="refreshData()" class="refresh-btn">🔄</button>
 
-    <!-- Modal Configuration (Dark Theme) -->
-    <div class="modal fade" id="configModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content glass-card border-0 text-light" style="background: #1e293b;">
-                <div class="modal-header border-bottom border-secondary">
-                    <h5 class="modal-title">Configuration</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                        aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="configForm" action="/save-config" method="post">
-                        <div class="mb-3">
-                            <label class="form-label text-secondary small text-uppercase fw-bold">Semestre</label>
-                            <select name="semester" class="form-select bg-dark text-light border-secondary">
-                                <option value="S3">Semestre 3</option>
-                                <option value="S4">Semestre 4</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label text-secondary small text-uppercase fw-bold">Option</label>
-                            <select name="option" class="form-select bg-dark text-light border-secondary">
-                                <option value="EMS">EMS (Statistique)</option>
-                                <option value="VCOD">VCOD (Informatique)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label text-secondary small text-uppercase fw-bold">Statut</label>
-                            <select name="status" class="form-select bg-dark text-light border-secondary">
-                                <option value="FI">Formation Initiale</option>
-                                <option value="FA">Alternance</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn btn-primary w-100 rounded-pill mt-2">Sauvegarder</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
+    <!-- Modals (Manual Grade & Customization) -->
     <!-- Modal MANUAL GRADE -->
     <div class="modal fade" id="manualGradeModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content glass-card border-0 text-light" style="background: #1e293b;">
                 <div class="modal-header border-bottom border-secondary">
                     <h5 class="modal-title">Ajouter une note</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                        aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="mg_course_name">
                     <div class="mb-3">
-                        <label class="form-label">Nom du devoir (ex: Oral)</label>
+                        <label class="form-label">Nom</label>
                         <input type="text" id="mg_name" class="form-control bg-dark text-light border-secondary">
                     </div>
                     <div class="row">
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Note</label>
-                            <input type="number" step="0.01" id="mg_value"
-                                class="form-control bg-dark text-light border-secondary">
-                        </div>
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Sur</label>
-                            <input type="number" step="0.1" id="mg_max" value="20"
-                                class="form-control bg-dark text-light border-secondary">
-                        </div>
+                        <div class="col-6 mb-3"><label class="form-label">Note</label><input type="number" step="0.01"
+                                id="mg_value" class="form-control bg-dark text-light border-secondary"></div>
+                        <div class="col-6 mb-3"><label class="form-label">Sur</label><input type="number" step="0.1"
+                                id="mg_max" value="20" class="form-control bg-dark text-light border-secondary"></div>
                     </div>
                     <button onclick="submitManualGrade()" class="btn btn-success w-100 rounded-pill">Ajouter</button>
                 </div>
@@ -475,19 +448,18 @@
         </div>
     </div>
 
-    <!-- Modal CUSTOMIZE COURSE -->
+    <!-- Modal CUSTOMIZE -->
     <div class="modal fade" id="customizeCourseModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content glass-card border-0 text-light" style="background: #1e293b;">
                 <div class="modal-header border-bottom border-secondary">
-                    <h5 class="modal-title">Personnaliser la matière</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                        aria-label="Close"></button>
+                    <h5 class="modal-title">Personnaliser</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="cc_course_name">
                     <div class="mb-3">
-                        <label class="form-label text-info">Déplacer vers le bloc :</label>
+                        <label class="form-label text-info">Déplacer vers :</label>
                         <select id="cc_target" class="form-select bg-dark text-light border-secondary">
                             <option value="">-- Ne pas déplacer --</option>
                             {% if competences %}
@@ -498,10 +470,9 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label text-info">Modifier le Coefficient :</label>
-                        <input type="number" step="0.1" id="cc_coef" placeholder="Laisser vide pour défaut"
+                        <label class="form-label text-info">Coef :</label>
+                        <input type="number" step="0.1" id="cc_coef" placeholder="Défaut"
                             class="form-control bg-dark text-light border-secondary">
-                        <small class="text-secondary">Laissez vide pour garder le coef officiel.</small>
                     </div>
                     <button onclick="submitCustomizeCourse()"
                         class="btn btn-primary w-100 rounded-pill">Enregistrer</button>
@@ -511,79 +482,73 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
     <script>
+        // --- DRAWER & SWIPE LOGIC ---
+        const drawer = document.getElementById('drawer');
+        const overlay = document.getElementById('drawerOverlay');
+        let startX = 0;
+
+        function openDrawer() { drawer.classList.add('active'); overlay.classList.add('active'); }
+        function closeDrawer() { drawer.classList.remove('active'); overlay.classList.remove('active'); }
+
+        document.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, { passive: true });
+        document.addEventListener('touchend', e => {
+            const endX = e.changedTouches[0].clientX;
+            const diffX = endX - startX;
+            if (startX < 50 && diffX > 50) openDrawer();
+            if (drawer.classList.contains('active') && diffX < -50) closeDrawer();
+        }, { passive: true });
+
+        // --- APP LOGIC ---
         function refreshData() {
             document.getElementById('loader').style.display = 'block';
             document.getElementById('content').style.opacity = '0.3';
-            document.getElementById('content').style.filter = 'blur(4px)';
             window.location.href = "/refresh-ui";
         }
 
-        // --- MANUAL GRADES ---
-        function openManualGradeModal(courseName) {
-            document.getElementById('mg_course_name').value = courseName;
+        // --- MANUALS ---
+        function openManualGradeModal(n) {
+            document.getElementById('mg_course_name').value = n;
             document.getElementById('mg_name').value = "Oral";
             document.getElementById('mg_value').value = "";
             new bootstrap.Modal(document.getElementById('manualGradeModal')).show();
         }
-
         function submitManualGrade() {
             const data = {
                 course_name: document.getElementById('mg_course_name').value,
-                grade_name: document.getElementById('mg_name').value || "Note manuelle",
+                grade_name: document.getElementById('mg_name').value || "Note",
                 grade_value: parseFloat(document.getElementById('mg_value').value),
                 max_value: parseFloat(document.getElementById('mg_max').value),
                 coef: 1.0
             };
-            if (isNaN(data.grade_value)) return alert("Note invalide");
-
-            fetch("/api/manual-grade/add", {
-                method: "POST", headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            }).then(() => window.location.reload());
+            if (isNaN(data.grade_value)) return;
+            fetch("/api/manual-grade/add", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+                .then(() => window.location.reload());
         }
-
         function deleteManualGrade(id) {
-            if (!confirm("Supprimer cette note manuelle ?")) return;
-            fetch("/api/manual-grade/delete", {
-                method: "POST", headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ grade_id: id })
-            }).then(() => window.location.reload());
+            if (confirm("Supprimer ?")) fetch("/api/manual-grade/delete", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grade_id: id }) })
+                .then(() => window.location.reload());
+        }
+        function excludeGrade(c, n, v) {
+            if (confirm("Ignorer cette note ?")) fetch("/api/grade/exclude", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ course_name: c, grade_name: n, grade_value: v }) })
+                .then(() => window.location.reload());
         }
 
-        function excludeGrade(course, name, value) {
-            if (!confirm("Masquer cette note du calcul ?")) return;
-            fetch("/api/grade/exclude", {
-                method: "POST", headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    course_name: course,
-                    grade_name: name,
-                    grade_value: value
-                })
-            }).then(() => window.location.reload());
-        }
-
-        // --- CUSTOMIZE COURSE ---
-        function openCustomizeModal(courseName, currentCoef) {
-            document.getElementById('cc_course_name').value = courseName;
-            document.getElementById('cc_coef').value = currentCoef ? currentCoef : "";
-            document.getElementById('cc_target').value = ""; // Default to no move
+        // --- CUSTOMIZE ---
+        function openCustomizeModal(n, c) {
+            document.getElementById('cc_course_name').value = n;
+            document.getElementById('cc_coef').value = c ? c : "";
+            document.getElementById('cc_target').value = "";
             new bootstrap.Modal(document.getElementById('customizeCourseModal')).show();
         }
-
         function submitCustomizeCourse() {
-            const valCoef = document.getElementById('cc_coef').value;
             const data = {
                 course_name: document.getElementById('cc_course_name').value,
                 target_competence: document.getElementById('cc_target').value || null,
-                custom_coef: valCoef ? parseFloat(valCoef) : null
+                custom_coef: document.getElementById('cc_coef').value ? parseFloat(document.getElementById('cc_coef').value) : null
             };
-
-            fetch("/api/course/customize", {
-                method: "POST", headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            }).then(() => window.location.reload());
+            fetch("/api/course/customize", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+                .then(() => window.location.reload());
         }
     </script>
 </body>
