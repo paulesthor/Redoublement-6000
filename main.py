@@ -770,6 +770,64 @@ async def edit_grade(request: Request, data: EditGradeRequest):
     conn.close()
     return {"status": "ok"}
 
+@app.post("/api/admin/export-maquette")
+async def export_maquette(request: Request):
+    username = request.session.get("user")
+    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Fetch User Settings for Context
+    settings = c.execute("SELECT * FROM user_settings WHERE username = ?", (username,)).fetchone()
+    semester = settings['semester'] if settings else 'S3' # Default to S3 if not set
+    option = settings['option'] if settings else 'INFO'
+    status = settings['status'] if settings else 'Etudiant'
+    
+    # Fetch Data for Calculation
+    courses_rows = c.execute("SELECT * FROM courses WHERE username = ?", (username,)).fetchall()
+    grades_rows = c.execute("SELECT * FROM grades WHERE username = ?", (username,)).fetchall()
+    manual_grades_rows = c.execute("SELECT * FROM manual_grades WHERE username = ?", (username,)).fetchall()
+    
+    overrides_rows = c.execute("SELECT * FROM course_overrides WHERE username = ?", (username,)).fetchall()
+    grade_overrides_rows = c.execute("SELECT * FROM grade_overrides WHERE username = ?", (username,)).fetchall()
+    exclusions_rows = c.execute("SELECT * FROM grade_exclusions WHERE username = ?", (username,)).fetchall()
+
+    conn.close()
+
+    # Convert to Dicts/Lists
+    courses = [dict(r) for r in courses_rows]
+    grades = [dict(r) for r in grades_rows]
+    manual_grades = [dict(r) for r in manual_grades_rows]
+    overrides_map = {r['course_canonical_name']: dict(r) for r in overrides_rows}
+    grade_overrides_map = {(r['course_canonical_name'], r['grade_name']): dict(r) for r in grade_overrides_rows}
+    exclusions = {(r['course_canonical_name'], r['grade_name'], r['grade_value']) for r in exclusions_rows}
+
+    # Calculate Stats (Gives us the final structure)
+    stats = calculate_semester_stats(
+        courses, grades, manual_grades, overrides_map, grade_overrides_map, exclusions,
+        semester, option, status
+    )
+    
+    # Log to Console
+    print(f"\n{'='*20} START MAQUETTE EXPORT ({semester}) {'='*20}")
+    for ue_name, ue_data in stats.items():
+        if ue_name in ["global_average", "total_coef"]: continue
+        
+        print(f"[MAQUETTE_EXPORT] UE: {ue_name}")
+        for course in ue_data['courses']:
+            c_name = course['name']
+            c_orig = course.get('original_name', 'N/A')
+            print(f"[MAQUETTE_EXPORT]   Course: {c_name} (Original: {c_orig})")
+            for grade in course['grades']:
+                g_name = grade['name']
+                g_val = grade['grade']
+                g_max = grade['max_grade']
+                print(f"[MAQUETTE_EXPORT]     - Grade: {g_name} : {g_val}/{g_max}")
+    print(f"{'='*20} END MAQUETTE EXPORT {'='*20}\n")
+    
+    return {"status": "ok", "message": "Maquette exported to server logs"}
+
 @app.post("/save-config")
 def save_config(request: Request, semester: str = Form(...), option: str = Form(...), status: str = Form(...)):
     username = request.session.get("user")
