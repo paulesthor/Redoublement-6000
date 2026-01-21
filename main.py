@@ -853,29 +853,79 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
     
     # 1. Overrides Manuels (Basés sur les logs)
     manual_map = {
+        # --- Reporting Tools ---
         "tableau software": "Utilisation avancée d'outils de reporting",
         "power bi": "Utilisation avancée d'outils de reporting",
+        "reporting": "Utilisation avancée d'outils de reporting",
+        
+        # --- Stats & Prog ---
         "sas": "Programmation statistique automatisée",
+        "programmation statistique": "Programmation statistique automatisée",
+        
+        # --- Data Integration ---
         "alimentation": "SAÉ - Intégration de données dans un Datawarehouse - Talend", 
+        "talend": "SAÉ - Intégration de données dans un Datawarehouse - Talend",
+        
+        # --- Conformité / Droit ---
         "droit": "SAÉ - EMS - Conformité réglementaire pour analyser des données",
+        "conformité": "SAÉ - EMS - Conformité réglementaire pour analyser des données",
+        "règlementaire": "SAÉ - EMS - Conformité réglementaire pour analyser des données",
+        
+        # --- BI / SID ---
         "architecture": "Systèmes d'information décisionnels",
         "modélisation sid": "Systèmes d'information décisionnels",
         "rappels sql": "Systèmes d'information décisionnels",
+        "sid": "Systèmes d'information décisionnels",
+        "décisionnels": "Systèmes d'information décisionnels",
+        "testqcm": "Systèmes d'information décisionnels",
+        
+        # --- Maths / AL ---
         "rls": "AL - Régression linéaire simple",
+        "régression": "AL - Régression linéaire simple",
+        "canari": "AL - Régression linéaire simple",
         "sig": "AL - Système d'information géographique",
+        "algèbre": "Algèbre linéaire",
+        "linéaire": "Algèbre linéaire",
+        
+        # --- Communication & Anglais ---
         "anglais": "Anglais professionnel",
+        "expression orale": "Anglais professionnel", # Often duplicate logic but safe
+        "writing": "Anglais professionnel",
+        
         "communication": "Communication organisationnelle et professionnelle",
+        "bieber": "Communication organisationnelle et professionnelle",
+        "scénario": "Communication organisationnelle et professionnelle",
+        
+        # --- EMS / Sondages ---
         "sondage": "EMS - Techniques de sondage et méthologie de l'enquête",
         "enquêtes": "EMS - Techniques de sondage et méthologie de l'enquête",
-        "algèbre": "Algèbre linéaire",
+        "prou": "EMS - Techniques de sondage et méthologie de l'enquête", 
+        "devoirdépôt": "EMS - Techniques de sondage et méthologie de l'enquête",
+        "mise en place d'une enquête": "EMS - Techniques de sondage et méthologie de l'enquête",
+
+        # --- Web ---
         "web": "Technologies web",
+        "internet": "Technologies web",
+        
+        # --- POO ---
         "poo": "EMS - AL -  Programmation objet",
         "programmation objet": "EMS - AL -  Programmation objet",
+        
+        # --- Eco / Gestion ---
         "économie": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
         "economie": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
         "entrepreneuriat": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
-        "bieber": "Communication organisationnelle et professionnelle", # [USER REQUEST]
-        "prou": "EMS - Techniques de sondage et méthologie de l'enquête" # Force match for Mr Prou
+        "gestion": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
+        
+        # --- SAE Description ---
+        "description et prévision": "SAÉ - Description et prévision de données temporelles",
+        "temporelles": "SAÉ - Description et prévision de données temporelles",
+        "ibazizou": "SAÉ - Description et prévision de données temporelles", # Manual grade but why not
+        "alie": "SAÉ - Description et prévision de données temporelles",
+
+        # --- SAE Recueil ---
+        "recueil": "SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience",
+        "cookie": "SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience"
     }
     
     for key, target in manual_map.items():
