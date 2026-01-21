@@ -392,12 +392,17 @@
                                                     style="background: rgba(255,255,255,0.05);">
                                                     {{ g.grade }}/{{ g.max_grade|int }}
                                                 </span>
+
+                                                <!-- EDIT BUTTON -->
+                                                <button class="btn btn-sm btn-link text-warning p-0 me-2"
+                                                    onclick="event.stopPropagation(); openEditGradeModal('{{ course.original_name | replace('\'', '\\\'') | safe }}', '{{ g.name | replace('\'', '\\\'') | safe }}')">✏️</button>
+
                                                 {% if g.is_manual %}
                                                 <button onclick="deleteManualGrade({{ g.id }})"
                                                     class="btn btn-sm btn-link text-danger p-0">✖</button>
                                                 {% elif not g.is_excluded %}
                                                 <button
-                                                    onclick="excludeGrade('{{ course.name | replace('\'', '\\\'') | safe }}', '{{ g.name | replace('\'', '\\\'') | safe }}', {{ g.grade }})"
+                                                    onclick="excludeGrade('{{ course.original_name | replace('\'', '\\\'') | safe }}', '{{ g.name | replace('\'', '\\\'') | safe }}', {{ g.grade }})"
                                                     class="btn btn-sm btn-link text-danger p-0">✖</button>
                                                 {% endif %}
                                             </div>
@@ -405,7 +410,7 @@
                                         {% endfor %}
                                         <li class="list-group-item ps-4 py-2 border-0 text-center">
                                             <button
-                                                onclick="openManualGradeModal('{{ course.name | replace('\'', '\\\'') | safe }}')"
+                                                onclick="openManualGradeModal('{{ course.original_name | replace('\'', '\\\'') | safe }}')"
                                                 class="btn btn-sm btn-outline-success rounded-pill py-0 px-3"
                                                 style="font-size: 0.8em;">+ Ajouter une note</button>
                                         </li>
@@ -426,6 +431,17 @@
     <button onclick="refreshData()" class="refresh-btn">🔄</button>
 
     <!-- Modals (Manual Grade & Customization) -->
+    <!-- Datalist for Courses -->
+    <datalist id="datalistOptions">
+        {% if competences %}
+        {% for comp_name, data in competences.items() %}
+        {% for course in data.courses %}
+        <option value="{{ course.original_name }}"></option>
+        {% endfor %}
+        {% endfor %}
+        {% endif %}
+    </datalist>
+
     <!-- Modal MANUAL GRADE -->
     <div class="modal fade" id="manualGradeModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -452,18 +468,25 @@
         </div>
     </div>
 
-    <!-- Modal CUSTOMIZE -->
+    <!-- Modal CUSTOMIZE COURSE -->
     <div class="modal fade" id="customizeCourseModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content glass-card border-0 text-light" style="background: #1e293b;">
                 <div class="modal-header border-bottom border-secondary">
-                    <h5 class="modal-title">Personnaliser</h5>
+                    <h5 class="modal-title">Personnaliser la Matière</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="cc_course_name">
+
                     <div class="mb-3">
-                        <label class="form-label text-info">Déplacer vers :</label>
+                        <label class="form-label text-warning">Renommer (Affichage) :</label>
+                        <input type="text" id="cc_custom_name" placeholder="Nom actuel..."
+                            class="form-control bg-dark text-light border-secondary">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-info">Déplacer vers UE :</label>
                         <select id="cc_target" class="form-select bg-dark text-light border-secondary">
                             <option value="">-- Ne pas déplacer --</option>
                             {% if competences %}
@@ -480,6 +503,36 @@
                     </div>
                     <button onclick="submitCustomizeCourse()"
                         class="btn btn-primary w-100 rounded-pill">Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal EDIT GRADE (New) -->
+    <div class="modal fade" id="editGradeModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0 text-light" style="background: #1e293b;">
+                <div class="modal-header border-bottom border-secondary">
+                    <h5 class="modal-title">Modifier la Note</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="eg_course_name">
+                    <input type="hidden" id="eg_grade_name">
+
+                    <div class="mb-3">
+                        <label class="form-label text-warning">Renommer :</label>
+                        <input type="text" id="eg_new_name" placeholder="Nouveau nom..."
+                            class="form-control bg-dark text-light border-secondary">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-info">Déplacer vers une autre matière :</label>
+                        <input class="form-control bg-dark text-light border-secondary" list="datalistOptions"
+                            id="eg_target_course" placeholder="Tapez pour chercher...">
+                    </div>
+
+                    <button onclick="submitEditGrade()" class="btn btn-primary w-100 rounded-pill">Enregistrer</button>
                 </div>
             </div>
         </div>
@@ -538,9 +591,12 @@
                 .then(() => window.location.reload());
         }
 
-        // --- CUSTOMIZE ---
-        function openCustomizeModal(n, c) {
+        // --- CUSTOMIZE COURSE ---
+        function openCustomizeModal(n, c) { // Note: n is escaped in HTML onclick, but here it is the string
             document.getElementById('cc_course_name').value = n;
+            // We don't have current custom_name easily available in arguments, user can retype or we fetch via API? 
+            // Simplified: just showing placeholder.
+            document.getElementById('cc_custom_name').value = "";
             document.getElementById('cc_coef').value = c ? c : "";
             document.getElementById('cc_target').value = "";
             new bootstrap.Modal(document.getElementById('customizeCourseModal')).show();
@@ -549,9 +605,30 @@
             const data = {
                 course_name: document.getElementById('cc_course_name').value,
                 target_competence: document.getElementById('cc_target').value || null,
-                custom_coef: document.getElementById('cc_coef').value ? parseFloat(document.getElementById('cc_coef').value) : null
+                custom_coef: document.getElementById('cc_coef').value ? parseFloat(document.getElementById('cc_coef').value) : null,
+                custom_name: document.getElementById('cc_custom_name').value || null
             };
             fetch("/api/course/customize", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+                .then(() => window.location.reload());
+        }
+
+        // --- EDIT GRADE ---
+        function openEditGradeModal(c_name, g_name) {
+            document.getElementById('eg_course_name').value = c_name;
+            document.getElementById('eg_grade_name').value = g_name;
+            document.getElementById('eg_new_name').value = g_name; // Pre - fill with current name
+            document.getElementById('eg_target_course').value = "";
+            new bootstrap.Modal(document.getElementById('editGradeModal')).show();
+        }
+
+        function submitEditGrade() {
+            const data = {
+                course_name: document.getElementById('eg_course_name').value,
+                grade_name: document.getElementById('eg_grade_name').value,
+                new_name: document.getElementById('eg_new_name').value || null,
+                target_course_name: document.getElementById('eg_target_course').value || null
+            };
+            fetch("/api/grade/edit", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
                 .then(() => window.location.reload());
         }
     </script>
