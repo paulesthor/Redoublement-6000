@@ -105,7 +105,16 @@ async def lifespan(app: FastAPI):
     # --- SHUTDOWN ---
     print("🚀 DEBUG: Shutting down.")
 
+from starlette.middleware.sessions import SessionMiddleware
+import os
+
 app = FastAPI(title="Redoublement 8000", lifespan=lifespan)
+
+# SECURITY: Secret Key for signing sessions (Prevent tampering)
+# In production, use a strong env variable. Fallback for dev.
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-changer-me-svp")
+
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=False) # https_only=True in prod ideally
 
 # Serveur d'icône (User provided JPG)
 @app.get("/icon.png")
@@ -150,7 +159,10 @@ def init_db():
     migrations = [
         "ALTER TABLE user_settings ADD COLUMN last_updated TEXT",
         "ALTER TABLE courses ADD COLUMN username TEXT",
-        "ALTER TABLE grades ADD COLUMN username TEXT" 
+        "ALTER TABLE grades ADD COLUMN username TEXT",
+        # Orphan Cleanup: Remove data from the 'ghost' era (NULL username) to clean DB
+        "DELETE FROM courses WHERE username IS NULL",
+        "DELETE FROM grades WHERE username IS NULL"
     ]
     
     for mig in migrations:
@@ -173,7 +185,7 @@ def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
-def login_action(username: str = Form(...), password: str = Form(...)):
+def login_action(request: Request, username: str = Form(...), password: str = Form(...)): # Included Request
     # On teste la connexion à l'ENT
     scraper = MoodleScraper(username, password)
     if scraper.login():
@@ -181,22 +193,23 @@ def login_action(username: str = Form(...), password: str = Form(...)):
         # On garde le scraper actif en mémoire
         active_scrapers[username] = scraper
         
-        # On crée le cookie de session
+        # Security: Use Signed Session instead of raw cookie
+        request.session['user'] = username
+        
         response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="session_user", value=username, httponly=True)
         return response
     else:
         return RedirectResponse(url="/login?error=1", status_code=303)
 
 @app.get("/logout")
-def logout():
+def logout(request: Request):
+    request.session.clear()
     response = RedirectResponse(url="/login")
-    response.delete_cookie("session_user")
     return response
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    username = request.cookies.get("session_user")
+    username = request.session.get("user")
     if not username:
         return RedirectResponse(url="/login")
 
@@ -486,7 +499,7 @@ def home(request: Request):
 
 @app.get("/refresh-ui")
 def refresh_ui(request: Request):
-    username = request.cookies.get("session_user")
+    username = request.session.get("user")
     
     # Si le scraper n'est plus en mémoire (après redémarrage serveur), on force la reconnexion
     if not username or username not in active_scrapers:
@@ -582,7 +595,7 @@ class ExcludeGradeRequest(BaseModel):
 
 @app.post("/api/manual-grade/add")
 async def add_manual_grade(request: Request, data: ManualGradeRequest):
-    username = request.cookies.get("session_user")
+    username = request.session.get("user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
     conn = get_db_connection()
@@ -595,7 +608,7 @@ async def add_manual_grade(request: Request, data: ManualGradeRequest):
 
 @app.post("/api/manual-grade/delete")
 async def delete_manual_grade(request: Request, data: DeleteGradeRequest):
-    username = request.cookies.get("session_user")
+    username = request.session.get("user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
     conn = get_db_connection()
@@ -607,7 +620,7 @@ async def delete_manual_grade(request: Request, data: DeleteGradeRequest):
 
 @app.post("/api/grade/exclude")
 async def exclude_grade(request: Request, data: ExcludeGradeRequest):
-    username = request.cookies.get("session_user")
+    username = request.session.get("user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
     conn = get_db_connection()
@@ -624,7 +637,7 @@ async def exclude_grade(request: Request, data: ExcludeGradeRequest):
 
 @app.post("/api/course/customize")
 async def customize_course(request: Request, data: CustomCourseRequest):
-    username = request.cookies.get("session_user")
+    username = request.session.get("user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
     conn = get_db_connection()
@@ -642,7 +655,7 @@ async def customize_course(request: Request, data: CustomCourseRequest):
 
 @app.post("/save-config")
 def save_config(request: Request, semester: str = Form(...), option: str = Form(...), status: str = Form(...)):
-    username = request.cookies.get("session_user")
+    username = request.session.get("user")
     if not username:
         return RedirectResponse(url="/login", status_code=303)
         
