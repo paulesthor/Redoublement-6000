@@ -428,6 +428,7 @@ def home(request: Request, view: str = "dashboard"): # Default view
             "request": request,
             "competences": {}, # Force empty to trigger Welcome Screen
             "user": username,
+            "is_admin": (username == "pesthor"),
             "global_average": None,
             "settings": settings,
             "view": view
@@ -532,13 +533,16 @@ def home(request: Request, view: str = "dashboard"): # Default view
             global_average = stats['average']
 
         return templates.TemplateResponse("index.html", {
-            "request": request,
-            "competences": competences_data,
-            "user": username,
-            "global_average": global_average,
-            "settings": settings,
-            "view": view
-        })
+        "request": request,
+        "competences": stats['competences'],
+        "unmatched": stats['unmatched'],
+        "user": username,
+        "is_admin": (username == "pesthor"),
+        "global_average": stats['average'],
+        "comp_averages": stats['comp_averages'],
+        "settings": settings,
+        "view": view
+    })
 
 @app.get("/health")
 def health_check():
@@ -567,25 +571,34 @@ def refresh_ui(request: Request):
         print(f"❌ Erreur SCRAPING exception: {e}")
         raw_courses = []
 
-    print(f"📚 {len(raw_courses)} matières trouvées via scraping.")
+    print(f"📚 {len(raw_courses)} matières trouvées via scraping. Lancement parallèle...")
     
     courses_data = [] # Liste pour stocker (course_info, grades_list)
-    
-    for course in raw_courses:
+    import concurrent.futures
+
+    def fetch_course_grades(course):
         try:
             grades = scraper.get_grades_for_course(course['id'])
             # Calcul de la moyenne locale
             # Filter validated notes
             notes_valides = [g['grade'] for g in grades if g['max_grade'] == 20 and not g['is_total']]
             avg = sum(notes_valides) / len(notes_valides) if notes_valides else None
-            
-            courses_data.append({
+            return {
                 "course": course,
                 "grades": grades,
                 "average": avg
-            })
+            }
         except Exception as e:
             print(f"⚠️ Erreur scraping grades pour {course.get('name')}: {e}")
+            return None
+
+    # Parallel Execution (Max 10 workers)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_course = {executor.submit(fetch_course_grades, c): c for c in raw_courses}
+        for future in concurrent.futures.as_completed(future_to_course):
+            res = future.result()
+            if res:
+                courses_data.append(res)
         
     print("✅ Scraping terminé. Mise à jour de la BDD...")
 
