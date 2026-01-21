@@ -810,19 +810,22 @@ async def export_maquette(request: Request):
     
     # Log to Console
     print(f"\n{'='*20} START MAQUETTE EXPORT ({semester}) {'='*20}")
-    for ue_name, ue_data in stats.items():
-        if ue_name in ["global_average", "total_coef"]: continue
+    
+    if stats and 'competences' in stats:
+        for ue_name, ue_data in stats['competences'].items():
+            print(f"[MAQUETTE_EXPORT] UE: {ue_name}")
+            for course in ue_data['courses']:
+                c_name = course['name']
+                c_orig = course.get('original_name', 'N/A')
+                print(f"[MAQUETTE_EXPORT]   Course: {c_name} (Original: {c_orig})")
+                for grade in course['grades']:
+                    g_name = grade['name']
+                    g_val = grade['grade']
+                    g_max = grade['max_grade']
+                    print(f"[MAQUETTE_EXPORT]     - Grade: {g_name} : {g_val}/{g_max}")
+    else:
+        print("[MAQUETTE_EXPORT] No data found or calculation error.")
         
-        print(f"[MAQUETTE_EXPORT] UE: {ue_name}")
-        for course in ue_data['courses']:
-            c_name = course['name']
-            c_orig = course.get('original_name', 'N/A')
-            print(f"[MAQUETTE_EXPORT]   Course: {c_name} (Original: {c_orig})")
-            for grade in course['grades']:
-                g_name = grade['name']
-                g_val = grade['grade']
-                g_max = grade['max_grade']
-                print(f"[MAQUETTE_EXPORT]     - Grade: {g_name} : {g_val}/{g_max}")
     print(f"{'='*20} END MAQUETTE EXPORT {'='*20}\n")
     
     return {"status": "ok", "message": "Maquette exported to server logs"}
