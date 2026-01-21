@@ -673,6 +673,9 @@ async def exclude_grade(request: Request, data: ExcludeGradeRequest):
     # On nettoie le nom (enlève l'icone si présent par erreur, même si le front l'envoie propre normalement)
     clean_name = data.grade_name.replace("📝 ", "")
     
+    # [MAPPING_HELPER] Log pour récupérer les règles plus tard
+    print(f"[MAPPING_HELPER] EXCLUDE | Course: '{data.course_name}' | Grade: '{clean_name}' | Value: {data.grade_value}")
+    
     c.execute("INSERT INTO grade_exclusions (username, course_canonical_name, grade_name, grade_value) VALUES (?, ?, ?, ?)",
               (username, data.course_name, clean_name, data.grade_value))
     conn.commit()
@@ -683,6 +686,9 @@ async def exclude_grade(request: Request, data: ExcludeGradeRequest):
 async def customize_course(request: Request, data: CustomCourseRequest):
     username = request.session.get("user")
     if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    
+    # [MAPPING_HELPER] Log pour récupérer les règles plus tard
+    print(f"[MAPPING_HELPER] MOVE/CUSTOMIZE | Course: '{data.course_name}' | Target UE: '{data.target_competence}' | Coef: {data.custom_coef}")
     
     conn = get_db_connection()
     c = conn.cursor()
