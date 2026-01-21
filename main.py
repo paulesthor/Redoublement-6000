@@ -175,6 +175,19 @@ def init_db():
             # print(f"⚠️ Migration warning: {e}")
             if conn.is_postgres: conn.rollback()
         
+    # [CRITICAL FIX] Drop Constraint on courses_pkey if it is just (id)
+    # Postgres specific fix for the error: Key (id)=(...) already exists.
+    if conn.is_postgres:
+        try:
+            # On essaie de dropper la vieille contrainte PK qui bloque les doublons d'ID entre users
+            c.execute("ALTER TABLE courses DROP CONSTRAINT courses_pkey")
+            c.execute("ALTER TABLE courses ADD PRIMARY KEY (id, username)")
+            conn.commit()
+            print("✅ MIGRATION: Courses PK updated to (id, username)")
+        except Exception as e:
+            # print(f"⚠️ MIGRATION PK SKIPPED (probablement déjà fait): {e}")
+            conn.rollback()
+            
     conn.commit()
     conn.close()
 
