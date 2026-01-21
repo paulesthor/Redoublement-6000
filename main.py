@@ -312,11 +312,19 @@ def home(request: Request, view: str = "dashboard"): # Default view
         # Process Courses
         for course in courses_list:
             # --- FILTERING BY SEMESTER in Name ---
-            # Heuristic: If we are calculating S3, ignore courses explicitly named S4, and vice-versa
-            # Unless it's a "Ressource" or generic name, but usually scraper includes S3/S4 prefix
+            # Heuristic: If we are calculating S3, ignore courses explicitly named S4
+            # If we are calculating S4, ignore courses explicitly named S3 OR that look like S3 (default to S3)
             c_name_lower = course['name'].lower()
+            
             if target_semester.lower() == "s3" and "s4" in c_name_lower: continue
-            if target_semester.lower() == "s4" and "s3" in c_name_lower: continue
+            
+            # [STRICT S4] Le S4 n'a pas commencé. Si on ne voit pas explicitement "S4" ou "Semestre 4", 
+            # on assume que c'est du S3 et on le masque du S4.
+            if target_semester.lower() == "s4":
+                if "s3" in c_name_lower: continue
+                # Si le nom ne contient PAS "s4" ni "semestre 4", on l'ignore pour le S4
+                if "s4" not in c_name_lower and "semestre 4" not in c_name_lower:
+                    continue
             
             # ... (Rest of Aggregation Logic similar to before) ...
             # To avoid code duplication, we'd ideally reuse the logic, but for now let's adapting the existing block
