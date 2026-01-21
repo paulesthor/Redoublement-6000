@@ -11,6 +11,12 @@ class MoodleScraper:
         
         # Session pour garder les cookies
         self.session = requests.Session()
+        
+        # [OPTIMIZATION] Increase Pool Size for Parallel Requests
+        adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
@@ -22,7 +28,7 @@ class MoodleScraper:
         cas_url = "https://auth.univ-poitiers.fr/cas/login?service=https%3A%2F%2Fupdago.univ-poitiers.fr%2Flogin%2Findex.php%3FauthCAS%3DCAS"
         
         try:
-            r_get = self.session.get(cas_url)
+            r_get = self.session.get(cas_url, timeout=30)
             soup = BeautifulSoup(r_get.text, 'html.parser')
             
             token_input = soup.find('input', {'name': 'execution'})
@@ -40,7 +46,7 @@ class MoodleScraper:
                 'deviceFingerprint': ''
             }
             
-            r_post = self.session.post(cas_url, data=payload, allow_redirects=True)
+            r_post = self.session.post(cas_url, data=payload, allow_redirects=True, timeout=30)
             
             if "updago.univ-poitiers.fr" in r_post.url:
                 self.is_connected = True
@@ -56,7 +62,7 @@ class MoodleScraper:
         """Récupère l'ID utilisateur Moodle depuis la page d'accueil/profil"""
         try:
             # On va sur la page d'accueil qui contient généralement un lien vers le profil
-            r = self.session.get("https://updago.univ-poitiers.fr/my/")
+            r = self.session.get("https://updago.univ-poitiers.fr/my/", timeout=30)
             soup = BeautifulSoup(r.text, 'html.parser')
             
             # Recherche du lien de profil dans le menu utilisateur ou ailleurs
@@ -85,7 +91,7 @@ class MoodleScraper:
 
         url_overview = "https://updago.univ-poitiers.fr/grade/report/overview/index.php"
         try:
-            r = self.session.get(url_overview)
+            r = self.session.get(url_overview, timeout=30)
             soup = BeautifulSoup(r.text, 'html.parser')
             courses = []
             seen_ids = set()
@@ -124,7 +130,7 @@ class MoodleScraper:
 
         url = f"https://updago.univ-poitiers.fr/course/user.php?mode=grade&id={course_id}&user={self.user_id}"
         try:
-            r = self.session.get(url)
+            r = self.session.get(url, timeout=30)
             soup = BeautifulSoup(r.text, 'html.parser')
             grades = []
             
