@@ -149,8 +149,9 @@ def init_db():
     c.execute(f'''CREATE TABLE IF NOT EXISTS grades (id {pk_type}, course_id TEXT, username TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
     c.execute(f'''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
     c.execute(f'''CREATE TABLE IF NOT EXISTS manual_grades (id {pk_type}, username TEXT, course_canonical_name TEXT, name TEXT, grade REAL, max_grade REAL, coef REAL)''')
-    c.execute(f'''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, custom_name TEXT, PRIMARY KEY(username, course_canonical_name))''')
     c.execute(f'''CREATE TABLE IF NOT EXISTS grade_exclusions (id {pk_type}, username TEXT, course_canonical_name TEXT, grade_name TEXT, grade_value REAL)''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS grade_overrides (username TEXT, course_canonical_name TEXT, grade_name TEXT, new_name TEXT, target_course_id TEXT, PRIMARY KEY(username, course_canonical_name, grade_name))''')
     
     # On valide d'abord la création des tables pour éviter qu'un fail dans la migration annule tout
     conn.commit()
@@ -284,6 +285,10 @@ def home(request: Request, view: str = "dashboard"): # Default view
     manual_grades_rows = c.execute("SELECT * FROM manual_grades WHERE username = ?", (username,)).fetchall()
     overrides_rows = c.execute("SELECT * FROM course_overrides WHERE username = ?", (username,)).fetchall()
     
+    # [NEW] Fetch Grade Overrides
+    grade_overrides_rows = c.execute("SELECT * FROM grade_overrides WHERE username = ?", (username,)).fetchall()
+    grade_overrides_map = {(r['course_canonical_name'], r['grade_name']): dict(r) for r in grade_overrides_rows}
+    
     manual_grades = [dict(r) for r in manual_grades_rows]
     overrides_map = {r['course_canonical_name']: dict(r) for r in overrides_rows}
     
@@ -364,11 +369,36 @@ def home(request: Request, view: str = "dashboard"): # Default view
                 
                 if best_match:
                     if best_match not in canonical_registry: canonical_registry[best_match] = {"grades": [], "matches": []}
+                    
                     for g in item.get('grades', []):
                         g_name_lower = g['name'].lower()
                         if "tendance" in g_name_lower: continue
-                        # Legacy Dedupe logic here...
-                        canonical_registry[best_match]["grades"].append(g)
+
+                        # [FEATURE] Apply Grade Renaming / Moving
+                        # Key = (Canonical Course Name, Original Grade Name)
+                        # We try both Original Scraped Name (g['name']) AND Cleaned Name just in case
+                        
+                        override = grade_overrides_map.get((best_match, g['name']))
+                        
+                        target_structure = canonical_registry[best_match]
+                        final_grade = g.copy() # Avoid mutating original reference
+                        
+                        if override:
+                            if override.get('new_name'):
+                                final_grade['name'] = override['new_name']
+                                # Mark as manual/renamed for UI? Maybe later.
+                            
+                            # Move to another course?
+                            if override.get('target_course_id'):
+                                target_c_name = override['target_course_id']
+                                # We allow moving to ANY known canonical course
+                                # Ensure target exists in registry
+                                if target_c_name not in canonical_registry:
+                                    canonical_registry[target_c_name] = {"grades": [], "matches": ["[MOVED_TARGET]"]}
+                                target_structure = canonical_registry[target_c_name]
+                        
+                        target_structure["grades"].append(final_grade)
+
                     canonical_registry[best_match]["matches"].append(item['name'])
                 else:
                     if target_semester.lower() in item['name'].lower(): # Only keep unmatched if they belong to this semester
@@ -394,6 +424,11 @@ def home(request: Request, view: str = "dashboard"): # Default view
             base_coefs = maquette.get('courses', {}).get(c_name, {})
             override_data = overrides_map.get(c_name)
             target_destinations = {}
+            
+            # [FEATURE] Apply Custom Name for Display
+            display_name = c_name
+            if override_data and override_data.get('custom_name'):
+                display_name = override_data['custom_name']
             
             if override_data and override_data.get('target_competence'):
                  target_comp = override_data['target_competence']
@@ -421,7 +456,7 @@ def home(request: Request, view: str = "dashboard"): # Default view
             for comp, coef in target_destinations.items():
                 if comp in competences_data:
                     competences_data[comp]["courses"].append({
-                        "name": c_name, "average": final_avg, "coef": coef, "grades": data['grades'], "is_custom": bool(override_data)
+                        "name": display_name, "original_name": c_name, "average": final_avg, "coef": coef, "grades": data['grades'], "is_custom": bool(override_data)
                     })
                     if final_avg is not None:
                         competences_data[comp]["weighted_sum"] += final_avg * coef
@@ -626,6 +661,8 @@ class CustomCourseRequest(BaseModel):
     course_name: str
     target_competence: Optional[str] = None
     custom_coef: Optional[float] = None
+    # [FEATURE] Added custom_name
+    custom_name: Optional[str] = None
 
 class DeleteGradeRequest(BaseModel):
     grade_id: int
@@ -634,6 +671,13 @@ class ExcludeGradeRequest(BaseModel):
     course_name: str
     grade_name: str
     grade_value: float
+
+# [FEATURE] New Model for Grade Editing
+class EditGradeRequest(BaseModel):
+    course_name: str # Canonical Course Name (Context)
+    grade_name: str # Current Grade Name (ID)
+    new_name: Optional[str] = None
+    target_course_name: Optional[str] = None # Where to move it
 
 # --- API ROUTES ---
 
@@ -703,6 +747,29 @@ async def customize_course(request: Request, data: CustomCourseRequest):
     conn.close()
     return {"status": "ok"}
 
+# [FEATURE] Endpoint for Grade Editing (Rename/Move)
+@app.post("/api/grade/edit")
+async def edit_grade(request: Request, data: EditGradeRequest):
+    username = request.session.get("user")
+    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    
+    # [MAPPING_HELPER]
+    print(f"[MAPPING_HELPER] EDIT_GRADE | Course: '{data.course_name}' | Grade: '{data.grade_name}' | NewName: '{data.new_name}' | Target: '{data.target_course_name}'")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    c.execute("""
+        INSERT INTO grade_overrides (username, course_canonical_name, grade_name, new_name, target_course_id)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(username, course_canonical_name, grade_name)
+        DO UPDATE SET new_name=excluded.new_name, target_course_id=excluded.target_course_id
+    """, (username, data.course_name, data.grade_name, data.new_name, data.target_course_name))
+    
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
 @app.post("/save-config")
 def save_config(request: Request, semester: str = Form(...), option: str = Form(...), status: str = Form(...)):
     username = request.session.get("user")
@@ -745,7 +812,9 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
         "poo": "EMS - AL -  Programmation objet",
         "programmation objet": "EMS - AL -  Programmation objet",
         "économie": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
+        "economie": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
         "entrepreneuriat": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
+        "bieber": "Communication organisationnelle et professionnelle", # [USER REQUEST]
         "prou": "EMS - Techniques de sondage et méthologie de l'enquête" # Force match for Mr Prou
     }
     
