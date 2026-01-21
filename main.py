@@ -136,8 +136,8 @@ def init_db():
     # Postgres ne supporte pas "CREATE TABLE IF NOT EXISTS" pour les types... mais pour les tables oui.
     # On reste simple.
     
-    c.execute(f'''CREATE TABLE IF NOT EXISTS courses (id TEXT PRIMARY KEY, name TEXT, average REAL)''')
-    c.execute(f'''CREATE TABLE IF NOT EXISTS grades (id {pk_type}, course_id TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS courses (id TEXT, username TEXT, name TEXT, average REAL, PRIMARY KEY (id, username))''')
+    c.execute(f'''CREATE TABLE IF NOT EXISTS grades (id {pk_type}, course_id TEXT, username TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
     c.execute(f'''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
     c.execute(f'''CREATE TABLE IF NOT EXISTS manual_grades (id {pk_type}, username TEXT, course_canonical_name TEXT, name TEXT, grade REAL, max_grade REAL, coef REAL)''')
     c.execute(f'''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
@@ -146,18 +146,22 @@ def init_db():
     # On valide d'abord la création des tables pour éviter qu'un fail dans la migration annule tout
     conn.commit()
     
-    # Migration pour ajouter la colonne last_updated si elle n'existe pas
-    try:
-        c.execute("ALTER TABLE user_settings ADD COLUMN last_updated TEXT")
-        conn.commit()
-    except (sqlite3.OperationalError, psycopg2.errors.DuplicateColumn):
-        # En Postgres, si une erreur survient dans une transaction, il faut rollback pour pouvoir continuer
-        if conn.is_postgres:
-            conn.rollback()
-    except Exception as e:
-        print(f"⚠️ Migration warning: {e}")
-        if conn.is_postgres:
-            conn.rollback()
+    # Migrations
+    migrations = [
+        "ALTER TABLE user_settings ADD COLUMN last_updated TEXT",
+        "ALTER TABLE courses ADD COLUMN username TEXT",
+        "ALTER TABLE grades ADD COLUMN username TEXT" 
+    ]
+    
+    for mig in migrations:
+        try:
+            c.execute(mig)
+            conn.commit()
+        except (sqlite3.OperationalError, psycopg2.errors.DuplicateColumn):
+            if conn.is_postgres: conn.rollback()
+        except Exception as e:
+            # print(f"⚠️ Migration warning: {e}")
+            if conn.is_postgres: conn.rollback()
         
     conn.commit()
     conn.close()
@@ -202,20 +206,28 @@ def home(request: Request):
     # 1. Récupérer config utilisateur
     settings = c.execute("SELECT * FROM user_settings WHERE username = ?", (username,)).fetchone()
     
-    # REPAIR: Correction immédiate si réglages par défaut invalides détectés
-    if settings and settings['status'] == 'Initial':
-        print("🔧 REPAIR: Updating invalid 'Initial' settings to S3/EMS/FI")
-        c.execute("UPDATE user_settings SET semester='S3', option='EMS', status='FI' WHERE username = ?", (username,))
+    # REPAIR: Correction immédiate si réglages par défaut invalides détectés ou inexistants
+    if not settings or settings['status'] == 'Initial':
+        print(f"🔧 REPAIR: Initializing or Updating settings for {username} to S3/EMS/FI")
+        from datetime import datetime
+        now = datetime.now().strftime("%d/%m/%Y à %H:%M")
+        
+        c.execute("""
+            INSERT INTO user_settings (username, semester, option, status, last_updated)
+            VALUES (?, 'S3', 'EMS', 'FI', ?)
+            ON CONFLICT(username) DO UPDATE SET semester='S3', option='EMS', status='FI'
+        """, (username, now))
         conn.commit()
         # On recharge les settings mis à jour
         settings = c.execute("SELECT * FROM user_settings WHERE username = ?", (username,)).fetchone()
 
     courses_list = []
-    # Récupération des données locales
-    rows = c.execute("SELECT * FROM courses").fetchall()
+    # Récupération des données locales FILTRÉES par USERNAME
+    # Note: Si la colonne username est vide (anciennes données), ça ne remontera rien, ce qui force un refresh propre.
+    rows = c.execute("SELECT * FROM courses WHERE username = ?", (username,)).fetchall()
     for row in rows:
         course = dict(row)
-        grades = c.execute("SELECT * FROM grades WHERE course_id = ?", (course['id'],)).fetchall()
+        grades = c.execute("SELECT * FROM grades WHERE course_id = ? AND username = ?", (course['id'], username)).fetchall()
         course['grades'] = [dict(g) for g in grades]
         courses_list.append(course)
 
@@ -508,18 +520,18 @@ def refresh_ui(request: Request):
         conn = get_db_connection()
         c = conn.cursor()
         
-        # On vide tout
-        c.execute("DELETE FROM grades")
-        c.execute("DELETE FROM courses")
+        # On ne vide que les données de CET utilisateur
+        c.execute("DELETE FROM grades WHERE username = ?", (username,))
+        c.execute("DELETE FROM courses WHERE username = ?", (username,))
         
         for item in courses_data:
             c_info = item['course']
-            c.execute("INSERT INTO courses (id, name, average) VALUES (?, ?, ?)", 
-                      (c_info['id'], c_info['name'], item['average']))
+            c.execute("INSERT INTO courses (id, username, name, average) VALUES (?, ?, ?, ?)", 
+                      (c_info['id'], username, c_info['name'], item['average']))
             
             for g in item['grades']:
-                c.execute("INSERT INTO grades (course_id, name, grade, max_grade, is_total) VALUES (?, ?, ?, ?, ?)", 
-                          (c_info['id'], g['name'], g['grade'], g['max_grade'], g['is_total']))
+                c.execute("INSERT INTO grades (course_id, username, name, grade, max_grade, is_total) VALUES (?, ?, ?, ?, ?, ?)", 
+                          (c_info['id'], username, g['name'], g['grade'], g['max_grade'], g['is_total']))
         
         # Mise à jour date et Defaults si vide
         from datetime import datetime
