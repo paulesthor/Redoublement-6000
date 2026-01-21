@@ -592,8 +592,10 @@ def refresh_ui(request: Request):
             print(f"⚠️ Erreur scraping grades pour {course.get('name')}: {e}")
             return None
 
-    # Parallel Execution (Max 10 workers)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # Parallel Execution (Max 50 workers to cover most users in one batch)
+    max_workers_count = 50
+    print(f"🚀 Launching scraping with {max_workers_count} workers for {len(raw_courses)} courses")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers_count) as executor:
         future_to_course = {executor.submit(fetch_course_grades, c): c for c in raw_courses}
         for future in concurrent.futures.as_completed(future_to_course):
             res = future.result()
