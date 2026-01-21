@@ -1,120 +1,14 @@
 import sqlite3
 import re
-print("🚀 DEBUG: Imports starting...")
-from fastapi import FastAPI, Request, Form, Response, Body
+from fastapi import FastAPI, Request, Form, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from scraper import MoodleScraper
 from maquette_service import MaquetteService
 from difflib import get_close_matches
-from pydantic import BaseModel
-from typing import Optional
 
-from contextlib import asynccontextmanager
-import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
-
-# Configuration DB
-DATABASE_URL = os.getenv("DATABASE_URL")
-DB_FILE = "notes.db"
-
-# --- DB ABSTRACTION LAYER ---
-class DBCursor:
-    def __init__(self, cursor, is_postgres=False):
-        self.cursor = cursor
-        self.is_postgres = is_postgres
-
-    def execute(self, query, params=()):
-        if self.is_postgres:
-            # Conversion de la syntaxe SQLite (?) vers Postgres (%s)
-            query = query.replace("?", "%s")
-        self.cursor.execute(query, params)
-        return self
-
-    def fetchone(self):
-        return self.cursor.fetchone()
-
-    def fetchall(self):
-        return self.cursor.fetchall()
-
-    def __getattr__(self, name):
-        return getattr(self.cursor, name)
-
-class DBConnection:
-    def __init__(self, connection, is_postgres=False):
-        self.connection = connection
-        self.is_postgres = is_postgres
-
-    def cursor(self):
-        return DBCursor(self.connection.cursor(), self.is_postgres)
-
-    def commit(self):
-        self.connection.commit()
-
-    def rollback(self):
-        self.connection.rollback()
-
-    def close(self):
-        self.connection.close()
-    
-    @property
-    def row_factory(self):
-        return self.connection.row_factory
-        
-    @row_factory.setter
-    def row_factory(self, value):
-        self.connection.row_factory = value
-
-def get_db_connection():
-    if DATABASE_URL:
-        # Postgres Mode
-        try:
-            conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-            return DBConnection(conn, is_postgres=True)
-        except Exception as e:
-            print(f"❌ Erreur connexion Postgres: {e}")
-            # Fallback to sqlite if needed, but better to fail explicitly
-            raise e
-    else:
-        # SQLite Mode
-        conn = sqlite3.connect(DB_FILE)
-        conn.row_factory = sqlite3.Row
-        return DBConnection(conn, is_postgres=False)
-
-active_scrapers = {} 
-maquette_service = None # Sera initialisé au démarrage
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # --- STARTUP ---
-    print("🚀 DEBUG: Starting up... Initializing services.")
-    
-    # 1. Init DB
-    print("🚀 DEBUG: initializing DB...")
-    init_db()
-    
-    # 2. Init Maquette Service (Lazy Load)
-    global maquette_service
-    print("🚀 DEBUG: Loading MaquetteService...")
-    maquette_service = MaquetteService()
-    print("🚀 DEBUG: Startup complete! Server is ready.")
-    
-    yield
-    # --- SHUTDOWN ---
-    print("🚀 DEBUG: Shutting down.")
-
-from starlette.middleware.sessions import SessionMiddleware
-import os
-
-app = FastAPI(title="Redoublement 8000", lifespan=lifespan)
-
-# SECURITY: Secret Key for signing sessions (Prevent tampering)
-# In production, use a strong env variable. Fallback for dev.
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-changer-me-svp")
-
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=False) # https_only=True in prod ideally
+app = FastAPI(title="Redoublement 8000")
 
 # Serveur d'icône (User provided JPG)
 @app.get("/icon.png")
@@ -124,59 +18,30 @@ async def get_icon():
     return FileResponse(icon_path)
 
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="templates"), name="static") # Hack since we don't have static dir
 
-# On s'assure que le dossier static existe pour éviter le crash au démarrage
-import os
-os.makedirs("static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.get("/health")
-async def health_check():
-    """Endpoint léger pour le robot de ping (économise les ressources)"""
-    return {"status": "alive"}
+DB_FILE = "notes.db"
+# Stockage temporaire des scrapers connectés (en mémoire RAM)
+active_scrapers = {} 
+maquette_service = MaquetteService()
 
 def init_db():
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS courses (id TEXT PRIMARY KEY, name TEXT, average REAL)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, course_id TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
     
-    # Types adaptés
-    pk_type = "SERIAL PRIMARY KEY" if conn.is_postgres else "INTEGER PRIMARY KEY"
-    
-    # Postgres ne supporte pas "CREATE TABLE IF NOT EXISTS" pour les types... mais pour les tables oui.
-    # On reste simple.
-    
-    c.execute(f'''CREATE TABLE IF NOT EXISTS courses (id TEXT, username TEXT, name TEXT, average REAL, PRIMARY KEY (id, username))''')
-    c.execute(f'''CREATE TABLE IF NOT EXISTS grades (id {pk_type}, course_id TEXT, username TEXT, name TEXT, grade REAL, max_grade REAL, is_total BOOLEAN)''')
-    c.execute(f'''CREATE TABLE IF NOT EXISTS user_settings (username TEXT PRIMARY KEY, semester TEXT, option TEXT, status TEXT, last_updated TEXT)''')
-    c.execute(f'''CREATE TABLE IF NOT EXISTS manual_grades (id {pk_type}, username TEXT, course_canonical_name TEXT, name TEXT, grade REAL, max_grade REAL, coef REAL)''')
-    c.execute(f'''CREATE TABLE IF NOT EXISTS course_overrides (username TEXT, course_canonical_name TEXT, target_competence TEXT, custom_coef REAL, PRIMARY KEY(username, course_canonical_name))''')
-    c.execute(f'''CREATE TABLE IF NOT EXISTS grade_exclusions (id {pk_type}, username TEXT, course_canonical_name TEXT, grade_name TEXT, grade_value REAL)''')
-    
-    # On valide d'abord la création des tables pour éviter qu'un fail dans la migration annule tout
-    conn.commit()
-    
-    # Migrations
-    migrations = [
-        "ALTER TABLE user_settings ADD COLUMN last_updated TEXT",
-        "ALTER TABLE courses ADD COLUMN username TEXT",
-        "ALTER TABLE grades ADD COLUMN username TEXT",
-        # Orphan Cleanup: Remove data from the 'ghost' era (NULL username) to clean DB
-        "DELETE FROM courses WHERE username IS NULL",
-        "DELETE FROM grades WHERE username IS NULL"
-    ]
-    
-    for mig in migrations:
-        try:
-            c.execute(mig)
-            conn.commit()
-        except (sqlite3.OperationalError, psycopg2.errors.DuplicateColumn):
-            if conn.is_postgres: conn.rollback()
-        except Exception as e:
-            # print(f"⚠️ Migration warning: {e}")
-            if conn.is_postgres: conn.rollback()
+    # Migration pour ajouter la colonne last_updated si elle n'existe pas
+    try:
+        c.execute("ALTER TABLE user_settings ADD COLUMN last_updated TEXT")
+    except sqlite3.OperationalError:
+        pass # La colonne existe déjà
         
     conn.commit()
     conn.close()
+
+init_db()
 
 # --- ROUTES ---
 
@@ -185,7 +50,7 @@ def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
-def login_action(request: Request, username: str = Form(...), password: str = Form(...)): # Included Request
+def login_action(username: str = Form(...), password: str = Form(...)):
     # On teste la connexion à l'ENT
     scraper = MoodleScraper(username, password)
     if scraper.login():
@@ -193,74 +58,40 @@ def login_action(request: Request, username: str = Form(...), password: str = Fo
         # On garde le scraper actif en mémoire
         active_scrapers[username] = scraper
         
-        # Security: Use Signed Session instead of raw cookie
-        request.session['user'] = username
-        
+        # On crée le cookie de session
         response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie(key="session_user", value=username, httponly=True)
         return response
     else:
         return RedirectResponse(url="/login?error=1", status_code=303)
 
 @app.get("/logout")
-def logout(request: Request):
-    request.session.clear()
+def logout():
     response = RedirectResponse(url="/login")
+    response.delete_cookie("session_user")
     return response
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    username = request.session.get("user")
+    username = request.cookies.get("session_user")
     if not username:
         return RedirectResponse(url="/login")
 
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     
     # 1. Récupérer config utilisateur
     settings = c.execute("SELECT * FROM user_settings WHERE username = ?", (username,)).fetchone()
     
-    # REPAIR: Correction immédiate si réglages par défaut invalides détectés ou inexistants
-    if not settings or settings['status'] == 'Initial':
-        print(f"🔧 REPAIR: Initializing or Updating settings for {username} to S3/EMS/FI")
-        from datetime import datetime
-        now = datetime.now().strftime("%d/%m/%Y à %H:%M")
-        
-        c.execute("""
-            INSERT INTO user_settings (username, semester, option, status, last_updated)
-            VALUES (?, 'S3', 'EMS', 'FI', ?)
-            ON CONFLICT(username) DO UPDATE SET semester='S3', option='EMS', status='FI'
-        """, (username, now))
-        conn.commit()
-        # On recharge les settings mis à jour
-        settings = c.execute("SELECT * FROM user_settings WHERE username = ?", (username,)).fetchone()
-
     courses_list = []
-    # Récupération des données locales FILTRÉES par USERNAME
-    # Note: Si la colonne username est vide (anciennes données), ça ne remontera rien, ce qui force un refresh propre.
-    rows = c.execute("SELECT * FROM courses WHERE username = ?", (username,)).fetchall()
+    # Récupération des données locales
+    rows = c.execute("SELECT * FROM courses").fetchall()
     for row in rows:
         course = dict(row)
-        grades = c.execute("SELECT * FROM grades WHERE course_id = ? AND username = ?", (course['id'], username)).fetchall()
+        grades = c.execute("SELECT * FROM grades WHERE course_id = ?", (course['id'],)).fetchall()
         course['grades'] = [dict(g) for g in grades]
         courses_list.append(course)
-
-    # 1b. Fetch User Overrides & Manual Grades
-    manual_grades_rows = c.execute("SELECT * FROM manual_grades WHERE username = ?", (username,)).fetchall()
-    overrides_rows = c.execute("SELECT * FROM course_overrides WHERE username = ?", (username,)).fetchall()
-    
-    manual_grades = [dict(r) for r in manual_grades_rows]
-    overrides_map = {r['course_canonical_name']: dict(r) for r in overrides_rows}
-    
-    # 1c. Fetch Grade Exclusions
-    exclusions_rows = c.execute("SELECT * FROM grade_exclusions WHERE username = ?", (username,)).fetchall()
-    
-    # Helper pour vérifier si une note est exclue
-    def is_excluded(course_name, g_name, g_val):
-        for ex in exclusions_rows:
-            if ex['course_canonical_name'] == course_name and ex['grade_name'] == g_name and abs(ex['grade_value'] - g_val) < 0.01:
-                return True
-        return False
-    
     conn.close()
 
     # 2. Logique Maquette / Coefficients
@@ -268,11 +99,9 @@ def home(request: Request):
     global_average = None
     
     if settings:
-        print(f"🔧 Settings loaded: {dict(settings)}")
         maquette = maquette_service.load_maquette(settings['semester'], settings['option'], settings['status'])
         
         if maquette:
-            print("📦 Maquette loaded successfully")
             # Init competences
             for comp in maquette['competences']:
                 competences_data[comp] = {"courses": [], "weighted_sum": 0, "coef_sum": 0}
@@ -336,126 +165,87 @@ def home(request: Request):
                         if best_match not in canonical_registry:
                             canonical_registry[best_match] = {"grades": [], "matches": []}
                         
-                        # On ajoute les notes scrapées
+                        # On ajoute les notes
                         for g in item.get('grades', []):
                             g_name_lower = g['name'].lower()
                             if "tendance" in g_name_lower: continue
                             
-                            # FIX: Tableau Software
+                            # FIX: Tableau Software - Remove 'devoir note' if keeping only 'S3 tableau software'
+                            # The user said: "S3 tableau software" is the one to keep.
+                            # So if matches Tableau, we skip "devoir note".
+                            # "Utilisation avancée..." is the canonical name for Tableau
                             if "tableau software" in best_match.lower() or "utilisation avancée" in best_match.lower():
+                                print(f"🔍 DEBUG TABLEAU: Checking grade '{g_name_lower}'")
                                 if "devoir note" in g_name_lower:
+                                    print("❌ SKIPPING 'devoir note' for Tableau")
                                     continue
                                     
-                            # FIX: Anglais - Deduplication
+                            # FIX: Anglais - Deduplicate Oral grades
+                            # We will handle deduplication JUST BEFORE adding, by checking if a similar grade exists in 'grades' list of registry
                             if "anglais" in best_match.lower():
+                                # Check if same name and grade value already exists
                                 is_duplicate = False
                                 for existing_g in canonical_registry[best_match]["grades"]:
+                                    # Relaxed check: if name contains 'oral' and grade matches
                                     if "oral" in g_name_lower and "oral" in existing_g['name'].lower() and existing_g['grade'] == g['grade']:
-                                         is_duplicate = True; break
+                                         print(f"❌ SKIPPING DUPLICATE ANGLAIS ORAL: {g['name']} ({g['grade']})")
+                                         is_duplicate = True
+                                         break
+                                    # Strict check for others
                                     if existing_g['name'] == g['name'] and existing_g['grade'] == g['grade']:
-                                        is_duplicate = True; break
-                                if is_duplicate: continue
+                                        is_duplicate = True
+                                        break
+                                if is_duplicate:
+                                    continue
 
                             canonical_registry[best_match]["grades"].append(g)
                             
                         canonical_registry[best_match]["matches"].append(item['name'])
                     else:
                         unmatched_items.append(item)
-            
-            # --- PHASE 1.5: INJECT MANUAL GRADES & FILTER EXCLUSIONS ---
-            for c_name in canonical_names:
-                # 1. Inject Manuals
-                my_manuals = [mg for mg in manual_grades if mg['course_canonical_name'] == c_name]
-                if my_manuals:
-                    if c_name not in canonical_registry:
-                         canonical_registry[c_name] = {"grades": [], "matches": ["[MANUAL ONLY]"]}
-                    
-                    for mg in my_manuals:
-                         canonical_registry[c_name]["grades"].append({
-                            "name": "📝 " + mg['name'], 
-                            "grade": mg['grade'],
-                            "max_grade": mg['max_grade'],
-                            "is_total": False,
-                            "is_manual": True,
-                            "id": mg['id'] 
-                        })
-                
-                # 2. MARK EXCLUDED
-                if c_name in canonical_registry:
-                    for g in canonical_registry[c_name]["grades"]:
-                        # Vérif exclusion
-                        # Note: pour les manuelles, on a un ID, mais pour les scrapées on utilise (Name + Value)
-                        g_clean_name = g['name'].replace("📝 ", "") 
-                        if is_excluded(c_name, g_clean_name, g['grade']):
-                            g['is_excluded'] = True
 
             # --- PHASE 2: DISTRIBUTION ---
             # A. Traitement des matières RECONNUES (Aggregées)
             for c_name, data in canonical_registry.items():
-                # Default coefs from maquette
-                base_coefs = maquette.get('courses', {}).get(c_name, {})
-                
-                # Check Overrides
-                override_data = overrides_map.get(c_name)
-                
-                target_destinations = {} # { "Nom Competence": coef }
-                
-                if override_data and override_data.get('target_competence'):
-                    # User MOVED the course to a specific block
-                    target_comp = override_data['target_competence']
-                    custom_coef = override_data.get('custom_coef')
+                if c_name in maquette['courses']:
+                    coefs = maquette['courses'][c_name]
                     
-                    # If custom_coef is not set, what to use? Default 1.0 implies generic weight.
-                    final_coef = custom_coef if custom_coef is not None else 1.0
-                    target_destinations[target_comp] = final_coef
-                else:
-                    # Use standard Maquette logic
-                    target_destinations = base_coefs.copy()
-                    # Apply custom coef override if present (but not moved)
-                    if override_data and override_data.get('custom_coef') is not None:
-                         for cmp in target_destinations:
-                             target_destinations[cmp] = override_data['custom_coef']
-
-                if not target_destinations and c_name in maquette['courses']:
-                     # Should not happen if logic above matches, but fallback
-                     target_destinations = maquette['courses'][c_name]
-
-                # Recalcul de la moyenne unique pour cette matière canonique
-                all_grades_vals = []
-                for g in data['grades']:
-                    if g.get('grade') is not None and not g.get('is_total') and not g.get('is_excluded'):
-                        # Normalisation /20
-                        # Normalisation /20
-                        local_max = g.get('max_grade', 20)
-                        local_grade = g['grade']
-                        
-                        if local_max == 100 and local_grade <= 20: local_max = 20.0
-                        
-                        if local_max > 0:
-                            normalized = (local_grade / local_max) * 20
-                            all_grades_vals.append(normalized)
-                        else:
-                            all_grades_vals.append(local_grade)
-                        
-                if all_grades_vals:
-                    final_avg = sum(all_grades_vals) / len(all_grades_vals)
-                else:
-                    final_avg = None
-                
-                # Ajout aux compétences cibles
-                for comp, coef in target_destinations.items():
-                    if comp in competences_data:
-                        competences_data[comp]["courses"].append({
-                            "name": c_name, # On affiche le NOM OFFICIEL propre
-                            "average": final_avg,
-                            "coef": coef,
-                            "grades": data['grades'],
-                            "is_custom": bool(override_data) # Tag for UI
-                        })
-                        
-                        if final_avg is not None:
-                            competences_data[comp]["weighted_sum"] += final_avg * coef
-                            competences_data[comp]["coef_sum"] += coef
+                    # Recalcul de la moyenne unique pour cette matière canonique
+                    all_grades_vals = []
+                    for g in data['grades']:
+                        if g['grade'] is not None and not g['is_total']:
+                            # Normalisation /20
+                            local_max = g['max_grade']
+                            local_grade = g['grade']
+                            
+                            # Heuristique : Si note sur 100 mais <= 20, c'est probablement une erreur de config Moodle (prof a mis sur 100 mais noté sur 20)
+                            if local_max == 100 and local_grade <= 20:
+                                local_max = 20.0
+                            
+                            if local_max > 0:
+                                normalized = (local_grade / local_max) * 20
+                                all_grades_vals.append(normalized)
+                            else:
+                                all_grades_vals.append(local_grade)
+                            
+                    if all_grades_vals:
+                        final_avg = sum(all_grades_vals) / len(all_grades_vals)
+                    else:
+                        final_avg = None
+                    
+                    # Ajout aux compétences
+                    for comp, coef in coefs.items():
+                        if comp in competences_data:
+                            competences_data[comp]["courses"].append({
+                                "name": c_name, # On affiche le NOM OFFICIEL propre
+                                "average": final_avg,
+                                "coef": coef,
+                                "grades": data['grades']
+                            })
+                            
+                            if final_avg is not None:
+                                competences_data[comp]["weighted_sum"] += final_avg * coef
+                                competences_data[comp]["coef_sum"] += coef
 
             # B. Traitement des matières NON RECONNUES
             for item in unmatched_items:
@@ -499,7 +289,7 @@ def home(request: Request):
 
 @app.get("/refresh-ui")
 def refresh_ui(request: Request):
-    username = request.session.get("user")
+    username = request.cookies.get("session_user")
     
     # Si le scraper n'est plus en mémoire (après redémarrage serveur), on force la reconnexion
     if not username or username not in active_scrapers:
@@ -530,37 +320,26 @@ def refresh_ui(request: Request):
 
     # 2. Mise à jour Base de données (Opération rapide)
     try:
-        conn = get_db_connection()
+        conn = sqlite3.connect(DB_FILE, timeout=10) # Timeout plus long
         c = conn.cursor()
         
-        # On ne vide que les données de CET utilisateur
-        c.execute("DELETE FROM grades WHERE username = ?", (username,))
-        c.execute("DELETE FROM courses WHERE username = ?", (username,))
+        # On vide tout
+        c.execute("DELETE FROM grades")
+        c.execute("DELETE FROM courses")
         
         for item in courses_data:
             c_info = item['course']
-            c.execute("INSERT INTO courses (id, username, name, average) VALUES (?, ?, ?, ?)", 
-                      (c_info['id'], username, c_info['name'], item['average']))
+            c.execute("INSERT INTO courses (id, name, average) VALUES (?, ?, ?)", 
+                      (c_info['id'], c_info['name'], item['average']))
             
             for g in item['grades']:
-                c.execute("INSERT INTO grades (course_id, username, name, grade, max_grade, is_total) VALUES (?, ?, ?, ?, ?, ?)", 
-                          (c_info['id'], username, g['name'], g['grade'], g['max_grade'], g['is_total']))
+                c.execute("INSERT INTO grades (course_id, name, grade, max_grade, is_total) VALUES (?, ?, ?, ?, ?)", 
+                          (c_info['id'], g['name'], g['grade'], g['max_grade'], g['is_total']))
         
-        # Mise à jour date et Defaults si vide
+        # Mise à jour date
         from datetime import datetime
         now = datetime.now().strftime("%d/%m/%Y à %H:%M")
-        
-        
-        # On s'assure qu'une ligne existe pour l'utilisateur
-        # REPAIR: Si l'utilisateur a les mauvais defaults du dernier patch ('Initial'), on corrige
-        c.execute("UPDATE user_settings SET semester='S3', option='EMS', status='FI' WHERE username = ? AND status = 'Initial'", (username,))
-        
-        # Si c'est la première fois, on met des valeurs par défaut VALIDES (S3 - BUT2 - EMS - FI)
-        c.execute("""
-            INSERT INTO user_settings (username, semester, option, status, last_updated)
-            VALUES (?, 'S3', 'EMS', 'FI', ?)
-            ON CONFLICT(username) DO UPDATE SET last_updated = excluded.last_updated
-        """, (username, now))
+        c.execute("UPDATE user_settings SET last_updated = ? WHERE username = ?", (now, username))
 
         conn.commit()
     except Exception as e:
@@ -569,97 +348,14 @@ def refresh_ui(request: Request):
         conn.close()
     
     return RedirectResponse(url="/", status_code=303)
-
-# --- API MODELS ---
-class ManualGradeRequest(BaseModel):
-    course_name: str
-    grade_name: str
-    grade_value: float
-    max_value: float = 20.0
-    coef: float = 1.0
-
-class CustomCourseRequest(BaseModel):
-    course_name: str
-    target_competence: Optional[str] = None
-    custom_coef: Optional[float] = None
-
-class DeleteGradeRequest(BaseModel):
-    grade_id: int
-
-class ExcludeGradeRequest(BaseModel):
-    course_name: str
-    grade_name: str
-    grade_value: float
-
-# --- API ROUTES ---
-
-@app.post("/api/manual-grade/add")
-async def add_manual_grade(request: Request, data: ManualGradeRequest):
-    username = request.session.get("user")
-    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
     
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("INSERT INTO manual_grades (username, course_canonical_name, name, grade, max_grade, coef) VALUES (?, ?, ?, ?, ?, ?)",
-              (username, data.course_name, data.grade_name, data.grade_value, data.max_value, data.coef))
-    conn.commit()
-    conn.close()
-    return {"status": "ok"}
-
-@app.post("/api/manual-grade/delete")
-async def delete_manual_grade(request: Request, data: DeleteGradeRequest):
-    username = request.session.get("user")
-    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM manual_grades WHERE id = ? AND username = ?", (data.grade_id, username))
-    conn.commit()
-    conn.close()
-    return {"status": "ok"}
-
-@app.post("/api/grade/exclude")
-async def exclude_grade(request: Request, data: ExcludeGradeRequest):
-    username = request.session.get("user")
-    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    
-    conn = get_db_connection()
-    c = conn.cursor()
-    # On ajoute à la liste des exclusions
-    # On nettoie le nom (enlève l'icone si présent par erreur, même si le front l'envoie propre normalement)
-    clean_name = data.grade_name.replace("📝 ", "")
-    
-    c.execute("INSERT INTO grade_exclusions (username, course_canonical_name, grade_name, grade_value) VALUES (?, ?, ?, ?)",
-              (username, data.course_name, clean_name, data.grade_value))
-    conn.commit()
-    conn.close()
-    return {"status": "ok"}
-
-@app.post("/api/course/customize")
-async def customize_course(request: Request, data: CustomCourseRequest):
-    username = request.session.get("user")
-    if not username: return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    
-    conn = get_db_connection()
-    c = conn.cursor()
-    # Upsert logic
-    c.execute("""
-        INSERT INTO course_overrides (username, course_canonical_name, target_competence, custom_coef) 
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(username, course_canonical_name) 
-        DO UPDATE SET target_competence=excluded.target_competence, custom_coef=excluded.custom_coef
-    """, (username, data.course_name, data.target_competence, data.custom_coef))
-    conn.commit()
-    conn.close()
-    return {"status": "ok"}
-
 @app.post("/save-config")
 def save_config(request: Request, semester: str = Form(...), option: str = Form(...), status: str = Form(...)):
-    username = request.session.get("user")
+    username = request.cookies.get("session_user")
     if not username:
         return RedirectResponse(url="/login", status_code=303)
         
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
         INSERT INTO user_settings (username, semester, option, status) VALUES (?, ?, ?, ?)
