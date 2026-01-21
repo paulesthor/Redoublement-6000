@@ -221,6 +221,165 @@ def logout(request: Request):
     response = RedirectResponse(url="/login")
     return response
 
+# --- HELPER FUNCTIONS ---
+
+def is_excluded(course_canonical_name, grade_name, grade_value, exclusions_rows):
+    for ex in exclusions_rows:
+        if ex['course_canonical_name'] == course_canonical_name and ex['grade_name'] == grade_name and abs(ex['grade_value'] - grade_value) < 0.01:
+            return True
+    return False
+
+def calculate_semester_stats(courses_list, manual_grades, overrides_map, grade_overrides_map, exclusions_rows, target_semester, target_option, target_status):
+    maquette = maquette_service.load_maquette(target_semester, target_option, target_status)
+    if not maquette: return None
+
+    competences_data = {}
+    for comp in maquette['competences']:
+        competences_data[comp] = {"courses": [], "weighted_sum": 0, "coef_sum": 0, "average": None}
+    
+    canonical_names = list(maquette['courses'].keys())
+    teacher_map = maquette.get('teachers', {})
+    canonical_registry = {} 
+    unmatched_items = []
+
+    # Process Courses
+    for course in courses_list:
+        # --- FILTERING BY SEMESTER in Name ---
+        c_name_lower = course['name'].lower()
+        
+        if target_semester.lower() == "s3" and "s4" in c_name_lower: continue
+        
+        if target_semester.lower() == "s4":
+            if "s3" in c_name_lower: continue
+            if "s4" not in c_name_lower and "semestre 4" not in c_name_lower:
+                continue
+        
+        # [LOGIC COPIED & ADAPTED FOR SCOPE]
+        is_meta_course = "département sd" in c_name_lower or "espace promo" in c_name_lower
+        items_to_process = []
+        if is_meta_course:
+                for g in course['grades']:
+                    if "tendance" in g['name'].lower(): continue
+                    items_to_process.append({"name": g['name'], "grades": [g], "is_virtual": True})
+        else:
+            items_to_process.append(course)
+        
+        for item in items_to_process:
+            if "tendance" in item.get('name', '').lower(): continue
+            
+            # Re-using the same global find_best_match function
+            best_match = find_best_match(item['name'], canonical_names, teacher_map)
+            
+            if best_match:
+                if best_match not in canonical_registry: canonical_registry[best_match] = {"grades": [], "matches": []}
+                
+                for g in item.get('grades', []):
+                    g_name_lower = g['name'].lower()
+                    if "tendance" in g_name_lower: continue
+
+                    # [FEATURE] Apply Grade Renaming / Moving
+                    override = grade_overrides_map.get((best_match, g['name']))
+                    
+                    target_structure = canonical_registry[best_match]
+                    final_grade = g.copy() # Avoid mutating original reference
+                    
+                    if override:
+                        if override.get('new_name'):
+                            final_grade['name'] = override['new_name']
+                        
+                        # Move to another course?
+                        if override.get('target_course_id'):
+                            target_c_name = override['target_course_id']
+                            if target_c_name not in canonical_registry:
+                                canonical_registry[target_c_name] = {"grades": [], "matches": ["[MOVED_TARGET]"]}
+                            target_structure = canonical_registry[target_c_name]
+                    
+                    target_structure["grades"].append(final_grade)
+
+                canonical_registry[best_match]["matches"].append(item['name'])
+            else:
+                if target_semester.lower() in item['name'].lower(): # Only keep unmatched if they belong to this semester
+                        unmatched_items.append(item)
+
+    # Inject Manuals (Filtered by Maquette existence)
+    for c_name in canonical_names:
+        my_manuals = [mg for mg in manual_grades if mg['course_canonical_name'] == c_name]
+        if my_manuals:
+            if c_name not in canonical_registry: canonical_registry[c_name] = {"grades": [], "matches": ["[MANUAL]"]}
+            for mg in my_manuals:
+                canonical_registry[c_name]["grades"].append({
+                    "name": "📝 " + mg['name'], "grade": mg['grade'], "max_grade": mg['max_grade'], "is_total": False, "is_manual": True, "id": mg['id'] 
+                })
+             # Exclusions
+        if c_name in canonical_registry:
+            for g in canonical_registry[c_name]["grades"]:
+                g_clean_name = g['name'].replace("📝 ", "") 
+                if is_excluded(c_name, g_clean_name, g['grade'], exclusions_rows): g['is_excluded'] = True
+
+    # Distribution
+    for c_name, data in canonical_registry.items():
+        base_coefs = maquette.get('courses', {}).get(c_name, {})
+        override_data = overrides_map.get(c_name)
+        target_destinations = {}
+        
+        # [FEATURE] Apply Custom Name for Display
+        display_name = c_name
+        if override_data and override_data.get('custom_name'):
+            display_name = override_data['custom_name']
+        
+        if override_data and override_data.get('target_competence'):
+                target_comp = override_data['target_competence']
+                custom_coef = override_data.get('custom_coef')
+                final_coef = custom_coef if custom_coef is not None else 1.0
+                target_destinations[target_comp] = final_coef
+        else:
+            target_destinations = base_coefs.copy()
+            if override_data and override_data.get('custom_coef') is not None:
+                    for cmp in target_destinations: target_destinations[cmp] = override_data['custom_coef']
+        
+        if not target_destinations and c_name in maquette['courses']: target_destinations = maquette['courses'][c_name]
+
+        all_grades_vals = []
+        for g in data['grades']:
+            if g.get('grade') is not None and not g.get('is_total') and not g.get('is_excluded'):
+                local_max = g.get('max_grade', 20)
+                local_grade = g['grade']
+                if local_max == 100 and local_grade <= 20: local_max = 20.0
+                normalized = (local_grade / local_max) * 20 if local_max > 0 else local_grade
+                all_grades_vals.append(normalized)
+        
+        final_avg = sum(all_grades_vals) / len(all_grades_vals) if all_grades_vals else None
+        
+        for comp, coef in target_destinations.items():
+            if comp in competences_data:
+                competences_data[comp]["courses"].append({
+                    "name": display_name, "original_name": c_name, "average": final_avg, "coef": coef, "grades": data['grades'], "is_custom": bool(override_data)
+                })
+                if final_avg is not None:
+                    competences_data[comp]["weighted_sum"] += final_avg * coef
+                    competences_data[comp]["coef_sum"] += coef
+
+    # Results
+    result_avgs = {}
+    total_weighted = 0
+    total_coefs = 0
+    
+    for comp, data in competences_data.items():
+        if data["coef_sum"] > 0:
+            data["average"] = data["weighted_sum"] / data["coef_sum"]
+            result_avgs[comp] = data["average"]
+            total_weighted += data["average"]
+            total_coefs += 1
+    
+    sem_avg = total_weighted / total_coefs if total_coefs > 0 else None
+    
+    return {
+        "competences": competences_data,
+        "unmatched": unmatched_items,
+        "average": sem_avg,
+        "comp_averages": result_avgs
+    }
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, view: str = "dashboard"): # Default view
     username = request.session.get("user")
@@ -295,12 +454,7 @@ def home(request: Request, view: str = "dashboard"): # Default view
     # 1c. Fetch Grade Exclusions
     exclusions_rows = c.execute("SELECT * FROM grade_exclusions WHERE username = ?", (username,)).fetchall()
     
-    # Legacy Helper (used inside calculation logic)
-    def is_excluded(course_name, g_name, g_val):
-        for ex in exclusions_rows:
-            if ex['course_canonical_name'] == course_name and ex['grade_name'] == g_name and abs(ex['grade_value'] - g_val) < 0.01:
-                return True
-        return False
+
     
     conn.close()
 
@@ -313,182 +467,14 @@ def home(request: Request, view: str = "dashboard"): # Default view
         })
 
     # --- CALCULATION LOGIC ---
-    # We need a helper to calculate a semester's results given a semester code
-    def calculate_semester_stats(target_semester, target_option, target_status):
-        maquette = maquette_service.load_maquette(target_semester, target_option, target_status)
-        if not maquette: return None
 
-        competences_data = {}
-        for comp in maquette['competences']:
-            competences_data[comp] = {"courses": [], "weighted_sum": 0, "coef_sum": 0, "average": None}
-        
-        canonical_names = list(maquette['courses'].keys())
-        teacher_map = maquette.get('teachers', {})
-        canonical_registry = {} 
-        unmatched_items = []
-
-        # Process Courses
-        for course in courses_list:
-            # --- FILTERING BY SEMESTER in Name ---
-            # Heuristic: If we are calculating S3, ignore courses explicitly named S4
-            # If we are calculating S4, ignore courses explicitly named S3 OR that look like S3 (default to S3)
-            c_name_lower = course['name'].lower()
-            
-            if target_semester.lower() == "s3" and "s4" in c_name_lower: continue
-            
-            # [STRICT S4] Le S4 n'a pas commencé. Si on ne voit pas explicitement "S4" ou "Semestre 4", 
-            # on assume que c'est du S3 et on le masque du S4.
-            if target_semester.lower() == "s4":
-                if "s3" in c_name_lower: continue
-                # Si le nom ne contient PAS "s4" ni "semestre 4", on l'ignore pour le S4
-                if "s4" not in c_name_lower and "semestre 4" not in c_name_lower:
-                    continue
-            
-            # ... (Rest of Aggregation Logic similar to before) ...
-            # To avoid code duplication, we'd ideally reuse the logic, but for now let's adapting the existing block
-            # For brevity in this refactor, I will reuse the Core Logic but scoped.
-            
-            # [LOGIC COPIED & ADAPTED FOR SCOPE]
-            is_meta_course = "département sd" in c_name_lower or "espace promo" in c_name_lower
-            items_to_process = []
-            if is_meta_course:
-                 for g in course['grades']:
-                    if "tendance" in g['name'].lower(): continue
-                    items_to_process.append({"name": g['name'], "grades": [g], "is_virtual": True})
-            else:
-                items_to_process.append(course)
-            
-            for item in items_to_process:
-                if "tendance" in item.get('name', '').lower(): continue
-                
-                # Manual Overrides (Scoped)
-                forced_canonical = None
-                # ... (Keep existing manual map check if needed, or rely on find_best_match) ...
-                # Re-using the same global find_best_match function
-                best_match = find_best_match(item['name'], canonical_names, teacher_map)
-                
-                if best_match:
-                    if best_match not in canonical_registry: canonical_registry[best_match] = {"grades": [], "matches": []}
-                    
-                    for g in item.get('grades', []):
-                        g_name_lower = g['name'].lower()
-                        if "tendance" in g_name_lower: continue
-
-                        # [FEATURE] Apply Grade Renaming / Moving
-                        # Key = (Canonical Course Name, Original Grade Name)
-                        # We try both Original Scraped Name (g['name']) AND Cleaned Name just in case
-                        
-                        override = grade_overrides_map.get((best_match, g['name']))
-                        
-                        target_structure = canonical_registry[best_match]
-                        final_grade = g.copy() # Avoid mutating original reference
-                        
-                        if override:
-                            if override.get('new_name'):
-                                final_grade['name'] = override['new_name']
-                                # Mark as manual/renamed for UI? Maybe later.
-                            
-                            # Move to another course?
-                            if override.get('target_course_id'):
-                                target_c_name = override['target_course_id']
-                                # We allow moving to ANY known canonical course
-                                # Ensure target exists in registry
-                                if target_c_name not in canonical_registry:
-                                    canonical_registry[target_c_name] = {"grades": [], "matches": ["[MOVED_TARGET]"]}
-                                target_structure = canonical_registry[target_c_name]
-                        
-                        target_structure["grades"].append(final_grade)
-
-                    canonical_registry[best_match]["matches"].append(item['name'])
-                else:
-                    if target_semester.lower() in item['name'].lower(): # Only keep unmatched if they belong to this semester
-                         unmatched_items.append(item)
-
-        # Inject Manuals (Filtered by Maquette existence)
-        for c_name in canonical_names:
-            my_manuals = [mg for mg in manual_grades if mg['course_canonical_name'] == c_name]
-            if my_manuals:
-                if c_name not in canonical_registry: canonical_registry[c_name] = {"grades": [], "matches": ["[MANUAL]"]}
-                for mg in my_manuals:
-                    canonical_registry[c_name]["grades"].append({
-                        "name": "📝 " + mg['name'], "grade": mg['grade'], "max_grade": mg['max_grade'], "is_total": False, "is_manual": True, "id": mg['id'] 
-                    })
-             # Exclusions
-            if c_name in canonical_registry:
-                for g in canonical_registry[c_name]["grades"]:
-                    g_clean_name = g['name'].replace("📝 ", "") 
-                    if is_excluded(c_name, g_clean_name, g['grade']): g['is_excluded'] = True
-
-        # Distribution
-        for c_name, data in canonical_registry.items():
-            base_coefs = maquette.get('courses', {}).get(c_name, {})
-            override_data = overrides_map.get(c_name)
-            target_destinations = {}
-            
-            # [FEATURE] Apply Custom Name for Display
-            display_name = c_name
-            if override_data and override_data.get('custom_name'):
-                display_name = override_data['custom_name']
-            
-            if override_data and override_data.get('target_competence'):
-                 target_comp = override_data['target_competence']
-                 custom_coef = override_data.get('custom_coef')
-                 final_coef = custom_coef if custom_coef is not None else 1.0
-                 target_destinations[target_comp] = final_coef
-            else:
-                target_destinations = base_coefs.copy()
-                if override_data and override_data.get('custom_coef') is not None:
-                     for cmp in target_destinations: target_destinations[cmp] = override_data['custom_coef']
-            
-            if not target_destinations and c_name in maquette['courses']: target_destinations = maquette['courses'][c_name]
-
-            all_grades_vals = []
-            for g in data['grades']:
-                if g.get('grade') is not None and not g.get('is_total') and not g.get('is_excluded'):
-                    local_max = g.get('max_grade', 20)
-                    local_grade = g['grade']
-                    if local_max == 100 and local_grade <= 20: local_max = 20.0
-                    normalized = (local_grade / local_max) * 20 if local_max > 0 else local_grade
-                    all_grades_vals.append(normalized)
-            
-            final_avg = sum(all_grades_vals) / len(all_grades_vals) if all_grades_vals else None
-            
-            for comp, coef in target_destinations.items():
-                if comp in competences_data:
-                    competences_data[comp]["courses"].append({
-                        "name": display_name, "original_name": c_name, "average": final_avg, "coef": coef, "grades": data['grades'], "is_custom": bool(override_data)
-                    })
-                    if final_avg is not None:
-                        competences_data[comp]["weighted_sum"] += final_avg * coef
-                        competences_data[comp]["coef_sum"] += coef
-
-        # Results
-        result_avgs = {}
-        total_weighted = 0
-        total_coefs = 0
-        
-        for comp, data in competences_data.items():
-            if data["coef_sum"] > 0:
-                data["average"] = data["weighted_sum"] / data["coef_sum"]
-                result_avgs[comp] = data["average"]
-                total_weighted += data["average"]
-                total_coefs += 1
-        
-        sem_avg = total_weighted / total_coefs if total_coefs > 0 else None
-        
-        return {
-            "competences": competences_data,
-            "unmatched": unmatched_items,
-            "average": sem_avg,
-            "comp_averages": result_avgs
-        }
 
     # --- RENDER LOGIC ---
     
     if view == "year":
         # Aggregate S3 + S4
-        s3_stats = calculate_semester_stats("S3", settings['option'], settings['status'])
-        s4_stats = calculate_semester_stats("S4", settings['option'], settings['status'])
+        s3_stats = calculate_semester_stats(courses_list, manual_grades, overrides_map, grade_overrides_map, exclusions_rows, "S3", settings['option'], settings['status'])
+        s4_stats = calculate_semester_stats(courses_list, manual_grades, overrides_map, grade_overrides_map, exclusions_rows, "S4", settings['option'], settings['status'])
         
         year_data = {"S3": s3_stats, "S4": s4_stats}
         
@@ -532,7 +518,7 @@ def home(request: Request, view: str = "dashboard"): # Default view
 
     else:
         # Standard Semester View (S3 or S4)
-        stats = calculate_semester_stats(context_semester, settings['option'], settings['status'])
+        stats = calculate_semester_stats(courses_list, manual_grades, overrides_map, grade_overrides_map, exclusions_rows, context_semester, settings['option'], settings['status'])
         
         # Fallback empty structure if calc fails (e.g. no maquette)
         if not stats: 
@@ -796,16 +782,29 @@ async def export_maquette(request: Request):
     conn.close()
 
     # Convert to Dicts/Lists
-    courses = [dict(r) for r in courses_rows]
-    grades = [dict(r) for r in grades_rows]
+    # We need to nest grades into courses to match calculate_semester_stats signature
     manual_grades = [dict(r) for r in manual_grades_rows]
     overrides_map = {r['course_canonical_name']: dict(r) for r in overrides_rows}
     grade_overrides_map = {(r['course_canonical_name'], r['grade_name']): dict(r) for r in grade_overrides_rows}
-    exclusions = {(r['course_canonical_name'], r['grade_name'], r['grade_value']) for r in exclusions_rows}
+    # exclusions_rows is passed directly
+    
+    # helper for nesting
+    grades_by_course = {}
+    for g in grades_rows:
+        g_dict = dict(g)
+        cid = g_dict['course_id']
+        if cid not in grades_by_course: grades_by_course[cid] = []
+        grades_by_course[cid].append(g_dict)
+        
+    courses_list = []
+    for r in courses_rows:
+        c_dict = dict(r)
+        c_dict['grades'] = grades_by_course.get(c_dict['id'], [])
+        courses_list.append(c_dict)
 
     # Calculate Stats (Gives us the final structure)
     stats = calculate_semester_stats(
-        courses, grades, manual_grades, overrides_map, grade_overrides_map, exclusions,
+        courses_list, manual_grades, overrides_map, grade_overrides_map, exclusions_rows,
         semester, option, status
     )
     
