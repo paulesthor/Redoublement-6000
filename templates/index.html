@@ -305,8 +305,12 @@
         {% if not competences and not global_average %}
         <div class="glass-card p-5 text-center mt-5 animate-in">
             <h3 class="mb-3">👋 Bienvenue {{ user }}</h3>
-            <p class="text-secondary mb-4">Configure ton parcours pour commencer.</p>
-            <a href="/?view=settings" class="btn btn-primary rounded-pill px-4">Configurer maintenant</a>
+            <p class="text-secondary mb-4">Lance une récupération pour voir tes notes.</p>
+            <div class="d-flex justify-content-center gap-3">
+                <button onclick="refreshData()" class="btn btn-success rounded-pill px-4">📥 Récupérer mes
+                    notes</button>
+                <a href="/?view=settings" class="btn btn-outline-primary rounded-pill px-4">⚙️ Configurer</a>
+            </div>
         </div>
         {% endif %}
 
@@ -357,7 +361,7 @@
                                     <!-- Actions & Grade -->
                                     <div class="d-flex align-items-center">
                                         <button class="btn btn-sm btn-link text-secondary p-0 me-3"
-                                            onclick="event.stopPropagation(); openCustomizeModal('{{ course.name | replace('\'', '\\\'') }}', {{ course.coef|default('null') }})">⚙️</button>
+                                            onclick="event.stopPropagation(); openCustomizeModal('{{ course.name | replace('\'', '\\\'') | safe }}', {{ course.coef|default('null') }})">⚙️</button>
 
                                         {% if course.average %}
                                         <span class="badge grade-badge rounded-pill" data-bs-toggle="collapse"
@@ -393,7 +397,7 @@
                                                     class="btn btn-sm btn-link text-danger p-0">✖</button>
                                                 {% elif not g.is_excluded %}
                                                 <button
-                                                    onclick="excludeGrade('{{ course.name | replace('\'', '\\\'') }}', '{{ g.name | replace('\'', '\\\'') }}', {{ g.grade }})"
+                                                    onclick="excludeGrade('{{ course.name | replace('\'', '\\\'') | safe }}', '{{ g.name | replace('\'', '\\\'') | safe }}', {{ g.grade }})"
                                                     class="btn btn-sm btn-link text-danger p-0">✖</button>
                                                 {% endif %}
                                             </div>
@@ -401,7 +405,7 @@
                                         {% endfor %}
                                         <li class="list-group-item ps-4 py-2 border-0 text-center">
                                             <button
-                                                onclick="openManualGradeModal('{{ course.name | replace('\'', '\\\'') }}')"
+                                                onclick="openManualGradeModal('{{ course.name | replace('\'', '\\\'') | safe }}')"
                                                 class="btn btn-sm btn-outline-success rounded-pill py-0 px-3"
                                                 style="font-size: 0.8em;">+ Ajouter une note</button>
                                         </li>
