@@ -120,12 +120,11 @@ class MoodleScraper:
             return []
 
     def get_grades_for_course(self, course_id):
-        """Récupère les notes d'une matière"""
+        """Récupère les notes d'une matière (Version Robuste)"""
         if not self.is_connected:
             self.login()
 
         if not self.user_id:
-            print("❌ Pas d'ID utilisateur, impossible de récupérer les notes")
             return []
 
         url = f"https://updago.univ-poitiers.fr/course/user.php?mode=grade&id={course_id}&user={self.user_id}"
@@ -134,10 +133,16 @@ class MoodleScraper:
             soup = BeautifulSoup(r.text, 'html.parser')
             grades = []
             
+            # On cherche table avec user-grade OU generaltable (parfois l'un, parfois l'autre)
             table = soup.find('table', class_='user-grade') or soup.find('table', class_='generaltable')
-            if not table: return []
+            
+            if not table: 
+                # DEBUG: Si pas de table, on log l'URL pour vérifier manuellement si besoin
+                # print(f"⚠️ Pas de table trouvée pour {course_id}")
+                return []
 
             for row in table.find_all('tr'):
+                # Protection si la ligne est vide
                 if not row.find('td'): continue
                 
                 name_cell = row.find(class_='column-itemname')
@@ -145,28 +150,39 @@ class MoodleScraper:
                 range_cell = row.find(class_='column-range')
                 
                 if name_cell and grade_cell:
+                    raw_text_name = name_cell.text.strip()
                     raw_grade = grade_cell.text.strip()
+                    
                     if raw_grade in ["-", "", "Empty"]: continue
-                    if "tendance" in name_cell.text.lower(): continue # Filter irrelevant 'Tendance centrale'
+                    if "tendance" in raw_text_name.lower(): continue 
 
                     try:
+                        # Nettoyage de la note
                         clean_grade = float(raw_grade.replace(',', '.').split()[0])
-                    except ValueError: continue 
+                    except ValueError: 
+                        continue 
 
                     max_grade = 20.0
                     if range_cell:
                         try:
-                            parts = range_cell.text.replace("–", "-").split("-")
-                            if len(parts) >= 2: max_grade = float(parts[-1].strip())
-                        except: pass
+                            # Gestion robuste du range "0–20" ou "0-100"
+                            txt_range = range_cell.text.replace("–", "-").strip()
+                            parts = txt_range.split("-")
+                            if len(parts) >= 2: 
+                                max_grade = float(parts[-1].strip())
+                        except: 
+                            pass # On garde 20.0 par défaut
                     
-                    is_total = "Total" in name_cell.text or "Moyenne" in name_cell.text
+                    is_total = "Total" in raw_text_name or "Moyenne" in raw_text_name
+                    
                     grades.append({
-                        "name": name_cell.text.replace("Élément manuel", "").strip(),
+                        "name": raw_text_name.replace("Élément manuel", "").strip(),
                         "grade": clean_grade,
                         "max_grade": max_grade,
                         "is_total": is_total
                     })
             return grades
-        except Exception:
+        except Exception as e:
+            print(f"❌ Erreur Scraper {course_id}: {e}")
             return []
+
