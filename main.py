@@ -15,6 +15,8 @@ from contextlib import asynccontextmanager
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import time
+import random
 
 # Configuration DB
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -554,8 +556,7 @@ def refresh_ui(request: Request):
     
     # DEBUG LOGS
     print(f"🔄 REFRESH REQUEST for user: {username}")
-    print(f"🔌 Active Scrapers keys: {list(active_scrapers.keys())}")
-
+    
     # Si le scraper n'est plus en mémoire (après redémarrage serveur), on force la reconnexion
     if not username or username not in active_scrapers:
         print("❌ Scraper not found or user not logged in. Redirecting to login.")
@@ -563,45 +564,44 @@ def refresh_ui(request: Request):
     
     scraper = active_scrapers[username]
     
-    # 1. Scraping (Longue opération réseau) - On le fait HORS de la connexion DB
+    # 1. Scraping (SÉQUENTIEL POUR STABILITÉ)
     print("🔄 Début du scraping...")
     try:
+        if not scraper.is_connected:
+            scraper.login()
+            
         raw_courses = scraper.get_all_courses()
     except Exception as e:
         print(f"❌ Erreur SCRAPING exception: {e}")
         raw_courses = []
 
-    print(f"📚 {len(raw_courses)} matières trouvées via scraping. Lancement parallèle...")
+    print(f"📚 {len(raw_courses)} matières trouvées. Lancement SÉQUENTIEL...")
     
     courses_data = [] # Liste pour stocker (course_info, grades_list)
-    import concurrent.futures
 
-    def fetch_course_grades(course):
+    # --- CORRECTION CRITIQUE : RETOUR AU SÉQUENTIEL ---
+    # La version multithread cassait la session CAS/Moodle.
+    # On itère simplement avec une petite pause pour être "poli" avec le serveur.
+    
+    for course in raw_courses:
+        time.sleep(random.uniform(0.1, 0.3)) 
         try:
+            print(f"   📥 Scraping: {course['name']}...")
             grades = scraper.get_grades_for_course(course['id'])
+            
             # Calcul de la moyenne locale
             # Filter validated notes
             notes_valides = [g['grade'] for g in grades if g['max_grade'] == 20 and not g['is_total']]
             avg = sum(notes_valides) / len(notes_valides) if notes_valides else None
-            return {
+            
+            courses_data.append({
                 "course": course,
                 "grades": grades,
                 "average": avg
-            }
+            })
         except Exception as e:
             print(f"⚠️ Erreur scraping grades pour {course.get('name')}: {e}")
-            return None
 
-    # Parallel Execution (Max 50 workers to cover most users in one batch)
-    max_workers_count = 50
-    print(f"🚀 Launching scraping with {max_workers_count} workers for {len(raw_courses)} courses")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers_count) as executor:
-        future_to_course = {executor.submit(fetch_course_grades, c): c for c in raw_courses}
-        for future in concurrent.futures.as_completed(future_to_course):
-            res = future.result()
-            if res:
-                courses_data.append(res)
-        
     print("✅ Scraping terminé. Mise à jour de la BDD...")
 
     # 2. Mise à jour Base de données (Opération rapide)
@@ -866,91 +866,48 @@ def find_best_match(scraped_name, canonical_names, teacher_map=None):
     """Trouve le nom canonique le plus proche avec heuristiques intelligentes"""
     clean_scraped = scraped_name.lower().strip()
     
-    # 1. Overrides Manuels (Basés sur les logs)
+    # 1. Overrides Manuels (Basés sur les logs & FIX pour 'ibazizou', 'alie', etc.)
     manual_map = {
-        # --- Reporting Tools ---
-        "tableau software": "Utilisation avancée d'outils de reporting",
-        "power bi": "Utilisation avancée d'outils de reporting",
-        "reporting": "Utilisation avancée d'outils de reporting",
-        
-        # --- Stats & Prog ---
-        "sas": "Programmation statistique automatisée",
-        "programmation statistique": "Programmation statistique automatisée",
-        
-        # --- Data Integration ---
-        "alimentation": "SAÉ - Intégration de données dans un Datawarehouse - Talend", 
-        "talend": "SAÉ - Intégration de données dans un Datawarehouse - Talend",
-        
-        # --- Conformité / Droit ---
-        "droit": "SAÉ - EMS - Conformité réglementaire pour analyser des données",
-        "conformité": "SAÉ - EMS - Conformité réglementaire pour analyser des données",
-        "règlementaire": "SAÉ - EMS - Conformité réglementaire pour analyser des données",
-        
-        # --- BI / SID ---
-        "architecture": "Systèmes d'information décisionnels",
-        "modélisation sid": "Systèmes d'information décisionnels",
-        "rappels sql": "Systèmes d'information décisionnels",
-        "sid": "Systèmes d'information décisionnels",
-        "décisionnels": "Systèmes d'information décisionnels",
-        "testqcm": "Systèmes d'information décisionnels",
-        
-        # --- Maths / AL ---
-        "rls": "AL - Régression linéaire simple",
-        "régression": "AL - Régression linéaire simple",
-        "canari": "AL - Régression linéaire simple",
-        "sig": "AL - Système d'information géographique",
-        "algèbre": "Algèbre linéaire",
-        "linéaire": "Algèbre linéaire",
-        
-        # --- Communication & Anglais ---
-        "anglais": "Anglais professionnel",
-        "expression orale": "Anglais professionnel", # Often duplicate logic but safe
-        "writing": "Anglais professionnel",
-        
-        "communication": "Communication organisationnelle et professionnelle",
-        "bieber": "Communication organisationnelle et professionnelle",
-        "scénario": "Communication organisationnelle et professionnelle",
-        
-        # --- EMS / Sondages ---
-        "sondage": "EMS - Techniques de sondage et méthologie de l'enquête",
-        "enquêtes": "EMS - Techniques de sondage et méthologie de l'enquête",
-        "prou": "EMS - Techniques de sondage et méthologie de l'enquête", 
+        # --- Compétence 4 & Stats ---
+        "ibazizou": "SAÉ - Description et prévision de données temporelles",
+        "alie": "SAÉ - Description et prévision de données temporelles",
+        "temporelles": "SAÉ - Description et prévision de données temporelles",
+        "cookie": "SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience",
+        "recueil": "SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience",
         "devoirdépôt": "EMS - Techniques de sondage et méthologie de l'enquête",
         "mise en place d'une enquête": "EMS - Techniques de sondage et méthologie de l'enquête",
+        "prou": "EMS - Techniques de sondage et méthologie de l'enquête",
+        "canari": "AL - Régression linéaire simple",
 
-        # --- Web ---
-        "web": "Technologies web",
-        "internet": "Technologies web",
-        
-        # --- POO ---
-        "poo": "EMS - AL -  Programmation objet",
-        "programmation objet": "EMS - AL -  Programmation objet",
-        
         # --- Eco / Gestion ---
-        "économie": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
+        "gestion": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
         "economie": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
         "entrepreneuriat": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
-        "gestion": "Les données de l’environnement entrepreneurial et économique pour l’aide à la décision",
-        
-        # --- SAE Description ---
-        "description et prévision": "SAÉ - Description et prévision de données temporelles",
-        "temporelles": "SAÉ - Description et prévision de données temporelles",
-        "ibazizou": "SAÉ - Description et prévision de données temporelles", # Manual grade but why not
-        "alie": "SAÉ - Description et prévision de données temporelles",
 
-        # --- SAE Recueil ---
-        "recueil": "SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience",
-        "cookie": "SAÉ - EMS - Recueil et analyse de données par échantillonnage ou plan d'expérience"
+        # --- Anglais & Com ---
+        "writing": "Anglais professionnel",
+        "anglais": "Anglais professionnel",
+        "expression orale": "Anglais professionnel",
+        "bieber": "Communication organisationnelle et professionnelle",
+        "scénario": "Communication organisationnelle et professionnelle",
+        "communication": "Communication organisationnelle et professionnelle",
+
+        # --- Informatique / SID ---
+        "architecture sid": "Systèmes d'information décisionnels",
+        "testqcm": "Systèmes d'information décisionnels",
+        "sid": "Systèmes d'information décisionnels",
+        "sas": "Programmation statistique automatisée",
+        "poo": "EMS - AL -  Programmation objet",
+        "web": "Technologies web",
+        
+        # --- Conformité ---
+        "conformité": "SAÉ - EMS - Conformité réglementaire pour analyser des données",
+        "règlementaire": "SAÉ - EMS - Conformité réglementaire pour analyser des données"
     }
     
     for key, target in manual_map.items():
         if key in clean_scraped:
-            if "prou" in clean_scraped:
-                print(f"🐛 DEBUG PROU: Found key '{key}' in '{clean_scraped}' -> Returning '{target}'")
             return target
-            
-    if "prou" in clean_scraped:
-        print(f"🐛 DEBUG PROU: 'prou' in name but NO manual match found! Keys checked: {list(manual_map.keys())}")
 
     # 2. Correspondance par Enseignant (TRÈS FIABLE)
     if teacher_map:
