@@ -551,25 +551,36 @@ def health_check():
     return {"status": "ok"}
 
 @app.get("/refresh-ui")
+@app.get("/refresh-ui")
 def refresh_ui(request: Request):
     username = request.session.get("user")
     
-    # DEBUG LOGS
     print(f"🔄 REFRESH REQUEST for user: {username}")
     
-    # Si le scraper n'est plus en mémoire (après redémarrage serveur), on force la reconnexion
     if not username or username not in active_scrapers:
         print("❌ Scraper not found or user not logged in. Redirecting to login.")
         return RedirectResponse(url="/login")
     
     scraper = active_scrapers[username]
-    
-    # 1. Scraping (SÉQUENTIEL POUR STABILITÉ)
+
+    # --- ÉTAPE 1 : NETTOYAGE PRÉALABLE (Anti-Doublons) ---
+    # On supprime tout AVANT de scraper pour être sûr de partir d'une page blanche
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        print(f"🧹 Nettoyage de la base pour {username}...")
+        c.execute("DELETE FROM grades WHERE username = ?", (username,))
+        c.execute("DELETE FROM courses WHERE username = ?", (username,))
+        conn.commit() # On valide immédiatement la suppression
+        conn.close()
+    except Exception as e:
+        print(f"❌ Erreur lors du nettoyage BDD: {e}")
+
+    # --- ÉTAPE 2 : SCRAPING ---
     print("🔄 Début du scraping...")
     try:
         if not scraper.is_connected:
             scraper.login()
-            
         raw_courses = scraper.get_all_courses()
     except Exception as e:
         print(f"❌ Erreur SCRAPING exception: {e}")
@@ -577,39 +588,52 @@ def refresh_ui(request: Request):
 
     print(f"📚 {len(raw_courses)} matières trouvées. Lancement SÉQUENTIEL...")
     
-    courses_data = [] # Liste pour stocker (course_info, grades_list)
+    courses_data = []
+    seen_ids = set() # Pour empêcher d'ajouter deux fois la même matière
 
-    # --- CORRECTION CRITIQUE : RETOUR AU SÉQUENTIEL ---
-    # La version multithread cassait la session CAS/Moodle.
-    # On itère simplement avec une petite pause pour être "poli" avec le serveur.
-    
     for course in raw_courses:
+        # 1. Filtre anti-doublon sur l'ID de la matière
+        c_id = str(course['id'])
+        if c_id in seen_ids:
+            continue
+        seen_ids.add(c_id)
+
         time.sleep(random.uniform(0.1, 0.3)) 
         try:
             print(f"   📥 Scraping: {course['name']}...")
             grades = scraper.get_grades_for_course(course['id'])
             
-            # Calcul de la moyenne locale
-            # Filter validated notes
-            notes_valides = [g['grade'] for g in grades if g['max_grade'] == 20 and not g['is_total']]
+            # Filtre anti-doublon sur les notes (parfois Moodle met la note et le total avec le même nom)
+            unique_grades = []
+            seen_grade_names = set()
+            
+            for g in grades:
+                # Clé unique pour une note : Nom + Valeur
+                g_key = f"{g['name']}_{g['grade']}"
+                if g_key not in seen_grade_names:
+                    unique_grades.append(g)
+                    seen_grade_names.add(g_key)
+
+            # Calcul moyenne
+            notes_valides = [g['grade'] for g in unique_grades if g['max_grade'] == 20 and not g['is_total']]
             avg = sum(notes_valides) / len(notes_valides) if notes_valides else None
             
             courses_data.append({
                 "course": course,
-                "grades": grades,
+                "grades": unique_grades,
                 "average": avg
             })
         except Exception as e:
             print(f"⚠️ Erreur scraping grades pour {course.get('name')}: {e}")
 
-    print("✅ Scraping terminé. Mise à jour de la BDD...")
+    print("✅ Scraping terminé. Insertion en BDD...")
 
-    # 2. Mise à jour Base de données (Opération rapide)
+    # --- ÉTAPE 3 : INSERTION ---
     try:
         conn = get_db_connection()
         c = conn.cursor()
         
-        # On ne vide que les données de CET utilisateur
+        # Double sécurité : On re-supprime au cas où (pour les accès concurrents)
         c.execute("DELETE FROM grades WHERE username = ?", (username,))
         c.execute("DELETE FROM courses WHERE username = ?", (username,))
         
@@ -626,16 +650,11 @@ def refresh_ui(request: Request):
         
         print(f"💾 BDD UPDATE: Inserted {count_courses} courses for {username}")
 
-        # Mise à jour date et Defaults si vide
+        # Mise à jour date et Defaults
         from datetime import datetime
         now = datetime.now().strftime("%d/%m/%Y à %H:%M")
         
-        
-        # On s'assure qu'une ligne existe pour l'utilisateur
-        # REPAIR: Si l'utilisateur a les mauvais defaults du dernier patch ('Initial'), on corrige
         c.execute("UPDATE user_settings SET semester='S3', option='EMS', status='FI' WHERE username = ? AND status = 'Initial'", (username,))
-        
-        # Si c'est la première fois, on met des valeurs par défaut VALIDES (S3 - BUT2 - EMS - FI)
         c.execute("""
             INSERT INTO user_settings (username, semester, option, status, last_updated)
             VALUES (?, 'S3', 'EMS', 'FI', ?)
