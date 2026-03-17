@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maxime Bernard : speaker et animateur sportif</title>
+    <meta name="description" content="Maxime Bernard : speaker et animateur sportif">
+    <link rel="icon" href="media/V1_Favicon%20vert%20sur%20fond%20blanc.jpg">
+    <link rel="icon" href="media/V1_Favicon%20vert%20sur%20fond%20noir-01.jpg" media="(prefers-color-scheme: dark)">
+    <link rel="stylesheet" href="style.css">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700&family=Syne:wght@400;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+
+<body>
+
+    <a href="index.html#portfolio" class="back-btn">
+        <i class="ph ph-arrow-left"></i> Retour
+    </a>
+
+    <header class="project-header">
+        <img src="https://images.unsplash.com/photo-1505666287802-931dc83948e9?q=80&w=2942&auto=format&fit=crop" class="project-bg" alt="Mascotte Basket">
+        <div class="overlay-dark"></div>
+
+        <div class="project-title-box">
+            <span class="tag-category">Basket Pro A</span>
+            <h1>L'École de l'Invisible</h1>
+            <p class="project-subtitle">Mon Parcours de Mascotte Pro : Apprendre à faire vibrer les salles sans dire un seul mot.</p>
+        </div>
+    </header>
+
+    <div class="project-infos-bar">
+        <div class="info-col">
+            <span class="label">Rôle</span>
+            <span class="value">Mascotte Officielle</span>
+        </div>
+        <div class="info-col">
+            <span class="label">Contexte</span>
+            <span class="value">Championnat Pro A</span>
+        </div>
+        <div class="info-col">
+            <span class="label">Public</span>
+            <span class="value">3500 Personnes</span>
+        </div>
+        <div class="info-col">
+            <span class="label">Compétence</span>
+            <span class="value">Body Language</span>
+        </div>
+    </div>
+
+    <section class="project-content">
+
+        <div class="content-row">
+            <div class="text-part">
+                <h2>Le <span class="highlight">Challenge</span> : <br>L’Art de l’Expression Muette</h2>
+                <p>Sans la parole, tout passe par le corps. Mon défi était d’imaginer et de créer des animations, des gestualités uniques et des shows captivants.</p>
+                <p>À travers un véritable <strong>jeu d’acteur</strong>, j’ai appris à transmettre des émotions et à fédérer un public entier par la seule force du mouvement.</p>
+            </div>
+            <div class="img-part">
+                <img src="media/meeting.jpg" alt="Mascotte Action">
+            </div>
+        </div>
+
+        <div class="content-row reverse">
+            <div class="text-part">
+                <h2>La <span class="highlight">Performance</span> : <br>L'Énergie au Service du Show</h2>
+                <p>L’animation est une discipline de précision. Entre <strong>acrobaties</strong> et respect strict du <strong>conducteur de match</strong>, ma mission était de maintenir une intensité constante.</p>
+                <p>Chaque intervention était calculée pour électriser les tribunes au moment opportun, garantissant une expérience spectateur inoubliable.</p>
+            </div>
+            <div class="img-part">
+                <img src="https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?q=80&w=2938&auto=format&fit=crop" alt="Ambiance salle">
+            </div>
+        </div>
+
+        <div style="max-width: 800px; margin: 80px auto; text-align: center; padding: 0 20px;">
+            <i class="ph ph-quotes-fill" style="font-size: 3rem; color: var(--green);"></i>
+            <h3 style="font-size: 2rem; margin: 20px 0; font-family: var(--font-title);">Ce que j'en ai <span class="highlight">retiré</span></h3>
+            <p style="font-size: 1.1rem; line-height: 1.6; color: #ddd;">
+                Cette immersion au cœur du parquet m’a permis de comprendre comment <strong>captiver une audience</strong> et de forger une aisance totale en public. Ironiquement, c’est en me taisant pendant des années que j’ai réellement saisi <strong>l’importance et le pouvoir des mots.</strong>
+            </p>
+        </div>
+
+        <div class="project-gallery">
+            <h3>Galerie Souvenirs</h3>
+            <div class="carousel-wrapper">
+                <button class="carousel-btn prev" aria-label="Précédent"><i class="ph ph-caret-left"></i></button>
+
+                <div class="gallery-carousel">
+                    <div class="carousel-track">
+                        <img src="https://images.unsplash.com/photo-1546519638-68e109498ee3?q=80&w=2940&auto=format&fit=crop" alt="Photo 1">
+                        <img src="https://images.unsplash.com/photo-1504450758481-7338eba7524a?q=80&w=2938&auto=format&fit=crop" alt="Photo 2">
+                        <img src="https://images.unsplash.com/photo-1574680096145-63a2a979333a?q=80&w=2940&auto=format&fit=crop" alt="Photo 3">
+                    </div>
+                </div>
+
+                <button class="carousel-btn next" aria-label="Suivant"><i class="ph ph-caret-right"></i></button>
+            </div>
+        </div>
+
+        <script>
+            const carousel = document.querySelector('.gallery-carousel');
+            const prevBtn = document.querySelector('.carousel-btn.prev');
+            const nextBtn = document.querySelector('.carousel-btn.next');
+            const scrollAmount = 350;
+
+            nextBtn.addEventListener('click', () => {
+                const maxScrollLeft = carousel.scrollWidth - carousel.clientWidth;
+                if (carousel.scrollLeft >= maxScrollLeft - 10) {
+                    carousel.scrollTo({ left: 0, behavior: 'smooth' });
+                } else {
+                    carousel.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                }
+            });
+
+            prevBtn.addEventListener('click', () => {
+                if (carousel.scrollLeft <= 10) {
+                    carousel.scrollTo({ left: carousel.scrollWidth, behavior: 'smooth' });
+                } else {
+                    carousel.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+                }
+            });
+        </script>
+
+    </section>
+
+    <footer style="text-align: center; padding: 40px; border-top: 1px solid #222; margin-top: 50px;">
+        <a href="index.html#contact" class="btn-submit" style="display:inline-block; width:auto; margin-bottom:20px;">Me contacter pour un projet similaire</a>
+        <p style="color:#666; font-size:0.8rem;">© 2025 - Emylas Animation</p>
+    </footer>
+
+</body>
+</html>

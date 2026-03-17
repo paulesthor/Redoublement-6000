@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maxime Bernard : speaker et animateur sportif</title>
+    <meta name="description" content="Maxime Bernard : speaker et animateur sportif">
+    <link rel="icon" href="media/V1_Favicon%20vert%20sur%20fond%20blanc.jpg">
+    <link rel="icon" href="media/V1_Favicon%20vert%20sur%20fond%20noir-01.jpg" media="(prefers-color-scheme: dark)">
+    <link rel="stylesheet" href="style.css">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700&family=Syne:wght@400;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+
+<body>
+
+    <a href="index.html#portfolio" class="back-btn">
+        <i class="ph ph-arrow-left"></i> Retour
+    </a>
+
+    <header class="project-header">
+        <img src="media/test.jpg" class="project-bg" alt="Fond Projet">
+        <div class="overlay-dark"></div>
+
+        <div class="project-title-box">
+            <span class="tag-category">Athlétisme</span>
+            <h1>Le "Meeting Chaussette"</h1>
+            <p class="project-subtitle">Comment réunir 500 personnes et des athlètes internationaux dans une ambiance de
+                feu.</p>
+        </div>
+    </header>
+
+    <div class="project-infos-bar">
+        <div class="info-col">
+            <span class="label">Rôle</span>
+            <span class="value">Co-Organisateur & Speaker</span>
+        </div>
+        <div class="info-col">
+            <span class="label">Date</span>
+            <span class="value">Juin 2024</span>
+        </div>
+        <div class="info-col">
+            <span class="label">Public</span>
+            <span class="value">500 Personnes</span>
+        </div>
+        <div class="info-col">
+            <span class="label">Lieu</span>
+            <span class="value">Stade du Rhône, Lyon</span>
+        </div>
+    </div>
+
+    <section class="project-content">
+
+        <div class="content-row">
+            <div class="text-part">
+                <h2>Le <span class="highlight">Challenge</span></h2>
+                <p>Créer un événement d'athlétisme qui casse les codes. L'athlétisme est souvent vu comme un sport
+                    individuel et silencieux. Nous voulions prouver le contraire.</p>
+                <p>Le défi était double : gérer la logistique d'une compétition officielle (juges, chronométrage) tout
+                    en assurant une "expérience spectateur" digne d'un show américain.</p>
+            </div>
+            <div class="img-part">
+                <img src="media/max.jpg" alt="Détail organisation">
+            </div>
+        </div>
+
+        <div class="content-row reverse">
+            <div class="text-part">
+                <h2>La <span class="highlight">Performance</span></h2>
+                <p>Au micro, mon rôle a été de vulgariser l'athlétisme pour les néophytes tout en gardant la précision
+                    pour les puristes.</p>
+                <p>Nous avons mis en place des battles de musique pour les sauts, des présentations d'athlètes avec
+                    fumigènes, et une interaction constante avec le public pour qu'aucun temps mort ne se fasse sentir.
+                </p>
+            </div>
+            <div class="img-part">
+                <img src="https://images.unsplash.com/photo-1478147427282-58a87a120781?q=80&w=2940&auto=format&fit=crop"
+                    alt="Speaker action">
+            </div>
+        </div>
+
+        <div class="project-gallery">
+            <h3>Galerie Souvenirs</h3>
+            <div class="carousel-wrapper">
+                <button class="carousel-btn prev" aria-label="Précédent"><i class="ph ph-caret-left"></i></button>
+
+                <div class="gallery-carousel">
+                    <div class="carousel-track">
+                        <img src="media/Capture d'écran 2026-01-13 225938.png" alt="Photo 1">
+                        <img src="media/Affiche meeting .png" alt="Photo 2">
+                        <img src="media/2affiche.png" alt="Photo 3">
+                        <img src="media/max.jpg" alt="Photo 4">
+                        <img src="https://images.unsplash.com/photo-1478147427282-58a87a120781?q=80&w=2940&auto=format&fit=crop"
+                            alt="Photo 5">
+                        <img src="media/Capture d'écran 2026-01-13 225938.png" alt="Photo 6">
+                        <img src="media/Affiche meeting .png" alt="Photo 7">
+                        <img src="media/2affiche.png" alt="Photo 8">
+                        <img src="media/max.jpg" alt="Photo 9">
+                        <img src="https://images.unsplash.com/photo-1478147427282-58a87a120781?q=80&w=2940&auto=format&fit=crop"
+                            alt="Photo 10">
+                        <img src="media/Capture d'écran 2026-01-13 225938.png" alt="Photo 11">
+                        <img src="media/Affiche meeting .png" alt="Photo 12">
+                    </div>
+                </div>
+
+                <button class="carousel-btn next" aria-label="Suivant"><i class="ph ph-caret-right"></i></button>
+            </div>
+        </div>
+
+        <script>
+            const carousel = document.querySelector('.gallery-carousel');
+            const prevBtn = document.querySelector('.carousel-btn.prev');
+            const nextBtn = document.querySelector('.carousel-btn.next');
+            const scrollAmount = 350; // Ajusté pour une meilleure navigation
+
+            nextBtn.addEventListener('click', () => {
+                const maxScrollLeft = carousel.scrollWidth - carousel.clientWidth;
+
+                // Si on est à la fin (ou très proche), on retourne au début
+                if (carousel.scrollLeft >= maxScrollLeft - 10) {
+                    carousel.scrollTo({ left: 0, behavior: 'smooth' });
+                } else {
+                    carousel.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                }
+            });
+
+            prevBtn.addEventListener('click', () => {
+                // Si on est au début, on va à la fin
+                if (carousel.scrollLeft <= 10) {
+                    carousel.scrollTo({ left: carousel.scrollWidth, behavior: 'smooth' });
+                } else {
+                    carousel.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+                }
+            });
+        </script>
+
+    </section>
+
+    <footer style="text-align: center; padding: 40px; border-top: 1px solid #222; margin-top: 50px;">
+        <a href="index.html#contact" class="btn-submit" style="display:inline-block; width:auto; margin-bottom:20px;">Me
+            contacter pour un projet similaire</a>
+        <p style="color:#666; font-size:0.8rem;">© 2025 - Emylas Animation</p>
+    </footer>
+
+</body>
+
+</html>
