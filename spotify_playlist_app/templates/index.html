@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Playlist Vibes</title>
+  <meta name="theme-color" content="#1DB954" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <link rel="icon" href="/static/icons/icon-192.png" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎧 Playlist Vibes</h1>
+    <div id="user-badge" class="user-badge hidden"></div>
+  </header>
+
+  <main id="app">
+    <section id="login-view" class="view hidden">
+      <p class="lead">Connecte ton compte Spotify pour générer des playlists à partir de tes titres likés.</p>
+      <a href="/login" class="btn btn-primary">Se connecter avec Spotify</a>
+    </section>
+
+    <section id="generate-view" class="view hidden">
+      <p class="lead">Décris l'ambiance que tu veux, l'app analyse tes goûts et te propose une playlist.</p>
+
+      <div class="chips" id="preset-chips">
+        <button class="chip" data-mood="Soirée énergique, ça doit envoyer fort">🔥 Soirée</button>
+        <button class="chip" data-mood="Session chill pour se détendre">🌙 Chill</button>
+        <button class="chip" data-mood="Concentration / travail, pas trop de paroles">📚 Focus</button>
+        <button class="chip" data-mood="Sport / cardio, énergie maximale">🏃 Sport</button>
+        <button class="chip" data-mood="Road trip, ambiance été">🚗 Road trip</button>
+      </div>
+
+      <textarea id="mood-input" rows="3" placeholder="Ex: soirée entre amis, ambiance électro qui monte crescendo"></textarea>
+
+      <div class="row">
+        <label for="count-input">Nombre de titres</label>
+        <input id="count-input" type="number" min="5" max="40" value="20" />
+      </div>
+
+      <button id="generate-btn" class="btn btn-primary">✨ Générer la playlist</button>
+
+      <div id="loading" class="hidden">
+        <div class="spinner"></div>
+        <p>Analyse de tes goûts et recherche des titres…</p>
+      </div>
+
+      <div id="result" class="hidden">
+        <div class="result-header">
+          <h2 id="result-name"></h2>
+          <p id="result-desc"></p>
+        </div>
+        <ul id="track-list"></ul>
+        <button id="create-btn" class="btn btn-primary">➕ Créer sur Spotify</button>
+        <a id="spotify-link" class="btn btn-secondary hidden" target="_blank" rel="noopener">Ouvrir dans Spotify</a>
+      </div>
+
+      <p id="error-msg" class="error hidden"></p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
