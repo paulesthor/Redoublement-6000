@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -9,7 +10,7 @@ from contextlib import contextmanager
 from typing import Optional
 
 import requests
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -347,6 +348,60 @@ Le tableau "tracks" doit contenir exactement {track_count} entrées, sans doublo
     text = data["candidates"][0]["content"]["parts"][0]["text"]
     text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
     return json.loads(text)
+
+
+def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY manquant côté serveur")
+
+    resp = requests.post(
+        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        json={
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": (
+                                "Transcris cet enregistrement audio en français. "
+                                "Réponds uniquement avec le texte transcrit, sans "
+                                "commentaire ni guillemets."
+                            )
+                        },
+                        {
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": base64.b64encode(audio_bytes).decode("ascii"),
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {"temperature": 0.2},
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    return text.strip().strip('"')
+
+
+@app.post("/api/transcribe")
+async def api_transcribe(request: Request, audio: UploadFile = File(...)):
+    session_id = current_session_id(request)
+    if not (session_id and get_session(session_id)):
+        return JSONResponse({"error": "not_authenticated"}, status_code=401)
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        return JSONResponse({"error": "empty_audio"}, status_code=400)
+
+    try:
+        text = transcribe_audio(audio_bytes, audio.content_type or "audio/webm")
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    return {"text": text}
 
 
 # --- spotify search / playlist creation -------------------------------

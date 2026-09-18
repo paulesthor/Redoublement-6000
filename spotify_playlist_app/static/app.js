@@ -67,6 +67,130 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
+// --- voice input -------------------------------------------------------
+
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+
+function setMicStatus(msg) {
+  const status = el("mic-status");
+  if (!msg) {
+    status.classList.add("hidden");
+    status.textContent = "";
+  } else {
+    status.textContent = msg;
+    status.classList.remove("hidden");
+  }
+}
+
+function setRecordingUI(active) {
+  isRecording = active;
+  el("mic-btn").classList.toggle("recording", active);
+}
+
+async function startBrowserSpeechRecognition() {
+  recognition = new SpeechRecognitionCtor();
+  recognition.lang = "fr-FR";
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onstart = () => {
+    setRecordingUI(true);
+    setMicStatus("Je t'écoute…");
+  };
+
+  recognition.onresult = (event) => {
+    let transcript = "";
+    for (let i = 0; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    el("mood-input").value = transcript;
+  };
+
+  recognition.onerror = (event) => {
+    setRecordingUI(false);
+    setMicStatus("");
+    if (event.error !== "aborted" && event.error !== "no-speech") {
+      showError("Micro indisponible (" + event.error + "). Réessaie ou tape ta demande.");
+    }
+  };
+
+  recognition.onend = () => {
+    setRecordingUI(false);
+    setMicStatus("");
+  };
+
+  recognition.start();
+}
+
+function pickAudioMimeType() {
+  const candidates = ["audio/webm", "audio/mp4", "audio/ogg"];
+  return candidates.find((type) => window.MediaRecorder && MediaRecorder.isTypeSupported(type)) || "";
+}
+
+async function startFallbackRecording() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const mimeType = pickAudioMimeType();
+  mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  recordedChunks = [];
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    setRecordingUI(false);
+    setMicStatus("Transcription en cours…");
+
+    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+    const formData = new FormData();
+    formData.append("audio", blob, "recording.webm");
+
+    try {
+      const resp = await fetch("/api/transcribe", { method: "POST", body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Transcription échouée");
+      el("mood-input").value = data.text;
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setMicStatus("");
+    }
+  };
+
+  mediaRecorder.start();
+  setRecordingUI(true);
+  setMicStatus("Je t'écoute… (appuie à nouveau pour arrêter)");
+}
+
+el("mic-btn").addEventListener("click", async () => {
+  clearError();
+
+  if (isRecording) {
+    if (recognition) recognition.stop();
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    return;
+  }
+
+  try {
+    if (SpeechRecognitionCtor) {
+      await startBrowserSpeechRecognition();
+    } else if (navigator.mediaDevices && window.MediaRecorder) {
+      await startFallbackRecording();
+    } else {
+      showError("La saisie vocale n'est pas supportée par ce navigateur.");
+    }
+  } catch (err) {
+    setRecordingUI(false);
+    setMicStatus("");
+    showError("Impossible d'accéder au micro : " + err.message);
+  }
+});
+
 el("generate-btn").addEventListener("click", async () => {
   clearError();
   const mood = el("mood-input").value.trim();

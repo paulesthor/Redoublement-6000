@@ -70,11 +70,26 @@ Ouvre http://127.0.0.1:8000
 
 ## Utilisation
 
-1. Choisis un preset (Soirée, Chill, Focus...) ou décris librement l'ambiance voulue.
+1. Choisis un preset (Soirée, Chill, Focus...), décris librement l'ambiance voulue, ou dicte-la
+   au micro (voir ci-dessous).
 2. "Générer la playlist" : le serveur récupère un échantillon de tes titres likés + artistes
    suivis, demande à Gemini une sélection cohérente, puis résout chaque titre sur Spotify.
 3. Vérifie la liste, puis "Créer sur Spotify" : la playlist est créée (privée) directement sur
-   ton compte, avec un lien pour l'ouvrir dans l'app Spotify.
+   ton compte, avec un lien pour l'ouvrir dans l'app Spotify — elle apparaît telle quelle dans ta
+   Bibliothèque Spotify habituelle.
+
+## Commande vocale
+
+Le bouton 🎤 à côté du champ de texte dicte ta demande au lieu de la taper :
+
+- Sur Chrome Android (et la plupart des navigateurs Chromium), la reconnaissance vocale se fait
+  directement dans le navigateur, en local, sans coût.
+- Si le navigateur ne supporte pas cette API (notamment Safari/iOS), l'app enregistre l'audio et
+  l'envoie à Gemini pour transcription (`/api/transcribe`) — ça fonctionne partout mais consomme
+  un appel API Gemini par dictée.
+
+Dans les deux cas le texte transcrit remplit simplement le champ ; tu peux le corriger avant de
+lancer la génération.
 
 ## Limites connues
 
@@ -84,3 +99,5 @@ Ouvre http://127.0.0.1:8000
   il faudrait demander le mode "Extended Quota" à Spotify.
 - Une seule session à la fois par navigateur (cookie de session signé, pas de gestion
   multi-comptes).
+- La reconnaissance vocale native nécessite HTTPS (fonctionne en local sur `127.0.0.1`, et sur
+  Render qui sert en HTTPS par défaut).

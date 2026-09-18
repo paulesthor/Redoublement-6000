@@ -33,7 +33,11 @@
         <button class="chip" data-mood="Road trip, ambiance été">🚗 Road trip</button>
       </div>
 
-      <textarea id="mood-input" rows="3" placeholder="Ex: soirée entre amis, ambiance électro qui monte crescendo"></textarea>
+      <div class="mood-field">
+        <textarea id="mood-input" rows="3" placeholder="Ex: soirée entre amis, ambiance électro qui monte crescendo"></textarea>
+        <button id="mic-btn" class="mic-btn" type="button" title="Dicter ta demande">🎤</button>
+      </div>
+      <p id="mic-status" class="mic-status hidden"></p>
 
       <div class="row">
         <label for="count-input">Nombre de titres</label>
