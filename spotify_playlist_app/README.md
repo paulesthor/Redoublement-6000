@@ -70,13 +70,25 @@ Ouvre http://127.0.0.1:8000
 
 ## Utilisation
 
-1. Choisis un preset (Soirée, Chill, Focus...), décris librement l'ambiance voulue, ou dicte-la
+### Onglet "Générer"
+
+1. Choisis la base de goûts à utiliser : tes titres likés (par défaut), une ou plusieurs
+   playlists existantes, tes écoutes récentes, ou uniquement tes artistes/genres préférés — utile
+   si tes titres likés sont trop hétéroclites ou ne reflètent plus ce que tu écoutes vraiment.
+2. Choisis un preset (Soirée, Chill, Focus...), décris librement l'ambiance voulue, ou dicte-la
    au micro (voir ci-dessous).
-2. "Générer la playlist" : le serveur récupère un échantillon de tes titres likés + artistes
-   suivis, demande à Gemini une sélection cohérente, puis résout chaque titre sur Spotify.
-3. Vérifie la liste, puis "Créer sur Spotify" : la playlist est créée (privée) directement sur
+3. "Générer la playlist" : le serveur récupère les titres de la source choisie + tes artistes/
+   genres, demande à Gemini une sélection cohérente, puis résout chaque titre sur Spotify.
+4. Vérifie la liste, puis "Créer sur Spotify" : la playlist est créée (privée) directement sur
    ton compte, avec un lien pour l'ouvrir dans l'app Spotify — elle apparaît telle quelle dans ta
    Bibliothèque Spotify habituelle.
+
+### Onglet "Retrouver un morceau"
+
+Tu ne te souviens plus du titre ou de l'artiste ? Décris ce dont tu te souviens (bout de paroles,
+ambiance, époque, artiste probable...), au clavier ou au micro. Gemini propose jusqu'à 5 morceaux
+candidats, l'app les retrouve sur Spotify et te permet de les écouter ou de les ajouter directement
+à une playlist existante.
 
 ## Commande vocale
 

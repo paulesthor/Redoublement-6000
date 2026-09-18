@@ -42,6 +42,32 @@ body {
 }
 .user-badge a { color: var(--muted); }
 
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 20px 16px;
+}
+
+.tab {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid #333;
+  color: var(--muted);
+  padding: 10px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: var(--accent);
+  color: #04140a;
+  border-color: var(--accent);
+}
+
 #app { max-width: 640px; margin: 0 auto; padding: 0 20px 40px; }
 
 .view.hidden, .hidden { display: none !important; }
@@ -148,6 +174,80 @@ textarea, input[type="number"] {
 .row label { color: var(--muted); }
 .row input { width: 90px; }
 
+.field-block { margin: 18px 0; }
+
+.field-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.source-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.radio-pill {
+  background: var(--surface-2);
+  border: 1px solid #333;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.radio-pill input {
+  accent-color: var(--accent);
+}
+
+.radio-pill:has(input:checked) {
+  background: var(--accent);
+  color: #04140a;
+  border-color: var(--accent);
+}
+
+.playlist-picker {
+  margin-top: 12px;
+  background: var(--surface);
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 8px; }
+
+.playlist-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-radius: 8px;
+}
+
+.playlist-item img {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.playlist-item .name { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.playlist-item input { accent-color: var(--accent); }
+
 #loading {
   text-align: center;
   margin-top: 30px;
@@ -199,4 +299,54 @@ textarea, input[type="number"] {
 .error {
   color: var(--danger);
   margin-top: 16px;
+}
+
+.find-results {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.find-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.find-result img {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.find-result .find-meta { flex: 1; overflow: hidden; }
+.find-result .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.find-result .artist { color: var(--muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.find-result .reason { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+
+.find-result .find-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.find-result .find-actions a,
+.find-result .find-actions select {
+  font-size: 0.78rem;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #333;
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+  text-align: center;
 }

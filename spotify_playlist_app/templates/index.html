@@ -16,6 +16,11 @@
     <div id="user-badge" class="user-badge hidden"></div>
   </header>
 
+  <nav id="tab-bar" class="tab-bar hidden">
+    <button class="tab active" data-tab="generate-view">✨ Générer</button>
+    <button class="tab" data-tab="find-view">🔍 Retrouver un morceau</button>
+  </nav>
+
   <main id="app">
     <section id="login-view" class="view hidden">
       <p class="lead">Connecte ton compte Spotify pour générer des playlists à partir de tes titres likés.</p>
@@ -38,6 +43,20 @@
         <button id="mic-btn" class="mic-btn" type="button" title="Dicter ta demande">🎤</button>
       </div>
       <p id="mic-status" class="mic-status hidden"></p>
+
+      <div class="field-block">
+        <label class="field-label">Se baser sur</label>
+        <div class="source-options" id="source-options">
+          <label class="radio-pill"><input type="radio" name="source" value="liked" checked /> Mes titres likés</label>
+          <label class="radio-pill"><input type="radio" name="source" value="playlist" /> Une/des playlist(s)</label>
+          <label class="radio-pill"><input type="radio" name="source" value="recent" /> Écoutes récentes</label>
+          <label class="radio-pill"><input type="radio" name="source" value="top_artists" /> Mes artistes préférés</label>
+        </div>
+        <div id="playlist-picker" class="playlist-picker hidden">
+          <p class="hint">Choisis une ou plusieurs playlists comme base de goûts :</p>
+          <div id="playlist-list" class="playlist-list"><p class="hint">Chargement…</p></div>
+        </div>
+      </div>
 
       <div class="row">
         <label for="count-input">Nombre de titres</label>
@@ -62,6 +81,28 @@
       </div>
 
       <p id="error-msg" class="error hidden"></p>
+    </section>
+
+    <section id="find-view" class="view hidden">
+      <p class="lead">Tu ne retrouves plus le titre ? Décris le morceau (paroles, ambiance, artiste probable,
+        époque...) et Gemini essaie de l'identifier.</p>
+
+      <div class="mood-field">
+        <textarea id="find-input" rows="3" placeholder="Ex: chanson des années 2000, refrain qui parle de danser sous la pluie, voix féminine..."></textarea>
+        <button id="find-mic-btn" class="mic-btn" type="button" title="Dicter la description">🎤</button>
+      </div>
+      <p id="find-mic-status" class="mic-status hidden"></p>
+
+      <button id="find-btn" class="btn btn-primary">🔍 Retrouver ce morceau</button>
+
+      <div id="find-loading" class="hidden">
+        <div class="spinner"></div>
+        <p>Gemini réfléchit…</p>
+      </div>
+
+      <ul id="find-results" class="find-results"></ul>
+
+      <p id="find-error-msg" class="error hidden"></p>
     </section>
   </main>
 

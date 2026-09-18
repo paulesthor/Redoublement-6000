@@ -38,6 +38,7 @@ SCOPES = " ".join(
         "user-read-email",
         "user-library-read",
         "user-top-read",
+        "user-read-recently-played",
         "playlist-modify-public",
         "playlist-modify-private",
     ]
@@ -279,20 +280,71 @@ def api_me(request: Request):
 
 # --- liked tracks / taste profile ------------------------------------------
 
-def fetch_taste_profile(token: str) -> dict:
+def _track_lines(items, track_key="track"):
+    lines = []
+    for item in items:
+        track = (item.get(track_key) if track_key else item) or {}
+        if not track or not track.get("name"):
+            continue
+        artists = ", ".join(a["name"] for a in track.get("artists", []))
+        lines.append(f"{track['name']} — {artists}")
+    return lines
+
+
+def fetch_liked_tracks(token: str, limit: int = 50) -> list[str]:
     liked = requests.get(
         f"{SPOTIFY_API}/me/tracks",
         headers=spotify_headers(token),
-        params={"limit": 50},
+        params={"limit": limit},
         timeout=15,
     ).json()
-    liked_tracks = []
-    for item in liked.get("items", []):
-        track = item.get("track") or {}
-        artists = ", ".join(a["name"] for a in track.get("artists", []))
-        if track.get("name"):
-            liked_tracks.append(f"{track['name']} — {artists}")
+    return _track_lines(liked.get("items", []))
 
+
+def fetch_recently_played(token: str, limit: int = 50) -> list[str]:
+    recent = requests.get(
+        f"{SPOTIFY_API}/me/player/recently-played",
+        headers=spotify_headers(token),
+        params={"limit": limit},
+        timeout=15,
+    ).json()
+    return _track_lines(recent.get("items", []))
+
+
+def fetch_user_playlists(token: str) -> list[dict]:
+    out = []
+    url = f"{SPOTIFY_API}/me/playlists"
+    params = {"limit": 50}
+    while url:
+        resp = requests.get(url, headers=spotify_headers(token), params=params, timeout=15).json()
+        for p in resp.get("items", []):
+            if not p:
+                continue
+            image = p["images"][0]["url"] if p.get("images") else None
+            out.append(
+                {
+                    "id": p["id"],
+                    "name": p["name"],
+                    "image": image,
+                    "tracks_total": p.get("tracks", {}).get("total", 0),
+                }
+            )
+        url = resp.get("next")
+        params = None
+    return out
+
+
+def fetch_playlist_tracks(token: str, playlist_id: str, limit: int = 80) -> list[str]:
+    resp = requests.get(
+        f"{SPOTIFY_API}/playlists/{playlist_id}/tracks",
+        headers=spotify_headers(token),
+        params={"limit": min(limit, 100), "fields": "items(track(name,artists(name)))"},
+        timeout=15,
+    ).json()
+    return _track_lines(resp.get("items", []))
+
+
+def fetch_top_artists_and_genres(token: str) -> tuple[list[str], list[str]]:
     top_artists = requests.get(
         f"{SPOTIFY_API}/me/top/artists",
         headers=spotify_headers(token),
@@ -304,8 +356,38 @@ def fetch_taste_profile(token: str) -> dict:
     for a in top_artists.get("items", []):
         genres.extend(a.get("genres", []))
     genres = list(dict.fromkeys(genres))  # dedupe, keep order
+    return artist_names, genres[:25]
 
-    return {"liked_tracks": liked_tracks[:40], "top_artists": artist_names, "genres": genres[:25]}
+
+SOURCE_LABELS = {
+    "liked": "les titres likés de l'utilisateur",
+    "playlist": "les titres d'une ou plusieurs playlists choisies par l'utilisateur",
+    "recent": "les titres écoutés récemment par l'utilisateur",
+    "top_artists": "uniquement les artistes/genres préférés de l'utilisateur (pas de titres précis)",
+}
+
+
+def fetch_taste_profile(token: str, source: str = "liked", playlist_ids: Optional[list[str]] = None) -> dict:
+    artist_names, genres = fetch_top_artists_and_genres(token)
+
+    seed_tracks: list[str] = []
+    if source == "playlist" and playlist_ids:
+        for pid in playlist_ids[:5]:
+            seed_tracks.extend(fetch_playlist_tracks(token, pid, limit=60 // max(1, len(playlist_ids))))
+    elif source == "recent":
+        seed_tracks = fetch_recently_played(token, limit=50)
+    elif source == "top_artists":
+        seed_tracks = []
+    else:
+        source = "liked"
+        seed_tracks = fetch_liked_tracks(token, limit=50)
+
+    return {
+        "seed_tracks": seed_tracks[:60],
+        "top_artists": artist_names,
+        "genres": genres,
+        "source_label": SOURCE_LABELS[source],
+    }
 
 
 # --- gemini ------------------------------------------------------------
@@ -316,15 +398,16 @@ def ask_gemini_for_playlist(profile: dict, mood: str, track_count: int) -> dict:
 
     prompt = f"""Tu es un DJ expert qui construit des playlists Spotify sur-mesure.
 
-Voici un aperçu des goûts musicaux de l'utilisateur (titres likés, artistes suivis, genres) :
-Titres likés : {json.dumps(profile['liked_tracks'], ensure_ascii=False)}
+Voici un aperçu des goûts musicaux de l'utilisateur, basé sur {profile['source_label']} :
+Titres de référence : {json.dumps(profile['seed_tracks'], ensure_ascii=False)}
 Artistes les plus écoutés : {json.dumps(profile['top_artists'], ensure_ascii=False)}
 Genres dominants : {json.dumps(profile['genres'], ensure_ascii=False)}
 
 Demande de l'utilisateur pour la nouvelle playlist : "{mood}"
 
-Construis une playlist de {track_count} morceaux qui correspond à cette demande, en t'appuyant sur ses goûts
-existants tout en proposant quelques découvertes cohérentes avec le style demandé.
+Construis une playlist de {track_count} morceaux qui correspond à cette demande, en t'appuyant en priorité sur
+les "titres de référence" ci-dessus (c'est la base de goûts que l'utilisateur a explicitement choisie pour cette
+playlist) tout en proposant quelques découvertes cohérentes avec le style demandé.
 
 Réponds UNIQUEMENT avec un JSON valide, sans texte autour, au format exact :
 {{
@@ -386,6 +469,39 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
     return text.strip().strip('"')
 
 
+def ask_gemini_for_track_candidates(description: str) -> list[dict]:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY manquant côté serveur")
+
+    prompt = f"""Un utilisateur essaie de retrouver un morceau de musique dont il ne connaît pas le
+titre exact. Voici sa description (paroles approximatives, ambiance, artiste possible, époque...) :
+
+"{description}"
+
+Propose jusqu'à 5 morceaux réels qui correspondent le mieux à cette description, du plus probable
+au moins probable. Réponds UNIQUEMENT avec un JSON valide, sans texte autour, au format exact :
+{{
+  "candidates": [
+    {{"title": "titre du morceau", "artist": "nom de l'artiste", "reason": "courte explication du rapprochement"}}
+  ]
+}}
+"""
+
+    resp = requests.post(
+        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json"},
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
+    return json.loads(text).get("candidates", [])
+
+
 @app.post("/api/transcribe")
 async def api_transcribe(request: Request, audio: UploadFile = File(...)):
     session_id = current_session_id(request)
@@ -438,9 +554,24 @@ def search_track(token: str, title: str, artist: str) -> Optional[dict]:
     }
 
 
+@app.get("/api/playlists")
+def api_playlists(request: Request):
+    session_id = current_session_id(request)
+    token = get_valid_token(session_id) if session_id else None
+    if not token:
+        return JSONResponse({"error": "not_authenticated"}, status_code=401)
+    try:
+        playlists = fetch_user_playlists(token)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    return {"playlists": playlists}
+
+
 class GenerateRequest(BaseModel):
     mood: str
     track_count: int = 20
+    source: str = "liked"
+    playlist_ids: list[str] = []
 
 
 @app.post("/api/generate")
@@ -451,9 +582,10 @@ def api_generate(request: Request, body: GenerateRequest):
         return JSONResponse({"error": "not_authenticated"}, status_code=401)
 
     track_count = max(5, min(body.track_count, 40))
+    source = body.source if body.source in SOURCE_LABELS else "liked"
 
     try:
-        profile = fetch_taste_profile(token)
+        profile = fetch_taste_profile(token, source=source, playlist_ids=body.playlist_ids)
         plan = ask_gemini_for_playlist(profile, body.mood, track_count)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": str(exc)}, status_code=502)
@@ -507,3 +639,57 @@ def api_create_playlist(request: Request, body: CreatePlaylistRequest):
         )
 
     return {"url": playlist["external_urls"]["spotify"], "name": playlist["name"]}
+
+
+class FindTrackRequest(BaseModel):
+    description: str
+
+
+@app.post("/api/find_track")
+def api_find_track(request: Request, body: FindTrackRequest):
+    session_id = current_session_id(request)
+    token = get_valid_token(session_id) if session_id else None
+    if not token:
+        return JSONResponse({"error": "not_authenticated"}, status_code=401)
+
+    if not body.description.strip():
+        return JSONResponse({"error": "empty_description"}, status_code=400)
+
+    try:
+        candidates = ask_gemini_for_track_candidates(body.description)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    resolved = []
+    seen_uris = set()
+    for item in candidates:
+        found = search_track(token, item.get("title", ""), item.get("artist", ""))
+        if found and found["uri"] not in seen_uris:
+            seen_uris.add(found["uri"])
+            found["reason"] = item.get("reason", "")
+            resolved.append(found)
+
+    return {"tracks": resolved}
+
+
+class AddToPlaylistRequest(BaseModel):
+    playlist_id: str
+    uri: str
+
+
+@app.post("/api/add_to_playlist")
+def api_add_to_playlist(request: Request, body: AddToPlaylistRequest):
+    session_id = current_session_id(request)
+    token = get_valid_token(session_id) if session_id else None
+    if not token:
+        return JSONResponse({"error": "not_authenticated"}, status_code=401)
+
+    resp = requests.post(
+        f"{SPOTIFY_API}/playlists/{body.playlist_id}/tracks",
+        headers={**spotify_headers(token), "Content-Type": "application/json"},
+        json={"uris": [body.uri]},
+        timeout=15,
+    )
+    if resp.status_code not in (200, 201):
+        return JSONResponse({"error": "add_failed", "detail": resp.text}, status_code=502)
+    return {"ok": True}
