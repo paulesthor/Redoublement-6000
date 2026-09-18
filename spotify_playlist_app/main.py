@@ -457,6 +457,57 @@ Le tableau "tracks" doit contenir exactement {track_count} entrées, sans doublo
     return json.loads(text)
 
 
+def ask_gemini_for_refinement(
+    profile: dict, mood: str, current_tracks: list[dict], feedback: str, track_count: int
+) -> dict:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY manquant côté serveur")
+
+    current_lines = [f"{t.get('title', '')} — {t.get('artist', '')}" for t in current_tracks]
+
+    prompt = f"""Tu es un DJ expert qui ajuste une playlist Spotify à partir des retours de l'utilisateur.
+
+Demande initiale de l'utilisateur : "{mood}"
+Goûts musicaux de référence, basés sur {profile['source_label']} :
+Titres de référence : {json.dumps(profile['seed_tracks'], ensure_ascii=False)}
+Artistes les plus écoutés : {json.dumps(profile['top_artists'], ensure_ascii=False)}
+Genres dominants : {json.dumps(profile['genres'], ensure_ascii=False)}
+
+Playlist actuellement proposée à l'utilisateur :
+{json.dumps(current_lines, ensure_ascii=False)}
+
+Retour de l'utilisateur sur cette playlist : "{feedback}"
+
+Ajuste la playlist en tenant compte de ce retour : retire ou remplace les morceaux qui ne
+correspondent pas au retour (par exemple un style, une ambiance ou un artiste dont l'utilisateur
+ne veut plus), garde ceux qui restent pertinents, et complète avec de nouveaux morceaux cohérents
+avec la demande initiale et le retour pour arriver à exactement {track_count} morceaux.
+
+Réponds UNIQUEMENT avec un JSON valide, sans texte autour, au format exact :
+{{
+  "playlist_name": "nom court et accrocheur",
+  "description": "une phrase décrivant l'ambiance",
+  "tracks": [{{"title": "titre du morceau", "artist": "nom de l'artiste"}}, ...]
+}}
+Le tableau "tracks" doit contenir exactement {track_count} entrées, sans doublons.
+"""
+
+    resp = requests.post(
+        GEMINI_URL,
+        headers={"x-goog-api-key": GEMINI_API_KEY},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.8, "responseMimeType": "application/json"},
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    text = extract_gemini_text(data)
+    text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
+    return json.loads(text)
+
+
 def extract_gemini_text(data: dict) -> str:
     candidates = data.get("candidates") or []
     if not candidates:
@@ -595,6 +646,7 @@ def search_track(token: str, title: str, artist: str) -> Optional[dict]:
         "artist": ", ".join(a["name"] for a in track["artists"]),
         "image": image,
         "url": track["external_urls"]["spotify"],
+        "duration_ms": track.get("duration_ms", 0),
     }
 
 
@@ -652,6 +704,54 @@ def api_generate(request: Request, body: GenerateRequest):
         plan = ask_gemini_for_playlist(profile, body.mood, track_count)
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": safe_error(exc, "Génération de la playlist")}, status_code=502)
+
+    resolved = resolve_tracks(token, plan.get("tracks", []))
+
+    return {
+        "playlist_name": plan.get("playlist_name", body.mood[:60]),
+        "description": plan.get("description", ""),
+        "tracks": resolved,
+    }
+
+
+class TrackRef(BaseModel):
+    title: str
+    artist: str = ""
+
+
+class RefineRequest(BaseModel):
+    mood: str
+    track_count: int = 20
+    source: str = "liked"
+    playlist_ids: list[str] = []
+    feedback: str
+    current_tracks: list[TrackRef] = []
+
+
+@app.post("/api/refine")
+def api_refine(request: Request, body: RefineRequest):
+    session_id = current_session_id(request)
+    token = get_valid_token(session_id) if session_id else None
+    if not token:
+        return JSONResponse({"error": "not_authenticated"}, status_code=401)
+
+    if not body.feedback.strip():
+        return JSONResponse({"error": "empty_feedback"}, status_code=400)
+
+    track_count = max(5, min(body.track_count, 40))
+    source = body.source if body.source in SOURCE_LABELS else "liked"
+
+    try:
+        profile = fetch_taste_profile(token, source=source, playlist_ids=body.playlist_ids)
+        plan = ask_gemini_for_refinement(
+            profile,
+            body.mood,
+            [t.model_dump() for t in body.current_tracks],
+            body.feedback,
+            track_count,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": safe_error(exc, "Ajustement de la playlist")}, status_code=502)
 
     resolved = resolve_tracks(token, plan.get("tracks", []))
 

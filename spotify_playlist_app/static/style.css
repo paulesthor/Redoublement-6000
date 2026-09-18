@@ -269,6 +269,7 @@ textarea, input[type="number"] {
 .result-header { margin-top: 24px; }
 .result-header h2 { margin-bottom: 4px; }
 .result-header p { color: var(--muted); margin-top: 0; }
+.result-summary { font-size: 0.85rem; }
 
 #track-list {
   list-style: none;

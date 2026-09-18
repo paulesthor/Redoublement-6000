@@ -125,6 +125,13 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
+function formatDuration(totalMs) {
+  const totalMinutes = Math.round(totalMs / 60000);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return h > 0 ? `${h} h ${m} min` : `${m} min`;
+}
+
 function renderTracks(tracks) {
   const list = el("track-list");
   list.innerHTML = "";
@@ -140,9 +147,22 @@ function renderTracks(tracks) {
     li.querySelector(".remove-track").addEventListener("click", () => {
       currentTracks.splice(index, 1);
       renderTracks(currentTracks);
+      updateResultSummary();
     });
     list.appendChild(li);
   });
+  updateResultSummary();
+}
+
+function updateResultSummary() {
+  const summary = el("result-summary");
+  if (!currentTracks.length) {
+    summary.textContent = "Aucun titre — retire moins de morceaux ou régénère.";
+    return;
+  }
+  const totalMs = currentTracks.reduce((sum, t) => sum + (t.duration_ms || 0), 0);
+  const durationLabel = totalMs > 0 ? ` · ~${formatDuration(totalMs)}` : "";
+  summary.textContent = `${currentTracks.length} titre${currentTracks.length > 1 ? "s" : ""}${durationLabel}`;
 }
 
 function populateTargetSelect() {
@@ -287,6 +307,7 @@ function setupVoiceInput({ micBtnId, statusId, textareaId, errorId }) {
 }
 
 setupVoiceInput({ micBtnId: "mic-btn", statusId: "mic-status", textareaId: "mood-input", errorId: "error-msg" });
+setupVoiceInput({ micBtnId: "feedback-mic-btn", statusId: "feedback-mic-status", textareaId: "feedback-input", errorId: "error-msg" });
 setupVoiceInput({ micBtnId: "find-mic-btn", statusId: "find-mic-status", textareaId: "find-input", errorId: "find-error-msg" });
 
 // --- generate playlist -----------------------------------------------------
@@ -348,6 +369,64 @@ async function runGenerate() {
 
 el("generate-btn").addEventListener("click", runGenerate);
 el("regenerate-btn").addEventListener("click", runGenerate);
+
+el("refine-btn").addEventListener("click", async () => {
+  clearError();
+  const feedback = el("feedback-input").value.trim();
+  if (!feedback) {
+    showError("Dis ce que tu veux changer (ex: enlève le rap, trop calme...).");
+    return;
+  }
+  if (!currentTracks.length) {
+    showError("Génère d'abord une playlist avant de l'ajuster.");
+    return;
+  }
+
+  const mood = el("mood-input").value.trim();
+  const trackCount = parseInt(el("count-input").value, 10) || 20;
+  const { source, playlistIds } = getSelectedSource();
+
+  el("refine-btn").disabled = true;
+  el("refine-btn").textContent = "🎯 Ajustement en cours…";
+  el("loading").classList.remove("hidden");
+
+  try {
+    const resp = await fetch("/api/refine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mood,
+        track_count: trackCount,
+        source,
+        playlist_ids: playlistIds,
+        feedback,
+        current_tracks: currentTracks.map((t) => ({ title: t.name, artist: t.artist })),
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Erreur inconnue");
+
+    currentTracks = data.tracks;
+    currentPlaylistMeta = { name: data.playlist_name, description: data.description };
+
+    el("result-name").textContent = data.playlist_name;
+    el("result-desc").textContent = data.description;
+    renderTracks(currentTracks);
+    el("feedback-input").value = "";
+    el("spotify-link").classList.add("hidden");
+    el("create-btn").classList.remove("hidden");
+
+    if (!data.tracks.length) {
+      showError("Aucun titre trouvé après ajustement, essaie un retour différent.");
+    }
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    el("refine-btn").disabled = false;
+    el("refine-btn").textContent = "🎯 Ajuster la playlist";
+    el("loading").classList.add("hidden");
+  }
+});
 
 el("create-btn").addEventListener("click", async () => {
   clearError();

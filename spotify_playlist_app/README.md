@@ -80,11 +80,17 @@ Ouvre http://127.0.0.1:8000
 3. "Générer la playlist" : le serveur récupère les titres de la source choisie + tes artistes/
    genres, demande à Gemini une sélection cohérente, puis résout chaque titre sur Spotify (en
    parallèle, pour que ça reste rapide même avec 40 titres).
-4. Retire les titres qui ne te conviennent pas (✕), ou "Régénérer" pour une nouvelle proposition
-   sans tout retaper.
-5. Choisis la destination : une nouvelle playlist (par défaut) ou une playlist existante à
-   compléter, puis "Valider sur Spotify" — un lien pour l'ouvrir dans l'app Spotify apparaît
-   ensuite ; elle est visible telle quelle dans ta Bibliothèque Spotify habituelle.
+4. Avant de créer quoi que ce soit sur Spotify, tu vois la liste complète (pochettes, titres,
+   nombre de morceaux, durée totale) :
+   - Retire un titre précis avec ✕.
+   - Ou décris ce qui ne va pas dans le champ "Pas convaincu ?" (ex: "enlève tout ce qui est trop
+     calme", "moins de rap", "plus dans le style des 2 premiers titres") — au clavier ou au micro —
+     et "Ajuster la playlist" : Gemini retravaille la liste à partir de ce retour, sans repartir de
+     zéro.
+   - Ou "Repartir de zéro" pour une proposition entièrement nouvelle.
+5. Une fois satisfait, choisis la destination : une nouvelle playlist (par défaut) ou une playlist
+   existante à compléter, puis "Valider sur Spotify" — un lien pour l'ouvrir dans l'app Spotify
+   apparaît ensuite ; elle est visible telle quelle dans ta Bibliothèque Spotify habituelle.
 
 ### Onglet "Retrouver un morceau"
 
