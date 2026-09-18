@@ -128,15 +128,31 @@ function escapeHtml(str) {
 function renderTracks(tracks) {
   const list = el("track-list");
   list.innerHTML = "";
-  tracks.forEach((t) => {
+  tracks.forEach((t, index) => {
     const li = document.createElement("li");
     li.innerHTML = `
       <img src="${t.image || ""}" alt="" onerror="this.style.visibility='hidden'" />
       <div class="track-meta">
         <div class="title">${escapeHtml(t.name)}</div>
         <div class="artist">${escapeHtml(t.artist)}</div>
-      </div>`;
+      </div>
+      <button class="remove-track" type="button" title="Retirer ce titre">✕</button>`;
+    li.querySelector(".remove-track").addEventListener("click", () => {
+      currentTracks.splice(index, 1);
+      renderTracks(currentTracks);
+    });
     list.appendChild(li);
+  });
+}
+
+function populateTargetSelect() {
+  const select = el("target-select");
+  select.innerHTML = '<option value="">➕ Nouvelle playlist</option>';
+  userPlaylists.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = `📂 Ajouter à : ${p.name}`;
+    select.appendChild(opt);
   });
 }
 
@@ -275,7 +291,7 @@ setupVoiceInput({ micBtnId: "find-mic-btn", statusId: "find-mic-status", textare
 
 // --- generate playlist -----------------------------------------------------
 
-el("generate-btn").addEventListener("click", async () => {
+async function runGenerate() {
   clearError();
   const mood = el("mood-input").value.trim();
   if (!mood) {
@@ -290,15 +306,19 @@ el("generate-btn").addEventListener("click", async () => {
   }
 
   el("generate-btn").disabled = true;
+  el("regenerate-btn").disabled = true;
   el("loading").classList.remove("hidden");
   el("result").classList.add("hidden");
 
   try {
-    const resp = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mood, track_count: trackCount, source, playlist_ids: playlistIds }),
-    });
+    const [resp] = await Promise.all([
+      fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mood, track_count: trackCount, source, playlist_ids: playlistIds }),
+      }),
+      ensurePlaylistsLoaded(),
+    ]);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Erreur inconnue");
 
@@ -307,9 +327,11 @@ el("generate-btn").addEventListener("click", async () => {
 
     el("result-name").textContent = data.playlist_name;
     el("result-desc").textContent = data.description;
-    renderTracks(data.tracks);
+    renderTracks(currentTracks);
+    populateTargetSelect();
     el("spotify-link").classList.add("hidden");
     el("create-btn").classList.remove("hidden");
+    el("create-btn").textContent = "✅ Valider sur Spotify";
     el("result").classList.remove("hidden");
 
     if (!data.tracks.length) {
@@ -319,14 +341,23 @@ el("generate-btn").addEventListener("click", async () => {
     showError(err.message);
   } finally {
     el("generate-btn").disabled = false;
+    el("regenerate-btn").disabled = false;
     el("loading").classList.add("hidden");
   }
-});
+}
+
+el("generate-btn").addEventListener("click", runGenerate);
+el("regenerate-btn").addEventListener("click", runGenerate);
 
 el("create-btn").addEventListener("click", async () => {
   clearError();
+  if (!currentTracks.length) {
+    showError("La liste est vide, régénère ou remets au moins un titre.");
+    return;
+  }
   el("create-btn").disabled = true;
   try {
+    const targetPlaylistId = el("target-select").value || null;
     const resp = await fetch("/api/create_playlist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -334,6 +365,7 @@ el("create-btn").addEventListener("click", async () => {
         name: currentPlaylistMeta.name,
         description: currentPlaylistMeta.description,
         uris: currentTracks.map((t) => t.uri),
+        target_playlist_id: targetPlaylistId,
       }),
     });
     const data = await resp.json();
@@ -341,7 +373,9 @@ el("create-btn").addEventListener("click", async () => {
 
     const link = el("spotify-link");
     link.href = data.url;
-    link.textContent = "🎶 Ouvrir la playlist dans Spotify";
+    link.textContent = targetPlaylistId
+      ? `🎶 Ouvrir "${data.name}" dans Spotify`
+      : "🎶 Ouvrir la nouvelle playlist dans Spotify";
     link.classList.remove("hidden");
     el("create-btn").classList.add("hidden");
   } catch (err) {

@@ -284,6 +284,27 @@ textarea, input[type="number"] {
   border-bottom: 1px solid #232323;
 }
 
+#track-list .remove-track {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 6px;
+  flex-shrink: 0;
+}
+#track-list .remove-track:active { color: var(--danger); }
+
+.target-select {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid #333;
+  border-radius: 12px;
+  color: var(--text);
+  padding: 12px 14px;
+  font-size: 0.95rem;
+}
+
 #track-list img {
   width: 44px;
   height: 44px;

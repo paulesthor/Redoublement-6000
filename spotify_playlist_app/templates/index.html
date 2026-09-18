@@ -76,7 +76,16 @@
           <p id="result-desc"></p>
         </div>
         <ul id="track-list"></ul>
-        <button id="create-btn" class="btn btn-primary">➕ Créer sur Spotify</button>
+
+        <div class="field-block">
+          <label class="field-label">Destination</label>
+          <select id="target-select" class="target-select">
+            <option value="">➕ Nouvelle playlist</option>
+          </select>
+        </div>
+
+        <button id="regenerate-btn" class="btn btn-secondary">🔁 Régénérer</button>
+        <button id="create-btn" class="btn btn-primary">✅ Valider sur Spotify</button>
         <a id="spotify-link" class="btn btn-secondary hidden" target="_blank" rel="noopener">Ouvrir dans Spotify</a>
       </div>
 

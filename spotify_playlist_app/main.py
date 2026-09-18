@@ -5,7 +5,9 @@ import re
 import secrets
 import sqlite3
 import time
+import traceback
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Optional
 
@@ -31,6 +33,22 @@ SPOTIFY_API = "https://api.spotify.com/v1"
 GEMINI_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 )
+
+
+def safe_error(exc: Exception, context: str) -> str:
+    """Log the full error server-side and return a message safe to show the client.
+
+    Exceptions from `requests` can embed the request URL (which may contain an API key
+    as a query parameter) in their string representation, so raw exception text must
+    never be forwarded to the browser.
+    """
+    print(f"[{context}] {exc!r}")
+    traceback.print_exc()
+    if isinstance(exc, requests.exceptions.Timeout):
+        return f"{context} : le service a mis trop de temps à répondre, réessaie."
+    if isinstance(exc, requests.exceptions.RequestException):
+        return f"{context} : erreur de communication avec le service."
+    return f"{context} : {exc.__class__.__name__}"
 
 SCOPES = " ".join(
     [
@@ -154,7 +172,12 @@ def get_valid_token(session_id: str) -> Optional[str]:
         return None
     if row["expires_at"] and time.time() < row["expires_at"]:
         return row["access_token"]
-    return refresh_access_token(row)
+    token = refresh_access_token(row)
+    if token is None:
+        # Refresh token revoked/expired: drop the stale session so the user is
+        # cleanly prompted to reconnect instead of hitting silent 401s forever.
+        delete_session(session_id)
+    return token
 
 
 def spotify_headers(token: str) -> dict:
@@ -174,7 +197,7 @@ def manifest():
         {
             "name": "Playlist Vibes",
             "short_name": "Vibes",
-            "description": "Génère des playlists Spotify sur mesure à partir de tes titres likés",
+            "description": "Génère des playlists Spotify sur mesure à partir de tes goûts musicaux",
             "start_url": "/",
             "display": "standalone",
             "background_color": "#121212",
@@ -419,7 +442,8 @@ Le tableau "tracks" doit contenir exactement {track_count} entrées, sans doublo
 """
 
     resp = requests.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        GEMINI_URL,
+        headers={"x-goog-api-key": GEMINI_API_KEY},
         json={
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.9, "responseMimeType": "application/json"},
@@ -428,9 +452,21 @@ Le tableau "tracks" doit contenir exactement {track_count} entrées, sans doublo
     )
     resp.raise_for_status()
     data = resp.json()
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    text = extract_gemini_text(data)
     text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
     return json.loads(text)
+
+
+def extract_gemini_text(data: dict) -> str:
+    candidates = data.get("candidates") or []
+    if not candidates:
+        block_reason = (data.get("promptFeedback") or {}).get("blockReason")
+        raise RuntimeError(f"Gemini n'a rien renvoyé (raison : {block_reason or 'inconnue'})")
+    parts = candidates[0].get("content", {}).get("parts") or []
+    if not parts or "text" not in parts[0]:
+        finish_reason = candidates[0].get("finishReason", "inconnue")
+        raise RuntimeError(f"Réponse Gemini incomplète (raison : {finish_reason})")
+    return parts[0]["text"]
 
 
 def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
@@ -438,7 +474,8 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
         raise RuntimeError("GEMINI_API_KEY manquant côté serveur")
 
     resp = requests.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        GEMINI_URL,
+        headers={"x-goog-api-key": GEMINI_API_KEY},
         json={
             "contents": [
                 {
@@ -465,7 +502,7 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
     )
     resp.raise_for_status()
     data = resp.json()
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    text = extract_gemini_text(data)
     return text.strip().strip('"')
 
 
@@ -488,7 +525,8 @@ au moins probable. Réponds UNIQUEMENT avec un JSON valide, sans texte autour, a
 """
 
     resp = requests.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        GEMINI_URL,
+        headers={"x-goog-api-key": GEMINI_API_KEY},
         json={
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json"},
@@ -497,7 +535,7 @@ au moins probable. Réponds UNIQUEMENT avec un JSON valide, sans texte autour, a
     )
     resp.raise_for_status()
     data = resp.json()
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    text = extract_gemini_text(data)
     text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
     return json.loads(text).get("candidates", [])
 
@@ -515,30 +553,36 @@ async def api_transcribe(request: Request, audio: UploadFile = File(...)):
     try:
         text = transcribe_audio(audio_bytes, audio.content_type or "audio/webm")
     except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        return JSONResponse({"error": safe_error(exc, "Transcription")}, status_code=502)
 
     return {"text": text}
 
 
 # --- spotify search / playlist creation -------------------------------
 
+def spotify_get_with_retry(url: str, token: str, params: dict) -> requests.Response:
+    """GET with a single retry on Spotify's 429 rate-limit, honoring Retry-After."""
+    resp = requests.get(url, headers=spotify_headers(token), params=params, timeout=15)
+    if resp.status_code == 429:
+        wait = min(float(resp.headers.get("Retry-After", 1)), 5)
+        time.sleep(wait)
+        resp = requests.get(url, headers=spotify_headers(token), params=params, timeout=15)
+    return resp
+
+
 def search_track(token: str, title: str, artist: str) -> Optional[dict]:
-    query = f"track:{title} artist:{artist}"
-    resp = requests.get(
-        f"{SPOTIFY_API}/search",
-        headers=spotify_headers(token),
-        params={"q": query, "type": "track", "limit": 1},
-        timeout=15,
+    if not title:
+        return None
+    query = f"track:{title} artist:{artist}" if artist else title
+    resp = spotify_get_with_retry(
+        f"{SPOTIFY_API}/search", token, {"q": query, "type": "track", "limit": 1}
     )
     if resp.status_code != 200:
         return None
     items = resp.json().get("tracks", {}).get("items", [])
     if not items:
-        resp = requests.get(
-            f"{SPOTIFY_API}/search",
-            headers=spotify_headers(token),
-            params={"q": f"{title} {artist}", "type": "track", "limit": 1},
-            timeout=15,
+        resp = spotify_get_with_retry(
+            f"{SPOTIFY_API}/search", token, {"q": f"{title} {artist}", "type": "track", "limit": 1}
         )
         items = resp.json().get("tracks", {}).get("items", []) if resp.status_code == 200 else []
     if not items:
@@ -554,6 +598,25 @@ def search_track(token: str, title: str, artist: str) -> Optional[dict]:
     }
 
 
+def resolve_tracks(token: str, items: list[dict]) -> list[dict]:
+    """Resolve Gemini's {title, artist} suggestions to real Spotify tracks in parallel,
+    preserving Gemini's original order and dropping duplicates."""
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        found_list = list(
+            pool.map(lambda it: search_track(token, it.get("title", ""), it.get("artist", "")), items)
+        )
+
+    resolved = []
+    seen_uris = set()
+    for item, found in zip(items, found_list):
+        if found and found["uri"] not in seen_uris:
+            seen_uris.add(found["uri"])
+            if item.get("reason"):
+                found["reason"] = item["reason"]
+            resolved.append(found)
+    return resolved
+
+
 @app.get("/api/playlists")
 def api_playlists(request: Request):
     session_id = current_session_id(request)
@@ -563,7 +626,7 @@ def api_playlists(request: Request):
     try:
         playlists = fetch_user_playlists(token)
     except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        return JSONResponse({"error": safe_error(exc, "Chargement des playlists")}, status_code=502)
     return {"playlists": playlists}
 
 
@@ -588,15 +651,9 @@ def api_generate(request: Request, body: GenerateRequest):
         profile = fetch_taste_profile(token, source=source, playlist_ids=body.playlist_ids)
         plan = ask_gemini_for_playlist(profile, body.mood, track_count)
     except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        return JSONResponse({"error": safe_error(exc, "Génération de la playlist")}, status_code=502)
 
-    resolved = []
-    seen_uris = set()
-    for item in plan.get("tracks", []):
-        found = search_track(token, item.get("title", ""), item.get("artist", ""))
-        if found and found["uri"] not in seen_uris:
-            seen_uris.add(found["uri"])
-            resolved.append(found)
+    resolved = resolve_tracks(token, plan.get("tracks", []))
 
     return {
         "playlist_name": plan.get("playlist_name", body.mood[:60]),
@@ -609,6 +666,7 @@ class CreatePlaylistRequest(BaseModel):
     name: str
     description: str = ""
     uris: list[str]
+    target_playlist_id: Optional[str] = None
 
 
 @app.post("/api/create_playlist")
@@ -619,24 +677,42 @@ def api_create_playlist(request: Request, body: CreatePlaylistRequest):
     if not token or not row:
         return JSONResponse({"error": "not_authenticated"}, status_code=401)
 
-    resp = requests.post(
-        f"{SPOTIFY_API}/users/{row['spotify_user_id']}/playlists",
-        headers={**spotify_headers(token), "Content-Type": "application/json"},
-        json={"name": body.name, "description": body.description, "public": False},
-        timeout=15,
-    )
-    if resp.status_code not in (200, 201):
-        return JSONResponse({"error": "playlist_creation_failed", "detail": resp.text}, status_code=502)
-    playlist = resp.json()
+    if not body.uris:
+        return JSONResponse({"error": "empty_tracklist"}, status_code=400)
+
+    if body.target_playlist_id:
+        playlist_id = body.target_playlist_id
+        info = requests.get(
+            f"{SPOTIFY_API}/playlists/{playlist_id}",
+            headers=spotify_headers(token),
+            params={"fields": "name,external_urls"},
+            timeout=15,
+        )
+        if info.status_code != 200:
+            return JSONResponse({"error": "playlist_not_found"}, status_code=404)
+        playlist = info.json()
+    else:
+        resp = requests.post(
+            f"{SPOTIFY_API}/users/{row['spotify_user_id']}/playlists",
+            headers={**spotify_headers(token), "Content-Type": "application/json"},
+            json={"name": body.name, "description": body.description, "public": False},
+            timeout=15,
+        )
+        if resp.status_code not in (200, 201):
+            return JSONResponse({"error": "playlist_creation_failed"}, status_code=502)
+        playlist = resp.json()
+        playlist_id = playlist["id"]
 
     for i in range(0, len(body.uris), 100):
         chunk = body.uris[i : i + 100]
-        requests.post(
-            f"{SPOTIFY_API}/playlists/{playlist['id']}/tracks",
+        add_resp = requests.post(
+            f"{SPOTIFY_API}/playlists/{playlist_id}/tracks",
             headers={**spotify_headers(token), "Content-Type": "application/json"},
             json={"uris": chunk},
             timeout=15,
         )
+        if add_resp.status_code not in (200, 201):
+            return JSONResponse({"error": "add_tracks_failed"}, status_code=502)
 
     return {"url": playlist["external_urls"]["spotify"], "name": playlist["name"]}
 
@@ -658,17 +734,9 @@ def api_find_track(request: Request, body: FindTrackRequest):
     try:
         candidates = ask_gemini_for_track_candidates(body.description)
     except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        return JSONResponse({"error": safe_error(exc, "Recherche du morceau")}, status_code=502)
 
-    resolved = []
-    seen_uris = set()
-    for item in candidates:
-        found = search_track(token, item.get("title", ""), item.get("artist", ""))
-        if found and found["uri"] not in seen_uris:
-            seen_uris.add(found["uri"])
-            found["reason"] = item.get("reason", "")
-            resolved.append(found)
-
+    resolved = resolve_tracks(token, candidates)
     return {"tracks": resolved}
 
 
