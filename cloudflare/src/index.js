@@ -159,8 +159,8 @@ route('POST', '/api/register', async ({ env, body }) => {
   if (env.INVITE_CODE && body.invite !== env.INVITE_CODE) bad('Code d’invitation invalide', 403);
   if (await one(env, 'SELECT 1 FROM users WHERE name = ?', name)) bad('Pseudo déjà pris', 409);
   const salt = randomHex(16);
-  const r = await run(env, 'INSERT INTO users (name, salt, hash, coins, pack_stock, pack_ts, created) VALUES (?,?,?,?,?,?,?)',
-    name, salt, await hashPw(pw, salt), CFG.START_COINS, CFG.START_PACKS, now(), now());
+  const r = await run(env, 'INSERT INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, friend_code) VALUES (?,?,?,?,?,?,?,?)',
+    name, salt, await hashPw(pw, salt), CFG.START_COINS, CFG.START_PACKS, now(), now(), randomHex(5));
   return newSession(env, r.meta.last_row_id);
 }, false);
 route('POST', '/api/login', async ({ env, body }) => {
@@ -168,7 +168,7 @@ route('POST', '/api/login', async ({ env, body }) => {
   if (!u || (await hashPw(String(body.password || ''), u.salt)) !== u.hash) bad('Pseudo ou mot de passe incorrect', 401);
   return newSession(env, u.id);
 }, false);
-route('GET', '/api/me', async ({ env, user }) => publicUser(await refreshPacks(env, user)));
+route('GET', '/api/me', async ({ env, user }) => ({ ...publicUser(await refreshPacks(env, user)), badge: await friendBadge(env, user.id) }));
 
 route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
@@ -338,6 +338,65 @@ route('POST', '/api/trades/:id/:action', async ({ env, ctx, user, params }) => {
   notify(env, ctx, { t: 'notify', msg: `Échange mis à jour (${params.action}).` }, other);
   return { ok: true };
 });
+
+// ---------- amis ----------
+// Par pseudo : demande à valider par l'autre joueur. Par QR code (code secret de l'ami) : ajout immédiat des deux côtés.
+const friendBadge = async (env, uid) => (await one(env, `SELECT (SELECT COUNT(*) FROM friend_requests WHERE to_id = ? AND status = 'pending')
+  + (SELECT COUNT(*) FROM friends WHERE user_id = ? AND seen = 0) AS n`, uid, uid)).n;
+const areFriends = async (env, a, b) => !!(await one(env, 'SELECT 1 FROM friends WHERE user_id = ? AND friend_id = ?', a, b));
+const makeFriends = (env, a, b, unseenFor = null) => env.DB.batch([ // unseenFor = joueur qui doit voir la pastille rouge
+  st(env, 'INSERT OR IGNORE INTO friends (user_id, friend_id, created, seen) VALUES (?,?,?,?)', a, b, now(), unseenFor === a ? 0 : 1),
+  st(env, 'INSERT OR IGNORE INTO friends (user_id, friend_id, created, seen) VALUES (?,?,?,?)', b, a, now(), unseenFor === b ? 0 : 1),
+  st(env, "UPDATE friend_requests SET status = 'accepted' WHERE status = 'pending' AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))", a, b, b, a),
+]);
+route('GET', '/api/friends', async ({ env, user }) => {
+  const online = new Set((await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids);
+  return {
+    code: user.friend_code,
+    friends: (await all(env, 'SELECT u.id, u.name, f.created, f.seen FROM friends f JOIN users u ON u.id = f.friend_id WHERE f.user_id = ? ORDER BY u.name', user.id))
+      .map(f => ({ ...f, isNew: !f.seen, online: online.has(f.id) })),
+    incoming: await all(env, "SELECT r.id, u.name, r.created FROM friend_requests r JOIN users u ON u.id = r.from_id WHERE r.to_id = ? AND r.status = 'pending' ORDER BY r.id DESC", user.id),
+    outgoing: await all(env, "SELECT r.id, u.name FROM friend_requests r JOIN users u ON u.id = r.to_id WHERE r.from_id = ? AND r.status = 'pending' ORDER BY r.id DESC", user.id),
+  };
+});
+route('POST', '/api/friends/request', async ({ env, ctx, user, body }) => {
+  const target = await one(env, 'SELECT id, name FROM users WHERE name = ?', String(body.name || '').trim());
+  if (!target) bad('Aucun joueur avec ce pseudo', 404);
+  if (target.id === user.id) bad('Tu ne peux pas t’ajouter toi-même');
+  if (await areFriends(env, user.id, target.id)) bad(`${target.name} est déjà dans tes amis`);
+  if (await one(env, "SELECT 1 FROM friend_requests WHERE from_id = ? AND to_id = ? AND status = 'pending'", user.id, target.id)) bad('Demande déjà envoyée');
+  if (await one(env, "SELECT 1 FROM friend_requests WHERE from_id = ? AND to_id = ? AND status = 'pending'", target.id, user.id)) { // il t'avait déjà invité : on accepte
+    await makeFriends(env, user.id, target.id, target.id);
+    notify(env, ctx, { t: 'friend', kind: 'accepted', name: user.name }, target.id);
+    return { status: 'friends', name: target.name };
+  }
+  await run(env, 'INSERT INTO friend_requests (from_id, to_id, created) VALUES (?,?,?)', user.id, target.id, now());
+  notify(env, ctx, { t: 'friend', kind: 'request', name: user.name }, target.id);
+  return { status: 'sent', name: target.name };
+});
+route('POST', '/api/friends/respond/:id', async ({ env, ctx, user, params, body }) => {
+  const r = await one(env, "SELECT * FROM friend_requests WHERE id = ? AND to_id = ? AND status = 'pending'", +params.id, user.id);
+  if (!r) bad('Demande introuvable', 404);
+  if (body.accept) {
+    await makeFriends(env, user.id, r.from_id, r.from_id);
+    notify(env, ctx, { t: 'friend', kind: 'accepted', name: user.name }, r.from_id);
+  } else await run(env, "UPDATE friend_requests SET status = 'declined' WHERE id = ?", r.id);
+  return { ok: true };
+});
+route('POST', '/api/friends/add-code', async ({ env, ctx, user, body }) => {
+  const owner = await one(env, 'SELECT id, name FROM users WHERE friend_code = ?', String(body.code || '').trim());
+  if (!owner) bad('QR code invalide', 404);
+  if (owner.id === user.id) bad('C’est ton propre QR code');
+  if (await areFriends(env, user.id, owner.id)) return { status: 'already', name: owner.name };
+  await makeFriends(env, user.id, owner.id, owner.id);
+  notify(env, ctx, { t: 'friend', kind: 'added', name: user.name }, owner.id);
+  return { status: 'friends', name: owner.name };
+});
+route('POST', '/api/friends/remove', async ({ env, user, body }) => {
+  await run(env, 'DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)', user.id, +body.id, +body.id, user.id);
+  return { ok: true };
+});
+route('POST', '/api/friends/seen', async ({ env, user }) => { await run(env, 'UPDATE friends SET seen = 1 WHERE user_id = ?', user.id); return { ok: true }; });
 
 // ---------- point d'entrée ----------
 async function api(req, env, ctx, url) {

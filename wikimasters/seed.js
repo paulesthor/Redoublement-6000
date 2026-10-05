@@ -7,6 +7,7 @@
 //                                         arrêt dès la fin du bloc fr.wikipedia)
 //                                       La rareté est fixée par le rang de popularité (voir config.js : CATALOG_SHARE).
 //   node seed.js --dump --keep=300000   garde seulement les 300 000 pages les plus consultées (base plus légère)
+//   options utiles : --skip-pages (réutilise la liste des pages déjà en base, ne refait que les consultations et le classement)
 //   node seed.js --sample               40 cartes d'exemple, hors-ligne, pour tester
 //
 // Options : --month=AAAA-MM  --sql=<fichier|url>  --pageviews=<fichier.bz2|skip>
@@ -78,7 +79,19 @@ async function loadPageviews(src) {
   db.exec('DROP TABLE IF EXISTS temp.pv; CREATE TEMP TABLE pv (title TEXT PRIMARY KEY, v INTEGER) WITHOUT ROWID');
   // Le fichier est trié par projet : on s'arrête dès que le bloc fr.wikipedia est terminé.
   const awk = `$1=="fr.wikipedia"{seen=1;print $2"\\t"$5;next} seen{exit}`;
-  const open = /^https?:/.test(src) ? `curl -sS --fail -A "WikimastersClone/1.0 (jeu prive entre amis)" "${src}"` : `cat "${src}"`;
+  // Téléchargement par blocs de 128 Mo, chacun repris en cas de coupure réseau (un proxy ou une box coupe parfois les très longs transferts).
+  const download = `UA="WikimastersClone/1.0 (jeu prive entre amis)"; URL="${src}"
+    size=$(curl -sSI -L -A "$UA" "$URL" | tr -d '\r' | awk 'tolower($1)=="content-length:"{n=$2} END{print n}')
+    [ -n "$size" ] || { echo "taille du fichier introuvable" >&2; exit 1; }
+    tmp=$(mktemp); off=0; chunk=134217728
+    while [ "$off" -lt "$size" ]; do
+      end=$((off+chunk-1)); [ "$end" -ge "$size" ] && end=$((size-1)); tries=0
+      until curl -sS --fail -A "$UA" -r "$off-$end" -o "$tmp" "$URL"; do tries=$((tries+1)); [ "$tries" -ge 6 ] && { echo "échec du téléchargement" >&2; rm -f "$tmp"; exit 1; }; sleep 3; done
+      cat "$tmp" || break
+      off=$((end+1))
+    done
+    rm -f "$tmp"`;
+  const open = /^https?:/.test(src) ? `{ ${download}\n}` : `cat "${src}"`;
   const cmd = `${open} | ${src.endsWith('.bz2') ? 'bzip2 -dc' : 'cat'} | awk '${awk}'`;
   const child = spawn('sh', ['-c', cmd], { stdio: ['ignore', 'pipe', 'inherit'] });
   const up = db.prepare('INSERT INTO pv (title, v) VALUES (?,?) ON CONFLICT(title) DO UPDATE SET v = v + excluded.v');
@@ -126,7 +139,8 @@ function finalize(shares = CFG.CATALOG_SHARE) {
     return;
   }
   if (!args.dump) { console.log('Utilise --dump (catalogue complet) ou --sample (40 cartes de test). Voir l’en-tête de seed.js.'); return; }
-  await loadPages(args.sql || 'https://dumps.wikimedia.org/frwiki/latest/frwiki-latest-page.sql.gz');
+  if (args['skip-pages']) console.log('Liste des pages déjà chargée (--skip-pages).');
+  else await loadPages(args.sql || 'https://dumps.wikimedia.org/frwiki/latest/frwiki-latest-page.sql.gz');
   if (args.pageviews !== 'skip') {
     if (args.pageviews) await loadPageviews(args.pageviews);
     else { const { url, month } = await pageviewsUrl(); console.log(`Consultations de ${month} : lecture en flux de ${url}`); await loadPageviews(url); }

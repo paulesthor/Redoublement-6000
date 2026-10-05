@@ -49,6 +49,7 @@ function onWs(m) {
   if (m.t === 'online') { online = new Set(m.ids); if (tab === 'duel' && !game) render(); }
   else if (m.t === 'notify' || m.t === 'info') { toast(m.msg); refreshMe(); }
   else if (m.t === 'error') toast(m.msg);
+  else if (m.t === 'friend') onFriend(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
   else if (m.t === 'refresh') { if (tab === m.what) render(); refreshMe(); }
   else if (m.t === 'challenge') {
@@ -260,6 +261,41 @@ const views = {
     v.querySelectorAll('[data-a]').forEach(b => b.onclick = safe(async () => { await api(`/trades/${b.dataset.id}/${b.dataset.a}`, {}); await refreshMe(); render(); }));
   },
 
+  async friends(v) {
+    const f = await api('/friends');
+    const link = `${location.origin}/?friend=${f.code}`;
+    v.innerHTML = `<h2>Amis</h2>
+      ${f.incoming.length ? `<div class="panel"><h3 style="margin-top:0">Demandes reçues</h3>${f.incoming.map(r => `<div class="frow"><span class="nm"><b>${esc(r.name)}</b> veut devenir ton ami</span>
+        <button data-resp="${r.id}" data-ok="1">Accepter</button><button class="plain" data-resp="${r.id}">Refuser</button></div>`).join('')}</div>` : ''}
+      <div class="panel"><h3 style="margin-top:0">Ajouter par pseudo</h3>
+        <div class="row"><input id="fr-name" placeholder="Pseudo du joueur" autocapitalize="off" style="flex:1 1 180px"><button id="fr-send">Envoyer la demande</button></div>
+        <p class="mut" style="margin:8px 0 0">L'autre joueur doit accepter ta demande.</p>
+        ${f.outgoing.length ? `<p class="mut" style="margin:8px 0 0">En attente : ${f.outgoing.map(r => esc(r.name)).join(', ')}</p>` : ''}</div>
+      <div class="panel"><h3 style="margin-top:0">Mon QR code</h3>
+        <div class="qrwrap" id="qr"></div>
+        <p class="mut" style="margin:0 0 10px">Un ami qui scanne ce code devient ton ami tout de suite, sans validation.</p>
+        <div class="row"><button class="plain" id="fr-scan">Scanner un QR code</button><button class="plain" id="fr-copy">Copier mon lien</button></div></div>
+      <h3>Mes amis (${f.friends.length})</h3>
+      <div class="panel">${f.friends.length ? f.friends.map(a => `<div class="frow"><span class="dot ${a.online ? 'on' : ''}" style="margin:0"></span><span class="nm">${esc(a.name)}${a.isNew ? '<span class="newtag">Nouveau</span>' : ''}</span>
+        <button class="plain" data-rm="${a.id}">Retirer</button></div>`).join('') : '<p class="mut" style="margin:0">Aucun ami pour l\'instant.</p>'}</div>`;
+    try { const qr = qrcode(0, 'M'); qr.addData(link); qr.make(); $('#qr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); } catch { $('#qr').textContent = link; }
+    $('#fr-send').onclick = safe(async () => {
+      const name = $('#fr-name').value.trim(); if (!name) return;
+      const r = await api('/friends/request', { name });
+      toast(r.status === 'friends' ? `${r.name} est maintenant ton ami` : `Demande envoyée à ${r.name}`); render();
+    });
+    $('#fr-scan').onclick = scanQr;
+    $('#fr-copy').onclick = safe(async () => { await navigator.clipboard.writeText(link); toast('Lien copié'); });
+    v.querySelectorAll('[data-resp]').forEach(b => b.onclick = safe(async () => {
+      await api(`/friends/respond/${b.dataset.resp}`, { accept: !!b.dataset.ok }); await refreshMe(); render();
+    }));
+    v.querySelectorAll('[data-rm]').forEach(b => b.onclick = safe(async () => {
+      if (!(await ask('Retirer cet ami ?', [], { ok: 'Retirer' }))) return;
+      await api('/friends/remove', { id: +b.dataset.rm }); render();
+    }));
+    if (f.friends.some(a => a.isNew)) api('/friends/seen', {}).then(refreshMe).catch(() => {}); // efface la pastille rouge
+  },
+
   async rank(v) {
     const { players } = await api('/leaderboard');
     v.innerHTML = `<h2>Classement</h2><p class="mut">Score = valeur des cartes uniques (selon la rareté) + 10 par victoire.</p>
@@ -323,6 +359,59 @@ async function renderGame() {
   }
 }
 
+// ---------- amis : notification à l'écran + pastille rouge ----------
+let bannerTimer;
+function banner(title, text, onclick) {
+  const b = $('#banner');
+  b.hidden = false; b.innerHTML = `<b>${esc(title)}</b>${esc(text)}`;
+  b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
+  b.onclick = () => { b.hidden = true; onclick?.(); };
+  clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { b.hidden = true; }, 7000);
+}
+function onFriend(m) {
+  const text = { request: `${m.name} t'a envoyé une demande d'ami`, added: `${m.name} t'a ajouté en ami`, accepted: `${m.name} a accepté ta demande d'ami` }[m.kind];
+  banner('Amis', text, () => { game = null; tab = 'friends'; render(); });
+  try { navigator.vibrate?.(30); } catch { /* non supporté */ }
+  refreshMe().catch(() => {});
+  if (tab === 'friends' && !game) render();
+}
+/** Ajoute un ami grâce au code secret lu dans son QR code. */
+async function addByCode(code) {
+  try {
+    const r = await api('/friends/add-code', { code });
+    toast(r.status === 'already' ? `${r.name} est déjà ton ami` : `${r.name} ajouté en ami !`);
+    game = null; tab = 'friends'; render();
+  } catch (e) { toast(e.message); }
+}
+async function scanQr() {
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+    return toast('Scanner indisponible sur ce navigateur : utilise l’appareil photo de ton téléphone sur le QR code de ton ami.');
+  }
+  const m = $('#modal');
+  m.hidden = false;
+  m.innerHTML = '<div id="scanner"><h2>Scanner un QR code</h2><video playsinline muted></video><p class="mut">Place le QR code de ton ami dans le cadre.</p><button class="plain" id="scan-close">Annuler</button></div>';
+  let stream, stopped = false;
+  const stop = () => { stopped = true; stream?.getTracks().forEach(t => t.stop()); m.hidden = true; m.innerHTML = ''; };
+  $('#scan-close').onclick = stop;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = m.querySelector('video');
+    video.srcObject = stream; await video.play();
+    const detector = new BarcodeDetector({ formats: ['qr_code'] });
+    const loop = async () => {
+      if (stopped) return;
+      try {
+        for (const c of await detector.detect(video)) {
+          const code = (() => { try { return new URL(c.rawValue).searchParams.get('friend'); } catch { return null; } })();
+          if (code) { stop(); return addByCode(code); }
+        }
+      } catch { /* image pas prête */ }
+      setTimeout(loop, 250);
+    };
+    loop();
+  } catch { stop(); toast('Impossible d’accéder à la caméra.'); }
+}
+
 // ---------- bandeau des tirages légendaires ----------
 function showHits(list) {
   if (!list.length) return;
@@ -351,6 +440,7 @@ const render = safe(async () => {
 });
 async function refreshMe() {
   me = await api('/me');
+  document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   $('#me').innerHTML = `<span>${esc(me.name)}</span><span><b>${fmt(me.coins)}</b> pièces</span><span class="mut">${me.packs} booster${me.packs > 1 ? 's' : ''}</span><button class="plain" id="lo">Quitter</button>`;
   $('#lo').onclick = logout;
 }
@@ -363,5 +453,10 @@ async function start() {
     showHits((await api('/hits')).hits);
   } catch { return; }
   $('#auth').hidden = true; $('#app').hidden = false; connect(); render();
+  let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
+  if (pending) addByCode(pending);
 }
+const urlCode = new URLSearchParams(location.search).get('friend');
+if (urlCode) { try { localStorage.setItem('wm_friend_code', urlCode); } catch { /* stockage indisponible */ } history.replaceState(null, '', location.pathname); }
+if (!token && urlCode) $('#a-friend').hidden = false;
 if (token) start();

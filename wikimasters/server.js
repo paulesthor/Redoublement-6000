@@ -259,7 +259,7 @@ route('POST', '/api/register', ({ body }) => {
   if (process.env.INVITE_CODE && body.invite !== process.env.INVITE_CODE) bad('Code d’invitation invalide', 403);
   if (one('SELECT 1 FROM users WHERE name=?', name)) bad('Pseudo déjà pris', 409);
   const salt = crypto.randomBytes(16).toString('hex');
-  const id = Number(run('INSERT INTO users (name, salt, hash, coins, pack_stock, pack_ts, created) VALUES (?,?,?,?,?,?,?)', name, salt, hashPw(pw, salt), CFG.START_COINS, CFG.START_PACKS, now(), now()).lastInsertRowid);
+  const id = Number(run('INSERT INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, friend_code) VALUES (?,?,?,?,?,?,?,?)', name, salt, hashPw(pw, salt), CFG.START_COINS, CFG.START_PACKS, now(), now(), crypto.randomBytes(5).toString('hex')).lastInsertRowid);
   return newSession(id);
 }, false);
 route('POST', '/api/login', ({ body }) => {
@@ -272,7 +272,7 @@ function newSession(uid) {
   run('INSERT INTO sessions (token, user_id, created) VALUES (?,?,?)', token, uid, now());
   return { token };
 }
-route('GET', '/api/me', ({ user }) => publicUser(refreshPacks(user)));
+route('GET', '/api/me', ({ user }) => ({ ...publicUser(refreshPacks(user)), badge: friendBadge(user.id) }));
 
 const hits = []; // derniers tirages légendaires (bandeau "Hits")
 function announceHits(user, cards) {
@@ -447,6 +447,62 @@ route('POST', '/api/trades/:id/:action', ({ user, params }) => {
   push(other, { t: 'refresh', what: 'trades' }); push(other, { t: 'notify', msg: `Échange mis à jour (${params.action}).` });
   return { ok: true };
 });
+
+// ---------- amis ----------
+// Par pseudo : demande à valider par l'autre joueur. Par QR code (code secret de l'ami) : ajout immédiat des deux côtés.
+const friendBadge = uid => one(`SELECT (SELECT COUNT(*) FROM friend_requests WHERE to_id = ? AND status = 'pending')
+  + (SELECT COUNT(*) FROM friends WHERE user_id = ? AND seen = 0) AS n`, uid, uid).n;
+const areFriends = (a, b) => !!one('SELECT 1 FROM friends WHERE user_id = ? AND friend_id = ?', a, b);
+function makeFriends(a, b, unseenFor = null) { // a et b deviennent amis ; unseenFor = joueur qui doit voir la pastille rouge
+  const ins = db.prepare('INSERT OR IGNORE INTO friends (user_id, friend_id, created, seen) VALUES (?,?,?,?)');
+  ins.run(a, b, now(), unseenFor === a ? 0 : 1); ins.run(b, a, now(), unseenFor === b ? 0 : 1);
+  run("UPDATE friend_requests SET status = 'accepted' WHERE status = 'pending' AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))", a, b, b, a);
+}
+route('GET', '/api/friends', ({ user }) => ({
+  code: user.friend_code,
+  friends: all(`SELECT u.id, u.name, f.created, f.seen FROM friends f JOIN users u ON u.id = f.friend_id WHERE f.user_id = ? ORDER BY u.name`, user.id)
+    .map(f => ({ ...f, isNew: !f.seen, online: clients.has(f.id) })),
+  incoming: all(`SELECT r.id, u.name, r.created FROM friend_requests r JOIN users u ON u.id = r.from_id WHERE r.to_id = ? AND r.status = 'pending' ORDER BY r.id DESC`, user.id),
+  outgoing: all(`SELECT r.id, u.name FROM friend_requests r JOIN users u ON u.id = r.to_id WHERE r.from_id = ? AND r.status = 'pending' ORDER BY r.id DESC`, user.id),
+}));
+route('POST', '/api/friends/request', ({ user, body }) => {
+  const target = one('SELECT id, name FROM users WHERE name = ?', String(body.name || '').trim());
+  if (!target) bad('Aucun joueur avec ce pseudo', 404);
+  if (target.id === user.id) bad('Tu ne peux pas t’ajouter toi-même');
+  if (areFriends(user.id, target.id)) bad(`${target.name} est déjà dans tes amis`);
+  if (one("SELECT 1 FROM friend_requests WHERE from_id = ? AND to_id = ? AND status = 'pending'", user.id, target.id)) bad('Demande déjà envoyée');
+  if (one("SELECT 1 FROM friend_requests WHERE from_id = ? AND to_id = ? AND status = 'pending'", target.id, user.id)) { // il t'avait déjà invité : on accepte
+    makeFriends(user.id, target.id, target.id);
+    push(target.id, { t: 'friend', kind: 'accepted', name: user.name });
+    return { status: 'friends', name: target.name };
+  }
+  run('INSERT INTO friend_requests (from_id, to_id, created) VALUES (?,?,?)', user.id, target.id, now());
+  push(target.id, { t: 'friend', kind: 'request', name: user.name });
+  return { status: 'sent', name: target.name };
+});
+route('POST', '/api/friends/respond/:id', ({ user, params, body }) => {
+  const r = one("SELECT * FROM friend_requests WHERE id = ? AND to_id = ? AND status = 'pending'", +params.id, user.id);
+  if (!r) bad('Demande introuvable', 404);
+  if (body.accept) {
+    makeFriends(user.id, r.from_id, r.from_id);
+    push(r.from_id, { t: 'friend', kind: 'accepted', name: user.name });
+  } else run("UPDATE friend_requests SET status = 'declined' WHERE id = ?", r.id);
+  return { ok: true };
+});
+route('POST', '/api/friends/add-code', ({ user, body }) => {
+  const owner = one('SELECT id, name FROM users WHERE friend_code = ?', String(body.code || '').trim());
+  if (!owner) bad('QR code invalide', 404);
+  if (owner.id === user.id) bad('C’est ton propre QR code');
+  if (areFriends(user.id, owner.id)) return { status: 'already', name: owner.name };
+  makeFriends(user.id, owner.id, owner.id);
+  push(owner.id, { t: 'friend', kind: 'added', name: user.name });
+  return { status: 'friends', name: owner.name };
+});
+route('POST', '/api/friends/remove', ({ user, body }) => {
+  run('DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)', user.id, +body.id, +body.id, user.id);
+  return { ok: true };
+});
+route('POST', '/api/friends/seen', ({ user }) => { run('UPDATE friends SET seen = 1 WHERE user_id = ?', user.id); return { ok: true }; });
 
 // ---------- serveur HTTP ----------
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };

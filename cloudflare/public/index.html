@@ -23,14 +23,19 @@
   <input id="a-invite" placeholder="Code d'invitation (si demandé)">
   <div class="row"><button id="a-login">Connexion</button><button id="a-register" class="plain">Créer un compte</button></div>
   <p id="a-err" class="err"></p>
+  <p id="a-friend" class="mut" hidden>Connecte-toi ou crée un compte pour ajouter cet ami.</p>
 </div>
 <div id="app" hidden>
   <aside>
     <div class="logo">WIKIMASTERS</div>
     <nav>
-      <button data-tab="packs">Boosters</button><button data-tab="album">Collection</button>
-      <button data-tab="duel">Combats</button><button data-tab="market">Enchères</button>
-      <button data-tab="trades">Échanges</button><button data-tab="rank">Classement</button>
+      <button data-tab="packs"><span class="t">Boosters</span></button>
+      <button data-tab="album"><span class="t"><span class="lg">Collection</span><span class="sh">Cartes</span></span></button>
+      <button data-tab="duel"><span class="t">Combats</span></button>
+      <button data-tab="market"><span class="t">Enchères</span></button>
+      <button data-tab="trades"><span class="t">Échanges</span></button>
+      <button data-tab="friends"><span class="t">Amis</span></button>
+      <button data-tab="rank"><span class="t"><span class="lg">Classement</span><span class="sh">Top</span></span></button>
     </nav>
     <div id="me"></div>
   </aside>
@@ -39,8 +44,10 @@
     <main id="view"></main>
   </div>
 </div>
+<div id="banner" hidden></div>
 <div id="toast"></div>
 <div id="modal" hidden></div>
+<script src="qrcode.js"></script>
 <script src="reveal.js"></script>
 <script src="app.js"></script>
 </body>
