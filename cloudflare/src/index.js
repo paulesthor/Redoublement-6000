@@ -304,66 +304,97 @@ async function takePrepared(env, uid) {
 }
 
 // ---------- joueurs simulés : ils mettent des cartes en vente et enchérissent ----------
-const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan', 'Zoé_Wiki', 'Hugo_Collect', 'Manon', 'Théo_Lyon', 'Sarah.M', 'Ethan_FR', 'Jade_Cartes'];
+const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan', 'Zoé_Wiki', 'Hugo_Collect', 'Manon', 'Théo_Lyon', 'Sarah.M', 'Ethan_FR', 'Jade_Cartes',
+  'Lucas_Bdx', 'Chloé.R', 'Maël', 'Anaïs_34', 'Romain_Wiki', 'Lina', 'Axel_Lille', 'Eva.D', 'Tom_Collec', 'Louise_59', 'Noah', 'Clara_Nice'];
 const BOT_PRICE = { common: [2, 6], uncommon: [5, 14], rare: [12, 36], super: [40, 110], ultra: [120, 320], legendary: [350, 900] };
-const BOT_MIX = [['common', .34], ['uncommon', .28], ['rare', .22], ['super', .10], ['ultra', .045], ['legendary', .015]];
+const BOT_MIX = [['common', .30], ['uncommon', .27], ['rare', .23], ['super', .12], ['ultra', .06], ['legendary', .02]];
 const BOT_MINUTES = [[60, .3], [360, .3], [720, .2], [1440, .2]];
-const BOT_LISTINGS = 10;
+const BOT_LISTINGS = 45;                 // ventes simulées ouvertes en permanence
+const BOT_NEW_PER_TICK = 10;
 const pickW = list => { let r = Math.random() * list.reduce((t, x) => t + x[1], 0); for (const [v, w] of list) if ((r -= w) < 0) return v; return list.at(-1)[0]; };
 const rand = (a, b) => a + Math.random() * (b - a);
+/** Envie des joueurs pour une page : 0,2 (page très peu vue) à 1 (des dizaines de milliers de vues par mois). Plus une page est visitée, plus elle est convoitée. */
+const demand = views => Math.min(1, Math.max(.2, Math.log10(Math.max(1, views)) / 5));
 let lastBot = 0;
+
+/** Une carte cherchée par un joueur sera mise en vente par un joueur simulé à un moment aléatoire dans l'heure. */
+async function wishListing(env, c) {
+  const busy = await one(env, "SELECT 1 x FROM auctions WHERE card_id = ? AND (status = 'open' OR ends_at > ?)", c.id, now() - 6 * 3600e3);
+  if (busy) return;
+  await env.DB.batch([
+    insertCard(env, { id: c.id, title: c.title, views: c.views, rarity: c.rarity, shiny: 0, atk: c.atk, def: c.def }),
+    st(env, 'INSERT OR IGNORE INTO wanted (card_id, at) VALUES (?,?)', c.id, now() + Math.round(rand(2, 58) * 60000)),
+  ]);
+}
+
 async function botTick(env, ctx, force = false) {
   if (!force && now() - lastBot < 40000) return;
   lastBot = now();
   let bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
-  if (!bots.length) {
+  if (bots.length < BOT_NAMES.length) {
     await env.DB.batch(BOT_NAMES.map(n => st(env, "INSERT OR IGNORE INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, is_bot) VALUES (?,?,?,?,?,?,?,1)", n, 'bot', '!', 1e9, 0, now(), now())));
     bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
   }
   if (!bots.length) return;
   const botName = new Map(bots.map(b => [b.id, b.name]));
-  const open = await all(env, `SELECT a.id, a.seller_id, a.bid, a.bidder_id, a.start_price, a.ends_at, a.card_id, c.rarity, c.title, ${AVG} avg_price,
+  const open = await all(env, `SELECT a.id, a.seller_id, a.bid, a.bidder_id, a.start_price, a.ends_at, a.card_id, c.rarity, c.title, c.views, c.extract, ${AVG} avg_price,
     (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) nb
     FROM auctions a JOIN cards c ON c.id = a.card_id WHERE a.status = 'open' AND a.ends_at > ?`, now());
   const botOpen = open.filter(a => botName.has(a.seller_id));
+  const openCards = new Set(open.map(a => a.card_id));
+  const stmts = [];
 
-  // 1) nouvelles ventes pour garder un marché vivant
-  const missing = Math.min(3, BOT_LISTINGS - botOpen.length);
-  for (let k = 0; k < missing; k++) {
-    const rarity = pickW(BOT_MIX);
-    let cardId = null;
-    const got = await run(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? ORDER BY RANDOM() LIMIT 1) RETURNING id', rarity).catch(() => null);
-    cardId = got?.results?.[0]?.id ?? null;
-    if (!cardId) {                                                    // réserve vide : tirage direct (la description arrive en arrière-plan)
-      const { ranges } = await getMeta(env, ASSET_ORIGIN);
-      const rank = ranges[rarity][0] + Math.floor(Math.random() * (ranges[rarity][1] - ranges[rarity][0]));
-      const e = await entryAt(env, ASSET_ORIGIN, rank);
-      await insertCard(env, { id: e[0], title: e[1], views: e[2], rarity, shiny: 0, ...stats(e[1], rarity, false) }).run();
-      ctx?.waitUntil(enrich(env, [e[0]]).catch(() => {}));
-      cardId = e[0];
-    }
-    const avg = (await one(env, `SELECT ${AVG.replace(/c\.id/g, '?')} p`, cardId))?.p;
-    const [lo, hi] = BOT_PRICE[rarity];
-    const price = Math.max(1, Math.round(avg ? avg * rand(.8, 1.3) : rand(lo, hi)));
-    const minutes = pickW(BOT_MINUTES);
-    const seller = bots[Math.floor(Math.random() * bots.length)];
-    await run(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', seller.id, cardId, price, now() + Math.round(minutes * 60000 * rand(.2, 1)));
+  // 1) ventes demandées par une recherche, arrivées à échéance
+  const due = await all(env, 'SELECT w.card_id, c.rarity, c.views FROM wanted w JOIN cards c ON c.id = w.card_id WHERE w.at <= ? LIMIT 6', now());
+  const listings = [];                                              // { cardId, rarity, views }
+  for (const w of due) { stmts.push(st(env, 'DELETE FROM wanted WHERE card_id = ?', w.card_id)); if (!openCards.has(w.card_id)) { listings.push({ cardId: w.card_id, rarity: w.rarity, views: w.views }); openCards.add(w.card_id); } }
+
+  // 2) catalogue vivant : on garde ~45 ventes simulées ouvertes
+  const missing = Math.max(0, Math.min(BOT_NEW_PER_TICK, BOT_LISTINGS - botOpen.length - listings.length));
+  if (missing) {
+    const { ranges } = await getMeta(env, ASSET_ORIGIN);
+    const picks = Array.from({ length: missing }, () => { const rarity = pickW(BOT_MIX); return { rarity, rank: ranges[rarity][0] + Math.floor(rand(0, ranges[rarity][1] - ranges[rarity][0])) }; });
+    const entries = await Promise.all(picks.map(p => entryAt(env, ASSET_ORIGIN, p.rank)));
+    picks.forEach((p, i) => {
+      const [id, title, views] = entries[i];
+      if (openCards.has(id)) return;
+      openCards.add(id);
+      stmts.push(insertCard(env, { id, title, views, rarity: p.rarity, shiny: 0, ...stats(title, p.rarity, false) }));
+      listings.push({ cardId: id, rarity: p.rarity, views, fresh: true });
+    });
   }
+  if (listings.length) {
+    const ids = listings.map(l => l.cardId);
+    const avgRows = await all(env, `SELECT card_id, CAST(ROUND(AVG(price)) AS INTEGER) p FROM sales WHERE card_id IN (${placeholders(ids.length)}) GROUP BY card_id`, ...ids);
+    const avg = new Map(avgRows.map(r => [r.card_id, r.p]));
+    for (const l of listings) {
+      const [lo, hi] = BOT_PRICE[l.rarity], d = demand(l.views);
+      const price = Math.max(1, Math.round((avg.get(l.cardId) ?? rand(lo, hi)) * rand(.8, 1.3) * (.85 + .5 * d)));   // une page très visitée se vend un peu plus cher
+      const seller = bots[Math.floor(Math.random() * bots.length)];
+      stmts.push(st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', seller.id, l.cardId, price, now() + Math.round(pickW(BOT_MINUTES) * 60000 * rand(.2, 1))));
+    }
+  }
+  if (stmts.length) await env.DB.batch(stmts);
 
-  // 2) enchères des joueurs simulés (au plus 3 par passage)
-  let bidsLeft = 3;
+  // 3) description + photo des cartes mises en vente (en arrière-plan, quelques-unes par passage)
+  const bare = [...new Set([...open.filter(a => !a.extract).map(a => a.card_id), ...listings.map(l => l.cardId)])].slice(0, 20);
+  if (bare.length) ctx?.waitUntil(enrich(env, bare).catch(() => {}));
+
+  // 4) enchères des joueurs simulés (au plus 4 par passage). Plus la page est visitée, plus on se l'arrache.
+  let bidsLeft = 4;
   for (const a of open.sort(() => Math.random() - .5)) {
     if (bidsLeft <= 0) break;
-    const humanSeller = !botName.has(a.seller_id), humanLeads = a.bidder_id && !botName.has(a.bidder_id);
+    const d = demand(a.views), humanSeller = !botName.has(a.seller_id), humanLeads = a.bidder_id && !botName.has(a.bidder_id);
     const value = a.avg_price ?? (BOT_PRICE[a.rarity][0] + BOT_PRICE[a.rarity][1]) / 2;
-    let p = 0;
-    if (humanSeller) p = a.nb === 0 ? .14 : a.nb < 3 ? .05 : 0;      // une vente de joueur reçoit vite une première offre
-    else if (humanLeads) p = a.ends_at - now() < 3 * 3600e3 ? .12 : .03; // contre-enchère sur un humain qui mène
-    else p = a.nb < 3 ? .04 : 0;                                     // les ventes entre simulés montent doucement
+    const maxBids = 2 + Math.round(4 * d);
+    let p;
+    if (humanSeller) p = a.nb === 0 ? .04 + .30 * d * d : a.nb < maxBids ? .02 + .16 * d * d : 0;   // une vente de joueur reçoit des offres selon la demande
+    else if (humanLeads) p = a.nb < maxBids + 2 ? (a.ends_at - now() < 3 * 3600e3 ? .05 + .35 * d * d : .02 + .12 * d * d) : 0; // un humain qui enchérit attire des rivaux
+    else p = a.nb < maxBids ? .02 + .08 * d : 0;                    // les ventes entre simulés montent doucement
     if (Math.random() >= p) continue;
     const min = Math.max(a.start_price, a.bid + 1);
-    const amount = a.bid ? min + Math.max(0, Math.round(a.bid * rand(.03, .12))) : min;
-    if (amount > value * 1.6 + 3) continue;                          // ils ne surpayent pas
+    const amount = a.bid ? min + Math.max(0, Math.round(a.bid * rand(.03, .12 + .08 * d))) : min;
+    if (amount > value * (1.2 + 1.2 * d) + 3) continue;             // plafond selon l'envie : on surpaye plus pour une page populaire
     const bot = bots.filter(b => b.id !== a.seller_id && b.id !== a.bidder_id)[Math.floor(Math.random() * (bots.length - 1))];
     if (!bot) continue;
     const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at;
@@ -584,6 +615,7 @@ route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) =>
     const e = await entryAt(env, origin, rank);
     return { id: e[0], title: p.title, rarity, rank, views: e[2], image: p.thumbnail?.source ?? null, extract: (p.extract || '').trim(), ...stats(p.title, rarity, false), enriched: 2 };
   }))).filter(Boolean);
+  if (cards[0] && q.length >= 3) ctx.waitUntil(wishListing(env, cards[0]).catch(() => {}));   // la carte cherchée sera bientôt en vente
   const own = cards.length ? await all(env, `SELECT card_id, SUM(qty) qty FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(cards.length)}) GROUP BY card_id`, user.id, ...cards.map(c => c.id)) : [];
   const owned = new Map(own.map(r => [r.card_id, r.qty]));
   return { cards: cards.map(c => ({ ...c, owned: owned.get(c.id) || 0 })) };

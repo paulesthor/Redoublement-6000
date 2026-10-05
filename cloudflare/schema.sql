@@ -118,3 +118,8 @@ CREATE TABLE IF NOT EXISTS prepared (        -- paquets tirés et complétés d'
   ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS prepared_user ON prepared(user_id, id);
+CREATE TABLE IF NOT EXISTS wanted (          -- cartes cherchées par un joueur : un joueur simulé les met en vente à l'heure indiquée
+  card_id INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS wanted_at ON wanted(at);
