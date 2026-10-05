@@ -44,7 +44,20 @@
       </g></g></svg>`;
   }
   window.packSvg = packSvg;
-  const packHtml = () => `<div class="pk-wrap"><div class="pk-glow"></div>
+  const INTENSITY = { common: .55, uncommon: .65, rare: .8, super: .9, ultra: 1, legendary: 1 };
+  /** Teinte le halo du paquet avec la couleur de la carte la plus rare du tirage (indice visuel comme dans FUT). */
+  function tint(pk, root, cards, rk) {
+    if (!cards?.length) return;
+
+    const best = cards.reduce((a, b) => ((rk[b.rarity] ?? 0) - (rk[a.rarity] ?? 0) || (b.shiny ? 1 : 0) - (a.shiny ? 1 : 0)) > 0 ? b : a);
+    const css = getComputedStyle(document.documentElement);
+    const col = (best.shiny ? css.getPropertyValue('--shiny') : css.getPropertyValue('--' + best.rarity)).trim() || '#ffffff';
+    pk.style.setProperty('--pc', col);
+    pk.style.setProperty('--pi', INTENSITY[best.rarity] ?? .7);
+    pk.classList.add('tint');
+    const h = root.querySelector('.pk-hint'); if (h) { h.style.setProperty('--pc', col); h.classList.add('tinted'); }
+  }
+  const packHtml = () => `<div class="pk-wrap"><div class="pk-halo"></div><div class="pk-glow"></div><div class="pk-shadow"></div>
       <div class="pk-cards">${[0, 1, 2, 3, 4].map(k => `<div class="pk-card" style="--k:${k}"><b>W</b></div>`).join('')}</div>
       <div class="pk"><div class="pk-piece pk-body">${packSvg('body')}</div><div class="pk-piece pk-top">${packSvg('top')}</div></div></div>
       <p class="pk-hint">Ouverture du paquet…</p>`;
@@ -69,7 +82,7 @@
     try {
       if (reduce) { cards = await dataP; }
       else {
-        pk.classList.add('in');           await sleep(550);
+        pk.classList.add('enter');           await sleep(550);
         pk.classList.add('shake');        await sleep(950);          // le paquet tremble
         buzz([15, 25, 40]);
         pk.classList.add('tear');         await sleep(650);          // le haut se déchire et s'envole
@@ -77,6 +90,7 @@
         pk.classList.add('open');                                   // les cartes sortent du paquet
         const waiting = setTimeout(() => { const h = root.querySelector('.pk-hint'); if (h) h.textContent = 'Chargement des cartes…'; pk.classList.add('wait'); }, 300);
         cards = await dataP;                                         // si les cartes ne sont pas prêtes, la lueur pulse en attendant
+        tint(pk, root, cards, o.rank);                                      // la lueur prend la couleur de la carte la plus rare
         clearTimeout(waiting);
         await preload(cards.map(c => c.image));
         await sleep(Math.max(0, 2900 - (performance.now() - t0)));  // durée minimale de la mise en scène

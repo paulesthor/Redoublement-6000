@@ -239,9 +239,10 @@ th{font-weight:600;color:var(--mut);font-size:12px}td.num,th.num{text-align:righ
 
 /* ---------- paquet qui se déchire (pendant le chargement) ---------- */
 #reveal.r-pack{--c:var(--gold)}
-#reveal .pk-wrap{position:absolute;left:50%;top:46%;width:min(58vw,236px);aspect-ratio:172/244;transform:translate(-50%,-50%) scale(.4);opacity:0;--foil:linear-gradient(135deg,#fbfbfb 0%,#d4d4d8 42%,#fdfdfd 52%,#b7b7be 100%)}
-#reveal .pk-wrap.in{animation:pk-in .55s cubic-bezier(.2,1.2,.4,1) both}
-#reveal .pk{position:absolute;inset:0;filter:drop-shadow(0 22px 34px #000a)}
+#reveal .pk-wrap{--pc:#fff;--pi:.6;position:absolute;left:50%;top:46%;width:min(58vw,236px);aspect-ratio:172/244;transform:translate(-50%,-50%) scale(.4);opacity:0;--foil:linear-gradient(135deg,#fbfbfb 0%,#d4d4d8 42%,#fdfdfd 52%,#b7b7be 100%)}
+#reveal .pk-wrap.enter{animation:pk-in .55s cubic-bezier(.2,1.2,.4,1) both}
+#reveal .pk{position:absolute;inset:0}
+#reveal .pk-shadow{position:absolute;left:-10%;right:-10%;bottom:-9%;height:16%;background:radial-gradient(ellipse at center,#000c 0%,#0006 40%,transparent 70%);pointer-events:none}
 #reveal .pk-piece{position:absolute;inset:0}
 #reveal .pk-svg{display:block;width:100%;height:100%}
 #reveal .pk-glow{position:absolute;left:50%;top:14%;width:180%;height:0;padding-bottom:180%;transform:translate(-50%,-50%) scale(0);background:radial-gradient(circle,#ffffffdd,#ffffff40 40%,transparent 68%);pointer-events:none;opacity:0}
@@ -413,3 +414,19 @@ body.noscroll{overflow:hidden}
   .pill svg.ic{width:16px;height:16px}
   button.avatar{width:34px;height:34px;font-size:14px}
 }
+
+/* halo teinté par la carte la plus rare (comme les ouvertures de paquets FUT) : dégradés seuls, aucun filtre */
+#reveal .pk-halo{position:absolute;left:50%;top:44%;width:260%;height:0;padding-bottom:260%;border-radius:50%;pointer-events:none;opacity:0;transform:translate(-50%,-50%) scale(.3);
+
+  background:radial-gradient(circle,color-mix(in srgb,var(--pc) 78%,transparent) 0%,color-mix(in srgb,var(--pc) 34%,transparent) 22%,color-mix(in srgb,var(--pc) 10%,transparent) 42%,transparent 62%);
+  -webkit-mask-image:radial-gradient(circle,#000 30%,transparent 69%);mask-image:radial-gradient(circle,#000 30%,transparent 69%)}
+#reveal .pk-halo::before{content:"";position:absolute;inset:0;border-radius:50%;
+  background:repeating-conic-gradient(from 0deg,color-mix(in srgb,var(--pc) 55%,transparent) 0 5deg,transparent 5deg 17deg);
+  -webkit-mask-image:radial-gradient(circle,#000 8%,transparent 62%);mask-image:radial-gradient(circle,#000 8%,transparent 62%);animation:halo-spin 14s linear infinite}
+#reveal .pk-wrap.tint .pk-halo{opacity:var(--pi);transform:translate(-50%,-50%) scale(1);transition:opacity .7s ease-out,transform 1s cubic-bezier(.2,.9,.3,1)}
+#reveal .pk-wrap.tint .pk-glow{opacity:0!important;transition:opacity .5s}
+#reveal .pk-wrap.fly .pk-halo{opacity:1;transform:translate(-50%,-50%) scale(1.25);transition:opacity .2s,transform .45s ease-in}
+#reveal.r-pack .pk-wrap.fly .pk-halo{animation:halo-out .5s ease-in both}
+#reveal .pk-hint.tinted{color:color-mix(in srgb,var(--pc) 70%,#fff)}
+@keyframes halo-spin{to{transform:rotate(360deg)}}
+@keyframes halo-out{to{opacity:0}}
