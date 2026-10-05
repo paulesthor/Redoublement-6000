@@ -6,13 +6,13 @@ const crypto = require('node:crypto');
 const { WebSocketServer } = require('ws');
 const { db, tx } = require('./db');
 const live = require('./live');
+const CFG = require('./config');
 
 const PORT = +process.env.PORT || 3000;
 const FRESH_RATIO = +(process.env.FRESH_RATIO ?? 0.5); // part des cartes d'un booster tirées parmi les articles "frais"
-const PACK_EVERY = 10 * 60 * 1000, PACK_MAX = 10, PACK_SIZE = 5;
-const WEIGHTS = { common: 70, rare: 22, epic: 6, legendary: 2 };
-const SELL = { common: 5, rare: 20, epic: 80, legendary: 300 };
-const POINTS = { common: 1, rare: 5, epic: 20, legendary: 50 };
+const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS } = CFG;
+const WEIGHTS = CFG.DROP;
+const RANK = { common: 0, rare: 1, epic: 2, legendary: 3 };
 
 // ---------- utilitaires ----------
 class HttpError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
@@ -53,17 +53,35 @@ function loadPool() {
   for (const r of Object.keys(WEIGHTS)) cardsByRarity[r] = all('SELECT id FROM cards WHERE rarity=?', r).map(x => x.id);
 }
 live.setOnNew((id, rarity) => { if (!cardsByRarity[rarity].includes(id)) cardsByRarity[rarity].push(id); });
+function drawRarity(only) {
+  const avail = Object.keys(WEIGHTS).filter(r => cardsByRarity[r].length && (!only || only.includes(r)));
+  if (!avail.length) return null;
+  let roll = Math.random() * avail.reduce((s, r) => s + WEIGHTS[r], 0);
+  for (const r of avail) { if ((roll -= WEIGHTS[r]) < 0) return r; }
+  return avail[0];
+}
+const pick = r => cardsByRarity[r][Math.floor(Math.random() * cardsByRarity[r].length)];
 function drawCard() {
   if (Math.random() < FRESH_RATIO) { const f = live.takeFresh(); if (f) return f; }
-  const avail = Object.keys(WEIGHTS).filter(r => cardsByRarity[r].length);
-  if (!avail.length) bad('Aucune carte en base : lance `npm run seed`', 500);
-  let roll = Math.random() * avail.reduce((s, r) => s + WEIGHTS[r], 0), rar = avail[0];
-  for (const r of avail) { if ((roll -= WEIGHTS[r]) < 0) { rar = r; break; } }
-  const pool = cardsByRarity[rar];
-  return pool[Math.floor(Math.random() * pool.length)];
+  const r = drawRarity();
+  if (!r) bad('Aucune carte en base : lance `npm run seed`', 500);
+  return pick(r);
 }
-const cardRows = ids => ids.length
-  ? all(`SELECT * FROM cards WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids) : [];
+/** Tire un booster complet ; garantit une carte rare ou mieux si activé. */
+function drawPack() {
+  const ids = Array.from({ length: PACK_SIZE }, drawCard);
+  if (CFG.GUARANTEE_RARE) {
+    const rows = cardRows([...new Set(ids)]);
+    if (!rows.some(c => RANK[c.rarity] >= 1)) {
+      const r = drawRarity(['rare', 'epic', 'legendary']);
+      if (r) ids[ids.length - 1] = pick(r);
+    }
+  }
+  return ids;
+}
+function cardRows(ids) {
+  return ids.length ? all(`SELECT * FROM cards WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids) : [];
+}
 
 // ---------- WebSocket : présence + push ----------
 const clients = new Map(); // userId -> Set<ws>
@@ -131,24 +149,73 @@ function endDuel(d) {
   const win = sa === sb ? null : sa > sb ? a : b;
   tx(() => {
     for (const p of d.players) {
-      const gain = win === null ? 25 : p === win ? 50 : 10;
+      const gain = win === null ? CFG.QUIZ_DRAW : p === win ? CFG.QUIZ_WIN : CFG.QUIZ_LOSE;
       run('UPDATE users SET coins = coins + ?, duel_wins = duel_wins + ?, duel_losses = duel_losses + ? WHERE id=?',
         gain, p === win ? 1 : 0, win !== null && p !== win ? 1 : 0, p);
     }
   });
   for (const p of d.players) push(p, { t: 'duel_end', id: d.id, score: d.score, names: d.names, winner: win });
 }
+// ---------- combats de cartes ----------
+const battles = new Map();
+function startBattle(a, b) {
+  const bt = { id: crypto.randomUUID(), players: [a.id, b.id], names: { [a.id]: a.name, [b.id]: b.name }, picks: {} };
+  battles.set(bt.id, bt);
+  for (const p of bt.players) push(p, { t: 'battle_start', id: bt.id, names: bt.names, rounds: CFG.BATTLE_ROUNDS });
+  bt.timer = setTimeout(() => { // un joueur n'a pas choisi : forfait
+    if (!battles.has(bt.id)) return;
+    battles.delete(bt.id);
+    for (const p of bt.players) push(p, { t: 'info', msg: 'Combat annulé : équipe non choisie à temps.' });
+    for (const p of bt.players) push(p, { t: 'battle_cancel' });
+  }, 90000);
+}
+function resolveBattle(bt) {
+  clearTimeout(bt.timer); battles.delete(bt.id);
+  const [a, b] = bt.players;
+  const team = uid => cardRows(bt.picks[uid]).reduce((m, c) => (m[c.id] = c, m), {});
+  const ta = team(a), tb = team(b);
+  const rounds = []; const wins = { [a]: 0, [b]: 0 }; const dmg = { [a]: 0, [b]: 0 };
+  for (let i = 0; i < CFG.BATTLE_ROUNDS; i++) {
+    const ca = ta[bt.picks[a][i]], cb = tb[bt.picks[b][i]];
+    const hit = (x, y) => Math.max(1, x.atk - y.def * 0.5) * (0.9 + Math.random() * 0.2);
+    const da = hit(ca, cb), db_ = hit(cb, ca);
+    dmg[a] += da; dmg[b] += db_;
+    const w = da === db_ ? null : da > db_ ? a : b;
+    if (w) wins[w]++;
+    rounds.push({ a: ca, b: cb, da: Math.round(da), db: Math.round(db_), winner: w });
+  }
+  let win = wins[a] === wins[b] ? (Math.abs(dmg[a] - dmg[b]) < 1 ? null : dmg[a] > dmg[b] ? a : b) : wins[a] > wins[b] ? a : b;
+  tx(() => {
+    for (const p of bt.players) {
+      const gain = win === null ? CFG.BATTLE_DRAW : p === win ? CFG.BATTLE_WIN : CFG.BATTLE_LOSE;
+      run('UPDATE users SET coins = coins + ?, duel_wins = duel_wins + ?, duel_losses = duel_losses + ? WHERE id=?',
+        gain, p === win ? 1 : 0, win !== null && p !== win ? 1 : 0, p);
+    }
+  });
+  for (const p of bt.players) push(p, { t: 'battle_end', id: bt.id, names: bt.names, a, b, rounds, wins, winner: win });
+}
 function handleWs(ws, user, msg) {
+  const mode = msg.mode === 'battle' ? 'battle' : 'quiz';
   if (msg.t === 'challenge') {
     const target = +msg.to;
     if (target === user.id || !clients.has(target)) return push(user.id, { t: 'error', msg: 'Joueur hors ligne' });
-    push(target, { t: 'challenge', from: user.id, name: user.name });
-    push(user.id, { t: 'info', msg: 'Défi envoyé !' });
+    push(target, { t: 'challenge', from: user.id, name: user.name, mode });
+    push(user.id, { t: 'info', msg: 'Défi envoyé.' });
   } else if (msg.t === 'accept') {
     const from = one('SELECT id, name FROM users WHERE id=?', +msg.from);
-    if (from && clients.has(from.id)) startDuel(from, user);
+    if (from && clients.has(from.id)) (mode === 'battle' ? startBattle : startDuel)(from, user);
   } else if (msg.t === 'decline') {
-    push(+msg.from, { t: 'info', msg: `${user.name} a refusé le duel.` });
+    push(+msg.from, { t: 'info', msg: `${user.name} a refusé.` });
+  } else if (msg.t === 'pick') {
+    const bt = battles.get(msg.id);
+    const ids = (msg.cards || []).map(Number);
+    if (!bt || !bt.players.includes(user.id) || bt.picks[user.id]) return;
+    if (ids.length !== CFG.BATTLE_ROUNDS || new Set(ids).size !== ids.length) return push(user.id, { t: 'error', msg: `Choisis ${CFG.BATTLE_ROUNDS} cartes différentes` });
+    const owned = new Set(all(`SELECT card_id FROM inventory WHERE user_id=? AND card_id IN (${ids.map(() => '?').join(',')})`, user.id, ...ids).map(r => r.card_id));
+    if (!ids.every(i => owned.has(i))) return push(user.id, { t: 'error', msg: 'Carte non possédée' });
+    bt.picks[user.id] = ids;
+    push(user.id, { t: 'info', msg: 'Équipe validée, en attente de l’adversaire…' });
+    if (bt.players.every(p => bt.picks[p])) resolveBattle(bt);
   } else if (msg.t === 'answer') {
     const d = duels.get(msg.id);
     if (!d || d.over || !d.players.includes(user.id) || d.answers[user.id] !== undefined || d.i < 0) return;
@@ -168,6 +235,7 @@ function settleAuctions() {
         run('UPDATE users SET coins = coins + ? WHERE id=?', a.bid, a.seller_id);
         addCard(a.bidder_id, a.card_id);
         run("UPDATE auctions SET status='sold' WHERE id=?", a.id);
+        run('INSERT INTO sales (card_id, price, ts) VALUES (?,?,?)', a.card_id, a.bid, now());
       } else {
         addCard(a.seller_id, a.card_id);
         run("UPDATE auctions SET status='expired' WHERE id=?", a.id);
@@ -194,7 +262,7 @@ route('POST', '/api/register', ({ body }) => {
   if (process.env.INVITE_CODE && body.invite !== process.env.INVITE_CODE) bad('Code d’invitation invalide', 403);
   if (one('SELECT 1 FROM users WHERE name=?', name)) bad('Pseudo déjà pris', 409);
   const salt = crypto.randomBytes(16).toString('hex');
-  const id = Number(run('INSERT INTO users (name, salt, hash, pack_ts, created) VALUES (?,?,?,?,?)', name, salt, hashPw(pw, salt), now(), now()).lastInsertRowid);
+  const id = Number(run('INSERT INTO users (name, salt, hash, coins, pack_stock, pack_ts, created) VALUES (?,?,?,?,?,?,?)', name, salt, hashPw(pw, salt), CFG.START_COINS, CFG.START_PACKS, now(), now()).lastInsertRowid);
   return newSession(id);
 }, false);
 route('POST', '/api/login', ({ body }) => {
@@ -210,45 +278,77 @@ function newSession(uid) {
 route('GET', '/api/me', ({ user }) => publicUser(refreshPacks(user)));
 
 route('POST', '/api/packs/open', ({ user }) => {
-  const ids = tx(() => {
+  const { ids, before } = tx(() => {
     const u = refreshPacks(one('SELECT * FROM users WHERE id=?', user.id));
     if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
     const wasFull = u.pack_stock >= PACK_MAX;
     run('UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id=?', wasFull ? 1 : 0, now(), u.id);
-    const drawn = Array.from({ length: PACK_SIZE }, drawCard);
-    drawn.forEach(c => addCard(u.id, c));
-    return drawn;
+    const before = new Set(all('SELECT card_id FROM inventory WHERE user_id=?', u.id).map(r => r.card_id));
+    const drawn = drawPack(); drawn.forEach(c => addCard(u.id, c));
+    return { ids: drawn, before };
   });
-  const rows = new Map(cardRows([...new Set(ids)]).map(c => [c.id, c]));
-  const owned = new Set(all('SELECT card_id FROM inventory WHERE user_id=? AND qty=1', user.id).map(r => r.card_id));
-  return { cards: ids.map(id => ({ ...rows.get(id), isNew: owned.has(id) && ids.filter(x => x === id).length === 1 })) };
+  return packResultWith(ids, before);
 });
+route('POST', '/api/packs/buy', ({ user }) => {
+  const { ids, before } = tx(() => {
+    const paid = run('UPDATE users SET coins = coins - ? WHERE id=? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
+    if (!paid.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
+    const before = new Set(all('SELECT card_id FROM inventory WHERE user_id=?', user.id).map(r => r.card_id));
+    const drawn = drawPack(); drawn.forEach(c => addCard(user.id, c));
+    return { ids: drawn, before };
+  });
+  return packResultWith(ids, before);
+});
+function packResultWith(ids, before) {
+  const rows = new Map(cardRows([...new Set(ids)]).map(c => [c.id, c]));
+  const seen = new Set();
+  return { cards: ids.map(id => { const isNew = !before.has(id) && !seen.has(id); seen.add(id); return { ...rows.get(id), isNew }; })
+    .sort((a, b) => RANK[b.rarity] - RANK[a.rarity]) };
+}
+route('GET', '/api/config', () => ({
+  drop: CFG.DROP, sell: CFG.SELL, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, guarantee: CFG.GUARANTEE_RARE,
+}), false);
 
+const AVG = `(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))`;
 route('GET', '/api/album', ({ user }) => {
-  const cards = all(`SELECT c.*, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=? 
+  const cards = all(`SELECT c.*, i.qty, ${AVG} AS avg_price FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=?
     ORDER BY CASE c.rarity WHEN 'legendary' THEN 0 WHEN 'epic' THEN 1 WHEN 'rare' THEN 2 ELSE 3 END, c.views DESC`, user.id);
   const total = Object.fromEntries(all('SELECT rarity, COUNT(*) n FROM cards GROUP BY rarity').map(r => [r.rarity, r.n]));
-  return { cards, total };
+  const rarityAvg = Object.fromEntries(all(`SELECT c.rarity, CAST(ROUND(AVG(s.price)) AS INTEGER) p, COUNT(*) n FROM sales s JOIN cards c ON c.id = s.card_id GROUP BY c.rarity`).map(r => [r.rarity, { avg: r.p, n: r.n }]));
+  return { cards, total, rarityAvg };
 });
-route('POST', '/api/cards/:id/sell', ({ user, params }) => tx(() => {
-  const cid = +params.id, inv = one('SELECT qty FROM inventory WHERE user_id=? AND card_id=?', user.id, cid);
-  if (!inv || inv.qty < 2) bad('Tu ne peux vendre que les doublons');
-  const price = SELL[one('SELECT rarity FROM cards WHERE id=?', cid).rarity];
-  takeCard(user.id, cid); run('UPDATE users SET coins = coins + ? WHERE id=?', price, user.id);
-  return { price };
+function discard(uid, cid, qty) {
+  const inv = one('SELECT qty FROM inventory WHERE user_id=? AND card_id=?', uid, cid);
+  qty = Math.min(qty, inv?.qty || 0);
+  if (qty < 1) bad('Tu ne possèdes pas cette carte');
+  const price = SELL[one('SELECT rarity FROM cards WHERE id=?', cid).rarity] * qty;
+  run('UPDATE inventory SET qty = qty - ? WHERE user_id=? AND card_id=?', qty, uid, cid);
+  run('DELETE FROM inventory WHERE user_id=? AND card_id=? AND qty <= 0', uid, cid);
+  run('UPDATE users SET coins = coins + ? WHERE id=?', price, uid);
+  return price;
+}
+route('POST', '/api/discard', ({ user, body }) => ({ price: tx(() => discard(user.id, +body.card_id, Math.max(1, Math.floor(+body.qty || 1)))) }));
+// vend tous les exemplaires en trop (on garde 1 exemplaire) des cartes de rareté <= max_rarity
+route('POST', '/api/discard-dupes', ({ user, body }) => tx(() => {
+  const max = RANK[body.max_rarity] ?? 0;
+  let total = 0, n = 0;
+  for (const r of all('SELECT c.id, c.rarity, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=? AND i.qty > 1', user.id)) {
+    if (RANK[r.rarity] <= max) { total += discard(user.id, r.id, r.qty - 1); n += r.qty - 1; }
+  }
+  return { price: total, count: n };
 }));
 
 route('GET', '/api/users', ({ user }) => ({ users: all('SELECT id, name FROM users ORDER BY name').map(u => ({ ...u, online: clients.has(u.id), me: u.id === user.id })) }));
 route('GET', '/api/leaderboard', () => ({
   players: all(`SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
-    COALESCE(SUM(CASE c.rarity WHEN 'legendary' THEN 50 WHEN 'epic' THEN 20 WHEN 'rare' THEN 5 ELSE 1 END), 0) + u.duel_wins * 10 AS score,
+    COALESCE(SUM(CASE c.rarity WHEN 'legendary' THEN ${POINTS.legendary} WHEN 'epic' THEN ${POINTS.epic} WHEN 'rare' THEN ${POINTS.rare} ELSE ${POINTS.common} END), 0) + u.duel_wins * 10 AS score,
     COUNT(c.id) AS uniques
     FROM users u LEFT JOIN inventory i ON i.user_id = u.id LEFT JOIN cards c ON c.id = i.card_id GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 }));
 
 route('GET', '/api/auctions', ({ user }) => ({
   auctions: all(`SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, b.name bidder,
-    c.id card_id, c.title, c.image, c.rarity, c.atk, c.def FROM auctions a JOIN cards c ON c.id = a.card_id
+    c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price FROM auctions a JOIN cards c ON c.id = a.card_id
     JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id
     WHERE a.status='open' ORDER BY a.ends_at`).map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id })),
 }));

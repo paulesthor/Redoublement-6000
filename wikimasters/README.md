@@ -28,10 +28,15 @@ Ouvrir un booster ne fait aucun appel réseau : ~50 % des cartes viennent de cet
 Variables : `LIVE_FETCH=0` (désactive), `FRESH_RATIO=0.5`, `FRESH_TARGET=60`. Le jeu peut démarrer avec une base vide (sans `npm run seed`).
 Rareté d'un article frais : vues mensuelles ≥ 150 000 légendaire, ≥ 20 000 épique, ≥ 3 000 rare, sinon commune.
 
-## Règles
-- 1 booster / 10 min (stock max 10), 5 cartes par booster. Rareté selon la popularité de l'article.
-- Doublons vendables (commune 5, rare 20, épique 80, légendaire 300 🪙). Départ : 200 🪙.
-- Duel : 5 questions, bonus de rapidité ; vainqueur +50 🪙, perdant +10.
-- Enchères : surenchère minimale +1, prolongation de 30 s si offre dans les 30 dernières secondes.
+## Réglages
+Tout l'équilibrage est dans `config.js` : taux de drop (`DROP`), cartes par booster (10), prix d'un booster acheté, gain à la défausse par rareté (`SELL`), points du classement, récompenses de combat et de quiz.
+
+## Fonctions
+- **Boosters** : 10 cartes, un gratuit toutes les 10 min (10 max en stock), ou achat direct pour 60 pièces. Au moins une carte rare ou mieux par booster.
+- **Collection** : filtre, tri (rareté, nom, quantité, valeur), valeur estimée, progression par rareté, prix moyen de vente de chaque carte.
+- **Défausse** : une carte à la fois ou « vendre tous les doublons » (jusqu'à une rareté donnée) contre des pièces selon la rareté.
+- **Enchères** : prix moyen affiché (10 dernières ventes de la carte), anti-snipe de 30 s.
+- **Combats** : quiz (5 questions) ou combat de cartes (équipe de 3, ATK contre DEF).
+- **Échanges** et **classement**.
 
 Contenu des cartes : Wikipédia, licence CC BY-SA.
