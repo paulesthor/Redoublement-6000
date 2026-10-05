@@ -27,13 +27,14 @@ Dans le tableau de bord Cloudflare : Workers & Pages → `wikimasters` → Setti
 branche `claude/wikimasters-clone`, dossier racine `cloudflare`, commande de déploiement `npx wrangler deploy`.
 Chaque `git push` sur cette branche redéploie alors le site tout seul. Après une migration de base (fichier `migrations-*.sql`), applique-la une fois sur D1.
 
-## Remplacer le catalogue de démonstration (40 cartes) par le vrai
+## Catalogue
+`public/catalog/` contient **le catalogue complet de fr.wikipedia (2 755 882 articles, 276 fichiers, ~95 Mo)** classé par consultations de septembre 2026 : rareté, rang et titre de chaque page. Pour le régénérer (autre mois, ou `--keep=300000` pour un catalogue plus léger) :
 ```bash
-cd ../wikimasters && npm install && npm run seed        # catalogue complet (voir son README), ou: npm run seed -- --keep=300000
+cd ../wikimasters && npm install && npm run seed        # lit les exports officiels de Wikipédia (≈ 20 min), voir son README
 cd ../cloudflare && npm run catalog                     # écrit public/catalog/*.json
-npm run deploy
+git add -A && git commit && git push                    # le déploiement automatique republie le site
 ```
-Compte ~280 fichiers pour 2,7 M de pages (limite gratuite : 20 000 fichiers).
+Limite gratuite de Cloudflare : 20 000 fichiers par déploiement (on en utilise ~300).
 
 ## Tester en local
 ```bash
