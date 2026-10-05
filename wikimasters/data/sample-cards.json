@@ -1,0 +1,202 @@
+[
+ {
+  "title": "Paris",
+  "views": 900000,
+  "extract": "Paris est la capitale de la France. Elle se situe au cœur d'un vaste bassin sédimentaire aux sols fertiles et au climat tempéré, le bassin parisien, sur une boucle de la Seine."
+ },
+ {
+  "title": "France",
+  "views": 800000,
+  "extract": "La France est un pays d'Europe de l'Ouest dont la capitale est Paris. Sa devise est Liberté, Égalité, Fraternité et sa monnaie est l'euro."
+ },
+ {
+  "title": "Napoléon Ier",
+  "views": 700000,
+  "extract": "Napoléon Bonaparte est un militaire et homme d'État français, né à Ajaccio, premier empereur des Français de 1804 à 1814 puis en 1815."
+ },
+ {
+  "title": "Albert Einstein",
+  "views": 650000,
+  "extract": "Albert Einstein est un physicien théoricien d'origine allemande, connu pour avoir élaboré la théorie de la relativité restreinte puis générale."
+ },
+ {
+  "title": "Lune",
+  "views": 600000,
+  "extract": "La Lune est l'unique satellite naturel de la Terre. Elle est le cinquième plus grand satellite du Système solaire."
+ },
+ {
+  "title": "Soleil",
+  "views": 590000,
+  "extract": "Le Soleil est l'étoile du Système solaire. Dans la classification astronomique, c'est une naine jaune d'une masse d'environ 1,989 × 10^30 kg."
+ },
+ {
+  "title": "Football",
+  "views": 540000,
+  "extract": "Le football est un sport collectif qui se joue avec un ballon sphérique entre deux équipes de onze joueurs. Il est pratiqué dans le monde entier."
+ },
+ {
+  "title": "Tour Eiffel",
+  "views": 520000,
+  "extract": "La tour Eiffel est une tour de fer puddlé de 330 mètres de hauteur située à Paris, à l'extrémité nord-ouest du parc du Champ-de-Mars."
+ },
+ {
+  "title": "Internet",
+  "views": 500000,
+  "extract": "Internet est le réseau informatique mondial accessible au public. Il est composé de millions de réseaux interconnectés utilisant le protocole TCP/IP."
+ },
+ {
+  "title": "Chat",
+  "views": 480000,
+  "extract": "Le chat domestique est un mammifère carnivore de la famille des félidés. Il est l'un des animaux de compagnie les plus populaires au monde."
+ },
+ {
+  "title": "Louis XIV",
+  "views": 470000,
+  "extract": "Louis XIV, dit Louis le Grand ou le Roi-Soleil, est un roi de France qui a régné de 1643 à 1715, soit soixante-douze ans."
+ },
+ {
+  "title": "Seconde Guerre mondiale",
+  "views": 460000,
+  "extract": "La Seconde Guerre mondiale est un conflit armé à l'échelle planétaire qui dura de 1939 à 1945 et opposa les Alliés à l'Axe."
+ },
+ {
+  "title": "Mozart",
+  "views": 430000,
+  "extract": "Wolfgang Amadeus Mozart est un compositeur autrichien de la période classique, né à Salzbourg en 1756 et mort à Vienne en 1791."
+ },
+ {
+  "title": "Mont Blanc",
+  "views": 410000,
+  "extract": "Le mont Blanc est le point culminant des Alpes et de l'Europe occidentale, avec une altitude de 4 805 mètres."
+ },
+ {
+  "title": "Léonard de Vinci",
+  "views": 400000,
+  "extract": "Léonard de Vinci est un peintre, inventeur et scientifique italien de la Renaissance, auteur notamment de La Joconde."
+ },
+ {
+  "title": "Océan Atlantique",
+  "views": 380000,
+  "extract": "L'océan Atlantique est le deuxième plus grand océan du monde. Il sépare l'Europe et l'Afrique de l'Amérique."
+ },
+ {
+  "title": "Mathématiques",
+  "views": 360000,
+  "extract": "Les mathématiques sont un ensemble de connaissances abstraites résultant de raisonnements logiques appliqués à des objets tels que les nombres et les figures."
+ },
+ {
+  "title": "Dinosaure",
+  "views": 340000,
+  "extract": "Les dinosaures sont un clade de reptiles apparus il y a environ 230 millions d'années et dont la plupart ont disparu il y a 66 millions d'années."
+ },
+ {
+  "title": "Cristiano Ronaldo",
+  "views": 330000,
+  "extract": "Cristiano Ronaldo est un footballeur international portugais, né à Funchal sur l'île de Madère en 1985."
+ },
+ {
+  "title": "Jeux olympiques",
+  "views": 320000,
+  "extract": "Les Jeux olympiques sont un événement sportif international réunissant des athlètes du monde entier, organisé tous les quatre ans."
+ },
+ {
+  "title": "Harry Potter",
+  "views": 300000,
+  "extract": "Harry Potter est une série littéraire de fantasy écrite par J. K. Rowling, racontant la vie d'un jeune sorcier et de ses amis."
+ },
+ {
+  "title": "Pizza",
+  "views": 280000,
+  "extract": "La pizza est une préparation culinaire originaire d'Italie, composée d'une pâte à pain garnie de tomate, de fromage et d'autres ingrédients."
+ },
+ {
+  "title": "Tigre",
+  "views": 260000,
+  "extract": "Le tigre est un mammifère carnivore de la famille des félidés, reconnaissable à son pelage orangé rayé de noir. C'est le plus grand félin vivant."
+ },
+ {
+  "title": "Vincent van Gogh",
+  "views": 250000,
+  "extract": "Vincent van Gogh est un peintre néerlandais post-impressionniste, auteur de La Nuit étoilée et des Tournesols."
+ },
+ {
+  "title": "Photosynthèse",
+  "views": 230000,
+  "extract": "La photosynthèse est le processus bioénergétique qui permet aux plantes de synthétiser de la matière organique à partir de lumière, d'eau et de dioxyde de carbone."
+ },
+ {
+  "title": "Révolution française",
+  "views": 220000,
+  "extract": "La Révolution française est une période de bouleversements sociaux et politiques de grande envergure en France, débutée en 1789."
+ },
+ {
+  "title": "Jeu vidéo",
+  "views": 210000,
+  "extract": "Un jeu vidéo est un jeu qui se pratique sur un écran à l'aide d'un dispositif informatique : ordinateur, console ou téléphone mobile."
+ },
+ {
+  "title": "Chocolat",
+  "views": 190000,
+  "extract": "Le chocolat est un aliment fabriqué à partir de fèves de cacaoyer fermentées, torréfiées et broyées, généralement mélangées à du sucre."
+ },
+ {
+  "title": "Pyramide de Khéops",
+  "views": 180000,
+  "extract": "La pyramide de Khéops, ou Grande Pyramide de Gizeh, est la plus grande des trois pyramides du plateau de Gizeh en Égypte."
+ },
+ {
+  "title": "Piano",
+  "views": 160000,
+  "extract": "Le piano est un instrument de musique à cordes frappées et à clavier, inventé au début du XVIIIe siècle par Bartolomeo Cristofori."
+ },
+ {
+  "title": "Éléphant",
+  "views": 150000,
+  "extract": "Les éléphants sont de grands mammifères herbivores terrestres, caractérisés par leur trompe, leurs défenses et leurs grandes oreilles."
+ },
+ {
+  "title": "Marie Curie",
+  "views": 140000,
+  "extract": "Marie Curie est une physicienne et chimiste polonaise naturalisée française, pionnière dans l'étude de la radioactivité et double lauréate du prix Nobel."
+ },
+ {
+  "title": "Volcan",
+  "views": 120000,
+  "extract": "Un volcan est une structure géologique par laquelle remontent des matériaux en fusion, appelés magma, provenant du manteau terrestre."
+ },
+ {
+  "title": "Tour de France",
+  "views": 110000,
+  "extract": "Le Tour de France est une compétition cycliste par étapes, organisée chaque année en juillet et qui se termine traditionnellement à Paris."
+ },
+ {
+  "title": "Baguette de pain",
+  "views": 90000,
+  "extract": "La baguette est un pain de forme allongée, d'environ 65 centimètres de long, emblématique de la gastronomie française."
+ },
+ {
+  "title": "Abeille",
+  "views": 70000,
+  "extract": "Les abeilles sont des insectes hyménoptères volants qui se nourrissent de nectar et de pollen et jouent un rôle essentiel dans la pollinisation."
+ },
+ {
+  "title": "Saturne",
+  "views": 50000,
+  "extract": "Saturne est la sixième planète du Système solaire, une géante gazeuse connue pour ses anneaux spectaculaires."
+ },
+ {
+  "title": "Ukulélé",
+  "views": 30000,
+  "extract": "L'ukulélé est un petit instrument de musique à cordes pincées de la famille des guitares, originaire d'Hawaï."
+ },
+ {
+  "title": "Axolotl",
+  "views": 20000,
+  "extract": "L'axolotl est une salamandre mexicaine qui conserve ses branchies externes toute sa vie et possède une remarquable capacité de régénération."
+ },
+ {
+  "title": "Pangolin",
+  "views": 10000,
+  "extract": "Les pangolins sont des mammifères insectivores d'Asie et d'Afrique dont le corps est recouvert d'écailles de kératine."
+ }
+]

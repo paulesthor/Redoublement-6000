@@ -1,0 +1,14 @@
+{
+  "name": "wikimasters-clone",
+  "version": "1.0.0",
+  "description": "Jeu de cartes Wikipédia pour un petit groupe d'amis (Node 22+, SQLite, WebSocket)",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "seed": "node seed.js",
+    "seed:sample": "node seed.js --sample",
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=22.5" },
+  "dependencies": { "ws": "^8.18.0" }
+}

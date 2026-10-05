@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WikiMasters privé</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="auth" class="panel center">
+  <h1>📚 WikiMasters</h1>
+  <input id="a-name" placeholder="Pseudo" autocomplete="username">
+  <input id="a-pw" type="password" placeholder="Mot de passe" autocomplete="current-password">
+  <input id="a-invite" placeholder="Code d'invitation (si demandé)">
+  <div class="row"><button id="a-login">Connexion</button><button id="a-register" class="alt">Créer un compte</button></div>
+  <p id="a-err" class="err"></p>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <b>📚 WikiMasters</b>
+    <span id="me"></span>
+    <nav>
+      <button data-tab="packs">Boosters</button><button data-tab="album">Album</button>
+      <button data-tab="duel">Duels</button><button data-tab="market">Enchères</button>
+      <button data-tab="trades">Échanges</button><button data-tab="rank">Classement</button>
+    </nav>
+  </header>
+  <main id="view"></main>
+</div>
+<div id="toast"></div>
+<div id="modal" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
