@@ -498,3 +498,5 @@ a.plink{color:var(--fg);text-decoration:underline;text-decoration-color:#ffffff5
 .skel .sk-h{height:34px;width:46%;margin-bottom:12px}.skel .sk-p{height:16px;width:70%;margin-bottom:22px}
 .skel .sk-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.skel .sk-g i{height:210px}
 @keyframes shim{to{background-position:-200% 0}}
+
+.bulk{display:flex;gap:8px;margin-bottom:14px}.bulk select{flex:1;min-width:0;font-size:14px}.bulk button{flex:none}

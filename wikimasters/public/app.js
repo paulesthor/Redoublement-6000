@@ -330,6 +330,12 @@ const views = {
     const have = {}; cards.forEach(c => { if (!c.shiny) have[c.rarity] = (have[c.rarity] || 0) + 1; });
     const worth = cards.reduce((s, c) => s + value(c) * c.qty, 0);
     const dupes = cards.reduce((s, c) => s + c.qty - 1, 0);
+    // doublons vendables « jusqu'à » chaque rareté (cumulé) : on garde toujours un exemplaire de chaque carte
+    const bulkTiers = cfg.rarities.map((r, i) => {
+      const part = cards.filter(c => RANK[c.rarity] <= i && c.qty > 1);
+      return { r, n: part.reduce((t, c) => t + c.qty - 1, 0), price: part.reduce((t, c) => t + (c.qty - 1) * sellValue(c), 0) };
+    });
+    const bulkDefault = (bulkTiers.filter((t, i) => i <= 1 && t.n).at(-1) || bulkTiers.find(t => t.n) || bulkTiers[0]).r;
     let rar = '';
     v.innerHTML = `${pageHead('Collection', `${cards.length} cartes uniques`)}
       <div class="tiles">
@@ -347,9 +353,9 @@ const views = {
         <label class="row" style="gap:8px;color:var(--mut);font-size:13px"><input type="checkbox" id="dup"> doublons</label>
         <div class="chips" id="chips"><button class="on" data-r="">Toutes</button>${cfg.rarities.map(r => `<button data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
-      <div class="row" style="margin-bottom:14px">
-        <button class="plain" data-bulk="common" ${dupes ? '' : 'disabled'}>Vendre les doublons communs</button>
-        <button class="plain" data-bulk="uncommon" ${dupes ? '' : 'disabled'}>… jusqu'aux peu communes</button></div>
+      <div class="bulk">
+        <select id="bulk-r" aria-label="Rareté maximale">${bulkTiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>Doublons jusqu'à : ${RAR[t.r]} (${t.n} carte${t.n > 1 ? 's' : ''}, +${fmt(t.price)})</option>`).join('')}</select>
+        <button class="plain" id="bulk-go">Vendre</button></div>
       <div class="grid" id="g"></div>`;
     const draw = () => {
       const f = $('#flt').value.toLowerCase(), s = $('#srt').value, d = $('#dup').checked;
@@ -377,10 +383,13 @@ const views = {
       const b = e.target.closest('button'); if (!b) return;
       rar = b.dataset.r; $('#chips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); draw();
     };
-    v.querySelectorAll('[data-bulk]').forEach(b => b.onclick = safe(async () => {
-      if (!(await ask('Vendre les doublons ?', [], { text: 'Un exemplaire de chaque carte est conservé.', ok: 'Vendre' }))) return;
-      const r = await api('/discard-dupes', { max_rarity: b.dataset.bulk }); toast(`${r.count} cartes vendues, +${r.price} pièces`); await refreshMe(); render();
-    }));
+    const bulkSync = () => { const t = bulkTiers.find(x => x.r === $('#bulk-r').value); $('#bulk-go').disabled = !t.n; return t; };
+    $('#bulk-r').onchange = bulkSync; bulkSync();
+    $('#bulk-go').onclick = safe(async () => {
+      const t = bulkSync(); if (!t.n) return;
+      if (!(await ask('Vendre les doublons ?', [], { text: `${t.n} carte${t.n > 1 ? 's' : ''} jusqu'à « ${RAR[t.r]} » pour ${fmt(t.price)} pièces. Un exemplaire de chaque carte est conservé.`, ok: 'Vendre' }))) return;
+      const r = await api('/discard-dupes', { max_rarity: t.r }); toast(`${r.count} cartes vendues, +${r.price} pièces`); await refreshMe(); render();
+    });
     draw();
     // photos manquantes : on retente en arrière-plan (Wikipédia, puis Wikidata) et on complète les cartes sans recharger la page
     const need = cards.filter(c => !c.image && c.enriched < 2).slice(0, 40);
