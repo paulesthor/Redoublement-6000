@@ -9,7 +9,7 @@ const live = require('./live');
 const CFG = require('./config');
 
 const PORT = +process.env.PORT || 3000;
-const FRESH_RATIO = +(process.env.FRESH_RATIO ?? 0.5); // part des cartes d'un booster tirées parmi les articles "frais"
+const FRESH_RATIO = +(process.env.FRESH_RATIO ?? 0.9); // part des tirages faits parmi des articles Wikipédia aléatoires (le reste : stock en base)
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS } = CFG;
 const WEIGHTS = CFG.DROP;
 const RANK = { common: 0, rare: 1, epic: 2, legendary: 3 };
@@ -53,8 +53,8 @@ function loadPool() {
   for (const r of Object.keys(WEIGHTS)) cardsByRarity[r] = all('SELECT id FROM cards WHERE rarity=?', r).map(x => x.id);
 }
 live.setOnNew((id, rarity) => { if (!cardsByRarity[rarity].includes(id)) cardsByRarity[rarity].push(id); });
-function drawRarity(only) {
-  const avail = Object.keys(WEIGHTS).filter(r => cardsByRarity[r].length && (!only || only.includes(r)));
+function drawRarity(only, needPool = true) {
+  const avail = Object.keys(WEIGHTS).filter(r => (!needPool || cardsByRarity[r].length) && (!only || only.includes(r)));
   if (!avail.length) return null;
   let roll = Math.random() * avail.reduce((s, r) => s + WEIGHTS[r], 0);
   for (const r of avail) { if ((roll -= WEIGHTS[r]) < 0) return r; }
@@ -62,10 +62,14 @@ function drawRarity(only) {
 }
 const pick = r => cardsByRarity[r][Math.floor(Math.random() * cardsByRarity[r].length)];
 function drawCard() {
-  if (Math.random() < FRESH_RATIO) { const f = live.takeFresh(); if (f) return f; }
-  const r = drawRarity();
-  if (!r) bad('Aucune carte en base : lance `npm run seed`', 500);
-  return pick(r);
+  const r = drawRarity(null, false); // rareté tirée au sort, qu'il y ait déjà des cartes en base ou non
+  // tirage uniforme parmi tout Wikipédia (réserve d'articles aléatoires), repli sur le stock en base
+  if (Math.random() < FRESH_RATIO) { const f = live.takeFresh(r); if (f) return f; }
+  if (cardsByRarity[r].length) return pick(r);
+  const alt = drawRarity();
+  if (alt) return pick(alt);
+  for (const x of Object.keys(WEIGHTS)) { const f = live.takeFresh(x); if (f) return f; }
+  bad('Aucune carte disponible : lance `npm run seed` ou patiente quelques secondes', 503);
 }
 /** Tire un booster complet ; garantit une carte rare ou mieux si activé. */
 function drawPack() {

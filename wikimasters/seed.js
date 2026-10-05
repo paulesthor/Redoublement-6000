@@ -2,6 +2,7 @@
 // Remplit la table `cards`.
 //   node seed.js            -> récupère les articles les plus vus de fr.wikipedia (nécessite Internet)
 //   node seed.js --sample   -> charge data/sample-cards.json (hors-ligne, pour tester)
+//   node seed.js --random=3000 -> tire N articles UNIFORMÉMENT au hasard (variété maximale : exoplanètes, acteurs, communes…)
 //   node seed.js --all     -> parcourt TOUTES les pages de fr.wikipedia (reprise automatique si interrompu)
 //   options: --days=30 --count=2000 --limit=200000 (arrêt après N pages) --rps=5 (requêtes/s)
 //   WIKI_API=https://fr.wikipedia.org/w/api.php (changeable)
@@ -138,7 +139,18 @@ async function crawlAll() {
   rerank();
 }
 
+async function randomSeed(n) {
+  const { fetchBatch } = require('./live');
+  let done = 0;
+  while (done < n) {
+    try { done += (await fetchBatch()).length; } catch (e) { console.error('\n' + e.message); await new Promise(r => setTimeout(r, 2000)); }
+    process.stdout.write(`\r${done}/${n} articles aléatoires enregistrés`);
+  }
+  console.log();
+}
+
 (async () => {
+  if (args.random) return randomSeed(+args.random || 1000);
   if (args.all) return crawlAll();
   if (args.sample) {
     const rows = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'sample-cards.json'), 'utf8'))

@@ -22,11 +22,13 @@ Variables : `PORT`, `DB_PATH`, `INVITE_CODE` (si défini, requis pour créer un 
 - Temps réel par WebSocket (duels, enchères, notifications), pas de polling.
 - Les images sont les miniatures du CDN Wikimedia, chargées par le navigateur.
 
-## Articles « frais » (tirés à la volée)
-Un worker d'arrière-plan (`live.js`) garde une réserve d'une soixantaine d'articles aléatoires de fr.wikipedia (résumé, photo, vues du mois), enregistrés en base au fur et à mesure.
-Ouvrir un booster ne fait aucun appel réseau : ~50 % des cartes viennent de cette réserve, le reste du stock déjà en base. Si Wikipédia est injoignable, le jeu continue avec le stock local et réessaie chaque minute.
-Variables : `LIVE_FETCH=0` (désactive), `FRESH_RATIO=0.5`, `FRESH_TARGET=60`. Le jeu peut démarrer avec une base vide (sans `npm run seed`).
-Rareté d'un article frais : vues mensuelles ≥ 150 000 légendaire, ≥ 20 000 épique, ≥ 3 000 rare, sinon commune.
+## Variété des cartes
+Les cartes d'un booster sont tirées **uniformément au hasard parmi tout fr.wikipedia** (exoplanète, acteur du début du XXe siècle, commune, plante…), comme sur WikiMasters.
+- La rareté d'une carte dépend des vues mensuelles de l'article : ≥ 150 000 légendaire, ≥ 20 000 épique, ≥ 3 000 rare, sinon commune (seuils dans `cardutil.js`). Presque tous les articles au hasard sont donc communs ; les épiques/légendaires viennent surtout du stock des articles populaires en base (`npm run seed`).
+- Un worker d'arrière-plan (`live.js`) garde des files d'articles aléatoires prêtes par rareté : ouvrir un booster ne fait aucun appel réseau.
+- `npm run seed -- --random=3000` pré-remplit la base avec 3000 articles aléatoires (≈ 10 min). Le jeu démarre aussi avec une base vide.
+- Si Wikipédia est injoignable, le jeu continue avec le stock en base et réessaie chaque minute.
+Variables : `LIVE_FETCH=0` (désactive), `FRESH_RATIO=0.9` (part des tirages pris dans la réserve aléatoire), `FRESH_TARGET=40`.
 
 ## Réglages
 Tout l'équilibrage est dans `config.js` : taux de drop (`DROP`), cartes par booster (10), prix d'un booster acheté, gain à la défausse par rareté (`SELL`), points du classement, récompenses de combat et de quiz.
