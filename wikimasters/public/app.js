@@ -282,16 +282,13 @@ const MARKET_SEG = [['market', 'Enchères'], ['trades', 'Échanges']];
 const views = {
   async packs(v) {
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
-    v.innerHTML = `<div class="hero"><h1>Ouvrir un paquet</h1>
+    v.innerHTML = `<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${packSvg('full')}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button>
       <div class="stock"><div class="pips">${Array.from({ length: cfg.packMax }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
         <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> / ${cfg.packMax} paquets disponibles${me.packs < cfg.packMax ? ` · prochain dans <b id="cd"></b>` : ''}`}</p></div>
       <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button></div>
-      <details class="panel rates"><summary>Taux de drop</summary>
-        <div class="ratelist">${cfg.rarities.map(r => `<div><span class="rar ${r}">${RAR[r]}</span><b>${pct(d[r])} %</b></div>`).join('')}</div>
-        <p class="mut" style="margin:12px 0 0;font-size:13px">Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. Catalogue : ${fmt(cfg.catalog)} pages. Aucune garantie : tout dépend de la chance.</p></details>
       <div class="lastpack" id="lastpack" hidden><h3 class="sec">Dernier tirage</h3><div id="out" class="grid"></div></div></div>`;
     // hauteur disponible sous l'en-tête et au-dessus de la barre du bas : les espaces de l'accueil s'en déduisent en pourcentage
     const hero = v.querySelector('.hero');
@@ -326,6 +323,14 @@ const views = {
       try { await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg }); }
       finally { render(); }
     });
+    $('#rates-btn').onclick = () => {
+      const m = $('#modal'); m.hidden = false;
+      m.innerHTML = `<div><h2>Taux de drop</h2><div class="ratelist">${cfg.rarities.map(r => `<div><span class="rar ${r}">${RAR[r]}</span><b>${pct(d[r])} %</b></div>`).join('')}</div>
+        <p class="mut" style="margin:12px 0 0;font-size:13px">Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. Catalogue : ${fmt(cfg.catalog)} pages. Aucune garantie : tout dépend de la chance.</p>
+        <div class="row"><button class="plain" id="rt-close">Fermer</button></div></div>`;
+      const close = () => { m.hidden = true; m.innerHTML = ''; };
+      $('#rt-close').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    };
     $('#open').onclick = openAnimated('/packs/open');
     $('#buy').onclick = openAnimated('/packs/buy');
     const t0 = Date.now(), next = me.nextPackIn;
@@ -721,7 +726,8 @@ function fitLock() {
   el.classList.remove('fit');
   el.classList.toggle('fit', !game && el.scrollHeight <= innerHeight + 1);
 }
-if ('ResizeObserver' in window) new ResizeObserver(() => fitLock()).observe(document.querySelector('#view'));
+if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => fitLock()); ro.observe(document.querySelector('#view')); ro.observe(document.querySelector('#app')); }
+document.fonts?.ready.then(() => fitLock());
 window.addEventListener('resize', fitLock); document.addEventListener('toggle', fitLock, true);
 const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
 const render = safe(async () => {
@@ -730,7 +736,7 @@ const render = safe(async () => {
   const v = $('#view'), sk = setTimeout(() => { v.innerHTML = SKELETON; }, 140);   // squelette si les données tardent
   try { await views[tab](v); } finally { clearTimeout(sk); }
   labelTables($('#view'));
-  window.scrollTo(0, 0); fitLock();
+  window.scrollTo(0, 0); fitLock(); setTimeout(fitLock, 250); setTimeout(fitLock, 1000);
 });
 async function refreshMe() {
   me = await api('/me');
