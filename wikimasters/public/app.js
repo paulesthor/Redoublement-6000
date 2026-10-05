@@ -23,15 +23,35 @@ let token = store.get(), me = null, cfg = null, tab = 'packs', ws = null, online
 let game = null; // duel de quiz ou combat en cours
 let tick, lastPack = null;
 
+// Lectures de listes : on répond tout de suite avec la dernière réponse connue (< 30 s) et on la rafraîchit en arrière-plan.
+// Si les données ont changé et que rien n'est en cours de saisie, la vue se redessine toute seule. Toute écriture vide ce cache.
+const SWR = /^\/(album|auctions|friends|leaderboard|users|trades|achievements|hits)$/;
+const gcache = new Map();
+function revalidate(path) {
+  const before = gcache.get(path)?.raw;
+  return fetchJson(path).then(({ raw }) => {
+    if (before && raw !== before && path !== '/hits' && !game && $('#modal').hidden && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) render();
+  }).catch(() => {});
+}
 async function api(path, body) {
+  if (body) { gcache.clear(); return fetchJson(path, body).then(r => r.j); }
+  if (SWR.test(path)) {
+    const c = gcache.get(path);
+    if (c && Date.now() - c.t < 30000) { if (Date.now() - c.t > 2000 && !c.busy) { c.busy = true; revalidate(path).finally(() => { c.busy = false; }); } return JSON.parse(c.raw); }
+  }
+  return fetchJson(path).then(r => r.j);
+}
+async function fetchJson(path, body) {
   const r = await fetch('/api' + path, {
     method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const j = await r.json().catch(() => ({}));
+  const raw = await r.text();
+  let j = {}; try { j = JSON.parse(raw); } catch { /* réponse vide */ }
   if (r.status === 401 && token) logout();
   if (!r.ok) { const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
-  return j;
+  if (!body && SWR.test(path)) gcache.set(path, { t: Date.now(), raw });
+  return { j, raw };
 }
 function toast(msg) { const d = document.createElement('div'); d.textContent = msg; $('#toast').append(d); setTimeout(() => d.remove(), 3500); }
 const safe = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
@@ -68,7 +88,7 @@ function onWs(m) {
   else if (m.t === 'error') toast(m.msg);
   else if (m.t === 'friend') onFriend(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
-  else if (m.t === 'refresh') { if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
+  else if (m.t === 'refresh') { gcache.clear(); if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
     $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : 'duel de quiz'}.</p>
@@ -111,7 +131,7 @@ async function lotSheet(id) {
   const min = Math.max(a.start_price, a.bid + 1);
   m.hidden = false;
   m.innerHTML = `<div class="detail"><h2>${esc(a.title)}</h2>
-    <p class="mut"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span> · par <a href="#" class="plink" data-pl="${a.seller_id}">${esc(a.seller)}</a> · prix moyen ${a.avg_price ?? '—'}</p>
+    <p class="mut"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span> · par ${a.seller_bot ? esc(a.seller) : `<a href="#" class="plink" data-pl="${a.seller_id}">${esc(a.seller)}</a>`} · prix moyen ${a.avg_price ?? '—'}</p>
     <div class="lotbox"><div><small>${a.bid ? 'Meilleure offre' : 'Mise de départ'}</small><b>${ico('coin')}${a.bid || a.start_price}</b>${a.bid ? `<small>${esc(a.bidder)}${a.leading ? ' (toi)' : ''}</small>` : ''}</div>
       <div class="time" data-end="${a.ends_at}">${ico('clock')}<span></span></div></div>
     ${a.mine ? '<p class="mut">C\'est ta vente.</p>' : `<label class="fld">Ton offre (minimum ${min})<input id="bid-v" type="number" inputmode="numeric" value="${min}"></label>
@@ -169,12 +189,24 @@ const TOPICS = [
 const topic = c => { const t = (c.extract || '').slice(0, 240); for (const [k, re] of TOPICS) if (re.test(t)) return k; return 'spark'; };
 const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '' } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
-  <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
+  <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
   <div class="tags">${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
   ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`);
+
+/** Images de fond chargées seulement quand la carte approche de l'écran (album de centaines de cartes). */
+let lazyObs = null;
+function lazyImages(root) {
+  const els = root.querySelectorAll('[data-bg]');
+  if (!('IntersectionObserver' in window)) { els.forEach(e => { e.style.backgroundImage = `url('${e.dataset.bg}')`; }); return; }
+  lazyObs ??= new IntersectionObserver(es => es.forEach(en => {
+    if (!en.isIntersecting) return;
+    const e = en.target; lazyObs.unobserve(e); e.style.backgroundImage = `url('${e.dataset.bg}')`; e.removeAttribute('data-bg');
+  }), { rootMargin: '600px 0px' });
+  els.forEach(e => lazyObs.observe(e));
+}
 
 /** Fiche détaillée d'une carte (toucher une carte). */
 function showCard(id) {
@@ -317,9 +349,11 @@ const views = {
       list.sort({ rar: (a, b) => RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, name: (a, b) => a.title.localeCompare(b.title, 'fr'),
         qty: (a, b) => b.qty - a.qty, val: (a, b) => value(b) - value(a) }[s]);
       $('#g').innerHTML = list.map(c => cardHtml(c, {
+        lazy: true,
         extra: `<div class="meta">Défausse <b>${sellValue(c)}</b> · Marché <b>${c.avg_price ?? '—'}</b></div>`,
         acts: `<button class="plain" data-d="${c.id}">Défausser</button><button class="plain" data-a="${c.id}">Vendre</button>`,
       })).join('') || '<div class="empty" style="grid-column:1/-1">Aucune carte ne correspond.</div>';
+      lazyImages($('#g'));
       $('#g').querySelectorAll('[data-d]').forEach(b => b.onclick = safe(async () => {
         const c = cards.find(x => x.id == b.dataset.d);
         if (c.qty === 1 && !(await ask('Défausser ?', [], { text: `Ta dernière « ${c.title} » pour ${sellValue(c)} pièces.`, ok: 'Défausser' }))) return;
@@ -653,10 +687,12 @@ function labelTables(root) {
     t.querySelectorAll('tr').forEach(tr => [...tr.children].forEach((td, i) => { if (td.tagName === 'TD' && heads[i]) td.dataset.label = heads[i]; }));
   });
 }
+const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
 const render = safe(async () => {
   clearInterval(tick); markTab();
   if (tab === 'duel' && game) return renderGame();
-  await views[tab]($('#view'));
+  const v = $('#view'), sk = setTimeout(() => { v.innerHTML = SKELETON; }, 140);   // squelette si les données tardent
+  try { await views[tab](v); } finally { clearTimeout(sk); }
   labelTables($('#view'));
   window.scrollTo(0, 0);
 });
@@ -711,11 +747,9 @@ async function start() {
   let ok = false;
   for (let essai = 0; essai < 8 && !ok; essai++) {  // réseau absent ou serveur qui démarre : on réessaie sans déconnecter
     try {
-      cfg = await api('/config');
-      RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
-      await refreshMe();
-      showHits((await api('/hits')).hits);
-      ACH_NAMES = (await api('/achievements')).achievements.map(a => ({ k: a.k, t: a.t }));
+      const [c, , h] = await Promise.all([api('/config'), refreshMe(), api('/hits')]);   // trois appels en parallèle au démarrage
+      cfg = c; RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
+      showHits(h.hits); ACH_NAMES = cfg.ach || [];
       ok = true;
     } catch (e) {
       if (e.status === 401) return;               // jeton refusé : logout() a déjà ramené à la connexion
@@ -725,6 +759,7 @@ async function start() {
   }
   $('#boot').hidden = true;
   if (!ok) { $('#auth').hidden = false; $('#a-err').textContent = 'Serveur injoignable. Réessaie dans un instant (tu restes connecté).'; return; } $('#app').hidden = false; connect(); render();
+  setTimeout(() => ['/album', '/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500);   // pré-chargement des onglets suivants
   let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
   if (pending) addByCode(pending);
 }
@@ -732,3 +767,5 @@ const urlCode = new URLSearchParams(location.search).get('friend');
 if (urlCode) { try { localStorage.setItem('wm_friend_code', urlCode); } catch { /* stockage indisponible */ } history.replaceState(null, '', location.pathname); }
 if (!token && urlCode) $('#a-friend').hidden = false;
 if (token) start();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

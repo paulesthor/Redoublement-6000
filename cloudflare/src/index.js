@@ -40,19 +40,27 @@ function pickRarity(ranges, min = 0) {
 }
 async function drawCards(env, origin, n) {
   const { ranges } = await getMeta(env, origin);
-  // pages distinctes dans un même booster (re-tirage si doublon, borné pour les très petits catalogues)
+  const rarities = Array.from({ length: n }, () => pickRarity(ranges, 0));
+  // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
+  let claimed = rarities.map(() => null);
+  try {
+    const res = await env.DB.batch(rarities.map(r => st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? ORDER BY RANDOM() LIMIT 1) RETURNING id', r)));
+    claimed = res.map(x => x.results?.[0]?.id ?? null);
+  } catch { /* table absente ou erreur : tirage direct */ }
+  const ready = claimed.filter(Boolean);
+  const rows = new Map(ready.length ? (await all(env, `SELECT id, title, views FROM cards WHERE id IN (${placeholders(ready.length)})`, ...ready)).map(r => [r.id, r]) : []);
   const taken = new Set();
-  const draw = min => {
+  const picks = rarities.map((rarity, i) => {
+    if (claimed[i] && rows.has(claimed[i])) return { rarity, ready: rows.get(claimed[i]) };
+    const [a, b] = ranges[rarity];
     for (let tries = 0; ; tries++) {
-      const rarity = pickRarity(ranges, min), [a, b] = ranges[rarity];
       const rank = a + Math.floor(Math.random() * (b - a));
       if (!taken.has(rank) || tries >= 30) { taken.add(rank); return { rarity, rank }; }
     }
-  };
-  const picks = Array.from({ length: n }, () => draw(0));
-  const entries = await Promise.all(picks.map(p => entryAt(env, origin, p.rank)));
+  });
+  const entries = await Promise.all(picks.map(p => p.ready ? null : entryAt(env, origin, p.rank)));
   return picks.map((p, i) => {
-    const [page, title, views] = entries[i];
+    const [page, title, views] = p.ready ? [p.ready.id, p.ready.title, p.ready.views] : entries[i];
     const shiny = p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE;
     return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...stats(title, p.rarity, shiny) };
   });
@@ -209,6 +217,7 @@ async function finishPack(env, ctx, user, drawn) {
   await env.DB.batch([
     ...drawn.map(c => insertCard(env, c)),
     ...drawn.map(c => addCard(env, user.id, c.id)),
+    ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', c.id - SHINY_OFFSET, c.id)),
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
   ]);
   ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {}));
@@ -225,6 +234,116 @@ async function finishPack(env, ctx, user, drawn) {
   return { cards };
 }
 
+
+// ---------- réserve de cartes prêtes (texte + photo déjà récupérés) ----------
+// Un tirage prend ses cartes dans cette réserve quand elle en a : plus aucune attente de Wikipédia à l'ouverture.
+// La tâche planifiée la remplit en continu avec des pages tirées au hasard (même loi que le tirage direct).
+const RESERVE_TARGET = { common: 40, uncommon: 20, rare: 20, super: 12, ultra: 8, legendary: 6 };
+const ASSET_ORIGIN = 'https://assets.local';
+async function refillReserve(env, max = 20) {
+  const { ranges } = await getMeta(env, ASSET_ORIGIN);
+  const have = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n FROM reserve GROUP BY rarity')).map(r => [r.rarity, r.n]));
+  const want = [];
+  for (let k = 0; k < max; k++) {                                   // on comble d'abord les raretés les plus dégarnies (en proportion)
+    const r = RARITIES.map(x => [x, (RESERVE_TARGET[x] - (have[x] || 0)) / RESERVE_TARGET[x]]).sort((a, b) => b[1] - a[1])[0];
+    if (r[1] <= 0) break;
+    want.push(r[0]); have[r[0]] = (have[r[0]] || 0) + 1;
+  }
+  if (!want.length) return 0;
+  const picks = want.map(rarity => ({ rarity, rank: ranges[rarity][0] + Math.floor(Math.random() * (ranges[rarity][1] - ranges[rarity][0])) }));
+  const entries = await Promise.all(picks.map(p => entryAt(env, ASSET_ORIGIN, p.rank)));
+  const items = picks.map((p, i) => ({ ...p, id: entries[i][0], title: entries[i][1], views: entries[i][2] }));
+  await env.DB.batch(items.map(c => insertCard(env, { ...c, shiny: 0, ...stats(c.title, c.rarity, false) })));
+  const ids = items.map(c => c.id);
+  await enrich(env, ids);
+  const ok = new Set((await all(env, `SELECT id FROM cards WHERE extract != '' AND id IN (${placeholders(ids.length)})`, ...ids)).map(r => r.id));
+  const keep = items.filter(c => ok.has(c.id));
+  if (keep.length) await env.DB.batch(keep.map(c => st(env, 'INSERT OR IGNORE INTO reserve (id, rarity, rank) VALUES (?,?,?)', c.id, c.rarity, c.rank)));
+  return keep.length;
+}
+
+// ---------- joueurs simulés : ils mettent des cartes en vente et enchérissent ----------
+const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan', 'Zoé_Wiki', 'Hugo_Collect', 'Manon', 'Théo_Lyon', 'Sarah.M', 'Ethan_FR', 'Jade_Cartes'];
+const BOT_PRICE = { common: [2, 6], uncommon: [5, 14], rare: [12, 36], super: [40, 110], ultra: [120, 320], legendary: [350, 900] };
+const BOT_MIX = [['common', .34], ['uncommon', .28], ['rare', .22], ['super', .10], ['ultra', .045], ['legendary', .015]];
+const BOT_MINUTES = [[60, .3], [360, .3], [720, .2], [1440, .2]];
+const BOT_LISTINGS = 10;
+const pickW = list => { let r = Math.random() * list.reduce((t, x) => t + x[1], 0); for (const [v, w] of list) if ((r -= w) < 0) return v; return list.at(-1)[0]; };
+const rand = (a, b) => a + Math.random() * (b - a);
+let lastBot = 0;
+async function botTick(env, ctx, force = false) {
+  if (!force && now() - lastBot < 40000) return;
+  lastBot = now();
+  let bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
+  if (!bots.length) {
+    await env.DB.batch(BOT_NAMES.map(n => st(env, "INSERT OR IGNORE INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, is_bot) VALUES (?,?,?,?,?,?,?,1)", n, 'bot', '!', 1e9, 0, now(), now())));
+    bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
+  }
+  if (!bots.length) return;
+  const botName = new Map(bots.map(b => [b.id, b.name]));
+  const open = await all(env, `SELECT a.id, a.seller_id, a.bid, a.bidder_id, a.start_price, a.ends_at, a.card_id, c.rarity, c.title, ${AVG} avg_price,
+    (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) nb
+    FROM auctions a JOIN cards c ON c.id = a.card_id WHERE a.status = 'open' AND a.ends_at > ?`, now());
+  const botOpen = open.filter(a => botName.has(a.seller_id));
+
+  // 1) nouvelles ventes pour garder un marché vivant
+  const missing = Math.min(3, BOT_LISTINGS - botOpen.length);
+  for (let k = 0; k < missing; k++) {
+    const rarity = pickW(BOT_MIX);
+    let cardId = null;
+    const got = await run(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? ORDER BY RANDOM() LIMIT 1) RETURNING id', rarity).catch(() => null);
+    cardId = got?.results?.[0]?.id ?? null;
+    if (!cardId) {                                                    // réserve vide : tirage direct (la description arrive en arrière-plan)
+      const { ranges } = await getMeta(env, ASSET_ORIGIN);
+      const rank = ranges[rarity][0] + Math.floor(Math.random() * (ranges[rarity][1] - ranges[rarity][0]));
+      const e = await entryAt(env, ASSET_ORIGIN, rank);
+      await insertCard(env, { id: e[0], title: e[1], views: e[2], rarity, shiny: 0, ...stats(e[1], rarity, false) }).run();
+      ctx?.waitUntil(enrich(env, [e[0]]).catch(() => {}));
+      cardId = e[0];
+    }
+    const avg = (await one(env, `SELECT ${AVG.replace(/c\.id/g, '?')} p`, cardId))?.p;
+    const [lo, hi] = BOT_PRICE[rarity];
+    const price = Math.max(1, Math.round(avg ? avg * rand(.8, 1.3) : rand(lo, hi)));
+    const minutes = pickW(BOT_MINUTES);
+    const seller = bots[Math.floor(Math.random() * bots.length)];
+    await run(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', seller.id, cardId, price, now() + Math.round(minutes * 60000 * rand(.2, 1)));
+  }
+
+  // 2) enchères des joueurs simulés (au plus 3 par passage)
+  let bidsLeft = 3;
+  for (const a of open.sort(() => Math.random() - .5)) {
+    if (bidsLeft <= 0) break;
+    const humanSeller = !botName.has(a.seller_id), humanLeads = a.bidder_id && !botName.has(a.bidder_id);
+    const value = a.avg_price ?? (BOT_PRICE[a.rarity][0] + BOT_PRICE[a.rarity][1]) / 2;
+    let p = 0;
+    if (humanSeller) p = a.nb === 0 ? .14 : a.nb < 3 ? .05 : 0;      // une vente de joueur reçoit vite une première offre
+    else if (humanLeads) p = a.ends_at - now() < 3 * 3600e3 ? .12 : .03; // contre-enchère sur un humain qui mène
+    else p = a.nb < 3 ? .04 : 0;                                     // les ventes entre simulés montent doucement
+    if (Math.random() >= p) continue;
+    const min = Math.max(a.start_price, a.bid + 1);
+    const amount = a.bid ? min + Math.max(0, Math.round(a.bid * rand(.03, .12))) : min;
+    if (amount > value * 1.6 + 3) continue;                          // ils ne surpayent pas
+    const bot = bots.filter(b => b.id !== a.seller_id && b.id !== a.bidder_id)[Math.floor(Math.random() * (bots.length - 1))];
+    if (!bot) continue;
+    const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at;
+    const won = await run(env, "UPDATE auctions SET bid = ?, bidder_id = ?, ends_at = ? WHERE id = ? AND bid = ? AND status = 'open'", amount, bot.id, ends, a.id, a.bid);
+    if (!won.meta.changes) continue;
+    bidsLeft--;
+    await run(env, 'INSERT INTO bids (auction_id, user_id, amount, ts) VALUES (?,?,?,?)', a.id, bot.id, amount, now());
+    if (humanLeads) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.bidder_id);   // l'humain surenchéri est remboursé
+    const others = new Set((await all(env, 'SELECT DISTINCT user_id FROM bids WHERE auction_id = ?', a.id)).map(r => r.user_id));
+    others.add(a.seller_id);
+    for (const uid of others) {
+      if (botName.has(uid) || uid === bot.id) continue;
+      const msg = uid === a.seller_id ? `${bot.name} enchérit ${amount} pièces sur ta « ${a.title} »`
+        : uid === a.bidder_id ? `Tu as été surenchéri sur « ${a.title} » : ${amount} pièces par ${bot.name}`
+        : `${bot.name} a enchéri ${amount} pièces sur « ${a.title} »`;
+      notify(env, ctx, { t: 'notify', msg }, uid);
+    }
+    notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  }
+}
+
 // ---------- enchères : règlement à la demande (pas de minuteur côté Workers) ----------
 async function settleAuctions(env, ctx) {
   const due = await all(env, "SELECT * FROM auctions WHERE status = 'open' AND ends_at <= ? LIMIT 5", now());
@@ -232,15 +351,17 @@ async function settleAuctions(env, ctx) {
     const claimed = await run(env, "UPDATE auctions SET status = ? WHERE id = ? AND status = 'open'", a.bidder_id ? 'sold' : 'expired', a.id);
     if (!claimed.meta.changes) continue; // déjà réglée par une autre requête
     const card = await one(env, 'SELECT title FROM cards WHERE id = ?', a.card_id);
+    const flags = new Map((await all(env, 'SELECT id, is_bot FROM users WHERE id IN (?, ?)', a.seller_id, a.bidder_id ?? a.seller_id)).map(r => [r.id, r.is_bot]));
+    const sellerBot = !!flags.get(a.seller_id), bidderBot = !!(a.bidder_id && flags.get(a.bidder_id)); // les joueurs simulés ne gardent pas de cartes
     if (a.bidder_id) {
       await env.DB.batch([
-        st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.seller_id),
-        addCard(env, a.bidder_id, a.card_id),
+        ...(sellerBot ? [] : [st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.seller_id)]),
+        ...(bidderBot ? [] : [addCard(env, a.bidder_id, a.card_id)]),
         st(env, 'INSERT INTO sales (card_id, price, ts) VALUES (?,?,?)', a.card_id, a.bid, now()),
       ]);
-      notify(env, ctx, { t: 'notify', msg: `Tu as remporté « ${card.title} » pour ${a.bid} pièces` }, a.bidder_id);
-      notify(env, ctx, { t: 'notify', msg: `« ${card.title} » vendu ${a.bid} pièces` }, a.seller_id);
-    } else {
+      if (!bidderBot) notify(env, ctx, { t: 'notify', msg: `Tu as remporté « ${card.title} » pour ${a.bid} pièces` }, a.bidder_id);
+      if (!sellerBot) notify(env, ctx, { t: 'notify', msg: `« ${card.title} » vendu ${a.bid} pièces` }, a.seller_id);
+    } else if (!sellerBot) {
       await addCard(env, a.seller_id, a.card_id).run();
       notify(env, ctx, { t: 'notify', msg: `Enchère sans offre : « ${card.title} » t'est rendue.` }, a.seller_id);
     }
@@ -285,7 +406,7 @@ route('GET', '/api/achievements', async ({ env, ctx, user }) => {
 });
 route('GET', '/api/profile/:id', async ({ env, user, params }) => {
   const id = +params.id;
-  const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs FROM users WHERE id = ?', id);
+  const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs FROM users WHERE id = ? AND is_bot = 0', id);
   if (!u) bad('Joueur introuvable', 404);
   const inv = await all(env, 'SELECT c.rarity, c.shiny, COUNT(*) n FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? GROUP BY c.rarity, c.shiny', id);
   const score = inv.reduce((t, r) => t + (POINTS[r.rarity] || 0) * r.n, 0) + u.wins * 10;
@@ -301,7 +422,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
     rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: meta.n,
-    packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX,
+    packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, ach: ACH.map(a => ({ k: a.k, t: a.t })),
   };
 }, false);
 
@@ -373,10 +494,14 @@ route('POST', '/api/discard-dupes', async ({ env, user, body }) => {
 });
 
 route('GET', '/api/users', async ({ env, user }) => {
-  const online = new Set((await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids);
-  return { users: (await all(env, 'SELECT id, name FROM users ORDER BY name')).map(u => ({ ...u, online: online.has(u.id), me: u.id === user.id })) };
+  const [onlineRes, rows] = await Promise.all([
+    env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online').then(r => r.json()).catch(() => ({ ids: [] })),
+    all(env, 'SELECT id, name FROM users WHERE is_bot = 0 ORDER BY name'),
+  ]);
+  const online = new Set(onlineRes.ids);
+  return { users: rows.map(u => ({ ...u, online: online.has(u.id), me: u.id === user.id })) };
 });
-route('GET', '/api/catalog/search', async ({ env, origin, user, query }) => {
+route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) => {
   const q = (query.get('q') || '').trim().slice(0, 80);
   if (q.length < 2) return { cards: [] };
   const params = new URLSearchParams({
@@ -384,8 +509,15 @@ route('GET', '/api/catalog/search', async ({ env, origin, user, query }) => {
     prop: 'pageimages|extracts', piprop: 'thumbnail', pithumbsize: '300', pilimit: 'max', pilicense: 'any',
     exintro: '1', explaintext: '1', exchars: '220', exlimit: 'max',
   });
+  // les recherches déjà faites (par n'importe quel joueur) sont gardées 24 h dans le cache Cloudflare
+  const ck = new Request('https://cache.local/wpsearch?q=' + encodeURIComponent(q.toLowerCase()));
   let pages = null;
-  try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) pages = (await r.json()).query?.pages; } catch { /* hors-ligne */ }
+  const hit = await caches.default.match(ck).catch(() => null);
+  if (hit) pages = await hit.json();
+  else {
+    try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) pages = (await r.json()).query?.pages; } catch { /* hors-ligne */ }
+    if (pages) ctx.waitUntil(caches.default.put(ck, new Response(JSON.stringify(pages), { headers: { 'Cache-Control': 'max-age=86400' } })).catch(() => {}));
+  }
   if (!pages) bad('Recherche indisponible, réessaie dans un instant', 503);
   const { ranges } = await getMeta(env, origin);
   const hits = Object.values(pages).sort((a, b) => a.index - b.index);
@@ -404,12 +536,13 @@ route('GET', '/api/catalog/search', async ({ env, origin, user, query }) => {
 route('GET', '/api/leaderboard', async ({ env }) => ({
   players: await all(env, `SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
     COALESCE(SUM(${caseSql('c.rarity', POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(c.id) AS uniques
-    FROM users u LEFT JOIN inventory i ON i.user_id = u.id LEFT JOIN cards c ON c.id = i.card_id GROUP BY u.id ORDER BY score DESC LIMIT 50`),
+    FROM users u LEFT JOIN inventory i ON i.user_id = u.id LEFT JOIN cards c ON c.id = i.card_id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 }));
 
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
+  ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée
   await settleAuctions(env, ctx);
-  const rows = await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, b.name bidder,
+  const rows = await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
     c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
     (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) bids FROM auctions a JOIN cards c ON c.id = a.card_id
     JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id WHERE a.status = 'open' ORDER BY a.ends_at`);
@@ -522,17 +655,18 @@ const makeFriends = (env, a, b, unseenFor = null) => env.DB.batch([ // unseenFor
   st(env, "UPDATE friend_requests SET status = 'accepted' WHERE status = 'pending' AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))", a, b, b, a),
 ]);
 route('GET', '/api/friends', async ({ env, user }) => {
-  const online = new Set((await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids);
-  return {
-    code: user.friend_code,
-    friends: (await all(env, 'SELECT u.id, u.name, f.created, f.seen FROM friends f JOIN users u ON u.id = f.friend_id WHERE f.user_id = ? ORDER BY u.name', user.id))
-      .map(f => ({ ...f, isNew: !f.seen, online: online.has(f.id) })),
-    incoming: await all(env, "SELECT r.id, u.name, r.created FROM friend_requests r JOIN users u ON u.id = r.from_id WHERE r.to_id = ? AND r.status = 'pending' ORDER BY r.id DESC", user.id),
-    outgoing: await all(env, "SELECT r.id, u.name FROM friend_requests r JOIN users u ON u.id = r.to_id WHERE r.from_id = ? AND r.status = 'pending' ORDER BY r.id DESC", user.id),
-  };
+  // le présent et les trois listes sont lus en parallèle
+  const [onlineRes, friends, incoming, outgoing] = await Promise.all([
+    env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online').then(r => r.json()).catch(() => ({ ids: [] })),
+    all(env, 'SELECT u.id, u.name, f.created, f.seen FROM friends f JOIN users u ON u.id = f.friend_id WHERE f.user_id = ? ORDER BY u.name', user.id),
+    all(env, "SELECT r.id, u.name, r.created FROM friend_requests r JOIN users u ON u.id = r.from_id WHERE r.to_id = ? AND r.status = 'pending' ORDER BY r.id DESC", user.id),
+    all(env, "SELECT r.id, u.name FROM friend_requests r JOIN users u ON u.id = r.to_id WHERE r.from_id = ? AND r.status = 'pending' ORDER BY r.id DESC", user.id),
+  ]);
+  const online = new Set(onlineRes.ids);
+  return { code: user.friend_code, friends: friends.map(f => ({ ...f, isNew: !f.seen, online: online.has(f.id) })), incoming, outgoing };
 });
 route('POST', '/api/friends/request', async ({ env, ctx, user, body }) => {
-  const target = await one(env, 'SELECT id, name FROM users WHERE name = ?', String(body.name || '').trim());
+  const target = await one(env, 'SELECT id, name FROM users WHERE name = ? AND is_bot = 0', String(body.name || '').trim());
   if (!target) bad('Aucun joueur avec ce pseudo', 404);
   if (target.id === user.id) bad('Tu ne peux pas t’ajouter toi-même');
   if (await areFriends(env, user.id, target.id)) bad(`${target.name} est déjà dans tes amis`);
@@ -586,6 +720,12 @@ async function api(req, env, ctx, url) {
 }
 
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      await botTick(env, ctx, true).catch(e => console.error('botTick', e));
+      await refillReserve(env).catch(e => console.error('refillReserve', e));
+    })());
+  },
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     try {

@@ -15,5 +15,9 @@
   "durable_objects": {
     "bindings": [{ "name": "LOBBY", "class_name": "Lobby" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }],
+  // Tâche planifiée chaque minute : remplit la réserve de cartes prêtes et anime le marché (joueurs simulés)
+  "triggers": { "crons": ["* * * * *"] },
+  // Le Worker s'exécute près de la base D1 : beaucoup moins de latence pour les requêtes qui enchaînent plusieurs lectures
+  "placement": { "mode": "smart" }
 }

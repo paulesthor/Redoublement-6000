@@ -490,3 +490,11 @@ body.noscroll{overflow:hidden}
 .mini .mi{aspect-ratio:1;background:linear-gradient(135deg,color-mix(in srgb,var(--c) 55%,#000),var(--c)) center/cover}
 .mini span{display:block;padding:5px 6px;font-size:11px;line-height:1.25;height:2.7em;overflow:hidden}
 a.plink{color:var(--fg);text-decoration:underline;text-decoration-color:#ffffff55}
+
+/* performances : l'album ne dessine que ce qui est visible ; squelettes pendant le chargement */
+#g .card{content-visibility:auto;contain-intrinsic-size:auto 330px}
+.skel{animation:fade .2s both}
+.skel i{display:block;border-radius:12px;background:linear-gradient(90deg,#14141d 25%,#1c1c27 50%,#14141d 75%);background-size:200% 100%;animation:shim 1.3s linear infinite}
+.skel .sk-h{height:34px;width:46%;margin-bottom:12px}.skel .sk-p{height:16px;width:70%;margin-bottom:22px}
+.skel .sk-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.skel .sk-g i{height:210px}
+@keyframes shim{to{background-position:-200% 0}}

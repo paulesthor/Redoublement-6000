@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   pack_stock INTEGER NOT NULL DEFAULT 10,
   test_mode INTEGER NOT NULL DEFAULT 0,
   packs_opened INTEGER NOT NULL DEFAULT 0,
+  is_bot INTEGER NOT NULL DEFAULT 0,      -- joueurs simulés qui animent le marché
   pack_ts INTEGER NOT NULL,
   duel_wins INTEGER NOT NULL DEFAULT 0,
   duel_losses INTEGER NOT NULL DEFAULT 0,
@@ -104,3 +105,9 @@ CREATE TABLE IF NOT EXISTS achievements (
   ts INTEGER NOT NULL,
   PRIMARY KEY (user_id, key)
 );
+CREATE TABLE IF NOT EXISTS reserve (        -- cartes déjà complétées (texte + photo) tirées d'avance : les paquets s'ouvrent sans attente
+  id INTEGER PRIMARY KEY,
+  rarity TEXT NOT NULL,
+  rank INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reserve_rarity ON reserve(rarity);

@@ -1,0 +1,21 @@
+# Mise en cache : polices et icônes ne changent pas ; scripts et styles sont servis du cache puis revalidés en arrière-plan.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/*.png
+  Cache-Control: public, max-age=604800
+/favicon.ico
+  Cache-Control: public, max-age=604800
+/app.js
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+/reveal.js
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+/pack.js
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+/qrcode.js
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+/jsQR.js
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/style.css
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+/fonts.css
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
