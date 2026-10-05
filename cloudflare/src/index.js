@@ -212,10 +212,7 @@ async function finishPack(env, ctx, user, drawn) {
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
   ]);
   ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {}));
-  // description + image : on laisse jusqu'à 5 s à Wikipédia pour répondre, le reste se termine en arrière-plan
-  const work = enrich(env, ids).catch(() => {});
-  ctx.waitUntil(work);
-  await Promise.race([work, new Promise(r => setTimeout(r, 5000))]);
+  // description + image : le client les demande par vagues (/api/cards/enrich), dans l'ordre de révélation
   const rows = new Map((await cardRows(env, ids)).map(c => [c.id, c]));
   const seen = new Set();
   const cards = drawn.map(c => { const isNew = !before.has(c.id) && !seen.has(c.id); seen.add(c.id); return { ...rows.get(c.id), isNew }; })

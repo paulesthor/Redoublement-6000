@@ -54,7 +54,14 @@
     async function show(n) {
       i = n; locked = true; dx = 0;
       const c = seq[n], legend = c.rarity === 'legendary', ultra = c.rarity === 'ultra', last = n === N - 1;
+      if (c._ready) await Promise.race([c._ready, sleep(1800)]);          // photo de cette carte : on l'attend un instant, sans bloquer
       root.className = `r-${c.rarity} ${c.shiny ? 'shiny' : ''}`;
+      if (c._ready) c._ready.then(() => {                                  // la photo arrive pendant qu'on regarde la carte : on la glisse en place
+        if (i !== n) return;
+        const ph = root.querySelector('.ph.noimg'), ds = root.querySelector('.ds');
+        if (c.image && ph) { ph.classList.remove('noimg'); ph.style.backgroundImage = `url('${c.image}')`; ph.querySelectorAll('svg').forEach(x => x.remove()); }
+        if (c.extract && ds && !ds.textContent) ds.textContent = c.extract;
+      });
       root.innerHTML = `<div class="bg"></div>${legend ? '<div class="rays"></div>' : ''}
         <div class="top"><span class="count">Carte <b>${n + 1}</b> / ${N}</span><button class="plain skip">Passer</button></div>
         <div class="stage"><div class="wrap"><div class="rc">

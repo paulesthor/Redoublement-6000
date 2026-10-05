@@ -197,6 +197,25 @@ document.addEventListener('click', e => {
   showCard(card.dataset.id);
 });
 
+/**
+ * Chargement chronologique des photos : par vagues dans l'ordre de révélation (2 premières cartes, puis 3, puis le reste).
+ * Seule la première vague est attendue avant l'ouverture ; chaque carte garde une promesse `_ready` que l'écran de révélation attend un instant.
+ */
+function loadProgressive(r) {
+  const ordered = [...r.cards].sort((a, b) => RANK[a.rarity] - RANK[b.rarity] || (a.shiny | 0) - (b.shiny | 0));
+  const need = c => !c.extract || (!c.image && c.enriched < 2);
+  const waves = [ordered.slice(0, 2), ordered.slice(2, 5), ordered.slice(5)].map(list => {
+    const todo = list.filter(need);
+    const p = todo.length ? api('/cards/enrich', { ids: todo.map(c => c.id) }).then(({ cards }) => {
+      const by = new Map(cards.map(x => [x.id, x]));
+      todo.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image, enriched: x.enriched }); if (c.image) new Image().src = c.image; }); // l'image est mise en cache avant d'être affichée
+    }).catch(() => {}) : Promise.resolve();
+    list.forEach(c => { c._ready = p; });
+    return p;
+  });
+  return waves[0];
+}
+
 /** Récupère description + image des cartes d'un tirage qui n'en ont pas encore (attend au plus ~3 s). */
 async function fillMissing(r) {
   const ids = r.cards.filter(c => !c.extract || (!c.image && c.enriched < 2)).map(c => c.id);
@@ -245,7 +264,7 @@ const views = {
       // la requête part tout de suite et le paquet se déchire pendant ce temps : le chargement est masqué par l'animation
       const cardsPromise = (async () => {
         const r = await api(path, {});
-        await fillMissing(r);                       // description + image prêtes avant d'afficher la carte
+        await loadProgressive(r);                   // seules les premières cartes sont attendues, les autres arrivent pendant qu'on les regarde
         lastPack = r;
         refreshMe().catch(() => {});
         return r.cards;
