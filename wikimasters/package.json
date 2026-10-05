@@ -5,10 +5,14 @@
   "private": true,
   "main": "server.js",
   "scripts": {
-    "seed": "node seed.js",
+    "seed": "node seed.js --dump",
     "seed:sample": "node seed.js --sample",
     "start": "node server.js"
   },
-  "engines": { "node": ">=22.5" },
-  "dependencies": { "ws": "^8.18.0" }
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
 }

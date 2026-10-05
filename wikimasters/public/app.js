@@ -1,8 +1,7 @@
 'use strict';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const RAR = { common: 'Commune', rare: 'Rare', epic: 'Épique', legendary: 'Légendaire' };
-const RANK = { common: 0, rare: 1, epic: 2, legendary: 3 };
+let RAR = {}, RANK = {}; // remplis depuis /api/config (raretés, libellés)
 let token = localStorage.getItem('wm_token'), me = null, cfg = null, tab = 'packs', ws = null, online = new Set();
 let game = null; // duel de quiz ou combat en cours
 let tick, lastPack = null;
@@ -45,6 +44,7 @@ function onWs(m) {
   if (m.t === 'online') { online = new Set(m.ids); if (tab === 'duel' && !game) render(); }
   else if (m.t === 'notify' || m.t === 'info') { toast(m.msg); refreshMe(); }
   else if (m.t === 'error') toast(m.msg);
+  else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
   else if (m.t === 'refresh') { if (tab === m.what) render(); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
@@ -58,26 +58,38 @@ function onWs(m) {
 
 // ---------- composants ----------
 const sellValue = c => cfg.sell[c.rarity];
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '' } = {}) => `<div class="card ${c.rarity} ${cls}" data-id="${c.id}" title="${esc((c.extract || '').slice(0, 300))}">
-  ${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '' } = {}) => `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}" title="${esc((c.extract || '').slice(0, 300))}">
+  ${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}
   <div class="img" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}></div>
   <div class="body"><div class="t">${esc(c.title)}</div>
-    <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span> · ATK ${c.atk} / DEF ${c.def}</div>${extra}</div>
+    <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><br>ATK ${fmt(c.atk)} · DEF ${fmt(c.def)}</div>${extra}</div>
   ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
 
 // ---------- vues ----------
 const views = {
   async packs(v) {
-    const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0);
+    const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
     v.innerHTML = `<h2>Boosters</h2>
       <div class="panel row"><span>Boosters disponibles : <b>${me.packs}</b> / ${cfg.packMax}</span>
         <span class="mut" id="cd-wrap">${me.packs < cfg.packMax ? 'prochain dans <span id="cd"></span>' : ''}</span>
         <span class="right row"><button id="open" ${me.packs ? '' : 'disabled'}>Ouvrir un booster (${cfg.packSize} cartes)</button>
         <button id="buy" class="plain" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir — ${cfg.packPrice} pièces</button></span></div>
-      <div class="panel mut">Taux de drop par carte : ${Object.keys(d).map(r => `<span class="rar ${r}">${RAR[r]}</span> ${(d[r] / tot * 100).toFixed(0)} %`).join(' · ')}.
+      <div class="panel mut">Taux de drop par carte : ${cfg.rarities.map(r => `<span class="rar ${r}">${RAR[r]}</span> ${pct(d[r])} %`).join(' · ')}.
+        Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. Catalogue : ${fmt(cfg.catalog)} pages.
         ${cfg.guarantee ? 'Au moins une carte rare ou mieux par booster.' : ''}</div>
       <div id="out" class="grid"></div>`;
-    const show = r => { lastPack = r; $('#out').innerHTML = r.cards.map(c => cardHtml(c)).join(''); };
+    const show = r => {
+      lastPack = r; $('#out').innerHTML = r.cards.map(c => cardHtml(c)).join('');
+      const missing = r.cards.filter(c => !c.extract).map(c => c.id); // description/image encore à récupérer côté serveur
+      if (missing.length && !r.asked) {
+        r.asked = true;
+        api('/cards/enrich', { ids: missing }).then(({ cards }) => {
+          const by = new Map(cards.map(x => [x.id, x]));
+          r.cards.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image }); });
+          if (lastPack === r && $('#out')) show(r);
+        }).catch(() => {});
+      }
+    };
     if (lastPack) show(lastPack);
     $('#open').onclick = safe(async () => { show(await api('/packs/open', {})); await refreshMe(); render(); });
     $('#buy').onclick = safe(async () => { show(await api('/packs/buy', {})); await refreshMe(); render(); });
@@ -93,24 +105,24 @@ const views = {
   async album(v) {
     const { cards, total, rarityAvg } = await api('/album');
     const value = c => c.avg_price ?? sellValue(c);
-    const have = {}, copies = {}; cards.forEach(c => { have[c.rarity] = (have[c.rarity] || 0) + 1; copies[c.rarity] = (copies[c.rarity] || 0) + c.qty; });
+    const have = {}, copies = {}; cards.forEach(c => { if (!c.shiny) have[c.rarity] = (have[c.rarity] || 0) + 1; copies[c.rarity] = (copies[c.rarity] || 0) + c.qty; });
     const worth = cards.reduce((s, c) => s + value(c) * c.qty, 0);
     const dupes = cards.reduce((s, c) => s + c.qty - 1, 0);
     v.innerHTML = `<h2>Collection</h2>
       <div class="panel stats">
         <div><b>${cards.length}</b>cartes uniques</div><div><b>${cards.reduce((s, c) => s + c.qty, 0)}</b>exemplaires</div>
         <div><b>${dupes}</b>doublons</div><div><b>${fmt(worth)}</b>valeur estimée (pièces)</div>
-        ${Object.keys(RAR).map(r => `<div style="min-width:110px"><span class="rar ${r}">${RAR[r]}</span> ${have[r] || 0}/${total[r] ?? 0}
+        ${cfg.rarities.map(r => `<div style="min-width:110px"><span class="rar ${r}">${RAR[r]}</span> ${have[r] || 0}/${total[r] ?? 0}
           <div class="bar"><i style="width:${(have[r] || 0) / (total[r] || 1) * 100}%;background:var(--${r})"></i></div>
           <span class="mut">vente moy. ${rarityAvg[r] ? fmt(rarityAvg[r].avg) : '—'}</span></div>`).join('')}
       </div>
       <div class="row" style="margin-bottom:10px">
-        <input id="flt" placeholder="Rechercher"><select id="rar"><option value="">Toutes raretés</option>${Object.keys(RAR).map(r => `<option value="${r}">${RAR[r]}</option>`).join('')}</select>
+        <input id="flt" placeholder="Rechercher"><select id="rar"><option value="">Toutes raretés</option>${cfg.rarities.map(r => `<option value="${r}">${RAR[r]}</option>`).join('')}</select>
         <select id="srt"><option value="rar">Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
         <label><input type="checkbox" id="dup"> doublons seulement</label>
         <span class="right row">
           <button class="plain" data-bulk="common" ${dupes ? '' : 'disabled'}>Vendre les doublons communs</button>
-          <button class="plain" data-bulk="rare" ${dupes ? '' : 'disabled'}>… jusqu'aux rares</button></span></div>
+          <button class="plain" data-bulk="uncommon" ${dupes ? '' : 'disabled'}>… jusqu'aux peu communes</button></span></div>
       <div class="grid" id="g"></div>`;
     const draw = () => {
       const f = $('#flt').value.toLowerCase(), r = $('#rar').value, s = $('#srt').value, d = $('#dup').checked;
@@ -188,7 +200,7 @@ const views = {
 
   async rank(v) {
     const { players } = await api('/leaderboard');
-    v.innerHTML = `<h2>Classement</h2><p class="mut">Score = valeur des cartes uniques (commune 1, rare 5, épique 20, légendaire 50) + 10 par victoire.</p>
+    v.innerHTML = `<h2>Classement</h2><p class="mut">Score = valeur des cartes uniques (selon la rareté) + 10 par victoire.</p>
       <table><tr><th>#</th><th>Joueur</th><th class="num">Score</th><th class="num">Cartes</th><th class="num">V / D</th><th class="num">Pièces</th></tr>
       ${players.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td class="num"><b>${p.score}</b></td><td class="num">${p.uniques}</td><td class="num">${p.wins} / ${p.losses}</td><td class="num">${fmt(p.coins)}</td></tr>`).join('')}</table>`;
   },
@@ -249,6 +261,15 @@ async function renderGame() {
   }
 }
 
+// ---------- bandeau des tirages légendaires ----------
+function showHits(list) {
+  if (!list.length) return;
+  const h = list[0];
+  $('#hits-text').classList.remove('mut');
+  $('#hits-text').textContent = list.slice(0, 3).map(x => `${x.user} a obtenu ${x.title}${x.shiny ? ' (shiny)' : ''}`).join('   ·   ');
+}
+const recentHits = [];
+
 // ---------- squelette ----------
 function markTab() { document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab)); }
 const render = safe(async () => {
@@ -258,12 +279,17 @@ const render = safe(async () => {
 });
 async function refreshMe() {
   me = await api('/me');
-  $('#me').innerHTML = `<span>${esc(me.name)}</span><span><b>${fmt(me.coins)}</b> pièces</span><button class="plain" id="lo">Quitter</button>`;
+  $('#me').innerHTML = `<span>${esc(me.name)}</span><span><b>${fmt(me.coins)}</b> pièces</span><span class="mut">${me.packs} booster${me.packs > 1 ? 's' : ''}</span><button class="plain" id="lo">Quitter</button>`;
   $('#lo').onclick = logout;
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (tab !== b.dataset.tab) lastPack = null; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
 async function start() {
-  try { await refreshMe(); cfg = await api('/config'); } catch { return; }
+  try {
+    cfg = await api('/config');
+    RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
+    await refreshMe();
+    showHits((await api('/hits')).hits);
+  } catch { return; }
   $('#auth').hidden = true; $('#app').hidden = false; connect(); render();
 }
 if (token) start();

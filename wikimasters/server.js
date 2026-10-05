@@ -9,10 +9,9 @@ const live = require('./live');
 const CFG = require('./config');
 
 const PORT = +process.env.PORT || 3000;
-const FRESH_RATIO = +(process.env.FRESH_RATIO ?? 0.9); // part des tirages faits parmi des articles Wikipédia aléatoires (le reste : stock en base)
-const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS } = CFG;
-const WEIGHTS = CFG.DROP;
-const RANK = { common: 0, rare: 1, epic: 2, legendary: 3 };
+const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
+const RANK = Object.fromEntries(RARITIES.map((r, i) => [r, i]));
+const caseSql = (col, map) => `CASE ${col} ${RARITIES.map(r => `WHEN '${r}' THEN ${map[r]}`).join(' ')} END`;
 
 // ---------- utilitaires ----------
 class HttpError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
@@ -48,39 +47,26 @@ function takeCard(uid, cid) {
   if (!r.changes) bad('Tu ne possèdes pas cette carte');
   run('DELETE FROM inventory WHERE user_id=? AND card_id=? AND qty <= 0', uid, cid);
 }
-const cardsByRarity = {};
-function loadPool() {
-  for (const r of Object.keys(WEIGHTS)) cardsByRarity[r] = all('SELECT id FROM cards WHERE rarity=?', r).map(x => x.id);
+// ---- tirage : rareté pondérée (config.DROP), puis page tirée uniformément dans cette rareté ----
+function drawRarity(min = 0) {
+  const avail = RARITIES.filter(r => RANK[r] >= min && live.total(r) > 0);
+  if (!avail.length) bad('Catalogue vide : lance `npm run seed --dump` (ou `npm run seed:sample`)', 503);
+  let roll = Math.random() * avail.reduce((s, r) => s + CFG.DROP[r], 0);
+  for (const r of avail) { if ((roll -= CFG.DROP[r]) < 0) return r; }
+  return avail.at(-1);
 }
-live.setOnNew((id, rarity) => { if (!cardsByRarity[rarity].includes(id)) cardsByRarity[rarity].push(id); });
-function drawRarity(only, needPool = true) {
-  const avail = Object.keys(WEIGHTS).filter(r => (!needPool || cardsByRarity[r].length) && (!only || only.includes(r)));
-  if (!avail.length) return null;
-  let roll = Math.random() * avail.reduce((s, r) => s + WEIGHTS[r], 0);
-  for (const r of avail) { if ((roll -= WEIGHTS[r]) < 0) return r; }
-  return avail[0];
+function drawCard(min = 0) {
+  const r = drawRarity(min);
+  let id = live.take(r) ?? live.randomId(r); // réserve déjà enrichie, sinon tirage direct dans la base
+  if (id == null) bad('Catalogue vide', 503);
+  live.ensureStats(id);
+  if (r === 'legendary' && Math.random() < CFG.SHINY_CHANCE) id = live.toShiny(id);
+  return id;
 }
-const pick = r => cardsByRarity[r][Math.floor(Math.random() * cardsByRarity[r].length)];
-function drawCard() {
-  const r = drawRarity(null, false); // rareté tirée au sort, qu'il y ait déjà des cartes en base ou non
-  // tirage uniforme parmi tout Wikipédia (réserve d'articles aléatoires), repli sur le stock en base
-  if (Math.random() < FRESH_RATIO) { const f = live.takeFresh(r); if (f) return f; }
-  if (cardsByRarity[r].length) return pick(r);
-  const alt = drawRarity();
-  if (alt) return pick(alt);
-  for (const x of Object.keys(WEIGHTS)) { const f = live.takeFresh(x); if (f) return f; }
-  bad('Aucune carte disponible : lance `npm run seed` ou patiente quelques secondes', 503);
-}
-/** Tire un booster complet ; garantit une carte rare ou mieux si activé. */
+/** Tire un booster complet ; garantit une carte "rare" ou mieux si activé. */
 function drawPack() {
-  const ids = Array.from({ length: PACK_SIZE }, drawCard);
-  if (CFG.GUARANTEE_RARE) {
-    const rows = cardRows([...new Set(ids)]);
-    if (!rows.some(c => RANK[c.rarity] >= 1)) {
-      const r = drawRarity(['rare', 'epic', 'legendary']);
-      if (r) ids[ids.length - 1] = pick(r);
-    }
-  }
+  const ids = Array.from({ length: PACK_SIZE }, () => drawCard());
+  if (CFG.GUARANTEE_RARE && !cardRows([...new Set(ids)]).some(c => RANK[c.rarity] >= RANK.rare)) ids[ids.length - 1] = drawCard(RANK.rare);
   return ids;
 }
 function cardRows(ids) {
@@ -108,10 +94,9 @@ function mask(extract, title) {
   return t;
 }
 function makeQuestions() {
-  const ids = new Set(); const pool = Object.values(cardsByRarity).flat();
-  while (pool.length && ids.size < Math.min(pool.length, Q_COUNT * 4)) ids.add(pool[Math.floor(Math.random() * pool.length)]);
-  const cards = cardRows([...ids]).sort(() => Math.random() - 0.5);
-  if (cards.length < 8) bad('Pas assez de cartes en base pour un duel', 500);
+  // questions bâties sur des cartes déjà enrichies (description disponible)
+  const cards = all("SELECT id, title, extract, views FROM cards WHERE enriched = 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT ?", Q_COUNT * 4);
+  if (cards.length < 8) bad('Pas assez de cartes enrichies pour un duel : ouvre quelques boosters d’abord', 503);
   const qs = [];
   for (let i = 0; i < Q_COUNT; i++) {
     const g = cards.splice(0, 4);
@@ -281,43 +266,63 @@ function newSession(uid) {
 }
 route('GET', '/api/me', ({ user }) => publicUser(refreshPacks(user)));
 
-route('POST', '/api/packs/open', ({ user }) => {
+const hits = []; // derniers tirages légendaires (bandeau "Hits")
+function announceHits(user, cards) {
+  for (const c of cards) {
+    if (c.rarity !== 'legendary') continue;
+    const h = { user: user.name, title: c.title, shiny: !!c.shiny, ts: now() };
+    hits.unshift(h); hits.length = Math.min(hits.length, 10);
+    broadcast({ t: 'hit', ...h });
+  }
+}
+async function finishPack(user, ids, before) {
+  await live.enrichWithin(ids, 1500); // description/image : au plus 1,5 s d'attente, la réserve les a presque toujours déjà
+  const rows = new Map(cardRows([...new Set(ids)]).map(c => [c.id, c]));
+  const seen = new Set();
+  const cards = ids.map(id => { const isNew = !before.has(id) && !seen.has(id); seen.add(id); return { ...rows.get(id), isNew }; })
+    .sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || b.shiny - a.shiny);
+  announceHits(user, cards);
+  return { cards };
+}
+const ownedIds = uid => new Set(all('SELECT card_id FROM inventory WHERE user_id=?', uid).map(r => r.card_id));
+route('POST', '/api/packs/open', async ({ user }) => {
   const { ids, before } = tx(() => {
     const u = refreshPacks(one('SELECT * FROM users WHERE id=?', user.id));
     if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
     const wasFull = u.pack_stock >= PACK_MAX;
     run('UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id=?', wasFull ? 1 : 0, now(), u.id);
-    const before = new Set(all('SELECT card_id FROM inventory WHERE user_id=?', u.id).map(r => r.card_id));
+    const before = ownedIds(u.id);
     const drawn = drawPack(); drawn.forEach(c => addCard(u.id, c));
     return { ids: drawn, before };
   });
-  return packResultWith(ids, before);
+  return finishPack(user, ids, before);
 });
-route('POST', '/api/packs/buy', ({ user }) => {
+route('POST', '/api/packs/buy', async ({ user }) => {
   const { ids, before } = tx(() => {
     const paid = run('UPDATE users SET coins = coins - ? WHERE id=? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
     if (!paid.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-    const before = new Set(all('SELECT card_id FROM inventory WHERE user_id=?', user.id).map(r => r.card_id));
+    const before = ownedIds(user.id);
     const drawn = drawPack(); drawn.forEach(c => addCard(user.id, c));
     return { ids: drawn, before };
   });
-  return packResultWith(ids, before);
+  return finishPack(user, ids, before);
 });
-function packResultWith(ids, before) {
-  const rows = new Map(cardRows([...new Set(ids)]).map(c => [c.id, c]));
-  const seen = new Set();
-  return { cards: ids.map(id => { const isNew = !before.has(id) && !seen.has(id); seen.add(id); return { ...rows.get(id), isNew }; })
-    .sort((a, b) => RANK[b.rarity] - RANK[a.rarity]) };
-}
+// le client peut demander l'enrichissement de cartes affichées sans image/description
+route('POST', '/api/cards/enrich', async ({ body }) => {
+  const ids = (body.ids || []).map(Number).filter(Number.isFinite).slice(0, 40);
+  await live.enrichWithin(ids, 4000);
+  return { cards: cardRows(ids).map(c => ({ id: c.id, extract: c.extract, image: c.image, enriched: c.enriched })) };
+});
+route('GET', '/api/hits', () => ({ hits }));
 route('GET', '/api/config', () => ({
-  drop: CFG.DROP, sell: CFG.SELL, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, guarantee: CFG.GUARANTEE_RARE,
+  rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: live.catalogSize(), packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, guarantee: CFG.GUARANTEE_RARE,
 }), false);
 
 const AVG = `(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))`;
 route('GET', '/api/album', ({ user }) => {
   const cards = all(`SELECT c.*, i.qty, ${AVG} AS avg_price FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=?
-    ORDER BY CASE c.rarity WHEN 'legendary' THEN 0 WHEN 'epic' THEN 1 WHEN 'rare' THEN 2 ELSE 3 END, c.views DESC`, user.id);
-  const total = Object.fromEntries(all('SELECT rarity, COUNT(*) n FROM cards GROUP BY rarity').map(r => [r.rarity, r.n]));
+    ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC`, user.id);
+  const total = Object.fromEntries(RARITIES.map(r => [r, live.total(r)]));
   const rarityAvg = Object.fromEntries(all(`SELECT c.rarity, CAST(ROUND(AVG(s.price)) AS INTEGER) p, COUNT(*) n FROM sales s JOIN cards c ON c.id = s.card_id GROUP BY c.rarity`).map(r => [r.rarity, { avg: r.p, n: r.n }]));
   return { cards, total, rarityAvg };
 });
@@ -345,7 +350,7 @@ route('POST', '/api/discard-dupes', ({ user, body }) => tx(() => {
 route('GET', '/api/users', ({ user }) => ({ users: all('SELECT id, name FROM users ORDER BY name').map(u => ({ ...u, online: clients.has(u.id), me: u.id === user.id })) }));
 route('GET', '/api/leaderboard', () => ({
   players: all(`SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
-    COALESCE(SUM(CASE c.rarity WHEN 'legendary' THEN ${POINTS.legendary} WHEN 'epic' THEN ${POINTS.epic} WHEN 'rare' THEN ${POINTS.rare} ELSE ${POINTS.common} END), 0) + u.duel_wins * 10 AS score,
+    COALESCE(SUM(${caseSql('c.rarity', POINTS)}), 0) + u.duel_wins * 10 AS score,
     COUNT(c.id) AS uniques
     FROM users u LEFT JOIN inventory i ON i.user_id = u.id LEFT JOIN cards c ON c.id = i.card_id GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 }));
@@ -393,8 +398,14 @@ route('GET', '/api/trades', ({ user }) => ({
     JOIN cards c1 ON c1.id=t.offer_card JOIN cards c2 ON c2.id=t.want_card
     WHERE t.status='pending' AND (t.from_id=? OR t.to_id=?) ORDER BY t.id DESC`, user.id, user.id),
 }));
+function searchCards(q) {
+  q = q.trim();
+  if (q.length < 2) return [];
+  const hi = q.slice(0, -1) + String.fromCharCode(q.charCodeAt(q.length - 1) + 1); // recherche par préfixe, via l'index sur le titre
+  return all(`SELECT id, title, rarity, shiny FROM cards WHERE shiny = 0 AND title COLLATE NOCASE >= ? AND title COLLATE NOCASE < ? ${q.length >= 3 ? 'ORDER BY views DESC' : ''} LIMIT 15`, q, hi);
+}
 route('GET', '/api/cards/search', ({ query }) => ({
-  cards: all('SELECT id, title, rarity FROM cards WHERE title LIKE ? ORDER BY views DESC LIMIT 15', `%${(query.get('q') || '').replace(/[%_]/g, '')}%`),
+  cards: searchCards(query.get('q') || ''),
 }));
 route('POST', '/api/trades', ({ user, body }) => {
   const to = +body.to;
@@ -478,6 +489,6 @@ wss.on('connection', (ws, req) => {
 });
 setInterval(() => wss.clients.forEach(ws => { if (!ws.isAlive) return ws.terminate(); ws.isAlive = false; ws.ping(); }), 25000);
 
-loadPool();
+live.loadRanges();
 live.refill();
-server.listen(PORT, () => console.log(`WikiMasters sur http://localhost:${PORT}  (${all('SELECT 1 FROM cards').length} cartes)`));
+server.listen(PORT, () => console.log(`WikiMasters sur http://localhost:${PORT}  (${live.catalogSize().toLocaleString('fr-FR')} cartes au catalogue)`));

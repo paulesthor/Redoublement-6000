@@ -1,44 +1,47 @@
 # WikiMasters privé
 
-Clone léger du jeu WikiMasters pour un petit groupe d'amis : boosters, album, duels de quiz, enchères, échanges, classement.
+Jeu de cartes Wikipédia pour un petit groupe d'amis : une carte = un article de Wikipédia FR. Boosters de 10 cartes, collection, défausse, enchères avec prix moyens, échanges, combats (quiz et cartes), classement. Node ≥ 22.5, SQLite, WebSocket.
 
 ## Lancer
 ```bash
 npm install
-npm run seed          # télécharge ~2000 articles populaires de fr.wikipedia (une seule fois)
-# ou: npm run seed:sample   (40 cartes hors-ligne pour tester)
+npm run seed:sample   # 40 cartes de test, hors-ligne
+# ou le vrai catalogue (voir plus bas) :
+npm run seed          # = node seed.js --dump   (long, une seule fois)
 npm start             # http://localhost:3000
 ```
-### Toutes les pages de Wikipédia
-`node seed.js --all` parcourt `fr.wikipedia.org` page par page (≈ 20 pages/requête, 5 req/s par défaut, reprise automatique si tu l'interromps avec Ctrl+C).
-Wikipédia FR compte ~2,7 M d'articles : le crawl complet prend plusieurs heures et pèse plusieurs Go. Utilise `--limit=200000` pour t'arrêter plus tôt.
-Ajoute `--days=30` pour que les articles les plus vus soient rangés en premier (raretés calculées sur les vues, sinon sur la taille de l'article).
+Variables : `PORT`, `DB_PATH`, `INVITE_CODE` (requis à l'inscription si défini), `LIVE_FETCH=0` (désactive la préparation en arrière-plan).
+Si tu viens d'une ancienne version : supprime `data/game.db` (le schéma a changé).
 
-Variables : `PORT`, `DB_PATH`, `INVITE_CODE` (si défini, requis pour créer un compte). Node ≥ 22.5.
+## Comment sont gérés les articles
+Même principe que WikiMasters (décrit dans sa page « À propos et sources ») :
 
-## Pourquoi ça ne lagge pas
-- Aucune requête vers Wikipédia pendant le jeu : cartes, extraits et stats sont pré-chargés en SQLite.
-- Un seul processus, SQLite en mode WAL, transactions courtes → largement suffisant pour quelques dizaines de joueurs.
-- Temps réel par WebSocket (duels, enchères, notifications), pas de polling.
-- Les images sont les miniatures du CDN Wikimedia, chargées par le navigateur.
+1. **Catalogue** (`seed.js --dump`, une fois) : la liste des pages vient des exports officiels (`frwiki-latest-page.sql.gz`, ~500 Mo, pages de l'espace principal hors redirections et homonymies, ≈ 2,7 M d'articles). Les consultations du dernier mois complet viennent de `pageviews-AAAAMM-user.bz2` (lu en flux, arrêt dès la fin du bloc `fr.wikipedia`, pas de fichier de 6 Go sur le disque). Les pages sont classées par popularité ; la rareté est fixée par le rang :
 
-## Variété des cartes
-Les cartes d'un booster sont tirées **uniformément au hasard parmi tout fr.wikipedia** (exoplanète, acteur du début du XXe siècle, commune, plante…), comme sur WikiMasters.
-- La rareté d'une carte dépend des vues mensuelles de l'article : ≥ 150 000 légendaire, ≥ 20 000 épique, ≥ 3 000 rare, sinon commune (seuils dans `cardutil.js`). Presque tous les articles au hasard sont donc communs ; les épiques/légendaires viennent surtout du stock des articles populaires en base (`npm run seed`).
-- Un worker d'arrière-plan (`live.js`) garde des files d'articles aléatoires prêtes par rareté : ouvrir un booster ne fait aucun appel réseau.
-- `npm run seed -- --random=3000` pré-remplit la base avec 3000 articles aléatoires (≈ 10 min). Le jeu démarre aussi avec une base vide.
-- Si Wikipédia est injoignable, le jeu continue avec le stock en base et réessaie chaque minute.
-Variables : `LIVE_FETCH=0` (désactive), `FRESH_RATIO=0.9` (part des tirages pris dans la réserve aléatoire), `FRESH_TARGET=40`.
+   | Rareté | Part du catalogue |
+   |---|---|
+   | Commune | 50,25 % |
+   | Peu commune | 20 % |
+   | Rare | 20 % |
+   | Super rare | 7 % |
+   | Ultra rare | 2,5 % |
+   | Légendaire | 0,25 % (+ une variante shiny par légendaire) |
+
+   Compte quelques dizaines de minutes et 0,5 à 1 Go de base. `--keep=300000` ne garde que les 300 000 pages les plus consultées (base plus légère), `--month=2026-09` force le mois.
+2. **Tirage** : la rareté est tirée selon `DROP` (config.js, par défaut = parts du catalogue, donc tirage uniforme sur tous les articles), puis une page au hasard dans cette rareté (par rang, sans charger le catalogue en mémoire). Une légendaire a 1 % de chances d'être shiny.
+3. **Description et image** : récupérées via l'API MediaWiki *à la demande* (20 pages par requête) puis **conservées en base**. Une réserve en mémoire de cartes déjà enrichies, par rareté, est préparée en arrière-plan : ouvrir un booster ne fait pas d'appel réseau en général (au pire 1,5 s d'attente, puis le client récupère le reste).
+4. **Statistiques fixes par page** : la meilleure stat (ATK ou DEF) est dans la plage de la rareté (commune 0–2 000 … légendaire 8 500–10 000, shiny 10 001–15 000), l'autre vaut au moins 50 % de la première.
+
+Hors-ligne ou Wikipédia injoignable : le jeu continue, les cartes s'affichent sans description/image et sont complétées plus tard.
 
 ## Réglages
-Tout l'équilibrage est dans `config.js` : taux de drop (`DROP`), cartes par booster (10), prix d'un booster acheté, gain à la défausse par rareté (`SELL`), points du classement, récompenses de combat et de quiz.
+Tout l'équilibrage est dans `config.js` : taux de drop, boosters (10 cartes, gratuit toutes les 10 min, max 10, achat 60 pièces), gains de défausse par rareté, points du classement, récompenses de combat, taille de la réserve.
 
 ## Fonctions
-- **Boosters** : 10 cartes, un gratuit toutes les 10 min (10 max en stock), ou achat direct pour 60 pièces. Au moins une carte rare ou mieux par booster.
-- **Collection** : filtre, tri (rareté, nom, quantité, valeur), valeur estimée, progression par rareté, prix moyen de vente de chaque carte.
-- **Défausse** : une carte à la fois ou « vendre tous les doublons » (jusqu'à une rareté donnée) contre des pièces selon la rareté.
-- **Enchères** : prix moyen affiché (10 dernières ventes de la carte), anti-snipe de 30 s.
+- **Boosters** de 10 cartes, taux affichés ; bandeau « Hits légendaires » en direct.
+- **Collection** : filtre, tri, valeur estimée, progression par rareté, prix moyen de vente de chaque carte.
+- **Défausse** d'une carte ou de tous les doublons (jusqu'à une rareté donnée) contre des pièces.
+- **Enchères** (10 dernières ventes → prix moyen, anti-snipe 30 s), **échanges**, **classement**.
 - **Combats** : quiz (5 questions) ou combat de cartes (équipe de 3, ATK contre DEF).
-- **Échanges** et **classement**.
 
-Contenu des cartes : Wikipédia, licence CC BY-SA.
+Contenu des cartes : Wikipédia (CC BY-SA), images Wikimedia. Projet indépendant de Wikimedia et de WikiMasters.

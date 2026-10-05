@@ -3,6 +3,10 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('node:path');
 
 const db = new DatabaseSync(process.env.DB_PATH || path.join(__dirname, 'data', 'game.db'));
+const hasCards = db.prepare("SELECT 1 FROM sqlite_master WHERE name='cards'").get();
+if (hasCards && !db.prepare("SELECT 1 FROM pragma_table_info('cards') WHERE name='rank'").get()) {
+  throw new Error('Ancien schéma de base détecté : supprime data/game.db (ou ton DB_PATH) puis relance `npm run seed`.');
+}
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -27,18 +31,23 @@ CREATE TABLE IF NOT EXISTS sessions (
   created INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS cards (
-  id INTEGER PRIMARY KEY,
-  title TEXT UNIQUE NOT NULL,
-  extract TEXT NOT NULL,
+  id INTEGER PRIMARY KEY,          -- id de la page Wikipédia (+100000000 pour la variante shiny)
+  title TEXT NOT NULL,
+  extract TEXT NOT NULL DEFAULT '',
   image TEXT,
-  url TEXT NOT NULL,
+  url TEXT NOT NULL DEFAULT '',
   views INTEGER NOT NULL DEFAULT 0,
   rarity TEXT NOT NULL,
-  atk INTEGER NOT NULL,
-  def INTEGER NOT NULL,
-  length INTEGER NOT NULL DEFAULT 0
+  atk INTEGER NOT NULL DEFAULT 0,
+  def INTEGER NOT NULL DEFAULT 0,
+  length INTEGER NOT NULL DEFAULT 0,
+  rank INTEGER,                    -- 0 = page la plus consultée ; NULL pour les variantes shiny
+  shiny INTEGER NOT NULL DEFAULT 0,
+  enriched INTEGER NOT NULL DEFAULT 0 -- 1 = description/image déjà récupérées via l'API MediaWiki
 );
-CREATE INDEX IF NOT EXISTS cards_rarity ON cards(rarity);
+CREATE INDEX IF NOT EXISTS cards_rank ON cards(rank);
+CREATE INDEX IF NOT EXISTS cards_title ON cards(title COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS cards_enriched ON cards(enriched) WHERE enriched = 1;
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS inventory (
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -74,8 +83,6 @@ CREATE TABLE IF NOT EXISTS trades (
   created INTEGER NOT NULL
 );
 `);
-
-try { db.exec('ALTER TABLE cards ADD COLUMN length INTEGER NOT NULL DEFAULT 0'); } catch { /* déjà présente */ }
 
 /** Exécute fn dans une transaction (BEGIN IMMEDIATE) ; rollback si exception. */
 function tx(fn) {
