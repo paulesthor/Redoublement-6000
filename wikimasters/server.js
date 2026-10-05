@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const { db, tx } = require('./db');
 const live = require('./live');
 const CFG = require('./config');
+const { ACH, achievements, statsFromInventory } = require('./achievements');
 
 const PORT = +process.env.PORT || 3000;
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -276,7 +277,11 @@ route('POST', '/api/me/test-mode', ({ user, body }) => {
   run('UPDATE users SET test_mode=? WHERE id=?', body.on ? 1 : 0, user.id);
   return { ok: true };
 });
-route('GET', '/api/me', ({ user }) => ({ ...publicUser(refreshPacks(user)), badge: friendBadge(user.id) }));
+const lastCheck = new Map();
+route('GET', '/api/me', ({ user }) => {
+  if (now() - (lastCheck.get(user.id) || 0) > 30000) { lastCheck.set(user.id, now()); checkAchievements(user); }
+  return { ...publicUser(refreshPacks(user)), badge: friendBadge(user.id) };
+});
 
 const hits = []; // derniers tirages légendaires (bandeau "Hits")
 function announceHits(user, cards) {
@@ -294,6 +299,8 @@ async function finishPack(user, ids, before) {
   const cards = ids.map(id => { const isNew = !before.has(id) && !seen.has(id); seen.add(id); return { ...rows.get(id), isNew }; })
     .sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || b.shiny - a.shiny);
   announceHits(user, cards);
+  run('UPDATE users SET packs_opened = packs_opened + 1 WHERE id=?', user.id);
+  checkAchievements(user);
   return { cards };
 }
 const ownedIds = uid => new Set(all('SELECT card_id FROM inventory WHERE user_id=?', uid).map(r => r.card_id));
@@ -448,6 +455,41 @@ route('GET', '/api/catalog/search', ({ user, query }) => {
   }
   return { cards: cards.map(c => ({ ...c, owned: one('SELECT COALESCE(SUM(qty), 0) n FROM inventory WHERE user_id=? AND card_id IN (?, ?)', user.id, c.id, c.id + 100000000).n })) };
 });
+// ---------- succès ----------
+function userStats(uid) {
+  const u = one('SELECT duel_wins wins, packs_opened packs, coins FROM users WHERE id=?', uid);
+  const inv = all('SELECT c.rarity, c.shiny, COUNT(*) n FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=? GROUP BY c.rarity, c.shiny', uid);
+  const mk = one("SELECT (SELECT COUNT(*) FROM auctions WHERE seller_id=? AND status='sold') sold, (SELECT COUNT(*) FROM auctions WHERE bidder_id=? AND status='sold') won, (SELECT COUNT(*) FROM friends WHERE user_id=?) friends", uid, uid, uid);
+  return { ...u, ...mk, ...statsFromInventory(inv, CFG.RARITIES) };
+}
+function checkAchievements(user) {
+  const stats = userStats(user.id);
+  const have = new Set(all('SELECT key FROM achievements WHERE user_id=?', user.id).map(r => r.key));
+  for (const a of achievements(stats).filter(a => a.done && !have.has(a.k))) {
+    if (!run('INSERT OR IGNORE INTO achievements (user_id, key, ts) VALUES (?,?,?)', user.id, a.k, now()).changes) continue;
+    run('UPDATE users SET coins = coins + ? WHERE id=?', a.r, user.id);
+    push(user.id, { t: 'notify', msg: `Succès débloqué : ${a.t} (+${a.r} 🪙)` });
+  }
+  return stats;
+}
+route('GET', '/api/achievements', ({ user }) => {
+  const stats = checkAchievements(user);
+  const got = new Map(all('SELECT key, ts FROM achievements WHERE user_id=?', user.id).map(r => [r.key, r.ts]));
+  return { achievements: achievements(stats).map(a => ({ k: a.k, t: a.t, d: a.d, n: a.n, r: a.r, value: a.value, done: got.has(a.k), ts: got.get(a.k) || null })) };
+});
+route('GET', '/api/profile/:id', ({ user, params }) => {
+  const id = +params.id;
+  const u = one('SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs FROM users WHERE id=?', id);
+  if (!u) bad('Joueur introuvable', 404);
+  const inv = all('SELECT c.rarity, c.shiny, COUNT(*) n FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=? GROUP BY c.rarity, c.shiny', id);
+  const score = inv.reduce((t, r) => t + (CFG.POINTS[r.rarity] || 0) * r.n, 0) + u.wins * 10;
+  const best = all(`SELECT c.id, c.title, c.rarity, c.shiny, c.image, c.atk, c.def FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=?
+    ORDER BY ${caseSql('c.rarity', Object.fromEntries(CFG.RARITIES.map(r => [r, CFG.RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC LIMIT 6`, id);
+  return { profile: { ...u, uniques: inv.reduce((t, r) => t + r.n, 0), score, best, achievements: all('SELECT key, ts FROM achievements WHERE user_id=? ORDER BY ts DESC', id), total: ACH.length,
+    isMe: id === user.id, isFriend: !!one('SELECT 1 x FROM friends WHERE user_id=? AND friend_id=?', user.id, id),
+    byRarity: Object.fromEntries(CFG.RARITIES.map(r => [r, inv.filter(x => x.rarity === r).reduce((t, x) => t + x.n, 0)])) } };
+});
+
 route('POST', '/api/trades', ({ user, body }) => {
   const to = +body.to;
   if (to === user.id || !one('SELECT 1 FROM users WHERE id=?', to)) bad('Destinataire invalide');

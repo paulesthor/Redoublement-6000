@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   coins INTEGER NOT NULL DEFAULT 200,
   pack_stock INTEGER NOT NULL DEFAULT 10,
   test_mode INTEGER NOT NULL DEFAULT 0,
+  packs_opened INTEGER NOT NULL DEFAULT 0,
   pack_ts INTEGER NOT NULL,
   duel_wins INTEGER NOT NULL DEFAULT 0,
   duel_losses INTEGER NOT NULL DEFAULT 0,
@@ -97,3 +98,9 @@ CREATE TABLE IF NOT EXISTS bids (
   ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS bids_auction ON bids(auction_id);
+CREATE TABLE IF NOT EXISTS achievements (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  key TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  PRIMARY KEY (user_id, key)
+);

@@ -466,3 +466,27 @@ body.noscroll{overflow:hidden}
 #reveal .ps-hint.wait{color:color-mix(in srgb,var(--pc) 60%,#fff)}
 @keyframes hint-pulse{50%{opacity:.5}}
 @media(prefers-reduced-motion:reduce){#reveal .ps-halo::before,#reveal .ps-guide i{animation:none}}
+
+/* succès + profils */
+.item.tap{cursor:pointer}.item.tap:active{background:#181822}
+.achlist{display:grid;gap:10px}
+.ach{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#14141d,#101017);opacity:.78}
+.ach.done{opacity:1;border-color:#ffffff30}
+.ach .grow{flex:1;min-width:0}.ach .nm{font-weight:600}.ach .sub{color:var(--mut);font-size:12.5px}
+.ach .medal{flex:none;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#1c1c27;color:var(--dim);border:1px solid var(--line2)}
+.ach.done .medal{background:linear-gradient(145deg,#f3f2ee,#9c9aa4);color:#16161c;border-color:#fff4}
+.ach .medal svg{width:21px;height:21px}
+.ach .bar{height:5px;border-radius:9px;background:#23232f;margin:7px 0 3px;overflow:hidden}.ach .bar i{display:block;height:100%;background:linear-gradient(90deg,#8f8d97,#ecebe6);border-radius:9px}
+.ach .rw{flex:none;display:flex;align-items:center;gap:4px;font-weight:700;font-size:13px;color:var(--mut)}.ach .rw svg{width:15px;height:15px;color:var(--gold)}
+.ach.done .rw{color:var(--fg)}
+.tiles .tile{padding:12px;border:1px solid var(--line);border-radius:12px;background:#0c0c12;text-align:center}
+#modal .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.tile b{display:block;font-family:var(--f-disp);font-size:20px}.tile span{color:var(--mut);font-size:11.5px}
+.rarbar{display:flex;gap:6px;flex-wrap:wrap}
+.rarbar span{flex:1 1 0;min-width:44px;text-align:center;padding:6px 4px;border-radius:10px;font-size:11px;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 12%,#0c0c12);border:1px solid color-mix(in srgb,var(--c) 40%,transparent)}
+.rarbar span b{display:block;font-size:15px;color:var(--fg)}
+.minis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mini{border-radius:12px;overflow:hidden;border:1px solid color-mix(in srgb,var(--c) 55%,#2a2a38);background:#0c0c12}
+.mini .mi{aspect-ratio:1;background:linear-gradient(135deg,color-mix(in srgb,var(--c) 55%,#000),var(--c)) center/cover}
+.mini span{display:block;padding:5px 6px;font-size:11px;line-height:1.25;height:2.7em;overflow:hidden}
+a.plink{color:var(--fg);text-decoration:underline;text-decoration-color:#ffffff55}

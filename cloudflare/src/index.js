@@ -1,6 +1,7 @@
 import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
   userFromToken, hashPw, randomHex, notify, searchBucket } from './util.js';
+import { ACH, achievements, statsFromInventory } from './achievements.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -148,6 +149,30 @@ async function enrich(env, ids) {
   }
 }
 
+
+// ---------- succès ----------
+async function userStats(env, uid) {
+  const [u, inv, mk] = await Promise.all([
+    one(env, 'SELECT duel_wins wins, packs_opened packs, coins FROM users WHERE id = ?', uid),
+    all(env, 'SELECT c.rarity, c.shiny, COUNT(*) n FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? GROUP BY c.rarity, c.shiny', uid),
+    one(env, "SELECT (SELECT COUNT(*) FROM auctions WHERE seller_id = ? AND status = 'sold') sold, (SELECT COUNT(*) FROM auctions WHERE bidder_id = ? AND status = 'sold') won, (SELECT COUNT(*) FROM friends WHERE user_id = ?) friends", uid, uid, uid),
+  ]);
+  return { ...u, ...mk, ...statsFromInventory(inv, RARITIES) };
+}
+/** Débloque les succès atteints (récompense en pièces + notification). */
+async function checkAchievements(env, ctx, user) {
+  const stats = await userStats(env, user.id);
+  const have = new Set((await all(env, 'SELECT key FROM achievements WHERE user_id = ?', user.id)).map(r => r.key));
+  for (const a of achievements(stats).filter(a => a.done && !have.has(a.k))) {
+    const ins = await run(env, 'INSERT OR IGNORE INTO achievements (user_id, key, ts) VALUES (?,?,?)', user.id, a.k, now());
+    if (!ins.meta.changes) continue;
+    await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.r, user.id);
+    notify(env, ctx, { t: 'notify', msg: `Succès débloqué : ${a.t} (+${a.r} pièces)` }, user.id);
+  }
+  return stats;
+}
+const lastCheck = new Map();
+
 // ---------- recherche dans tout le catalogue ----------
 const bucketCache = new Map();
 async function rankOf(env, origin, title) {
@@ -183,7 +208,9 @@ async function finishPack(env, ctx, user, drawn) {
   await env.DB.batch([
     ...drawn.map(c => insertCard(env, c)),
     ...drawn.map(c => addCard(env, user.id, c.id)),
+    st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
   ]);
+  ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {}));
   const rows = new Map((await cardRows(env, ids)).map(c => [c.id, c]));
   const seen = new Set();
   const cards = drawn.map(c => { const isNew = !before.has(c.id) && !seen.has(c.id); seen.add(c.id); return { ...rows.get(c.id), isNew }; })
@@ -247,7 +274,28 @@ route('POST', '/api/login', async ({ env, body }) => {
   if (!u || (await hashPw(String(body.password || ''), u.salt)) !== u.hash) bad('Pseudo ou mot de passe incorrect', 401);
   return newSession(env, u.id);
 }, false);
-route('GET', '/api/me', async ({ env, user }) => ({ ...publicUser(await refreshPacks(env, user)), badge: await friendBadge(env, user.id) }));
+route('GET', '/api/me', async ({ env, ctx, user }) => {
+  if (now() - (lastCheck.get(user.id) || 0) > 30000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
+  return { ...publicUser(await refreshPacks(env, user)), badge: await friendBadge(env, user.id) };
+});
+route('GET', '/api/achievements', async ({ env, ctx, user }) => {
+  const stats = await checkAchievements(env, ctx, user);
+  const got = new Map((await all(env, 'SELECT key, ts FROM achievements WHERE user_id = ?', user.id)).map(r => [r.key, r.ts]));
+  return { achievements: achievements(stats).map(a => ({ k: a.k, t: a.t, d: a.d, n: a.n, r: a.r, value: a.value, done: got.has(a.k), ts: got.get(a.k) || null })) };
+});
+route('GET', '/api/profile/:id', async ({ env, user, params }) => {
+  const id = +params.id;
+  const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs FROM users WHERE id = ?', id);
+  if (!u) bad('Joueur introuvable', 404);
+  const inv = await all(env, 'SELECT c.rarity, c.shiny, COUNT(*) n FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? GROUP BY c.rarity, c.shiny', id);
+  const score = inv.reduce((t, r) => t + (POINTS[r.rarity] || 0) * r.n, 0) + u.wins * 10;
+  const best = await all(env, `SELECT c.id, c.title, c.rarity, c.shiny, c.image, c.atk, c.def FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
+    ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC LIMIT 6`, id);
+  const ach = await all(env, 'SELECT key, ts FROM achievements WHERE user_id = ? ORDER BY ts DESC', id);
+  const fr = await one(env, 'SELECT 1 x FROM friends WHERE user_id = ? AND friend_id = ?', user.id, id);
+  return { profile: { ...u, uniques: inv.reduce((t, r) => t + r.n, 0), score, best, achievements: ach, total: ACH.length, isMe: id === user.id, isFriend: !!fr,
+    byRarity: Object.fromEntries(RARITIES.map(r => [r, inv.filter(x => x.rarity === r).reduce((t, x) => t + x.n, 0)])) } };
+});
 
 route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);

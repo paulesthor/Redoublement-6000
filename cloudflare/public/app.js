@@ -102,7 +102,7 @@ function sellSheet(c) {
   });
 }
 
-let lotOpen = null;
+let lotOpen = null, ACH_NAMES = [];
 async function lotSheet(id) {
   const m = $('#modal'); lotOpen = id;
   const [{ auctions }, { bids }] = await Promise.all([api('/auctions'), api(`/auctions/${id}/bids`)]);
@@ -111,7 +111,7 @@ async function lotSheet(id) {
   const min = Math.max(a.start_price, a.bid + 1);
   m.hidden = false;
   m.innerHTML = `<div class="detail"><h2>${esc(a.title)}</h2>
-    <p class="mut"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span> · par ${esc(a.seller)} · prix moyen ${a.avg_price ?? '—'}</p>
+    <p class="mut"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span> · par <a href="#" class="plink" data-pl="${a.seller_id}">${esc(a.seller)}</a> · prix moyen ${a.avg_price ?? '—'}</p>
     <div class="lotbox"><div><small>${a.bid ? 'Meilleure offre' : 'Mise de départ'}</small><b>${ico('coin')}${a.bid || a.start_price}</b>${a.bid ? `<small>${esc(a.bidder)}${a.leading ? ' (toi)' : ''}</small>` : ''}</div>
       <div class="time" data-end="${a.ends_at}">${ico('clock')}<span></span></div></div>
     ${a.mine ? '<p class="mut">C\'est ta vente.</p>' : `<label class="fld">Ton offre (minimum ${min})<input id="bid-v" type="number" inputmode="numeric" value="${min}"></label>
@@ -120,6 +120,7 @@ async function lotSheet(id) {
     ${a.mine ? '<div class="row"><button id="bid-no" class="plain">Fermer</button></div>' : ''}
     <h3 class="hist-h">Historique des offres</h3>
     <div class="hist">${bids.length ? bids.map(b => `<div><span>${esc(b.name)}</span><b>${ico('coin')}${b.amount}</b><em>${new Date(b.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</em></div>`).join('') : '<p class="mut">Aucune offre pour l\'instant.</p>'}</div></div>`;
+  m.querySelectorAll('.plink').forEach(a => a.onclick = e => { e.preventDefault(); lotOpen = null; clearInterval(lotTick); playerSheet(a.dataset.pl); });
   const close = () => { m.hidden = true; m.innerHTML = ''; lotOpen = null; clearInterval(lotTick); };
   const upd = () => { const t = m.querySelector('[data-end]'); if (t) { const ms = t.dataset.end - Date.now(); t.querySelector('span').textContent = timeLeft(ms); t.classList.toggle('hot', ms < 60000); } };
   clearInterval(lotTick); upd(); lotTick = setInterval(upd, 1000);
@@ -208,7 +209,7 @@ async function fillMissing(r) {
 }
 
 // ---------- vues ----------
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'duel', market: 'market', trades: 'market', friends: 'friends' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'duel', ach: 'duel', market: 'market', trades: 'market', friends: 'friends' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -217,7 +218,7 @@ const bindSeg = v => v.querySelectorAll('[data-seg]').forEach(b => b.onclick = (
 const avColor = name => `hsl(${[...String(name)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)} 62% 68%)`;
 const avatar = (name, on = false) => `<span class="av ${on ? 'on' : ''}" style="--avc:${avColor(name)}">${esc(String(name)[0]?.toUpperCase() || '?')}</span>`;
 const timeLeft = ms => { const r = Math.max(0, Math.round(ms / 1000)); return r >= 3600 ? `${Math.floor(r / 3600)} h ${Math.floor(r % 3600 / 60)} min` : r >= 60 ? `${Math.floor(r / 60)} min ${r % 60} s` : `${r} s`; };
-const COMBAT_SEG = [['duel', 'Combats'], ['rank', 'Classement']];
+const COMBAT_SEG = [['duel', 'Combats'], ['rank', 'Classement'], ['ach', 'Succès']];
 const MARKET_SEG = [['market', 'Enchères'], ['trades', 'Échanges']];
 
 const views = {
@@ -419,7 +420,7 @@ const views = {
         <p class="mut" style="margin:0 0 12px;font-size:13px">Un ami qui scanne ce code devient ton ami tout de suite, sans validation.</p>
         <div class="row"><button id="fr-scan">${ico('qr')} Scanner un QR code</button><button class="plain" id="fr-copy">Copier mon lien</button></div></div>
       <h3 class="sec">Mes amis</h3>
-      ${f.friends.length ? `<div class="list">${f.friends.map(a => `<div class="item">${avatar(a.name, a.online)}<div class="grow"><div class="nm">${esc(a.name)}${a.isNew ? '<span class="newtag">Nouveau</span>' : ''}</div><div class="sub">${a.online ? 'En ligne' : 'Hors ligne'}</div></div>
+      ${f.friends.length ? `<div class="list">${f.friends.map(a => `<div class="item tap" data-pl="${a.id}">${avatar(a.name, a.online)}<div class="grow"><div class="nm">${esc(a.name)}${a.isNew ? '<span class="newtag">Nouveau</span>' : ''}</div><div class="sub">${a.online ? 'En ligne' : 'Hors ligne'}</div></div>
         <div class="acts"><button class="plain" data-rm="${a.id}">Retirer</button></div></div>`).join('')}</div>` : '<div class="empty">Aucun ami pour l\'instant.<br>Partage ton QR code ou envoie une demande par pseudo.</div>'}`;
     try { const qr = qrcode(0, 'M'); qr.addData(link); qr.make(); $('#qr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); } catch { $('#qr').textContent = link; }
     $('#fr-send').onclick = safe(async () => {
@@ -439,13 +440,24 @@ const views = {
     if (f.friends.some(a => a.isNew)) api('/friends/seen', {}).then(refreshMe).catch(() => {}); // efface la pastille rouge
   },
 
+  async ach(v) {
+    const { achievements: list } = await api('/achievements');
+    const done = list.filter(a => a.done).length;
+    v.innerHTML = `${pageHead('Succès', `${done} / ${list.length} débloqués`)}${seg(COMBAT_SEG, 'ach')}
+      <div class="achlist">${list.map(a => `<div class="ach ${a.done ? 'done' : ''}"><div class="medal">${ico(a.done ? 'trophy' : 'shield')}</div>
+        <div class="grow"><div class="nm">${esc(a.t)}</div><div class="sub">${esc(a.d)}</div>
+          ${a.done ? '' : `<div class="bar"><i style="width:${Math.round(a.value / a.n * 100)}%"></i></div><div class="sub">${fmt(a.value)} / ${fmt(a.n)}</div>`}</div>
+        <div class="rw">${ico('coin')}${a.r}</div></div>`).join('')}</div>`;
+    bindSeg(v);
+  },
+
   async rank(v) {
     const { players } = await api('/leaderboard');
     v.innerHTML = `${pageHead('Classement', 'Score = valeur des cartes uniques (selon la rareté) + 10 par victoire')}${seg(COMBAT_SEG, 'rank')}
-      <div class="list">${players.map((p, i) => `<div class="item r${i + 1} ${p.id === me.id ? 'me' : ''}"><span class="rank-n">${i + 1}</span>${avatar(p.name, online.has(p.id))}
+      <div class="list">${players.map((p, i) => `<div class="item tap r${i + 1} ${p.id === me.id ? 'me' : ''}" data-pl="${p.id}"><span class="rank-n">${i + 1}</span>${avatar(p.name, online.has(p.id))}
         <div class="grow"><div class="nm">${esc(p.name)}</div><div class="sub"><span>${p.uniques} cartes</span><span>${p.wins} V / ${p.losses} D</span><span>${fmt(p.coins)} pièces</span></div></div>
         <div class="score">${fmt(p.score)}<small>points</small></div></div>`).join('')}</div>`;
-    bindSeg(v);
+    bindSeg(v); bindPlayers(v);
   },
 };
 
@@ -635,6 +647,29 @@ async function refreshMe() {
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar" id="profile" aria-label="Profil">${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
+const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.onclick = e => { if (e.target.closest('button')) return; playerSheet(el.dataset.pl); });
+/** Profil d'un joueur : stats, meilleures cartes, succès. */
+async function playerSheet(id) {
+  const m = $('#modal');
+  const { profile: p } = await api('/profile/' + id).catch(e => { toast(e.message); return {}; });
+  if (!p) return;
+  const names = Object.fromEntries(ACH_NAMES.map(a => [a.k, a.t]));
+  m.hidden = false;
+  m.innerHTML = `<div class="detail"><div class="profile">${avatar(p.name, online.has(p.id))}<div><b>${esc(p.name)}</b>${p.isMe ? ' <span class="mut">(toi)</span>' : p.isFriend ? ' <span class="newtag">Ami</span>' : ''}
+      <div class="mut">${p.wins} victoire${p.wins > 1 ? 's' : ''} · ${p.losses} défaite${p.losses > 1 ? 's' : ''}</div></div></div>
+    <div class="tiles"><div class="tile"><b>${fmt(p.score)}</b><span>points</span></div><div class="tile"><b>${fmt(p.uniques)}</b><span>cartes uniques</span></div><div class="tile"><b>${fmt(p.packs)}</b><span>paquets ouverts</span></div></div>
+    <div class="rarbar">${cfg.rarities.map(r => `<span style="--c:var(--${r})" title="${RAR[r]}"><b>${p.byRarity[r] || 0}</b>${ABBR[r]}</span>`).join('')}</div>
+    ${p.best.length ? `<h3 class="hist-h">Meilleures cartes</h3><div class="minis">${p.best.map(c => `<div class="mini ${c.shiny ? 'shiny' : ''}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})" title="${esc(c.title)}">
+      <div class="mi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div><span>${esc(c.title)}</span></div>`).join('')}</div>` : ''}
+    <h3 class="hist-h">Succès · ${p.achievements.length} / ${p.total}</h3>
+    ${p.achievements.length ? `<div class="chips wrap">${p.achievements.slice(0, 12).map(a => `<button class="plain" style="pointer-events:none">${esc(names[a.key] || a.key)}</button>`).join('')}</div>` : '<p class="mut">Aucun succès pour l\'instant.</p>'}
+    <div class="row">${!p.isMe && !p.isFriend ? '<button id="pl-add">Ajouter en ami</button>' : p.isMe ? '<button id="pl-ach">Mes succès</button>' : ''}<button class="plain" id="pl-close">Fermer</button></div></div>`;
+  const close = () => { m.hidden = true; m.innerHTML = ''; };
+  $('#pl-close').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  $('#pl-add')?.addEventListener('click', safe(async () => { await api('/friends/request', { name: p.name }); toast('Demande envoyée'); close(); }));
+  $('#pl-ach')?.addEventListener('click', () => { close(); tab = 'ach'; render(); });
+}
+
 function profileSheet() {
   const m = $('#modal');
   m.hidden = false;
@@ -642,9 +677,10 @@ function profileSheet() {
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
     <label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>
     <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
-    <div class="row" style="margin-top:18px"><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
+    <div class="row" style="margin-top:18px"><button class="plain" id="pf-me" style="flex:1">Mon profil</button><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
   $('#pf-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   $('#pf-out').onclick = logout;
+  $('#pf-me').onclick = () => playerSheet(me.id);
   $('#pf-snd').onchange = e => { try { localStorage.setItem('wm_sound', e.target.checked ? '1' : '0'); } catch { /* stockage indisponible */ } };
   $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
@@ -660,6 +696,7 @@ async function start() {
       RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
       await refreshMe();
       showHits((await api('/hits')).hits);
+      ACH_NAMES = (await api('/achievements')).achievements.map(a => ({ k: a.k, t: a.t }));
       ok = true;
     } catch (e) {
       if (e.status === 401) return;               // jeton refusé : logout() a déjà ramené à la connexion
