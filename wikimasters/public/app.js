@@ -109,34 +109,48 @@ document.addEventListener('click', e => {
   showCard(card.dataset.id);
 });
 
+/** Récupère description + image des cartes d'un tirage qui n'en ont pas encore (attend au plus ~3 s). */
+async function fillMissing(r) {
+  const ids = r.cards.filter(c => !c.extract).map(c => c.id);
+  if (!ids.length) return;
+  try {
+    const { cards } = await Promise.race([api('/cards/enrich', { ids }), new Promise((_, rej) => setTimeout(() => rej(new Error('lent')), 3000))]);
+    const by = new Map(cards.map(x => [x.id, x]));
+    r.cards.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image }); });
+  } catch { /* on affiche sans : la carte se complétera plus tard */ }
+}
+
 // ---------- vues ----------
 const views = {
   async packs(v) {
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
-    v.innerHTML = `<h2>Boosters</h2>
-      <div class="panel row"><span>Boosters disponibles : <b>${me.packs}</b> / ${cfg.packMax}</span>
-        <span class="mut" id="cd-wrap">${me.packs < cfg.packMax ? 'prochain dans <span id="cd"></span>' : ''}</span>
-        <span class="right row"><button id="open" ${me.packs ? '' : 'disabled'}>Ouvrir un booster (${cfg.packSize} cartes)</button>
-        <button id="buy" class="plain" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir — ${cfg.packPrice} pièces</button></span></div>
-      <div class="panel mut">Taux de drop par carte : ${cfg.rarities.map(r => `<span class="rar ${r}">${RAR[r]}</span> ${pct(d[r])} %`).join(' · ')}.
-        Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. Catalogue : ${fmt(cfg.catalog)} pages.
-        ${cfg.guarantee ? 'Au moins une carte rare ou mieux par booster.' : ''}</div>
-      <div id="out" class="grid"></div>`;
+    v.innerHTML = `<div class="packpage"><h2>Ouvrir un paquet</h2>
+      <p class="mut" style="margin:0">Découvrez ${cfg.packSize} nouvelles cartes Wikipédia</p>
+      <div class="packart" id="packart"><b>W</b></div>
+      <button id="open" ${me.packs ? '' : 'disabled'}>Ouvrir</button>
+      <div class="counter"><b>${me.packs}</b> / ${cfg.packMax}<small>paquets disponibles</small>${me.packs < cfg.packMax ? '<small>Prochain dans <span id="cd"></span></small>' : ''}</div>
+      <button id="buy" class="plain" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir — ${cfg.packPrice} pièces</button>
+      <details class="panel" style="width:100%;margin-top:14px;text-align:left"><summary>Taux de drop</summary><p class="mut" style="margin:8px 0 0">
+        ${cfg.rarities.map(r => `<span class="rar ${r}">${RAR[r]}</span> ${pct(d[r])} %`).join(' · ')}.
+        Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. Catalogue : ${fmt(cfg.catalog)} pages. Aucune garantie : tout dépend de la chance.</p></details>
+      <div class="lastpack" id="lastpack" hidden><h3>Dernier tirage</h3><div id="out" class="grid"></div></div></div>`;
     const show = r => {
-      lastPack = r; $('#out').innerHTML = r.cards.map(c => cardHtml(c)).join('');
-      const missing = r.cards.filter(c => !c.extract).map(c => c.id); // description/image encore à récupérer côté serveur
-      if (missing.length && !r.asked) {
-        r.asked = true;
-        api('/cards/enrich', { ids: missing }).then(({ cards }) => {
-          const by = new Map(cards.map(x => [x.id, x]));
-          r.cards.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image }); });
-          if (lastPack === r && $('#out')) show(r);
-        }).catch(() => {});
-      }
+      lastPack = r; $('#lastpack').hidden = false; $('#out').innerHTML = [...r.cards].sort((a, b) => RANK[b.rarity] - RANK[a.rarity]).map(c => cardHtml(c)).join('');
     };
     if (lastPack) show(lastPack);
-    $('#open').onclick = safe(async () => { show(await api('/packs/open', {})); await refreshMe(); render(); });
-    $('#buy').onclick = safe(async () => { show(await api('/packs/buy', {})); await refreshMe(); render(); });
+    // ouverture animée : les cartes arrivent une par une, de la moins rare à la plus rare
+    const openAnimated = path => safe(async () => {
+      $('#open').disabled = $('#buy').disabled = true; $('#open').textContent = 'Ouverture…'; $('#packart').classList.add('opening');
+      let r;
+      try { r = await api(path, {}); } catch (e) { $('#packart').classList.remove('opening'); $('#open').textContent = 'Ouvrir'; $('#open').disabled = !me.packs; $('#buy').disabled = false; throw e; }
+      await fillMissing(r);                       // description + image prêtes avant d'afficher la carte
+      lastPack = r;
+      await refreshMe();
+      await playReveal(r.cards, { labels: RAR, rank: RANK, fmt, cardHtml });
+      render();
+    });
+    $('#open').onclick = openAnimated('/packs/open');
+    $('#buy').onclick = openAnimated('/packs/buy');
     const t0 = Date.now(), next = me.nextPackIn;
     tick = setInterval(() => {
       const cd = $('#cd'); if (!cd) return;

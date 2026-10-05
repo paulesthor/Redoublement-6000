@@ -103,3 +103,97 @@ button,select,input,.card,a.btn{touch-action:manipulation}
   #toast div{text-align:center}
 }
 @media(min-width:821px){.grid{grid-template-columns:repeat(auto-fill,minmax(158px,1fr))}}
+
+/* ---------- page « Ouvrir un paquet » ---------- */
+.packpage{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px}
+.packpage h2{margin:0}
+.packart{margin:18px 0 10px;width:150px;height:210px;border-radius:14px;background:linear-gradient(135deg,#f4f4f4 0%,#cfcfcf 45%,#f8f8f8 55%,#bdbdbd 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 0 40px #ffffff22,0 12px 30px #000a;transition:filter .4s,transform .4s,opacity .4s;position:relative;overflow:hidden}
+.packart::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,transparent 0 22px,#ffffff40 22px 30px)}
+.packart b{position:relative;z-index:1;font-size:78px;color:#111;line-height:1}
+.packart.opening{filter:blur(3px);opacity:.5;transform:scale(.94)}
+.packpage #open{min-width:190px;font-size:16px}
+.counter{margin-top:12px;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:10px 26px;font-size:18px;color:var(--mut)}
+.counter b{color:var(--fg)}.counter small{display:block;font-size:11px;color:var(--mut)}
+details.panel summary{cursor:pointer;color:var(--mut)}
+.lastpack{width:100%;margin-top:22px;text-align:left}
+
+/* ---------- ouverture de booster ---------- */
+body.noscroll{overflow:hidden}
+#modal{z-index:70}
+#reveal{--c:var(--common);position:fixed;inset:0;z-index:60;background:#0b0b0b;display:flex;flex-direction:column;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:pan-y;perspective:1200px}
+#reveal.r-uncommon{--c:var(--uncommon)}#reveal.r-rare{--c:var(--rare)}#reveal.r-super{--c:var(--super)}#reveal.r-ultra{--c:var(--ultra)}#reveal.r-legendary{--c:var(--legendary)}
+#reveal.shiny{--c:var(--shiny)}
+#reveal .bg{position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,color-mix(in srgb,var(--c) 30%,transparent),transparent 62%);pointer-events:none}
+#reveal .top,#reveal .bottom{position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 16px 8px}
+#reveal .top{justify-content:center;position:relative}
+#reveal .top .skip{position:absolute;right:14px;top:calc(10px + env(safe-area-inset-top));min-height:0;padding:3px 10px;font-size:12px}
+#reveal .count{color:var(--mut);font-size:13px}#reveal .count b{color:var(--c)}
+#reveal .bottom{padding:8px 16px calc(20px + env(safe-area-inset-bottom));flex-direction:column;gap:14px}
+#reveal .nav{display:flex;align-items:center;justify-content:center;gap:14px}
+#reveal .arrow{width:42px;min-height:42px;height:42px;padding:0;border-radius:50%;font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center}
+#reveal .dots{display:flex;gap:8px;align-items:center}
+#reveal .dots i{width:8px;height:8px;border-radius:50%;background:#3a3a3a;transition:all .25s}
+#reveal .dots i.seen{background:var(--dc,#777);opacity:.55}
+#reveal .dots i.on{width:12px;height:12px;background:var(--c);box-shadow:0 0 10px var(--c)}
+#reveal .next{min-width:210px;background:var(--c);border-color:var(--c);color:#111;font-size:15px}
+#reveal .stage{position:relative;z-index:2;flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:0 16px}
+#reveal .wrap{--dx:0px;--ry:0deg;--rot:0deg;transform:translateX(var(--dx)) rotateY(var(--ry)) rotate(var(--rot));transition:transform .26s cubic-bezier(.3,.7,.3,1),opacity .26s;touch-action:pan-y;cursor:grab;transform-style:preserve-3d}
+#reveal .wrap.drag{transition:none;cursor:grabbing}
+#reveal .wrap.out{opacity:0}
+#reveal .wrap.pop{animation:rc-in .55s cubic-bezier(.2,1.3,.4,1) both}
+#reveal .wrap.slide{animation:rc-slide .42s cubic-bezier(.2,.9,.3,1) both}
+/* carte pastel teintée par la rareté, comme l'original */
+#reveal .rc{width:min(80vw,330px);max-height:calc(100dvh - 210px);overflow:hidden;background:color-mix(in srgb,var(--c) 24%,#fff);color:#161616;border-radius:20px;box-shadow:0 0 34px color-mix(in srgb,var(--c) 42%,transparent),0 18px 50px #000a;display:flex;flex-direction:column}
+#reveal.r-legendary .rc,#reveal.shiny .rc{box-shadow:0 0 70px color-mix(in srgb,var(--c) 75%,transparent),0 0 140px color-mix(in srgb,var(--c) 35%,transparent),0 18px 50px #000a}
+#reveal .ph{position:relative;aspect-ratio:4/3;flex:none;background:var(--c) center/cover}
+#reveal .chip{position:absolute;top:10px;left:10px;background:color-mix(in srgb,var(--c) 40%,#fff);color:#161616;font-size:11px;font-weight:800;padding:2px 8px;border-radius:7px;border:1px solid color-mix(in srgb,var(--c) 70%,#000)}
+#reveal .chip.sh{left:auto;right:10px;background:var(--shiny)}
+#reveal .newtag{position:absolute;bottom:10px;left:10px;background:#161616;color:var(--acc);font-size:11px;font-weight:700;padding:2px 9px;border-radius:7px}
+#reveal .in{padding:12px 16px 6px;overflow:hidden;flex:1;min-height:0}
+#reveal .nm{font-size:20px;font-weight:700;line-height:1.2;overflow-wrap:anywhere}
+#reveal .rl{color:color-mix(in srgb,var(--c) 55%,#000);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin:3px 0 6px}
+#reveal .ds{margin:0;font-size:13px;line-height:1.5;color:#2c2c2c;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+#reveal .sts{display:flex;justify-content:space-between;align-items:center;margin:4px 16px 14px;padding-top:9px;border-top:1px solid #0002;font-size:14px}
+#reveal .sts span{display:flex;align-items:center;gap:6px}
+#reveal .sum{position:relative;z-index:2;flex:1;overflow:auto;padding:calc(18px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));max-width:1100px;width:100%;margin:0 auto}
+#reveal .sum .sticky-bar{position:sticky;bottom:0;top:auto;background:linear-gradient(transparent,#0b0b0b 40%);padding-top:18px}
+#reveal .sum .finish{width:100%}
+
+/* le paquet qui s'ouvre */
+#reveal .pack{position:absolute;left:50%;top:44%;width:150px;height:210px;margin:-105px 0 0 -75px;border-radius:14px;background:linear-gradient(135deg,#f4f4f4 0%,#cfcfcf 45%,#f8f8f8 55%,#bdbdbd 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 0 50px #ffffff55;animation:pack-shake 1.25s ease-in both}
+#reveal .pack-w{font-size:78px;font-weight:700;color:#111}
+#reveal .flash{position:absolute;inset:0;background:#fff;opacity:0;animation:flash 1.3s ease-out both;pointer-events:none;z-index:5}
+@keyframes pack-shake{0%{transform:scale(.7);opacity:0}15%{transform:scale(1);opacity:1}25%{transform:rotate(-3deg)}35%{transform:rotate(3deg)}45%{transform:rotate(-5deg)}55%{transform:rotate(5deg)}70%{transform:rotate(-7deg) scale(1.05)}85%{transform:rotate(7deg) scale(1.1)}100%{transform:scale(1.7);opacity:0}}
+@keyframes flash{0%,72%{opacity:0}88%{opacity:.9}100%{opacity:0}}
+@keyframes rc-in{0%{opacity:0;transform:translateY(60px) scale(.55) rotate(-6deg)}60%{opacity:1;transform:translateY(-6px) scale(1.05) rotate(1deg)}100%{opacity:1;transform:none}}
+@keyframes rc-slide{0%{opacity:0;transform:translateX(55vw) rotateY(-28deg) scale(.92)}100%{opacity:1;transform:none}}
+
+/* rayons + anneau + étincelles (légendaires / ultra rares) */
+#reveal .rays{position:absolute;left:50%;top:42%;width:170vmax;height:170vmax;margin:-85vmax 0 0 -85vmax;z-index:1;pointer-events:none;
+  background:repeating-conic-gradient(from 0deg,color-mix(in srgb,var(--c) 38%,transparent) 0 5deg,transparent 5deg 16deg);
+  -webkit-mask-image:radial-gradient(circle,#000 0,transparent 52%);mask-image:radial-gradient(circle,#000 0,transparent 52%);animation:spin 16s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#reveal .ring{position:absolute;left:50%;top:42%;width:240px;height:240px;margin:-120px 0 0 -120px;border:4px solid var(--c);border-radius:50%;z-index:4;pointer-events:none;animation:ring 1s ease-out both}
+@keyframes ring{from{transform:scale(.2);opacity:1}to{transform:scale(7);opacity:0}}
+#reveal .sparks{position:absolute;inset:0;z-index:4;pointer-events:none;overflow:hidden}
+#reveal .sparks span{position:absolute;left:50%;top:42%;width:var(--s);height:var(--s);border-radius:50%;background:var(--c);box-shadow:0 0 10px 2px var(--c);opacity:0;animation:spark 2.2s ease-out var(--d) both}
+@keyframes spark{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(.2)}}
+
+/* walkout légendaire (façon FUT) */
+#reveal .walk{position:absolute;inset:0;z-index:6;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;animation:walk-in .25s ease-out both}
+#reveal .walk::before{content:"";position:absolute;left:50%;top:50%;width:140vmax;height:140vmax;margin:-70vmax 0 0 -70vmax;
+  background:repeating-conic-gradient(from 0deg,color-mix(in srgb,var(--c) 55%,transparent) 0 3deg,transparent 3deg 12deg);
+  -webkit-mask-image:radial-gradient(circle,#000 0,transparent 45%);mask-image:radial-gradient(circle,#000 0,transparent 45%);
+  animation:spin 6s linear infinite,rays-in 1.6s ease-out both}
+@keyframes rays-in{from{opacity:0;scale:.3}to{opacity:1;scale:1}}
+@keyframes walk-in{from{opacity:0}to{opacity:1}}
+#reveal .streak{position:absolute;left:0;top:46%;width:100%;height:5px;background:linear-gradient(90deg,transparent,var(--c),#fff,var(--c),transparent);box-shadow:0 0 30px 6px var(--c);animation:streak .9s cubic-bezier(.6,0,.2,1) .15s both}
+#reveal .streak.s2{top:54%;height:3px;animation-delay:.3s;animation-direction:reverse}
+@keyframes streak{from{transform:translateX(-110%);opacity:1}to{transform:translateX(110%);opacity:.2}}
+#reveal .wt{position:relative;font-size:clamp(30px,9vw,64px);font-weight:800;color:var(--c);text-shadow:0 0 28px var(--c),0 0 60px var(--c);animation:wt-slam .5s cubic-bezier(.2,1.4,.4,1) .85s both}
+#reveal .wsub{position:relative;margin-top:10px;font-size:clamp(14px,4vw,22px);letter-spacing:.4em;color:#fff;animation:wt-slam .5s ease-out 1.1s both}
+@keyframes wt-slam{from{opacity:0;transform:scale(3);letter-spacing:.7em;filter:blur(14px)}to{opacity:1;transform:scale(1);letter-spacing:.14em;filter:blur(0)}}
+#reveal .wflash{position:absolute;inset:0;background:radial-gradient(circle,#fff,color-mix(in srgb,var(--c) 60%,#fff));opacity:0;animation:wflash .55s ease-in 1.75s both}
+@keyframes wflash{0%{opacity:0}45%{opacity:1}100%{opacity:0}}
+
+@media(prefers-reduced-motion:reduce){#reveal *{animation-duration:.01ms!important;animation-delay:0s!important}}

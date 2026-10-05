@@ -63,7 +63,7 @@ function drawCard(min = 0) {
   if (r === 'legendary' && Math.random() < CFG.SHINY_CHANCE) id = live.toShiny(id);
   return id;
 }
-/** Tire un booster complet ; garantit une carte "rare" ou mieux si activé. */
+/** Tire un booster complet : la rareté dépend uniquement de la chance (aucune garantie). */
 function drawPack() {
   // pages distinctes dans un même booster (re-tirage si doublon, borné pour les très petits catalogues)
   const pages = new Set(), ids = [];
@@ -75,7 +75,6 @@ function drawPack() {
     }
     pages.add(id % 100000000); ids.push(id);
   }
-  if (CFG.GUARANTEE_RARE && !cardRows([...new Set(ids)]).some(c => RANK[c.rarity] >= RANK.rare)) ids[ids.length - 1] = drawCard(RANK.rare);
   return ids;
 }
 function cardRows(ids) {
@@ -324,7 +323,7 @@ route('POST', '/api/cards/enrich', async ({ body }) => {
 });
 route('GET', '/api/hits', () => ({ hits }));
 route('GET', '/api/config', () => ({
-  rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: live.catalogSize(), packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, guarantee: CFG.GUARANTEE_RARE,
+  rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: live.catalogSize(), packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX,
 }), false);
 
 const AVG = `(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))`;

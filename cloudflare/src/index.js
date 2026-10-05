@@ -49,7 +49,6 @@ async function drawCards(env, origin, n) {
     }
   };
   const picks = Array.from({ length: n }, () => draw(0));
-  if (CFG.GUARANTEE_RARE && !picks.some(p => RANK[p.rarity] >= RANK.rare)) picks[n - 1] = draw(RANK.rare);
   const entries = await Promise.all(picks.map(p => entryAt(env, origin, p.rank)));
   return picks.map((p, i) => {
     const [page, title, views] = entries[i];
@@ -175,7 +174,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
     rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: meta.n,
-    packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, guarantee: CFG.GUARANTEE_RARE,
+    packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX,
   };
 }, false);
 

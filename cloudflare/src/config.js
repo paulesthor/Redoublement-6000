@@ -11,7 +11,6 @@ export default {
   PACK_EVERY: 10 * 60 * 1000,  // un booster gratuit toutes les 10 min
   PACK_MAX: 10,                // stock max de boosters gratuits
   PACK_PRICE: 60,              // prix d'un booster acheté (ouvert immédiatement)
-  GUARANTEE_RARE: false,       // true : au moins une carte "rare" ou mieux par booster
 
   // Part de chaque rareté dans le catalogue (%), appliquée au classement par popularité lors du `seed`.
   CATALOG_SHARE: { common: 50.25, uncommon: 20, rare: 20, super: 7, ultra: 2.5, legendary: 0.25 },
