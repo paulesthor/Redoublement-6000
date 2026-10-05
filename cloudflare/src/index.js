@@ -262,6 +262,14 @@ async function refillReserve(env, max = 20) {
   return keep.length;
 }
 
+let lastRefill = 0;
+/** Remplissage de la réserve à la demande (au plus toutes les 30 s par instance) : la tâche planifiée n'est qu'un renfort. */
+function maybeRefill(env, ctx) {
+  if (now() - lastRefill < 30000) return;
+  lastRefill = now();
+  ctx.waitUntil(refillReserve(env).catch(e => console.error('refillReserve', e)));
+}
+
 // ---------- joueurs simulés : ils mettent des cartes en vente et enchérissent ----------
 const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan', 'Zoé_Wiki', 'Hugo_Collect', 'Manon', 'Théo_Lyon', 'Sarah.M', 'Ethan_FR', 'Jade_Cartes'];
 const BOT_PRICE = { common: [2, 6], uncommon: [5, 14], rare: [12, 36], super: [40, 110], ultra: [120, 320], legendary: [350, 900] };
@@ -431,6 +439,7 @@ route('POST', '/api/me/test-mode', async ({ env, user, body }) => {
   return { ok: true };
 });
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
+  maybeRefill(env, ctx);
   const u = await refreshPacks(env, user);
   if (!u.test_mode) {                                    // mode test : paquets illimités
     if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
@@ -441,6 +450,7 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   return finishPack(env, ctx, user, await drawCards(env, origin, PACK_SIZE));
 });
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
+  maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
   return finishPack(env, ctx, user, await drawCards(env, origin, PACK_SIZE));
@@ -541,6 +551,7 @@ route('GET', '/api/leaderboard', async ({ env }) => ({
 
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
   ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée
+  maybeRefill(env, ctx);
   await settleAuctions(env, ctx);
   const rows = await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
     c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
