@@ -46,3 +46,6 @@ export function notify(env, ctx, msg, to = null) {
   ctx?.waitUntil(p);
   return p;
 }
+
+/** Seau de l'index de recherche (public/catalog/s/N.json) d'un titre : même fonction que scripts/build-search-index.mjs. */
+export const searchBucket = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619) >>> 0; return h & 4095; };

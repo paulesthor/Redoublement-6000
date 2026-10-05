@@ -1,6 +1,6 @@
 import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
-  userFromToken, hashPw, randomHex, notify } from './util.js';
+  userFromToken, hashPw, randomHex, notify, searchBucket } from './util.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -148,6 +148,18 @@ async function enrich(env, ids) {
   }
 }
 
+// ---------- recherche dans tout le catalogue ----------
+const bucketCache = new Map();
+async function rankOf(env, origin, title) {
+  const b = searchBucket(title);
+  let list = bucketCache.get(b);
+  if (!list) {
+    list = await assetJson(env, origin, `/catalog/s/${b}.json`);
+    bucketCache.set(b, list);
+    if (bucketCache.size > 200) bucketCache.delete(bucketCache.keys().next().value);
+  }
+  return list.find(e => e[1] === title)?.[0] ?? null;
+}
 // ---------- paquets du joueur ----------
 async function refreshPacks(env, u) {
   const elapsed = Math.floor((now() - u.pack_ts) / PACK_EVERY);
@@ -310,6 +322,31 @@ route('GET', '/api/users', async ({ env, user }) => {
   const online = new Set((await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids);
   return { users: (await all(env, 'SELECT id, name FROM users ORDER BY name')).map(u => ({ ...u, online: online.has(u.id), me: u.id === user.id })) };
 });
+route('GET', '/api/catalog/search', async ({ env, origin, user, query }) => {
+  const q = (query.get('q') || '').trim().slice(0, 80);
+  if (q.length < 2) return { cards: [] };
+  const params = new URLSearchParams({
+    action: 'query', format: 'json', generator: 'search', gsrsearch: q, gsrnamespace: '0', gsrlimit: '20',
+    prop: 'pageimages|extracts', piprop: 'thumbnail', pithumbsize: '300', pilimit: 'max', pilicense: 'any',
+    exintro: '1', explaintext: '1', exchars: '220', exlimit: 'max',
+  });
+  let pages = null;
+  try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) pages = (await r.json()).query?.pages; } catch { /* hors-ligne */ }
+  if (!pages) bad('Recherche indisponible, réessaie dans un instant', 503);
+  const { ranges } = await getMeta(env, origin);
+  const hits = Object.values(pages).sort((a, b) => a.index - b.index);
+  const cards = (await Promise.all(hits.map(async p => {
+    const rank = await rankOf(env, origin, p.title);
+    if (rank == null) return null;
+    const rarity = RARITIES.find(r => rank >= ranges[r][0] && rank < ranges[r][1]);
+    const e = await entryAt(env, origin, rank);
+    return { id: e[0], title: p.title, rarity, rank, views: e[2], image: p.thumbnail?.source ?? null, extract: (p.extract || '').trim(), ...stats(p.title, rarity, false), enriched: 2 };
+  }))).filter(Boolean);
+  const own = cards.length ? await all(env, `SELECT card_id, SUM(qty) qty FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(cards.length)}) GROUP BY card_id`, user.id, ...cards.map(c => c.id)) : [];
+  const owned = new Map(own.map(r => [r.card_id, r.qty]));
+  return { cards: cards.map(c => ({ ...c, owned: owned.get(c.id) || 0 })) };
+});
+
 route('GET', '/api/leaderboard', async ({ env }) => ({
   players: await all(env, `SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
     COALESCE(SUM(${caseSql('c.rarity', POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(c.id) AS uniques

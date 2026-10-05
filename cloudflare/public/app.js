@@ -208,7 +208,7 @@ async function fillMissing(r) {
 }
 
 // ---------- vues ----------
-const GROUP = { packs: 'packs', album: 'album', duel: 'duel', rank: 'duel', market: 'market', trades: 'market', friends: 'friends' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'duel', market: 'market', trades: 'market', friends: 'friends' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -331,6 +331,26 @@ const views = {
       }
       if (changed && $('#g')) draw();
     }).catch(() => {});
+  },
+
+  async search(v) {
+    v.innerHTML = `${pageHead('Recherche', 'Retrouve n\'importe quelle page de Wikipédia et sa rareté')}
+      <div class="search wide">${ico('search')}<input id="gq" placeholder="Nom d'une page (ex. Tour Eiffel)" autocomplete="off" enterkeyhint="search"></div>
+      <div id="gr" class="grid"><div class="empty" style="grid-column:1/-1">Tape au moins 2 lettres.<br>Les ${fmt(cfg.catalog)} pages du catalogue sont cherchables.</div></div>`;
+    let timer = null, seq = 0;
+    const run = async () => {
+      const q = $('#gq').value.trim(), my = ++seq, box = $('#gr');
+      if (q.length < 2) { box.innerHTML = '<div class="empty" style="grid-column:1/-1">Tape au moins 2 lettres.</div>'; return; }
+      box.innerHTML = '<div class="empty" style="grid-column:1/-1">Recherche…</div>';
+      try {
+        const { cards } = await api('/catalog/search?q=' + encodeURIComponent(q));
+        if (my !== seq) return;
+        box.innerHTML = cards.length ? cards.map(c => cardHtml(c, { tag: c.owned ? `<span class="tag new">Possédée ×${c.owned}</span>` : '', extra: `<div class="meta">Rang <b>#${fmt(c.rank ?? 0)}</b></div>` })).join('')
+          : '<div class="empty" style="grid-column:1/-1">Aucune page trouvée.</div>';
+      } catch (e) { if (my === seq) box.innerHTML = `<div class="empty" style="grid-column:1/-1">${esc(e.message)}</div>`; }
+    };
+    $('#gq').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 350); };
+    $('#gq').onkeydown = e => { if (e.key === 'Enter') { clearTimeout(timer); run(); } };
   },
 
   async duel(v) {

@@ -431,6 +431,17 @@ function searchCards(q) {
 route('GET', '/api/cards/search', ({ query }) => ({
   cards: searchCards(query.get('q') || ''),
 }));
+route('GET', '/api/catalog/search', ({ user, query }) => {
+  const q = (query.get('q') || '').trim();
+  if (q.length < 2) return { cards: [] };
+  const cols = 'id, title, rarity, rank, views, atk, def, image, extract, enriched';
+  let cards = all(`SELECT ${cols} FROM cards WHERE shiny = 0 AND title COLLATE NOCASE >= ? AND title COLLATE NOCASE < ? ORDER BY views DESC LIMIT 20`, q, q.slice(0, -1) + String.fromCharCode(q.charCodeAt(q.length - 1) + 1));
+  if (cards.length < 20) {
+    const have = new Set(cards.map(c => c.id));
+    cards = cards.concat(all(`SELECT ${cols} FROM cards WHERE shiny = 0 AND title LIKE ? ORDER BY views DESC LIMIT 20`, '%' + q.replace(/[%_]/g, '') + '%').filter(c => !have.has(c.id))).slice(0, 20);
+  }
+  return { cards: cards.map(c => ({ ...c, owned: one('SELECT COALESCE(SUM(qty), 0) n FROM inventory WHERE user_id=? AND card_id IN (?, ?)', user.id, c.id, c.id + 100000000).n })) };
+});
 route('POST', '/api/trades', ({ user, body }) => {
   const to = +body.to;
   if (to === user.id || !one('SELECT 1 FROM users WHERE id=?', to)) bad('Destinataire invalide');

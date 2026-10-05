@@ -5,7 +5,7 @@
   "type": "module",
   "description": "WikiMasters privé sur Cloudflare (Workers + D1 + Durable Object), gratuit et toujours en ligne",
   "scripts": {
-    "catalog": "node scripts/build-catalog.mjs",
+    "catalog": "node scripts/build-catalog.mjs && node scripts/build-search-index.mjs",
     "db:local": "wrangler d1 execute wikimasters --local --file=schema.sql",
     "db:remote": "wrangler d1 execute wikimasters --remote --file=schema.sql",
     "dev": "wrangler dev",
