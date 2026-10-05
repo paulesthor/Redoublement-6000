@@ -111,3 +111,10 @@ CREATE TABLE IF NOT EXISTS reserve (        -- cartes déjà complétées (texte
   rank INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS reserve_rarity ON reserve(rarity);
+CREATE TABLE IF NOT EXISTS prepared (        -- paquets tirés et complétés d'avance pour un joueur (non encore ouverts)
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  cards TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS prepared_user ON prepared(user_id, id);

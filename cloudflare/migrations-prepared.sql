@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS prepared (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, cards TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS prepared_user ON prepared(user_id, id);

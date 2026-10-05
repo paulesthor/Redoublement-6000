@@ -181,6 +181,7 @@ async function checkAchievements(env, ctx, user) {
   return stats;
 }
 const lastCheck = new Map();
+const lastPrep = new Map();
 
 // ---------- recherche dans tout le catalogue ----------
 const bucketCache = new Map();
@@ -268,6 +269,38 @@ function maybeRefill(env, ctx) {
   if (now() - lastRefill < 30000) return;
   lastRefill = now();
   ctx.waitUntil(refillReserve(env).catch(e => console.error('refillReserve', e)));
+}
+
+
+// ---------- paquets préparés d'avance ----------
+// Dès que le joueur arrive (ou après chaque ouverture), on tire et on complète (texte + photos) ses prochains paquets :
+// ils s'ouvrent ensuite instantanément, les uns après les autres. Rien n'est ajouté à la collection avant l'ouverture.
+const PREPARE_MAX = 3;
+const preparing = new Set();
+async function prepareFor(env, ctx, user, stock) {
+  if (user.is_bot || preparing.has(user.id)) return;
+  const want = Math.min(PREPARE_MAX, Math.max(stock, user.test_mode ? PREPARE_MAX : 0, user.coins >= CFG.PACK_PRICE ? 1 : 0));
+  if (want < 1) return;
+  preparing.add(user.id);
+  try {
+    const have = (await one(env, 'SELECT COUNT(*) n FROM prepared WHERE user_id = ?', user.id)).n;
+    for (let k = have; k < want; k++) {
+      const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE);
+      const ids = [...new Set(drawn.map(c => c.id))];
+      await env.DB.batch(drawn.map(c => insertCard(env, c)));
+      await enrich(env, ids);
+      await env.DB.batch([
+        ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', c.id - SHINY_OFFSET, c.id)),
+        st(env, 'INSERT INTO prepared (user_id, cards, ts) VALUES (?,?,?)', user.id, JSON.stringify(drawn), now()),
+      ]);
+    }
+  } finally { preparing.delete(user.id); }
+}
+/** Le plus ancien paquet préparé du joueur (ou null). */
+async function takePrepared(env, uid) {
+  const r = await run(env, 'DELETE FROM prepared WHERE id = (SELECT id FROM prepared WHERE user_id = ? ORDER BY id LIMIT 1) RETURNING cards', uid).catch(() => null);
+  const row = r?.results?.[0];
+  try { return row ? JSON.parse(row.cards) : null; } catch { return null; }
 }
 
 // ---------- joueurs simulés : ils mettent des cartes en vente et enchérissent ----------
@@ -405,7 +438,16 @@ route('POST', '/api/login', async ({ env, body }) => {
 }, false);
 route('GET', '/api/me', async ({ env, ctx, user }) => {
   if (now() - (lastCheck.get(user.id) || 0) > 30000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
-  return { ...publicUser(await refreshPacks(env, user)), badge: await friendBadge(env, user.id) };
+  const u = await refreshPacks(env, user);
+  if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
+  return { ...publicUser(u), badge: await friendBadge(env, user.id) };
+});
+// images des paquets préparés : le client les met en cache avant l'ouverture
+route('GET', '/api/packs/next', async ({ env, user }) => {
+  const rows = await all(env, 'SELECT cards FROM prepared WHERE user_id = ? ORDER BY id LIMIT 2', user.id);
+  const ids = rows.flatMap(r => { try { return JSON.parse(r.cards).map(c => c.id); } catch { return []; } });
+  const imgs = ids.length ? await all(env, `SELECT image FROM cards WHERE image IS NOT NULL AND id IN (${placeholders(ids.length)})`, ...ids) : [];
+  return { ready: rows.length, images: imgs.map(r => r.image) };
 });
 route('GET', '/api/achievements', async ({ env, ctx, user }) => {
   const stats = await checkAchievements(env, ctx, user);
@@ -447,13 +489,17 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
-  return finishPack(env, ctx, user, await drawCards(env, origin, PACK_SIZE));
+  const drawn = (await takePrepared(env, u.id)) ?? await drawCards(env, origin, PACK_SIZE);
+  ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (u.test_mode ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
+  return finishPack(env, ctx, user, drawn);
 });
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-  return finishPack(env, ctx, user, await drawCards(env, origin, PACK_SIZE));
+  const drawn = (await takePrepared(env, user.id)) ?? await drawCards(env, origin, PACK_SIZE);
+  ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
+  return finishPack(env, ctx, user, drawn);
 });
 route('POST', '/api/cards/enrich', async ({ env, body }) => {
   const ids = (body.ids || []).map(Number).filter(Number.isFinite).slice(0, 40);

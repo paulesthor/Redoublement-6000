@@ -196,6 +196,13 @@ const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false }
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
   ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`);
 
+/** Les prochains paquets sont préparés par le serveur : on met leurs images en cache avant l'ouverture. */
+const prefetched = new Set();
+async function prefetchNext() {
+  try { (await api('/packs/next')).images.forEach(u => { if (!prefetched.has(u)) { prefetched.add(u); new Image().src = u; } }); } catch { /* pas grave */ }
+}
+const schedulePrefetch = () => [2500, 8000, 16000].forEach(ms => setTimeout(prefetchNext, ms));
+
 /** Images de fond chargées seulement quand la carte approche de l'écran (album de centaines de cartes). */
 let lazyObs = null;
 function lazyImages(root) {
@@ -296,6 +303,7 @@ const views = {
       // la requête part tout de suite et le paquet se déchire pendant ce temps : le chargement est masqué par l'animation
       const cardsPromise = (async () => {
         const r = await api(path, {});
+        schedulePrefetch();                         // le serveur prépare déjà le paquet suivant : on précharge ses images
         await loadProgressive(r);                   // seules les premières cartes sont attendues, les autres arrivent pendant qu'on les regarde
         lastPack = r;
         refreshMe().catch(() => {});
@@ -759,7 +767,7 @@ async function start() {
   }
   $('#boot').hidden = true;
   if (!ok) { $('#auth').hidden = false; $('#a-err').textContent = 'Serveur injoignable. Réessaie dans un instant (tu restes connecté).'; return; } $('#app').hidden = false; connect(); render();
-  setTimeout(() => ['/album', '/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500);   // pré-chargement des onglets suivants
+  setTimeout(() => ['/album', '/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500); schedulePrefetch();   // pré-chargement des onglets suivants
   let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
   if (pending) addByCode(pending);
 }
