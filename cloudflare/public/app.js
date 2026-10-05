@@ -344,9 +344,9 @@ const views = {
         <div class="tile"><b>${dupes}</b><span>doublons</span></div>
         <div class="tile gold"><b>${fmt(worth)}</b><span>valeur estimée (pièces)</span></div>
       </div>
-      <div class="panel"><h3>Progression</h3><div class="prog" style="margin:0">${cfg.rarities.map(r => `<div><div class="top"><span class="rar ${r}">${RAR[r]}</span><span>${have[r] || 0} / ${fmt(total[r] ?? 0)}</span></div>
+      <details class="panel progd" ${innerWidth > 820 ? 'open' : ''}><summary>Progression <span class="mut">${cfg.rarities.map(r => `${have[r] || 0}`).join(' · ')}</span></summary><div class="prog" style="margin:12px 0 0">${cfg.rarities.map(r => `<div><div class="top"><span class="rar ${r}">${RAR[r]}</span><span>${have[r] || 0} / ${fmt(total[r] ?? 0)}</span></div>
         <div class="bar" style="color:var(--${r})"><i style="width:${Math.max((have[r] || 0) ? 3 : 0, (have[r] || 0) / (total[r] || 1) * 100)}%;background:var(--${r})"></i></div>
-        <span class="mut" style="font-size:11.5px">vente moy. ${rarityAvg[r] ? fmt(rarityAvg[r].avg) : '—'}</span></div>`).join('')}</div></div>
+        <span class="mut" style="font-size:11.5px">vente moy. ${rarityAvg[r] ? fmt(rarityAvg[r].avg) : '—'}</span></div>`).join('')}</div></details>
       <div class="toolbar">
         <div class="search">${ico('search')}<input id="flt" placeholder="Rechercher une carte" autocomplete="off"></div>
         <select id="srt"><option value="rar">Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
@@ -427,8 +427,8 @@ const views = {
   async duel(v) {
     const { users } = await api('/users');
     v.innerHTML = `${pageHead('Combats', 'Défie un joueur connecté')}${seg(COMBAT_SEG, 'duel')}
-      <div class="panel"><p class="mut" style="margin:0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Combat</b> : chacun choisit 3 cartes, la n°1 affronte la n°1 de l'adversaire, etc. (ATK contre DEF). Victoire : +50 pièces.</p></div>
-      <div class="list">${users.map(u => `<div class="item ${u.me ? 'me' : ''}">${avatar(u.name, online.has(u.id))}
+      <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Combat</b> : chacun choisit 3 cartes, la n°1 affronte la n°1 de l'adversaire, etc. (ATK contre DEF). Victoire : +50 pièces.</p></details></div>
+      <div class="list">${users.map(u => `<div class="item row1 ${u.me ? 'me' : ''}">${avatar(u.name, online.has(u.id))}
         <div class="grow"><div class="nm">${esc(u.name)}${u.me ? ' (toi)' : ''}</div><div class="sub">${online.has(u.id) ? 'En ligne' : 'Hors ligne'}</div></div>
         ${u.me ? '' : `<div class="acts">${['quiz', 'battle'].map(m => `<button data-id="${u.id}" data-mode="${m}" ${online.has(u.id) ? '' : 'disabled'} class="${m === 'quiz' ? 'plain' : ''}">${m === 'quiz' ? 'Quiz' : 'Combat'}</button>`).join('')}</div>`}</div>`).join('')}</div>`;
     bindSeg(v);
@@ -455,11 +455,11 @@ const views = {
   async trades(v) {
     const [{ trades }, { users }, { cards }] = await Promise.all([api('/trades'), api('/users'), api('/album')]);
     v.innerHTML = `${pageHead('Marché', 'Échange des cartes avec un joueur')}${seg(MARKET_SEG, 'trades')}
-      <div class="panel"><h3>Proposer un échange</h3><div class="fr-add" style="flex-direction:column">
+      <div class="panel"><h3>Proposer un échange</h3><div class="tform">
         <select id="t-to">${users.filter(u => !u.me).map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>
         <select id="t-off">${cards.map(c => `<option value="${c.id}">Je donne : ${esc(c.title)}</option>`).join('')}</select>
         <input id="t-q" placeholder="Carte voulue (tape son nom)" list="t-list" autocomplete="off"><datalist id="t-list"></datalist><button id="t-go">Proposer l'échange</button></div></div>
-      <h3 class="sec">En attente</h3>` + (trades.length ? `<div class="list">${trades.map(t => {
+      ` + (trades.length ? `<h3 class="sec">En attente</h3><div class="list">${trades.map(t => {
         const mine = t.from_id === me.id;
         return `<div class="item">${avatar(mine ? t.to_name : t.from_name)}<div class="grow"><div class="nm">${mine ? 'Toi' : esc(t.from_name)} → ${mine ? esc(t.to_name) : 'toi'}</div>
           <div class="sub"><span><b style="color:var(--fg)">${esc(t.offer_title)}</b> contre <b style="color:var(--fg)">${esc(t.want_title)}</b></span></div></div>
@@ -479,16 +479,14 @@ const views = {
     const f = await api('/friends');
     const link = `${location.origin}/?friend=${f.code}`;
     v.innerHTML = `${pageHead('Amis', `${f.friends.length} ami${f.friends.length > 1 ? 's' : ''}`)}
-      ${f.incoming.length ? `<div class="panel"><h3>Demandes reçues</h3><div class="list">${f.incoming.map(r => `<div class="item">${avatar(r.name)}<div class="grow"><div class="nm">${esc(r.name)}</div><div class="sub">veut devenir ton ami</div></div>
+      ${f.incoming.length ? `<div class="panel"><h3>Demandes reçues</h3><div class="list">${f.incoming.map(r => `<div class="item row1">${avatar(r.name)}<div class="grow"><div class="nm">${esc(r.name)}</div><div class="sub">veut devenir ton ami</div></div>
         <div class="acts"><button data-resp="${r.id}" data-ok="1">Accepter</button><button class="plain" data-resp="${r.id}">Refuser</button></div></div>`).join('')}</div></div>` : ''}
-      <div class="panel"><h3>Ajouter par pseudo</h3>
-        <div class="fr-add"><input id="fr-name" placeholder="Pseudo du joueur" autocapitalize="off" autocomplete="off"><button id="fr-send">Envoyer la demande</button></div>
-        <p class="mut" style="margin:10px 0 0;font-size:13px">L'autre joueur doit accepter ta demande.</p>
-        ${f.outgoing.length ? `<p class="mut" style="margin:6px 0 0;font-size:13px">En attente : ${f.outgoing.map(r => esc(r.name)).join(', ')}</p>` : ''}</div>
-      <div class="panel"><h3>Mon QR code</h3>
-        <div class="qrwrap" id="qr"></div>
-        <p class="mut" style="margin:0 0 12px;font-size:13px">Un ami qui scanne ce code devient ton ami tout de suite, sans validation.</p>
-        <div class="row"><button id="fr-scan">${ico('qr')} Scanner un QR code</button><button class="plain" id="fr-copy">Copier mon lien</button></div></div>
+      <div class="panel addfriend"><h3>Ajouter un ami</h3>
+        <div class="fr-add"><input id="fr-name" placeholder="Pseudo du joueur" autocapitalize="off" autocomplete="off"><button id="fr-send">Demander</button></div>
+        ${f.outgoing.length ? `<p class="mut" style="margin:6px 0 0;font-size:12.5px">En attente : ${f.outgoing.map(r => esc(r.name)).join(', ')}</p>` : ''}
+        <div class="qrrow"><div class="qrwrap" id="qr"></div>
+          <div class="qrside"><p class="mut">Ton QR code : un ami qui le scanne devient ton ami tout de suite.</p>
+            <button id="fr-scan">${ico('qr')} Scanner</button><button class="plain" id="fr-copy">Copier mon lien</button></div></div></div>
       <h3 class="sec">Mes amis</h3>
       ${f.friends.length ? `<div class="list">${f.friends.map(a => `<div class="item tap" data-pl="${a.id}">${avatar(a.name, a.online)}<div class="grow"><div class="nm">${esc(a.name)}${a.isNew ? '<span class="newtag">Nouveau</span>' : ''}</div><div class="sub">${a.online ? 'En ligne' : 'Hors ligne'}</div></div>
         <div class="acts"><button class="plain" data-rm="${a.id}">Retirer</button></div></div>`).join('')}</div>` : '<div class="empty">Aucun ami pour l\'instant.<br>Partage ton QR code ou envoie une demande par pseudo.</div>'}`;
