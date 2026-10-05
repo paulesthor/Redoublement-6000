@@ -16,53 +16,6 @@
   const SHIELD = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#2f66c9" stroke-width="2.4" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>';
 
   /**
-   * Paquet de cartes dessiné en SVG (formes vectorielles : pas de clip-path/overflow CSS, qui produisaient des
-   * rectangles parasites sur certains navigateurs mobiles). kind : 'full' | 'top' | 'body' (déchirure en dents de scie).
-   */
-  const PW = 172, PH = 244, TY = 42;
-  function tearPts() {
-    const teeth = 16, pts = [];
-    for (let k = 0; k <= teeth; k++) pts.push([+(PW - k * PW / teeth).toFixed(1), +(TY + (k % 2 ? 4 : -4) + (k % 3 ? 0 : 2)).toFixed(1)]); // de droite à gauche
-    return pts;
-  }
-  function packSvg(kind) {
-    const id = 'pk' + Math.random().toString(36).slice(2, 7), pts = tearPts(), str = p => p.join(',');
-    const top = `0,0 ${PW},0 ${pts.map(str).join(' ')}`;
-    const body = `${[...pts].reverse().map(str).join(' ')} ${PW},${PH} 0,${PH}`;
-    const tear = kind === 'full' ? '' : `<clipPath id="${id}t"><polygon points="${kind === 'top' ? top : body}"/></clipPath>`;
-    return `<svg class="pk-svg" viewBox="0 0 ${PW} ${PH}" aria-hidden="true"><defs>
-      <linearGradient id="${id}f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbfbfb"/><stop offset=".42" stop-color="#d4d4d8"/><stop offset=".52" stop-color="#fdfdfd"/><stop offset="1" stop-color="#b7b7be"/></linearGradient>
-      <pattern id="${id}b" width="34" height="34" patternUnits="userSpaceOnUse" patternTransform="rotate(28)"><rect width="10" height="34" fill="#fff" fill-opacity=".38"/></pattern>
-      <pattern id="${id}k" width="6" height="14" patternUnits="userSpaceOnUse"><rect width="2" height="14" fill="#000" fill-opacity=".18"/></pattern>
-      <linearGradient id="${id}s" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-      <clipPath id="${id}r"><rect width="${PW}" height="${PH}" rx="16"/></clipPath>${tear}</defs>
-      <g ${tear ? `clip-path="url(#${id}t)"` : ''}><g clip-path="url(#${id}r)">
-        <rect width="${PW}" height="${PH}" fill="url(#${id}f)"/><rect width="${PW}" height="${PH}" fill="url(#${id}b)"/>
-        ${kind !== 'body' ? `<rect width="${PW}" height="12" fill="url(#${id}k)"/>` : ''}${kind !== 'top' ? `<rect y="${PH - 12}" width="${PW}" height="12" fill="url(#${id}k)"/>` : ''}
-        ${kind !== 'top' ? `<text x="${PW / 2}" y="${PH * .6}" text-anchor="middle" font-family="Sora,Inter,sans-serif" font-weight="800" font-size="98" fill="#101014">W</text>` : ''}
-        <rect y="0" x="-90" width="64" height="${PH}" fill="url(#${id}s)" transform="skewX(-14)"><animate attributeName="x" from="-90" to="250" dur="4.2s" repeatCount="indefinite"/></rect>
-      </g></g></svg>`;
-  }
-  window.packSvg = packSvg;
-  const INTENSITY = { common: .55, uncommon: .65, rare: .8, super: .9, ultra: 1, legendary: 1 };
-  /** Teinte le halo du paquet avec la couleur de la carte la plus rare du tirage (indice visuel comme dans FUT). */
-  function tint(pk, root, cards, rk) {
-    if (!cards?.length) return;
-
-    const best = cards.reduce((a, b) => ((rk[b.rarity] ?? 0) - (rk[a.rarity] ?? 0) || (b.shiny ? 1 : 0) - (a.shiny ? 1 : 0)) > 0 ? b : a);
-    const css = getComputedStyle(document.documentElement);
-    const col = (best.shiny ? css.getPropertyValue('--shiny') : css.getPropertyValue('--' + best.rarity)).trim() || '#ffffff';
-    pk.style.setProperty('--pc', col);
-    pk.style.setProperty('--pi', INTENSITY[best.rarity] ?? .7);
-    pk.classList.add('tint');
-    const h = root.querySelector('.pk-hint'); if (h) { h.style.setProperty('--pc', col); h.classList.add('tinted'); }
-  }
-  const packHtml = () => `<div class="pk-wrap"><div class="pk-halo"></div><div class="pk-glow"></div><div class="pk-shadow"></div>
-      <div class="pk-cards">${[0, 1, 2, 3, 4].map(k => `<div class="pk-card" style="--k:${k}"><b>W</b></div>`).join('')}</div>
-      <div class="pk"><div class="pk-piece pk-body">${packSvg('body')}</div><div class="pk-piece pk-top">${packSvg('top')}</div></div></div>
-      <p class="pk-hint">Ouverture du paquet…</p>`;
-
-  /**
    * @param source  cartes du tirage, ou promesse de ces cartes (le paquet se déchire pendant le chargement)
    * @param o       { labels, rank, fmt, cardHtml }
    */
@@ -73,29 +26,12 @@
     document.body.append(root);
     document.body.classList.add('noscroll');
 
-    // 1) le paquet se déchire pendant que les cartes (et leurs images) se chargent
-    root.innerHTML = `<div class="bg"></div>${packHtml()}<div class="flash"></div>`;
+    // 1) le joueur déchire le paquet au doigt pendant que les cartes (et leurs images) se chargent
     const dataP = Promise.resolve(source);
-    const t0 = performance.now();
-    const pk = root.querySelector('.pk-wrap');
     let cards;
     try {
       if (reduce) { cards = await dataP; }
-      else {
-        pk.classList.add('enter');           await sleep(550);
-        pk.classList.add('shake');        await sleep(950);          // le paquet tremble
-        buzz([15, 25, 40]);
-        pk.classList.add('tear');         await sleep(650);          // le haut se déchire et s'envole
-        buzz(35);
-        pk.classList.add('open');                                   // les cartes sortent du paquet
-        const waiting = setTimeout(() => { const h = root.querySelector('.pk-hint'); if (h) h.textContent = 'Chargement des cartes…'; pk.classList.add('wait'); }, 300);
-        cards = await dataP;                                         // si les cartes ne sont pas prêtes, la lueur pulse en attendant
-        tint(pk, root, cards, o.rank);                                      // la lueur prend la couleur de la carte la plus rare
-        clearTimeout(waiting);
-        await preload(cards.map(c => c.image));
-        await sleep(Math.max(0, 2900 - (performance.now() - t0)));  // durée minimale de la mise en scène
-        pk.classList.add('fly');          await sleep(480);          // les cartes foncent vers l'écran
-      }
+      else cards = await window.packStage(root, { dataP, rank: o.rank, buzz, preload });
     } catch (e) {                                                    // erreur serveur : on referme proprement
       root.remove(); document.body.classList.remove('noscroll');
       throw e;

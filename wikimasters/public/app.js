@@ -641,9 +641,11 @@ function profileSheet() {
   m.innerHTML = `<div><div class="profile">${avatar(me.name)}<div><b>${esc(me.name)}</b><div class="mut">${me.wins} victoire${me.wins > 1 ? 's' : ''} · ${me.losses} défaite${me.losses > 1 ? 's' : ''}</div></div></div>
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
     <label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>
+    <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
     <div class="row" style="margin-top:18px"><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
   $('#pf-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   $('#pf-out').onclick = logout;
+  $('#pf-snd').onchange = e => { try { localStorage.setItem('wm_sound', e.target.checked ? '1' : '0'); } catch { /* stockage indisponible */ } };
   $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
 }
