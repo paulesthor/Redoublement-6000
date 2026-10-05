@@ -11,37 +11,61 @@
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" href="favicon-48.png" type="image/png" sizes="48x48">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="theme-color" content="#0b0b0b">
+<meta name="theme-color" content="#07070b">
 <title>WikiMasters</title>
+<link rel="preload" href="fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/sora-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<!-- icônes (sprite) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-packs" viewBox="0 0 24 24"><rect x="4" y="3" width="12" height="16" rx="2.5"/><path d="M8 22h9a3 3 0 0 0 3-3V8"/><path d="M8.5 8.5h3M8.5 12h5"/></symbol>
+  <symbol id="i-album" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></symbol>
+  <symbol id="i-duel" viewBox="0 0 24 24"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="M13 19l6-6M16 16l4 4M19 21l2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></symbol>
+  <symbol id="i-market" viewBox="0 0 24 24"><path d="M3 9l1.2-5h15.6L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M10 20v-5h4v5"/></symbol>
+  <symbol id="i-friends" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.2c2.7.2 4.5 2.2 4.5 5.3"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7.8 9l1.7 6.2L12 10.8l2.5 4.4L16.2 9"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3M12 14v4M8 21h8M10 18h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3M21 14v.01M14 21h3M21 17v4"/></symbol>
+  <symbol id="i-sword" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+</svg>
+
 <div id="auth" class="auth">
-  <h1>WIKIMASTERS</h1>
-  <p class="mut">Les articles de Wikipédia en cartes à collectionner.</p>
-  <input id="a-name" placeholder="Pseudo" autocomplete="username">
-  <input id="a-pw" type="password" placeholder="Mot de passe" autocomplete="current-password">
-  <input id="a-invite" placeholder="Code d'invitation (si demandé)">
-  <div class="row"><button id="a-login">Connexion</button><button id="a-register" class="plain">Créer un compte</button></div>
-  <p id="a-err" class="err"></p>
-  <p id="a-friend" class="mut" hidden>Connecte-toi ou crée un compte pour ajouter cet ami.</p>
+  <div class="auth-card">
+    <div class="wordmark big"><span>WIKI</span><b>MASTERS</b></div>
+    <p class="tagline">Les articles de Wikipédia deviennent ta collection de cartes.</p>
+    <input id="a-name" placeholder="Pseudo" autocomplete="username">
+    <input id="a-pw" type="password" placeholder="Mot de passe" autocomplete="current-password">
+    <input id="a-invite" placeholder="Code d'invitation (si demandé)">
+    <button id="a-login" class="cta">Connexion</button>
+    <button id="a-register" class="plain">Créer un compte</button>
+    <p id="a-err" class="err"></p>
+    <p id="a-friend" class="mut" hidden>Connecte-toi ou crée un compte pour ajouter cet ami.</p>
+  </div>
 </div>
+
 <div id="app" hidden>
   <aside>
-    <div class="logo">WIKIMASTERS</div>
+    <div class="wordmark"><span>WIKI</span><b>MASTERS</b></div>
     <nav>
-      <button data-tab="packs"><span class="t">Boosters</span></button>
-      <button data-tab="album"><span class="t"><span class="lg">Collection</span><span class="sh">Cartes</span></span></button>
-      <button data-tab="duel"><span class="t">Combats</span></button>
-      <button data-tab="market"><span class="t">Enchères</span></button>
-      <button data-tab="trades"><span class="t">Échanges</span></button>
-      <button data-tab="friends"><span class="t">Amis</span></button>
-      <button data-tab="rank"><span class="t"><span class="lg">Classement</span><span class="sh">Top</span></span></button>
+      <button data-tab="packs"><span class="t"><svg class="ic"><use href="#i-packs"/></svg></span><em>Boosters</em></button>
+      <button data-tab="album"><span class="t"><svg class="ic"><use href="#i-album"/></svg></span><em>Collection</em></button>
+      <button data-tab="duel"><span class="t"><svg class="ic"><use href="#i-duel"/></svg></span><em>Combats</em></button>
+      <button data-tab="market"><span class="t"><svg class="ic"><use href="#i-market"/></svg></span><em>Marché</em></button>
+      <button data-tab="friends"><span class="t"><svg class="ic"><use href="#i-friends"/></svg></span><em>Amis</em></button>
     </nav>
-    <div id="me"></div>
   </aside>
   <div class="content">
-    <div id="hits"><span class="hits-label">HITS<br>LÉGENDAIRES</span><span id="hits-text" class="mut">Les prochains tirages légendaires apparaîtront ici.</span></div>
+    <div id="topbar">
+      <div class="wordmark sm"><span>WIKI</span><b>MASTERS</b></div>
+      <div id="me"></div>
+    </div>
+    <div id="hits"><span class="hits-label">Hits<br>légendaires</span><span id="hits-text" class="mut">Les prochains tirages légendaires apparaîtront ici.</span></div>
     <main id="view"></main>
   </div>
 </div>

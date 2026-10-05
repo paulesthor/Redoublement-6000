@@ -45,3 +45,5 @@ Tout l'équilibrage est dans `config.js` : taux de drop, boosters (10 cartes, gr
 - **Combats** : quiz (5 questions) ou combat de cartes (équipe de 3, ATK contre DEF).
 
 Contenu des cartes : Wikipédia (CC BY-SA), images Wikimedia. Projet indépendant de Wikimedia et de WikiMasters.
+
+Polices : Inter et Sora (SIL Open Font License), auto-hébergées dans `public/fonts/`.
