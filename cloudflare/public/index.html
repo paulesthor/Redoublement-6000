@@ -45,6 +45,13 @@
     <main id="view"></main>
   </div>
 </div>
+<div id="boot" class="mut" style="text-align:center;margin-top:30vh" hidden>Chargement…</div>
+<div id="scan-overlay" hidden>
+  <video id="scan-video" playsinline muted></video>
+  <div class="scan-frame"></div>
+  <div class="scan-top"><span>Scanne le QR code de ton ami</span><button id="scan-close" aria-label="Fermer">✕</button></div>
+  <div id="scan-hint"></div>
+</div>
 <div id="banner" hidden></div>
 <div id="toast"></div>
 <div id="modal" hidden></div>

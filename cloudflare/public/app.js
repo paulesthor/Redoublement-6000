@@ -2,7 +2,24 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let RAR = {}, RANK = {}; // remplis depuis /api/config (raretés, libellés)
-let token = localStorage.getItem('wm_token'), me = null, cfg = null, tab = 'packs', ws = null, online = new Set();
+// Session : le jeton reste valable tant que le joueur ne se déconnecte pas. On le garde dans localStorage et, en secours, dans un cookie d'un an.
+const store = {
+  get() {
+    try { const t = localStorage.getItem('wm_token'); if (t) return t; } catch { /* stockage bloqué */ }
+    const m = document.cookie.match(/(?:^|; )wm_token=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  },
+  set(t) {
+    try { localStorage.setItem('wm_token', t); } catch { /* stockage bloqué */ }
+    document.cookie = `wm_token=${encodeURIComponent(t)}; max-age=31536000; path=/; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+    try { navigator.storage?.persist?.(); } catch { /* non supporté */ }  // demande au navigateur de ne pas effacer les données du site
+  },
+  clear() {
+    try { localStorage.removeItem('wm_token'); } catch { /* stockage bloqué */ }
+    document.cookie = 'wm_token=; max-age=0; path=/';
+  },
+};
+let token = store.get(), me = null, cfg = null, tab = 'packs', ws = null, online = new Set();
 let game = null; // duel de quiz ou combat en cours
 let tick, lastPack = null;
 
@@ -13,7 +30,7 @@ async function api(path, body) {
   });
   const j = await r.json().catch(() => ({}));
   if (r.status === 401 && token) logout();
-  if (!r.ok) throw new Error(j.error || 'Erreur');
+  if (!r.ok) { const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
   return j;
 }
 function toast(msg) { const d = document.createElement('div'); d.textContent = msg; $('#toast').append(d); setTimeout(() => d.remove(), 3500); }
@@ -27,11 +44,11 @@ async function auth(kind) {
     const r = await fetch('/api/' + kind, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: $('#a-name').value, password: $('#a-pw').value, invite: $('#a-invite').value }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
-    token = j.token; localStorage.setItem('wm_token', token); start();
+    token = j.token; store.set(token); start();
   } catch (e) { $('#a-err').textContent = e.message; }
 }
 $('#a-login').onclick = () => auth('login'); $('#a-register').onclick = () => auth('register');
-function logout() { localStorage.removeItem('wm_token'); location.reload(); }
+function logout() { store.clear(); location.reload(); }
 
 // ---------- websocket ----------
 function connect() {
@@ -383,33 +400,79 @@ async function addByCode(code) {
     game = null; tab = 'friends'; render();
   } catch (e) { toast(e.message); }
 }
+function parseScannedCode(raw) {
+  const txt = String(raw || '').trim();
+  try { const c = new URL(txt).searchParams.get('friend'); if (c) return c; } catch { /* pas une URL */ }
+  const m = txt.match(/friend=([a-f0-9]{6,})/i);
+  if (m) return m[1];
+  return /^[a-f0-9]{8,12}$/i.test(txt) ? txt : '';
+}
+let jsqrPromise = null;
+function loadJsQR() {
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  return (jsqrPromise ??= new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'jsQR.js'; s.onload = () => res(window.jsQR); s.onerror = () => { jsqrPromise = null; rej(new Error('jsQR')); };
+    document.head.append(s);
+  }));
+}
+let scan = null; // { stream, raf, active }
+function stopScanner() {
+  if (!scan) return;
+  scan.active = false; cancelAnimationFrame(scan.raf);
+  scan.stream?.getTracks().forEach(t => t.stop());
+  const v = $('#scan-video'); if (v) v.srcObject = null;
+  $('#scan-overlay').hidden = true; scan = null;
+}
 async function scanQr() {
-  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
-    return toast('Scanner indisponible sur ce navigateur : utilise l’appareil photo de ton téléphone sur le QR code de ton ami.');
-  }
-  const m = $('#modal');
-  m.hidden = false;
-  m.innerHTML = '<div id="scanner"><h2>Scanner un QR code</h2><video playsinline muted></video><p class="mut">Place le QR code de ton ami dans le cadre.</p><button class="plain" id="scan-close">Annuler</button></div>';
-  let stream, stopped = false;
-  const stop = () => { stopped = true; stream?.getTracks().forEach(t => t.stop()); m.hidden = true; m.innerHTML = ''; };
-  $('#scan-close').onclick = stop;
+  if (!navigator.mediaDevices?.getUserMedia) return toast('Caméra indisponible ici : utilise l’appareil photo de ton téléphone sur le QR code de ton ami.');
+  const ov = $('#scan-overlay'), video = $('#scan-video'), hint = $('#scan-hint');
+  scan = { stream: null, raf: 0, active: true };
+  const current = scan;
+  ov.hidden = false; hint.textContent = 'Autorise l’accès à la caméra…';
+  $('#scan-close').onclick = stopScanner;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    const video = m.querySelector('video');
-    video.srcObject = stream; await video.play();
-    const detector = new BarcodeDetector({ formats: ['qr_code'] });
-    const loop = async () => {
-      if (stopped) return;
-      try {
-        for (const c of await detector.detect(video)) {
-          const code = (() => { try { return new URL(c.rawValue).searchParams.get('friend'); } catch { return null; } })();
-          if (code) { stop(); return addByCode(code); }
-        }
-      } catch { /* image pas prête */ }
-      setTimeout(loop, 250);
+    try { current.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }); }
+    catch (e) { if (e.name === 'NotAllowedError' || e.name === 'SecurityError') throw e; current.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); }
+  } catch (e) {
+    stopScanner();
+    return toast(e.name === 'NotAllowedError' ? 'Accès à la caméra refusé : autorise-le dans les réglages du navigateur.' : 'Impossible d’ouvrir la caméra.');
+  }
+  if (!current.active) { current.stream.getTracks().forEach(t => t.stop()); return; }  // fermé pendant l'autorisation
+  video.setAttribute('playsinline', ''); video.muted = true;
+  video.srcObject = current.stream;
+  try { await video.play(); } catch { /* lecture automatique bloquée : la vidéo démarrera au toucher */ }
+  hint.textContent = 'Vise le QR code de ton ami';
+  const found = raw => {
+    const code = parseScannedCode(raw);
+    if (!code) { hint.textContent = 'QR code non reconnu, réessaie'; return false; }
+    try { navigator.vibrate?.(20); } catch { /* non supporté */ }
+    stopScanner(); addByCode(code); return true;
+  };
+  let detector = null;
+  if ('BarcodeDetector' in window) { try { detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch { /* repli sur jsQR */ } }
+  if (detector) {                                   // Chrome / Android
+    const tick = async () => {
+      if (!current.active) return;
+      try { const r = await detector.detect(video); if (r.length && found(r[0].rawValue)) return; } catch { /* image pas prête */ }
+      current.raf = requestAnimationFrame(tick);
     };
-    loop();
-  } catch { stop(); toast('Impossible d’accéder à la caméra.'); }
+    current.raf = requestAnimationFrame(tick);
+    return;
+  }
+  let jsQR;                                         // iPhone / Safari / Firefox : décodage image par image avec jsQR
+  try { jsQR = await loadJsQR(); } catch { stopScanner(); return toast('Scanner indisponible : utilise l’appareil photo de ton téléphone.'); }
+  const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const tick = () => {
+    if (!current.active) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth) {
+      const w = canvas.width = video.videoWidth, h = canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, w, h);
+      try { const r = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' }); if (r?.data && found(r.data)) return; } catch { /* image illisible */ }
+    }
+    current.raf = requestAnimationFrame(tick);
+  };
+  current.raf = requestAnimationFrame(tick);
 }
 
 // ---------- bandeau des tirages légendaires ----------
@@ -446,13 +509,24 @@ async function refreshMe() {
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (tab !== b.dataset.tab) lastPack = null; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
 async function start() {
-  try {
-    cfg = await api('/config');
-    RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
-    await refreshMe();
-    showHits((await api('/hits')).hits);
-  } catch { return; }
-  $('#auth').hidden = true; $('#app').hidden = false; connect(); render();
+  $('#auth').hidden = true;                       // pas de formulaire de connexion qui clignote quand on est déjà connecté
+  $('#boot').hidden = false;
+  let ok = false;
+  for (let essai = 0; essai < 8 && !ok; essai++) {  // réseau absent ou serveur qui démarre : on réessaie sans déconnecter
+    try {
+      cfg = await api('/config');
+      RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
+      await refreshMe();
+      showHits((await api('/hits')).hits);
+      ok = true;
+    } catch (e) {
+      if (e.status === 401) return;               // jeton refusé : logout() a déjà ramené à la connexion
+      $('#boot').textContent = 'Connexion au serveur…';
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+  $('#boot').hidden = true;
+  if (!ok) { $('#auth').hidden = false; $('#a-err').textContent = 'Serveur injoignable. Réessaie dans un instant (tu restes connecté).'; return; } $('#app').hidden = false; connect(); render();
   let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
   if (pending) addByCode(pending);
 }
