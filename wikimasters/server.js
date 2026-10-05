@@ -65,7 +65,16 @@ function drawCard(min = 0) {
 }
 /** Tire un booster complet ; garantit une carte "rare" ou mieux si activé. */
 function drawPack() {
-  const ids = Array.from({ length: PACK_SIZE }, () => drawCard());
+  // pages distinctes dans un même booster (re-tirage si doublon, borné pour les très petits catalogues)
+  const pages = new Set(), ids = [];
+  while (ids.length < PACK_SIZE) {
+    let id;
+    for (let tries = 0; tries < 30; tries++) {
+      id = drawCard();
+      if (!pages.has(id % 100000000)) break;
+    }
+    pages.add(id % 100000000); ids.push(id);
+  }
   if (CFG.GUARANTEE_RARE && !cardRows([...new Set(ids)]).some(c => RANK[c.rarity] >= RANK.rare)) ids[ids.length - 1] = drawCard(RANK.rare);
   return ids;
 }

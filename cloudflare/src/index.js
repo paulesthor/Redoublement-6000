@@ -39,14 +39,17 @@ function pickRarity(ranges, min = 0) {
 }
 async function drawCards(env, origin, n) {
   const { ranges } = await getMeta(env, origin);
-  const picks = Array.from({ length: n }, () => {
-    const rarity = pickRarity(ranges), [a, b] = ranges[rarity];
-    return { rarity, rank: a + Math.floor(Math.random() * (b - a)) };
-  });
-  if (CFG.GUARANTEE_RARE && !picks.some(p => RANK[p.rarity] >= RANK.rare)) {
-    const rarity = pickRarity(ranges, RANK.rare), [a, b] = ranges[rarity];
-    picks[n - 1] = { rarity, rank: a + Math.floor(Math.random() * (b - a)) };
-  }
+  // pages distinctes dans un même booster (re-tirage si doublon, borné pour les très petits catalogues)
+  const taken = new Set();
+  const draw = min => {
+    for (let tries = 0; ; tries++) {
+      const rarity = pickRarity(ranges, min), [a, b] = ranges[rarity];
+      const rank = a + Math.floor(Math.random() * (b - a));
+      if (!taken.has(rank) || tries >= 30) { taken.add(rank); return { rarity, rank }; }
+    }
+  };
+  const picks = Array.from({ length: n }, () => draw(0));
+  if (CFG.GUARANTEE_RARE && !picks.some(p => RANK[p.rarity] >= RANK.rare)) picks[n - 1] = draw(RANK.rare);
   const entries = await Promise.all(picks.map(p => entryAt(env, origin, p.rank)));
   return picks.map((p, i) => {
     const [page, title, views] = entries[i];
