@@ -26,6 +26,7 @@ const live = require('./live');
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, '').split('='); return [k, v ?? true]; }));
 db.exec('PRAGMA synchronous = OFF');
 
+const UA = { 'User-Agent': 'WikimastersClone/1.0 (jeu prive entre amis)' }; // les serveurs Wikimedia refusent les clients sans User-Agent identifiable
 const urlOf = title => 'https://fr.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_'));
 
 function lastFullMonth(back = 1) {
@@ -37,7 +38,7 @@ function lastFullMonth(back = 1) {
 async function loadPages(src) {
   let input, size = 0, read = 0;
   if (/^https?:/.test(src)) {
-    const res = await fetch(src);
+    const res = await fetch(src, { headers: UA });
     if (!res.ok) throw new Error(`Téléchargement impossible (${res.status}) : ${src}`);
     size = +res.headers.get('content-length') || 0;
     input = Readable.fromWeb(res.body);
@@ -69,7 +70,7 @@ async function pageviewsUrl() {
   for (let back = 1; back <= 3; back++) {
     const m = args.month && back === 1 ? args.month : lastFullMonth(back), [y] = m.split('-');
     const url = `https://dumps.wikimedia.org/other/pageview_complete/monthly/${y}/${m}/pageviews-${m.replace('-', '')}-user.bz2`;
-    if ((await fetch(url, { method: 'HEAD' }).catch(() => ({ ok: false }))).ok) return { url, month: m };
+    if ((await fetch(url, { method: 'HEAD', headers: UA }).catch(() => ({ ok: false }))).ok) return { url, month: m };
   }
   throw new Error('Aucun fichier de consultations trouvé sur dumps.wikimedia.org');
 }
@@ -77,7 +78,7 @@ async function loadPageviews(src) {
   db.exec('DROP TABLE IF EXISTS temp.pv; CREATE TEMP TABLE pv (title TEXT PRIMARY KEY, v INTEGER) WITHOUT ROWID');
   // Le fichier est trié par projet : on s'arrête dès que le bloc fr.wikipedia est terminé.
   const awk = `$1=="fr.wikipedia"{seen=1;print $2"\\t"$5;next} seen{exit}`;
-  const open = /^https?:/.test(src) ? `curl -sS --fail "${src}"` : `cat "${src}"`;
+  const open = /^https?:/.test(src) ? `curl -sS --fail -A "WikimastersClone/1.0 (jeu prive entre amis)" "${src}"` : `cat "${src}"`;
   const cmd = `${open} | ${src.endsWith('.bz2') ? 'bzip2 -dc' : 'cat'} | awk '${awk}'`;
   const child = spawn('sh', ['-c', cmd], { stdio: ['ignore', 'pipe', 'inherit'] });
   const up = db.prepare('INSERT INTO pv (title, v) VALUES (?,?) ON CONFLICT(title) DO UPDATE SET v = v + excluded.v');
