@@ -22,6 +22,11 @@ npm run deploy                     # => https://wikimasters.<ton-sous-domaine>.w
 `wrangler.jsonc` pointe déjà sur la base D1 `wikimasters` (id `6ac810b7-…`). Si tu utilises un autre compte, crée la base (`npx wrangler d1 create wikimasters`) et remplace `database_id`.
 Code d'invitation à l'inscription : ajoute `"vars": { "INVITE_CODE": "ton-code" }` dans `wrangler.jsonc`.
 
+## Déploiement automatique (depuis un téléphone)
+Dans le tableau de bord Cloudflare : Workers & Pages → `wikimasters` → Settings → Builds → connecter le dépôt GitHub `paulesthor/Redoublement-6000`,
+branche `claude/wikimasters-clone`, dossier racine `cloudflare`, commande de déploiement `npx wrangler deploy`.
+Chaque `git push` sur cette branche redéploie alors le site tout seul. Après une migration de base (fichier `migrations-*.sql`), applique-la une fois sur D1.
+
 ## Remplacer le catalogue de démonstration (40 cartes) par le vrai
 ```bash
 cd ../wikimasters && npm install && npm run seed        # catalogue complet (voir son README), ou: npm run seed -- --keep=300000
