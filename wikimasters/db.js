@@ -35,9 +35,11 @@ CREATE TABLE IF NOT EXISTS cards (
   views INTEGER NOT NULL DEFAULT 0,
   rarity TEXT NOT NULL,
   atk INTEGER NOT NULL,
-  def INTEGER NOT NULL
+  def INTEGER NOT NULL,
+  length INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS cards_rarity ON cards(rarity);
+CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS inventory (
   user_id INTEGER NOT NULL REFERENCES users(id),
   card_id INTEGER NOT NULL REFERENCES cards(id),
@@ -65,6 +67,8 @@ CREATE TABLE IF NOT EXISTS trades (
   created INTEGER NOT NULL
 );
 `);
+
+try { db.exec('ALTER TABLE cards ADD COLUMN length INTEGER NOT NULL DEFAULT 0'); } catch { /* déjà présente */ }
 
 /** Exécute fn dans une transaction (BEGIN IMMEDIATE) ; rollback si exception. */
 function tx(fn) {

@@ -82,7 +82,9 @@ function mask(extract, title) {
   return t;
 }
 function makeQuestions() {
-  const cards = all('SELECT id, title, extract, views FROM cards ORDER BY RANDOM() LIMIT ?', Q_COUNT * 4 + 8);
+  const ids = new Set(); const pool = Object.values(cardsByRarity).flat();
+  while (pool.length && ids.size < Math.min(pool.length, Q_COUNT * 4)) ids.add(pool[Math.floor(Math.random() * pool.length)]);
+  const cards = cardRows([...ids]).sort(() => Math.random() - 0.5);
   if (cards.length < 8) bad('Pas assez de cartes en base pour un duel', 500);
   const qs = [];
   for (let i = 0; i < Q_COUNT; i++) {
