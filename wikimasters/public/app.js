@@ -115,7 +115,7 @@ const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
 const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '' } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
   <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
-  ${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}
+  <div class="tags">${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
   ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`);
@@ -170,7 +170,7 @@ const views = {
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
     v.innerHTML = `<div class="hero"><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
-      <div class="packart" id="packart"><b>W</b></div>
+      <div class="packart" id="packart">${packSvg('full')}</div>
       <button id="open" ${me.packs ? '' : 'disabled'}>Ouvrir</button>
       <div class="stock"><div class="pips">${Array.from({ length: cfg.packMax }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
         <p><b>${me.packs}</b> / ${cfg.packMax} paquets disponibles${me.packs < cfg.packMax ? ` · prochain dans <b id="cd"></b>` : ''}</p></div>
