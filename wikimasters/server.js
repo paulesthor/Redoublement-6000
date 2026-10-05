@@ -582,4 +582,4 @@ setInterval(() => wss.clients.forEach(ws => { if (!ws.isAlive) return ws.termina
 
 live.loadRanges();
 live.refill();
-server.listen(PORT, () => console.log(`WikiMasters sur http://localhost:${PORT}  (${live.catalogSize().toLocaleString('fr-FR')} cartes au catalogue)`));
+server.listen(PORT, () => console.log(`Clodo Wiki sur http://localhost:${PORT}  (${live.catalogSize().toLocaleString('fr-FR')} cartes au catalogue)`));

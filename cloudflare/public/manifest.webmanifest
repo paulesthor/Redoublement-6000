@@ -1,6 +1,6 @@
 {
-  "name": "WikiMasters",
-  "short_name": "WikiMasters",
+  "name": "Clodo Wiki",
+  "short_name": "Clodo Wiki",
   "description": "Les articles de Wikipédia en cartes à collectionner",
   "start_url": "/",
   "display": "standalone",
