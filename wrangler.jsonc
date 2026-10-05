@@ -1,0 +1,19 @@
+{
+  // Configuration Cloudflare lue quand le déploiement automatique (Workers Builds) s'exécute à la racine du dépôt.
+  // Elle déploie le projet du dossier cloudflare/ ; ce dossier a sa propre configuration identique pour un déploiement à la main.
+  "name": "wikimasters",
+  "main": "cloudflare/src/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./cloudflare/public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/ws"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "wikimasters", "database_id": "6ac810b7-6df0-4e97-8f67-b2f3a12588ed" }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "LOBBY", "class_name": "Lobby" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }]
+}
