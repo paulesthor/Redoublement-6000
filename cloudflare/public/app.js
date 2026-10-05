@@ -285,14 +285,27 @@ const views = {
     v.innerHTML = `<div class="hero"><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${packSvg('full')}</div>
-      <button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button>
+      <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button>
       <div class="stock"><div class="pips">${Array.from({ length: cfg.packMax }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
         <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> / ${cfg.packMax} paquets disponibles${me.packs < cfg.packMax ? ` · prochain dans <b id="cd"></b>` : ''}`}</p></div>
-      <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button>
+      <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button></div>
       <details class="panel rates"><summary>Taux de drop</summary>
         <div class="ratelist">${cfg.rarities.map(r => `<div><span class="rar ${r}">${RAR[r]}</span><b>${pct(d[r])} %</b></div>`).join('')}</div>
         <p class="mut" style="margin:12px 0 0;font-size:13px">Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. Catalogue : ${fmt(cfg.catalog)} pages. Aucune garantie : tout dépend de la chance.</p></details>
       <div class="lastpack" id="lastpack" hidden><h3 class="sec">Dernier tirage</h3><div id="out" class="grid"></div></div></div>`;
+    // hauteur disponible sous l'en-tête et au-dessus de la barre du bas : les espaces de l'accueil s'en déduisent en pourcentage
+    const hero = v.querySelector('.hero');
+    const setAvail = () => {
+      if (!hero.isConnected) return window.removeEventListener('resize', setAvail);
+      const nav = document.querySelector('aside nav').getBoundingClientRect();
+      const bottom = innerWidth <= 820 ? nav.height : 0;
+      const free = Math.max(300, innerHeight - hero.getBoundingClientRect().top - scrollY - bottom - 6);
+      hero.style.setProperty('--avail', free + 'px');
+      const over = document.documentElement.scrollHeight - innerHeight;           // marges du bas de la page : une passe de correction
+      if (over > 0 && !hero.querySelector('.rates[open]')) hero.style.setProperty('--avail', Math.max(300, free - over) + 'px');
+      fitLock();
+    };
+    setAvail(); window.addEventListener('resize', setAvail);
     const show = r => {
       lastPack = r; $('#lastpack').hidden = false; $('#out').innerHTML = [...r.cards].sort((a, b) => RANK[b.rarity] - RANK[a.rarity]).map(c => cardHtml(c)).join('');
     };

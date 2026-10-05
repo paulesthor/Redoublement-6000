@@ -538,3 +538,14 @@ details[open].progd>summary::after,details[open].rulesd>summary::after{content:"
   .packart{height:clamp(110px,24dvh,212px)}}
 
 html.fit,html.fit body{overflow:hidden;overscroll-behavior:none}
+
+/* accueil : la hauteur disponible est répartie en pourcentages (titre, paquet, actions, taux de drop) */
+@media(max-width:820px){
+  .hero{--avail:600px;min-height:var(--avail);justify-content:space-evenly;padding:0}
+  .hero h1{font-size:clamp(20px,3.6dvh,26px)}
+  .hero .packart{height:calc(var(--avail) * .36);margin:0}
+  .hero .pk-actions{display:flex;flex-direction:column;align-items:center;gap:calc(var(--avail) * .03);width:100%}
+  .hero .stock{margin:0}.hero .buy{margin:0}
+  .hero #open{padding:calc(var(--avail) * .022) 22px}
+  .hero .rates{margin:0}
+}
