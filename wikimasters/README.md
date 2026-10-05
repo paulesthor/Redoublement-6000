@@ -22,6 +22,12 @@ Variables : `PORT`, `DB_PATH`, `INVITE_CODE` (si défini, requis pour créer un 
 - Temps réel par WebSocket (duels, enchères, notifications), pas de polling.
 - Les images sont les miniatures du CDN Wikimedia, chargées par le navigateur.
 
+## Articles « frais » (tirés à la volée)
+Un worker d'arrière-plan (`live.js`) garde une réserve d'une soixantaine d'articles aléatoires de fr.wikipedia (résumé, photo, vues du mois), enregistrés en base au fur et à mesure.
+Ouvrir un booster ne fait aucun appel réseau : ~50 % des cartes viennent de cette réserve, le reste du stock déjà en base. Si Wikipédia est injoignable, le jeu continue avec le stock local et réessaie chaque minute.
+Variables : `LIVE_FETCH=0` (désactive), `FRESH_RATIO=0.5`, `FRESH_TARGET=60`. Le jeu peut démarrer avec une base vide (sans `npm run seed`).
+Rareté d'un article frais : vues mensuelles ≥ 150 000 légendaire, ≥ 20 000 épique, ≥ 3 000 rare, sinon commune.
+
 ## Règles
 - 1 booster / 10 min (stock max 10), 5 cartes par booster. Rareté selon la popularité de l'article.
 - Doublons vendables (commune 5, rare 20, épique 80, légendaire 300 🪙). Départ : 200 🪙.

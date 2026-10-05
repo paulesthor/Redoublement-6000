@@ -5,8 +5,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer } = require('ws');
 const { db, tx } = require('./db');
+const live = require('./live');
 
 const PORT = +process.env.PORT || 3000;
+const FRESH_RATIO = +(process.env.FRESH_RATIO ?? 0.5); // part des cartes d'un booster tirées parmi les articles "frais"
 const PACK_EVERY = 10 * 60 * 1000, PACK_MAX = 10, PACK_SIZE = 5;
 const WEIGHTS = { common: 70, rare: 22, epic: 6, legendary: 2 };
 const SELL = { common: 5, rare: 20, epic: 80, legendary: 300 };
@@ -50,7 +52,9 @@ const cardsByRarity = {};
 function loadPool() {
   for (const r of Object.keys(WEIGHTS)) cardsByRarity[r] = all('SELECT id FROM cards WHERE rarity=?', r).map(x => x.id);
 }
+live.setOnNew((id, rarity) => { if (!cardsByRarity[rarity].includes(id)) cardsByRarity[rarity].push(id); });
 function drawCard() {
+  if (Math.random() < FRESH_RATIO) { const f = live.takeFresh(); if (f) return f; }
   const avail = Object.keys(WEIGHTS).filter(r => cardsByRarity[r].length);
   if (!avail.length) bad('Aucune carte en base : lance `npm run seed`', 500);
   let roll = Math.random() * avail.reduce((s, r) => s + WEIGHTS[r], 0), rar = avail[0];
@@ -371,4 +375,5 @@ wss.on('connection', (ws, req) => {
 setInterval(() => wss.clients.forEach(ws => { if (!ws.isAlive) return ws.terminate(); ws.isAlive = false; ws.ping(); }), 25000);
 
 loadPool();
+live.refill();
 server.listen(PORT, () => console.log(`WikiMasters sur http://localhost:${PORT}  (${all('SELECT 1 FROM cards').length} cartes)`));

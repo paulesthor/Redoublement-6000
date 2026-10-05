@@ -18,16 +18,7 @@ const args = Object.fromEntries(process.argv.slice(2).map(a => {
 const API = process.env.WIKI_API || 'https://fr.wikipedia.org/w/api.php';
 const UA = { 'User-Agent': 'WikimastersClone/1.0 (jeu prive entre amis)' };
 
-const hash = s => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
-const stats = (title, views) => {
-  const base = Math.min(95, 15 + Math.log10(views + 1) * 12);
-  const j = n => Math.max(5, Math.min(99, Math.round(base + ((hash(title + n) % 31) - 15))));
-  return { atk: j('a'), def: j('d') };
-};
-function rarityFor(rank, total) {
-  const p = rank / total;
-  return p < 0.02 ? 'legendary' : p < 0.10 ? 'epic' : p < 0.35 ? 'rare' : 'common';
-}
+const { stats, rarityFor } = require('./cardutil');
 
 async function getJson(url, tries = 3) {
   for (let i = 0; i < tries; i++) {
