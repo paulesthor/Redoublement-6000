@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS bids (
+  id INTEGER PRIMARY KEY,
+  auction_id INTEGER NOT NULL REFERENCES auctions(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount INTEGER NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bids_auction ON bids(auction_id);

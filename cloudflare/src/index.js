@@ -81,25 +81,68 @@ async function wikidataImages(qids) {
     return { out, ok: true };
   } catch { return { out, ok: false }; }
 }
+// fichiers à ignorer quand on cherche une illustration dans le corps de l'article (icônes, bandeaux, logos de projets…)
+const BAD_FILE = /\.(svg|ogg|oga|ogv|webm|mid|midi|pdf|tiff?|djvu)$|^Fichier:(Commons-logo|Logo[ _]disambig|Wiki|Ambox|Question|Disambig|Edit-|Crystal|Nuvola|Folder|Symbol|Padlock|Increase|Decrease|Loupe|Portail|OOjs|Gnome|Stub|Information|Gtk|Merge|Text[ _]|Translation|Bandeau|Lock|Quote|Arrow|Replacement)/i;
+const WP = 'https://fr.wikipedia.org/w/api.php?';
+async function wpJson(params) {
+  try { const r = await fetch(WP + new URLSearchParams({ action: 'query', format: 'json', ...params }), { headers: UA }); if (r.ok) return (await r.json()).query ?? {}; } catch { /* hors-ligne */ }
+  return null;
+}
+const wpPages = (extra) => wpJson({
+  prop: 'extracts|pageimages|pageprops', ppprop: 'wikibase_item', exintro: '1', explaintext: '1', exlimit: 'max', exchars: '600',
+  piprop: 'thumbnail', pithumbsize: '400', pilimit: 'max', pilicense: 'any', redirects: '1', ...extra,
+}).then(q => q?.pages ?? null);
+
+/** Illustrations présentes dans le corps de l'article (y compris images non libres, usage privé) pour les pages sans « image principale ». */
+async function articleImages(pids) {
+  const out = new Map();
+  if (!pids.length) return { out, ok: true };
+  const q = await wpJson({ pageids: pids.join('|'), prop: 'images', imlimit: 'max' });
+  if (!q?.pages) return { out, ok: false };
+  const cand = new Map(); // titre de fichier -> pid
+  for (const pid of pids) {
+    const files = (q.pages[pid]?.images || []).map(i => i.title).filter(t => !BAD_FILE.test(t));
+    files.sort((a, b) => /\.jpe?g$/i.test(b) - /\.jpe?g$/i.test(a));
+    for (const t of files.slice(0, 2)) cand.set(t, pid);
+  }
+  const titles = [...cand.keys()].slice(0, 50);
+  if (!titles.length) return { out, ok: true };
+  const info = await wpJson({ titles: titles.join('|'), prop: 'imageinfo', iiprop: 'url|size', iiurlwidth: '400' });
+  if (!info?.pages) return { out, ok: false };
+  for (const f of Object.values(info.pages)) {
+    const ii = f.imageinfo?.[0], pid = cand.get(f.title);
+    if (ii?.thumburl && pid && ii.width >= 150 && ii.height >= 150 && !out.has(pid)) out.set(pid, ii.thumburl);
+  }
+  return { out, ok: true };
+}
+
 async function enrich(env, ids) {
-  const rows = ids.length ? await all(env, `SELECT id FROM cards WHERE (enriched = 0 OR (enriched = 1 AND image IS NULL)) AND id IN (${placeholders(ids.length)})`, ...ids) : [];
-  const pages = [...new Set(rows.map(r => (r.id >= SHINY_OFFSET ? r.id - SHINY_OFFSET : r.id)))];
+  const rows = ids.length ? await all(env, `SELECT id, title FROM cards WHERE (enriched = 0 OR (enriched = 1 AND image IS NULL)) AND id IN (${placeholders(ids.length)})`, ...ids) : [];
+  const titleOf = new Map(rows.map(r => [r.id >= SHINY_OFFSET ? r.id - SHINY_OFFSET : r.id, r.title]));
+  const pages = [...titleOf.keys()];
   for (let i = 0; i < pages.length; i += 20) {
     const chunk = pages.slice(i, i + 20);
-    const params = new URLSearchParams({
-      action: 'query', format: 'json', pageids: chunk.join('|'), prop: 'extracts|pageimages|pageprops', ppprop: 'wikibase_item', exintro: '1', explaintext: '1',
-      exlimit: 'max', exchars: '600', piprop: 'thumbnail', pithumbsize: '400', pilimit: 'max',
-    });
-    let j = null;
-    try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) j = await r.json(); } catch { /* hors-ligne */ }
-    if (!j?.query?.pages) continue;
-    // pages sans photo sur Wikipédia : on cherche une image sur Wikidata (photo, logo, drapeau ou armoiries)
-    const noPhoto = chunk.filter(pid => !j.query.pages[pid]?.thumbnail && j.query.pages[pid]?.pageprops?.wikibase_item);
-    const wd = await wikidataImages(noPhoto.map(pid => j.query.pages[pid].pageprops.wikibase_item));
-    await env.DB.batch(chunk.map(pid => {
-      const p = j.query.pages[pid] || {};
-      const image = p.thumbnail?.source ?? wd.out.get(p.pageprops?.wikibase_item) ?? null;
-      const done = p.thumbnail || !noPhoto.includes(pid) || wd.ok ? 2 : 1; // 1 = on réessaiera plus tard (Wikidata injoignable)
+    const found = await wpPages({ pageids: chunk.join('|') });
+    if (!found) continue;
+    const got = new Map(); // pid -> page ({} = page introuvable ; absent = erreur réseau, on réessaiera)
+    for (const pid of chunk) {
+      let p = found[pid];
+      if (!p || p.title !== titleOf.get(pid)) { // l'identifiant ne correspond plus au titre (page renommée, ancien catalogue…) : on cherche par titre
+        const byTitle = await wpPages({ titles: titleOf.get(pid) });
+        if (!byTitle) continue;
+        p = Object.values(byTitle)[0];
+        if (!p || p.missing !== undefined) p = {};
+      }
+      got.set(pid, p);
+    }
+    const noThumb = [...got].filter(([, p]) => !p.thumbnail).map(([pid]) => pid);
+    const art = await articleImages(noThumb);
+    const wdQ = noThumb.filter(pid => !art.out.has(pid) && got.get(pid).pageprops?.wikibase_item);
+    const wd = await wikidataImages(wdQ.map(pid => got.get(pid).pageprops.wikibase_item));
+    if (!got.size) continue;
+    await env.DB.batch([...got].map(([pid, p]) => {
+      const image = p.thumbnail?.source ?? art.out.get(pid) ?? wd.out.get(p.pageprops?.wikibase_item) ?? null;
+      const done = image || (art.ok && wd.ok) ? 2 : 1; // 1 = on réessaiera plus tard (source injoignable)
       return st(env, 'UPDATE cards SET extract = ?, image = COALESCE(?, image), enriched = ? WHERE id IN (?, ?)', (p.extract || '').trim(), image, done, pid, pid + SHINY_OFFSET);
     }));
   }
@@ -276,7 +319,8 @@ route('GET', '/api/leaderboard', async ({ env }) => ({
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
   await settleAuctions(env, ctx);
   const rows = await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, b.name bidder,
-    c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price FROM auctions a JOIN cards c ON c.id = a.card_id
+    c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
+    (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) bids FROM auctions a JOIN cards c ON c.id = a.card_id
     JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id WHERE a.status = 'open' ORDER BY a.ends_at`);
   return { auctions: rows.map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id })) };
 });
@@ -289,9 +333,14 @@ route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
     st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', user.id, +body.card_id),
     st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', user.id, +body.card_id, price, now() + minutes * 60000),
   ]);
+  const card = await one(env, 'SELECT title FROM cards WHERE id = ?', +body.card_id);
+  notify(env, ctx, { t: 'notify', msg: `${user.name} met « ${card.title} » aux enchères (${price} pièces)`, except: user.id });
   notify(env, ctx, { t: 'refresh', what: 'auctions' });
   return { ok: true };
 });
+route('GET', '/api/auctions/:id/bids', async ({ env, params }) => ({
+  bids: await all(env, 'SELECT b.amount, b.ts, u.name FROM bids b JOIN users u ON u.id = b.user_id WHERE b.auction_id = ? ORDER BY b.id DESC LIMIT 50', +params.id),
+}));
 route('POST', '/api/auctions/:id/bid', async ({ env, ctx, user, params, body }) => {
   await settleAuctions(env, ctx);
   const amount = Math.floor(+body.amount);
@@ -305,9 +354,17 @@ route('POST', '/api/auctions/:id/bid', async ({ env, ctx, user, params, body }) 
   const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at; // anti-snipe
   const won = await run(env, "UPDATE auctions SET bid = ?, bidder_id = ?, ends_at = ? WHERE id = ? AND bid = ? AND status = 'open'", amount, user.id, ends, a.id, a.bid);
   if (!won.meta.changes) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', amount, user.id); bad('Quelqu’un a surenchéri entre-temps, réessaie'); }
-  if (a.bidder_id) {
-    await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.bidder_id);
-    if (a.bidder_id !== user.id) notify(env, ctx, { t: 'notify', msg: 'Tu as été surenchéri !' }, a.bidder_id);
+  await run(env, 'INSERT INTO bids (auction_id, user_id, amount, ts) VALUES (?,?,?,?)', a.id, user.id, amount, now());
+  if (a.bidder_id) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.bidder_id);
+  const title = (await one(env, 'SELECT title FROM cards WHERE id = ?', a.card_id)).title;
+  const others = new Set((await all(env, 'SELECT DISTINCT user_id FROM bids WHERE auction_id = ?', a.id)).map(r => r.user_id));
+  others.add(a.seller_id);
+  for (const uid of others) {
+    if (uid === user.id) continue;
+    const msg = uid === a.seller_id ? `${user.name} enchérit ${amount} pièces sur ta « ${title} »`
+      : uid === a.bidder_id ? `Tu as été surenchéri sur « ${title} » : ${amount} pièces par ${user.name}`
+      : `${user.name} a enchéri ${amount} pièces sur « ${title} »`;
+    notify(env, ctx, { t: 'notify', msg }, uid);
   }
   notify(env, ctx, { t: 'refresh', what: 'auctions' });
   return { ok: true };

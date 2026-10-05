@@ -27,14 +27,14 @@ export class Lobby {
     const data = JSON.stringify(msg);
     for (const ws of this.clients.get(uid) ?? []) { try { ws.send(data); } catch { /* fermée */ } }
   }
-  broadcast(msg) { for (const uid of this.clients.keys()) this.push(uid, msg); }
+  broadcast(msg, except = null) { for (const uid of this.clients.keys()) if (uid !== except) this.push(uid, msg); }
   presence() { this.broadcast({ t: 'online', ids: [...this.clients.keys()] }); }
 
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === '/push') {                      // appelé par le Worker (notifications, rafraîchissements, hits)
       const { to, msg } = await req.json();
-      to ? this.push(to, msg) : this.broadcast(msg);
+      to ? this.push(to, msg) : this.broadcast(msg, msg.except ?? null);
       return new Response('ok');
     }
     if (url.pathname === '/online') return Response.json({ ids: [...this.clients.keys()] });

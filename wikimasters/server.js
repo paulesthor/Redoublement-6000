@@ -365,7 +365,8 @@ route('GET', '/api/leaderboard', () => ({
 
 route('GET', '/api/auctions', ({ user }) => ({
   auctions: all(`SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, b.name bidder,
-    c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price FROM auctions a JOIN cards c ON c.id = a.card_id
+    c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
+    (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) bids FROM auctions a JOIN cards c ON c.id = a.card_id
     JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id
     WHERE a.status='open' ORDER BY a.ends_at`).map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id })),
 }));
@@ -376,9 +377,14 @@ route('POST', '/api/auctions', ({ user, body }) => {
     takeCard(user.id, +body.card_id);
     run('INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', user.id, +body.card_id, price, now() + minutes * 60000);
   });
+  const card = one('SELECT title FROM cards WHERE id=?', +body.card_id);
+  for (const uid of clients.keys()) if (uid !== user.id) push(uid, { t: 'notify', msg: `${user.name} met « ${card.title} » aux enchères (${price} 🪙)` });
   broadcast({ t: 'refresh', what: 'auctions' });
   return { ok: true };
 });
+route('GET', '/api/auctions/:id/bids', ({ params }) => ({
+  bids: all('SELECT b.amount, b.ts, u.name FROM bids b JOIN users u ON u.id = b.user_id WHERE b.auction_id=? ORDER BY b.id DESC LIMIT 50', +params.id),
+}));
 route('POST', '/api/auctions/:id/bid', ({ user, params, body }) => {
   const amount = Math.floor(+body.amount);
   const out = tx(() => {
@@ -392,9 +398,19 @@ route('POST', '/api/auctions/:id/bid', ({ user, params, body }) => {
     if (a.bidder_id && a.bidder_id !== user.id) run('UPDATE users SET coins = coins + ? WHERE id=?', a.bid, a.bidder_id);
     const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at; // anti-snipe
     run('UPDATE auctions SET bid=?, bidder_id=?, ends_at=? WHERE id=?', amount, user.id, ends, a.id);
+    run('INSERT INTO bids (auction_id, user_id, amount, ts) VALUES (?,?,?,?)', a.id, user.id, amount, now());
     return a;
   });
-  if (out.bidder_id && out.bidder_id !== user.id) push(out.bidder_id, { t: 'notify', msg: 'Tu as été surenchéri !' });
+  const title = one('SELECT title FROM cards WHERE id=?', out.card_id).title;
+  const others = new Set(all('SELECT DISTINCT user_id FROM bids WHERE auction_id=?', out.id).map(r => r.user_id));
+  others.add(out.seller_id);
+  for (const uid of others) {
+    if (uid === user.id) continue;
+    const msg = uid === out.seller_id ? `${user.name} enchérit ${amount} 🪙 sur ta « ${title} »`
+      : uid === out.bidder_id ? `Tu as été surenchéri sur « ${title} » : ${amount} 🪙 par ${user.name}`
+      : `${user.name} a enchéri ${amount} 🪙 sur « ${title} »`;
+    push(uid, { t: 'notify', msg });
+  }
   broadcast({ t: 'refresh', what: 'auctions' });
   return { ok: true };
 });

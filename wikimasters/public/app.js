@@ -68,7 +68,7 @@ function onWs(m) {
   else if (m.t === 'error') toast(m.msg);
   else if (m.t === 'friend') onFriend(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
-  else if (m.t === 'refresh') { if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); refreshMe(); }
+  else if (m.t === 'refresh') { if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
     $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : 'duel de quiz'}.</p>
@@ -78,6 +78,61 @@ function onWs(m) {
   }
   else if (/^(duel|battle)|^(question|reveal)$/.test(m.t)) gameEvent(m);
 }
+
+
+// ---------- ventes aux enchères ----------
+const DURATIONS = [[60, '1 h'], [360, '6 h'], [720, '12 h'], [1440, '24 h']];
+function sellSheet(c) {
+  return new Promise(resolve => {
+    const m = $('#modal'); let mins = 360;
+    m.hidden = false;
+    const start = c.avg_price ?? sellValue(c) * 3;
+    m.innerHTML = `<div><h2>Mettre aux enchères</h2><p class="mut">${esc(c.title)} · prix moyen du marché : ${c.avg_price ?? 'aucune vente'}</p>
+      <label class="fld">Prix de départ (pièces)<input id="sp" type="number" inputmode="numeric" value="${start}"></label>
+      <div class="fld" style="margin-bottom:6px">Durée de l'enchère</div>
+      <div class="chips wrap" id="sd">${DURATIONS.map(([v, l]) => `<button data-m="${v}" class="${v === mins ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="row"><button id="s-ok">Mettre en vente</button><button id="s-no" class="plain">Annuler</button></div></div>`;
+    const close = () => { m.hidden = true; m.innerHTML = ''; resolve(); };
+    $('#sd').onclick = e => { const b = e.target.closest('button'); if (!b) return; mins = +b.dataset.m; $('#sd').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+    $('#s-no').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    $('#s-ok').onclick = safe(async () => {
+      await api('/auctions', { card_id: c.id, price: $('#sp').value, minutes: mins });
+      toast('Mise en vente'); close(); render();
+    });
+  });
+}
+
+let lotOpen = null;
+async function lotSheet(id) {
+  const m = $('#modal'); lotOpen = id;
+  const [{ auctions }, { bids }] = await Promise.all([api('/auctions'), api(`/auctions/${id}/bids`)]);
+  const a = auctions.find(x => x.id == id);
+  if (!a) { m.hidden = true; lotOpen = null; return; }
+  const min = Math.max(a.start_price, a.bid + 1);
+  m.hidden = false;
+  m.innerHTML = `<div class="detail"><h2>${esc(a.title)}</h2>
+    <p class="mut"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span> · par ${esc(a.seller)} · prix moyen ${a.avg_price ?? '—'}</p>
+    <div class="lotbox"><div><small>${a.bid ? 'Meilleure offre' : 'Mise de départ'}</small><b>${ico('coin')}${a.bid || a.start_price}</b>${a.bid ? `<small>${esc(a.bidder)}${a.leading ? ' (toi)' : ''}</small>` : ''}</div>
+      <div class="time" data-end="${a.ends_at}">${ico('clock')}<span></span></div></div>
+    ${a.mine ? '<p class="mut">C\'est ta vente.</p>' : `<label class="fld">Ton offre (minimum ${min})<input id="bid-v" type="number" inputmode="numeric" value="${min}"></label>
+      <div class="chips wrap" id="bid-q">${[0, 5, 10, 25].map(d => `<button data-d="${d}">${d ? '+' + d : 'Min'}</button>`).join('')}</div>
+      <div class="row"><button id="bid-ok">Enchérir</button><button id="bid-no" class="plain">Fermer</button></div>`}
+    ${a.mine ? '<div class="row"><button id="bid-no" class="plain">Fermer</button></div>' : ''}
+    <h3 class="hist-h">Historique des offres</h3>
+    <div class="hist">${bids.length ? bids.map(b => `<div><span>${esc(b.name)}</span><b>${ico('coin')}${b.amount}</b><em>${new Date(b.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</em></div>`).join('') : '<p class="mut">Aucune offre pour l\'instant.</p>'}</div></div>`;
+  const close = () => { m.hidden = true; m.innerHTML = ''; lotOpen = null; clearInterval(lotTick); };
+  const upd = () => { const t = m.querySelector('[data-end]'); if (t) { const ms = t.dataset.end - Date.now(); t.querySelector('span').textContent = timeLeft(ms); t.classList.toggle('hot', ms < 60000); } };
+  clearInterval(lotTick); upd(); lotTick = setInterval(upd, 1000);
+  $('#bid-no').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  if (!a.mine) {
+    $('#bid-q').onclick = e => { const b = e.target.closest('button'); if (b) $('#bid-v').value = min + +b.dataset.d; };
+    $('#bid-ok').onclick = safe(async () => {
+      await api(`/auctions/${id}/bid`, { amount: $('#bid-v').value });
+      toast('Offre envoyée'); await refreshMe(); await lotSheet(id); if (tab === 'market') render();
+    });
+  }
+}
+let lotTick = null;
 
 // ---------- dialogues (remplacent prompt/confirm, plus agréables au doigt) ----------
 function ask(title, fields = [], { text = '', ok = 'Valider' } = {}) {
@@ -252,12 +307,7 @@ const views = {
       }));
       $('#g').querySelectorAll('[data-a]').forEach(b => b.onclick = safe(async () => {
         const c = cards.find(x => x.id == b.dataset.a);
-        const r = await ask('Mettre en vente', [
-          { label: `Prix de départ (pièces) — moyenne du marché : ${c.avg_price ?? 'aucune vente'}`, type: 'number', value: c.avg_price ?? sellValue(c) * 3 },
-          { label: 'Durée', value: 10, options: [[10, '10 min'], [30, '30 min'], [60, '1 h'], [180, '3 h'], [360, '6 h'], [720, '12 h'], [1440, '24 h']] },
-        ], { text: c.title, ok: 'Mettre en vente' });
-        if (!r) return;
-        await api('/auctions', { card_id: c.id, price: r[0], minutes: r[1] }); toast('Mise en vente'); render();
+        await sellSheet(c);
       }));
     };
     ['flt', 'srt', 'dup'].forEach(id => $('#' + id).oninput = draw);
@@ -300,17 +350,13 @@ const views = {
       ? `<div class="list">${auctions.map(a => `<div class="item lot" style="--c:var(--${a.rarity})">
           <div class="thumb ${a.image ? '' : 'noimg'}" ${a.image ? `style="background-image:url('${esc(a.image)}')"` : ''}>${a.image ? '' : noimg(a)}<span class="chip" style="--c:var(--${a.rarity})">${ABBR[a.rarity]}</span></div>
           <div class="info"><div class="nm">${esc(a.title)}</div>
-            <div class="sub"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span><span>par ${esc(a.seller)}</span><span>prix moyen ${a.avg_price ?? '—'}</span></div>
+            <div class="sub"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span><span>par ${esc(a.seller)}</span><span>prix moyen ${a.avg_price ?? '—'}</span><span>${a.bids || 0} offre${a.bids > 1 ? 's' : ''}</span></div>
             <div class="price">${ico('coin')}${a.bid || a.start_price}<span class="mut" style="font-size:12px;font-weight:400;font-family:var(--f-body)">${a.bid ? `${esc(a.bidder)}${a.leading ? ' (toi)' : ''}` : 'mise de départ'}</span></div>
             <div class="time" data-end="${a.ends_at}">${ico('clock')}<span></span></div></div>
-          <div class="acts" style="align-self:center">${a.mine ? '<span class="mut">Ta vente</span>' : `<button data-bid="${a.id}" data-min="${Math.max(a.start_price, a.bid + 1)}">Enchérir</button>`}</div></div>`).join('')}</div>`
+          <div class="acts" style="align-self:center">${a.mine ? '<span class="mut">Ta vente</span>' : ''}<button class="${a.mine ? 'plain' : ''}" data-lot="${a.id}">${a.mine ? 'Voir' : 'Enchérir'}</button></div></div>`).join('')}</div>`
       : '<div class="empty">Aucune enchère en cours.<br>Mets une carte en vente depuis ta collection.</div>');
     bindSeg(v);
-    v.querySelectorAll('[data-bid]').forEach(b => b.onclick = safe(async () => {
-      const r = await ask('Enchérir', [{ label: `Ton offre en pièces (minimum ${b.dataset.min})`, type: 'number', value: b.dataset.min }], { ok: 'Enchérir' });
-      if (!r) return;
-      await api(`/auctions/${b.dataset.bid}/bid`, { amount: r[0] }); await refreshMe(); render();
-    }));
+    v.querySelectorAll('[data-lot]').forEach(b => b.onclick = safe(() => lotSheet(b.dataset.lot)));
     const upd = () => v.querySelectorAll('[data-end]').forEach(s => { const ms = s.dataset.end - Date.now(); s.querySelector('span').textContent = timeLeft(ms); s.classList.toggle('hot', ms < 60000); });
     upd(); tick = setInterval(upd, 1000);
   },

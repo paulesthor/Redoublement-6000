@@ -386,3 +386,19 @@ body.noscroll{overflow:hidden}
 @media(min-width:821px){
   .hero{padding-top:18px}
 }
+
+/* enchères : feuille d'une vente + historique */
+.chips.wrap{flex-wrap:wrap;overflow:visible;margin-bottom:6px}
+.lotbox{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin:12px 0;padding:12px 14px;border:1px solid var(--line2);border-radius:14px;background:#0c0c12}
+.lotbox small{display:block;color:var(--mut);font-size:12px}
+.lotbox b{display:flex;align-items:center;gap:6px;font-family:var(--f-disp);font-size:24px}
+.lotbox b svg{width:20px;height:20px;color:var(--gold)}
+.lotbox .time{display:inline-flex;align-items:center;gap:5px;color:var(--mut);font-size:13px;white-space:nowrap}
+.lotbox .time svg{width:14px;height:14px}.lotbox .time.hot{color:#ff8a80}
+.hist-h{font-size:14px;margin:18px 0 6px;color:var(--mut);font-weight:600}
+.hist{max-height:30dvh;overflow:auto;border-top:1px solid var(--line)}
+.hist>div{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px}
+.hist>div span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist>div b{display:flex;align-items:center;gap:4px}.hist>div b svg{width:14px;height:14px;color:var(--gold)}
+.hist>div em{font-style:normal;color:var(--mut);font-size:12px}
+.hist>div:first-child b{color:var(--legendary)}
