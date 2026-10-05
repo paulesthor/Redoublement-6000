@@ -39,6 +39,11 @@ function connect() {
   ws.onmessage = e => onWs(JSON.parse(e.data));
   ws.onclose = () => { if (token) setTimeout(connect, 1500); };
 }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !token || !me) return;
+  if (!ws || ws.readyState > 1) connect();                  // la connexion a été coupée en arrière-plan
+  refreshMe().then(() => { if (!game) render(); }).catch(() => {});
+});
 const send = o => ws?.readyState === 1 && ws.send(JSON.stringify(o));
 function onWs(m) {
   if (m.t === 'online') { online = new Set(m.ids); if (tab === 'duel' && !game) render(); }
@@ -56,14 +61,53 @@ function onWs(m) {
   else if (/^(duel|battle)|^(question|reveal)$/.test(m.t)) gameEvent(m);
 }
 
+// ---------- dialogues (remplacent prompt/confirm, plus agréables au doigt) ----------
+function ask(title, fields = [], { text = '', ok = 'Valider' } = {}) {
+  return new Promise(resolve => {
+    const m = $('#modal');
+    m.hidden = false;
+    m.innerHTML = `<div><h2>${esc(title)}</h2>${text ? `<p class="mut">${esc(text)}</p>` : ''}${fields.map((f, i) => `<label class="fld">${esc(f.label)}${f.options
+      ? `<select data-i="${i}">${f.options.map(([v, l]) => `<option value="${v}" ${v == f.value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+      : `<input data-i="${i}" type="${f.type || 'text'}" ${f.type === 'number' ? 'inputmode="numeric"' : ''} value="${esc(f.value ?? '')}">`}</label>`).join('')}
+      <div class="row"><button id="ask-ok">${esc(ok)}</button><button id="ask-no" class="plain">Annuler</button></div></div>`;
+    const close = v => { m.hidden = true; m.innerHTML = ''; resolve(v); };
+    $('#ask-ok').onclick = () => close([...m.querySelectorAll('[data-i]')].map(el => el.value));
+    $('#ask-no').onclick = () => close(null);
+    m.onclick = e => { if (e.target === m) close(null); };
+    m.querySelector('input')?.focus();
+  });
+}
+
 // ---------- composants ----------
 const sellValue = c => cfg.sell[c.rarity];
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '' } = {}) => `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}" title="${esc((c.extract || '').slice(0, 300))}">
+const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '' } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
   ${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}
   <div class="img" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}></div>
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><br>ATK ${fmt(c.atk)} · DEF ${fmt(c.def)}</div>${extra}</div>
-  ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
+  ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`);
+
+/** Fiche détaillée d'une carte (toucher une carte). */
+function showCard(id) {
+  const c = cardIndex.get(+id); if (!c) return;
+  const m = $('#modal');
+  m.hidden = false;
+  m.innerHTML = `<div class="detail"><div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''}" style="margin-bottom:12px">
+      <div class="img big" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}></div>
+      <div class="body"><div class="t">${esc(c.title)}</div>
+        <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}${c.shiny ? ' · Shiny' : ''}</span> · ATK ${fmt(c.atk)} · DEF ${fmt(c.def)}</div></div></div>
+    <p class="extract">${c.extract ? esc(c.extract) : '<span class="mut">Description en cours de chargement…</span>'}</p>
+    <p class="mut">Défausse : ${sellValue(c)} pièces${c.avg_price != null ? ` · prix moyen au marché : ${c.avg_price}` : ''}</p>
+    <div class="row"><a class="btn" href="https://fr.wikipedia.org/wiki/${encodeURIComponent(c.title.replace(/ /g, '_'))}" target="_blank" rel="noopener">Lire sur Wikipédia</a><button class="plain" id="det-close">Fermer</button></div></div>`;
+  $('#det-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
+  m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
+}
+document.addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  if (!card || e.target.closest('button, a') || card.classList.contains('pick') || !$('#modal').hidden) return;
+  showCard(card.dataset.id);
+});
 
 // ---------- vues ----------
 const views = {
@@ -135,19 +179,22 @@ const views = {
       })).join('') || '<p class="mut">Aucune carte.</p>';
       $('#g').querySelectorAll('[data-d]').forEach(b => b.onclick = safe(async () => {
         const c = cards.find(x => x.id == b.dataset.d);
-        if (c.qty === 1 && !confirm(`Défausser ta dernière « ${c.title} » pour ${sellValue(c)} pièces ?`)) return;
+        if (c.qty === 1 && !(await ask('Défausser ?', [], { text: `Ta dernière « ${c.title} » pour ${sellValue(c)} pièces.`, ok: 'Défausser' }))) return;
         const r = await api('/discard', { card_id: c.id, qty: 1 }); toast(`+${r.price} pièces`); await refreshMe(); render();
       }));
       $('#g').querySelectorAll('[data-a]').forEach(b => b.onclick = safe(async () => {
         const c = cards.find(x => x.id == b.dataset.a);
-        const price = prompt(`Prix de départ pour « ${c.title} » (moyenne du marché : ${c.avg_price ?? 'aucune vente'})`, c.avg_price ?? sellValue(c) * 3); if (!price) return;
-        const min = prompt('Durée en minutes', '10'); if (!min) return;
-        await api('/auctions', { card_id: c.id, price, minutes: min }); toast('Mise en vente'); render();
+        const r = await ask('Mettre en vente', [
+          { label: `Prix de départ (pièces) — moyenne du marché : ${c.avg_price ?? 'aucune vente'}`, type: 'number', value: c.avg_price ?? sellValue(c) * 3 },
+          { label: 'Durée', value: 10, options: [[10, '10 min'], [30, '30 min'], [60, '1 h'], [180, '3 h'], [360, '6 h'], [720, '12 h'], [1440, '24 h']] },
+        ], { text: c.title, ok: 'Mettre en vente' });
+        if (!r) return;
+        await api('/auctions', { card_id: c.id, price: r[0], minutes: r[1] }); toast('Mise en vente'); render();
       }));
     };
     ['flt', 'rar', 'srt', 'dup'].forEach(id => $('#' + id).oninput = draw);
     v.querySelectorAll('[data-bulk]').forEach(b => b.onclick = safe(async () => {
-      if (!confirm('Vendre tous les doublons (1 exemplaire gardé par carte) ?')) return;
+      if (!(await ask('Vendre les doublons ?', [], { text: 'Un exemplaire de chaque carte est conservé.', ok: 'Vendre' }))) return;
       const r = await api('/discard-dupes', { max_rarity: b.dataset.bulk }); toast(`${r.count} cartes vendues, +${r.price} pièces`); await refreshMe(); render();
     }));
     draw();
@@ -171,8 +218,9 @@ const views = {
         <td class="num">${a.mine ? '<span class="mut">ta vente</span>' : `<button data-bid="${a.id}" data-min="${Math.max(a.start_price, a.bid + 1)}">Enchérir</button>`}</td></tr>`).join('')}</table>`
       : '<p class="mut">Aucune enchère en cours. Mets une carte en vente depuis ta collection.</p>');
     v.querySelectorAll('[data-bid]').forEach(b => b.onclick = safe(async () => {
-      const amt = prompt(`Ton offre (minimum ${b.dataset.min})`, b.dataset.min); if (!amt) return;
-      await api(`/auctions/${b.dataset.bid}/bid`, { amount: amt }); await refreshMe(); render();
+      const r = await ask('Enchérir', [{ label: `Ton offre en pièces (minimum ${b.dataset.min})`, type: 'number', value: b.dataset.min }], { ok: 'Enchérir' });
+      if (!r) return;
+      await api(`/auctions/${b.dataset.bid}/bid`, { amount: r[0] }); await refreshMe(); render();
     }));
     const upd = () => v.querySelectorAll('[data-end]').forEach(s => { const r = Math.max(0, Math.round((s.dataset.end - Date.now()) / 1000)); s.textContent = r >= 60 ? `${Math.floor(r / 60)} min ${r % 60} s` : `${r} s`; });
     upd(); tick = setInterval(upd, 1000);
@@ -235,7 +283,7 @@ async function renderGame() {
     const draw = () => {
       v.innerHTML = `<h2>Combat — choisis ${game.rounds} cartes</h2>
         <p class="mut">L'ordre compte : la 1re carte affronte la 1re de l'adversaire. Sélection : ${game.sel.map(id => esc(cards.find(c => c.id === id).title)).join(' → ') || 'aucune'}</p>
-        <p><button id="go" ${game.sel.length === game.rounds ? '' : 'disabled'}>Valider l'équipe</button></p>
+        <div class="sticky-bar"><button id="go" ${game.sel.length === game.rounds ? '' : 'disabled'}>Valider l'équipe (${game.sel.length}/${game.rounds})</button></div>
         <div class="grid">${cards.map(c => cardHtml(c, { cls: 'pick ' + (game.sel.includes(c.id) ? 'sel' : ''), tag: game.sel.includes(c.id) ? `<span class="tag">n°${game.sel.indexOf(c.id) + 1}</span>` : '' })).join('')}</div>`;
       v.querySelectorAll('.card').forEach(el => el.onclick = () => {
         const id = +el.dataset.id, i = game.sel.indexOf(id);
@@ -272,10 +320,20 @@ const recentHits = [];
 
 // ---------- squelette ----------
 function markTab() { document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab)); }
+/** Copie l'en-tête de chaque colonne dans les cellules (data-label) : le CSS mobile affiche les lignes comme des fiches. */
+function labelTables(root) {
+  root.querySelectorAll('table').forEach(t => {
+    const heads = [...t.querySelectorAll('tr:first-child th')].map(h => h.textContent.trim());
+    if (!heads.length) return;
+    t.querySelectorAll('tr').forEach(tr => [...tr.children].forEach((td, i) => { if (td.tagName === 'TD' && heads[i]) td.dataset.label = heads[i]; }));
+  });
+}
 const render = safe(async () => {
   clearInterval(tick); markTab();
   if (tab === 'duel' && game) return renderGame();
   await views[tab]($('#view'));
+  labelTables($('#view'));
+  window.scrollTo(0, 0);
 });
 async function refreshMe() {
   me = await api('/me');
