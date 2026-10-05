@@ -8,14 +8,14 @@ const CFG = require('./config');
 const { SHINY_OFFSET, stats, rankRanges } = require('./cardutil');
 
 const API = process.env.WIKI_API || 'https://fr.wikipedia.org/w/api.php';
-const UA = { 'User-Agent': 'WikimastersClone/1.0 (jeu prive entre amis)' };
+const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
 
 const q = {
   byRank: db.prepare('SELECT id FROM cards WHERE rank = ?'),
   rows: n => db.prepare(`SELECT id, title, rarity, shiny, enriched, atk, extract, image FROM cards WHERE id IN (${Array(n).fill('?').join(',')})`),
   setStats: db.prepare('UPDATE cards SET atk=?, def=? WHERE id=?'),
-  setInfo: db.prepare('UPDATE cards SET extract=?, image=?, url=?, enriched=1 WHERE id=?'),
-  copyShiny: db.prepare('UPDATE cards SET extract=?, image=?, url=?, enriched=1 WHERE id=?'),
+  setInfo: db.prepare('UPDATE cards SET extract=?, image=COALESCE(?, image), url=?, enriched=? WHERE id=?'),
+  copyShiny: db.prepare('UPDATE cards SET extract=?, image=?, url=?, enriched=? WHERE id=?'),
   count: db.prepare('SELECT COUNT(*) n FROM cards WHERE shiny = 0'),
   meta: db.prepare("SELECT v FROM meta WHERE k='ranges'"),
 };
@@ -55,7 +55,7 @@ function toShiny(id) {
   const base = db.prepare('SELECT title, extract, image, url, enriched FROM cards WHERE id=?').get(id);
   if (!base || !db.prepare('SELECT 1 FROM cards WHERE id=?').get(sid)) return id;
   ensureStats(sid);
-  if (base.enriched) q.copyShiny.run(base.extract, base.image, base.url || urlOf(base.title), sid);
+  if (base.enriched) q.copyShiny.run(base.extract, base.image, base.url || urlOf(base.title), base.enriched, sid);
   return sid;
 }
 
@@ -65,26 +65,45 @@ async function getJson(url) {
   try { const r = await fetch(url, { headers: UA, signal: ctl.signal }); return r.ok ? await r.json() : null; }
   catch { return null; } finally { clearTimeout(t); }
 }
-/** Récupère description + image des cartes non enrichies, les conserve en base. Renvoie { done, todo }. */
+// enriched : 0 = rien, 1 = Wikipédia lu (image éventuellement manquante), 2 = terminé (Wikidata consulté pour les pages sans photo)
+const IMG_PROPS = ['P18', 'P154', 'P41', 'P94']; // image, logo, drapeau, armoiries (par ordre de préférence)
+async function wikidataImages(qids) {
+  const out = new Map();
+  if (!qids.length) return { out, ok: true };
+  const j = await getJson('https://www.wikidata.org/w/api.php?' + new URLSearchParams({ action: 'wbgetentities', ids: qids.join('|'), props: 'claims', format: 'json' }));
+  if (!j) return { out, ok: false };
+  for (const [qid, e] of Object.entries(j.entities || {})) {
+    for (const prop of IMG_PROPS) {
+      const name = e.claims?.[prop]?.[0]?.mainsnak?.datavalue?.value;
+      if (typeof name === 'string') { out.set(qid, `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}?width=400`); break; }
+    }
+  }
+  return { out, ok: true };
+}
+/** Récupère description + image des cartes non enrichies (ou sans photo), les conserve en base. Renvoie { done, todo }. */
 async function enrich(ids) {
   const baseIds = [...new Set(ids.map(i => (i >= SHINY_OFFSET ? i - SHINY_OFFSET : i)))];
-  const todo = baseIds.length ? q.rows(baseIds.length).all(...baseIds).filter(r => !r.enriched) : [];
+  const todo = baseIds.length ? q.rows(baseIds.length).all(...baseIds).filter(r => !r.enriched || (r.enriched === 1 && !r.image)) : [];
   let done = 0;
   const out = () => ({ done, todo: todo.length });
   for (let i = 0; i < todo.length; i += 20) {
     const chunk = todo.slice(i, i + 20);
     const params = new URLSearchParams({
-      action: 'query', format: 'json', pageids: chunk.map(r => r.id).join('|'), prop: 'extracts|pageimages',
+      action: 'query', format: 'json', pageids: chunk.map(r => r.id).join('|'), prop: 'extracts|pageimages|pageprops', ppprop: 'wikibase_item',
       exintro: '1', explaintext: '1', exlimit: 'max', exchars: '600', piprop: 'thumbnail', pithumbsize: '400', pilimit: 'max',
     });
     const j = await getJson(API + '?' + params);
     if (!j?.query?.pages) continue; // réseau indisponible : on réessaiera plus tard
     const pages = j.query.pages;
+    const noPhoto = chunk.filter(r => !pages[r.id]?.thumbnail && pages[r.id]?.pageprops?.wikibase_item);
+    const wd = await wikidataImages(noPhoto.map(r => pages[r.id].pageprops.wikibase_item));
     db.exec('BEGIN');
     try {
       for (const r of chunk) {
         const p = pages[r.id] || {};
-        q.setInfo.run((p.extract || '').trim(), p.thumbnail?.source ?? null, urlOf(r.title), r.id);
+        const image = p.thumbnail?.source ?? wd.out.get(p.pageprops?.wikibase_item) ?? null;
+        const level = p.thumbnail || !noPhoto.includes(r) || wd.ok ? 2 : 1; // 1 = Wikidata injoignable, on réessaiera
+        q.setInfo.run((p.extract || '').trim(), image, urlOf(r.title), level, r.id);
         if (r.rarity === 'legendary' && db.prepare('SELECT 1 FROM cards WHERE id=?').get(r.id + SHINY_OFFSET)) toShiny(r.id);
         done++;
       }

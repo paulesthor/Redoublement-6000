@@ -99,9 +99,22 @@ function ask(title, fields = [], { text = '', ok = 'Valider' } = {}) {
 // ---------- composants ----------
 const sellValue = c => cfg.sell[c.rarity];
 const ABBR = { common: 'C', uncommon: 'PC', rare: 'R', super: 'SR', ultra: 'UR', legendary: 'L' };
+/** Thème d'une page sans photo, deviné d'après sa description : sert à choisir l'icône de la carte. */
+const TOPICS = [
+  ['film', /\b(film|long métrage|court métrage|série télévisée|téléfilm|dessin animé|anime|épisode)\b/i],
+  ['note', /\b(album|chanteu|chanson|single|groupe de (musique|rock|rap|metal|pop)|compositeu|musicien|orchestre|opéra|symphonie|rappeu)\b/i],
+  ['book', /\b(roman|livre|ouvrage|bande dessinée|manga|nouvelle|essai|revue|journal|écrivain|poète|auteur)\b/i],
+  ['leaf', /\b(espèce|genre|famille|plante|arbre|oiseau|insecte|poisson|mammifère|champignon|papillon|reptile|amphibien|coléoptère|araignée|fleur|végétal|animal|bactérie|taxon)\b/i],
+  ['pin', /\b(commune|village|ville|département|région|province|canton|arrondissement|district|île|montagne|fleuve|rivière|lac|pays|capitale|quartier|comté|municipalité|préfecture|localité|gare|aéroport|cap|vallée)\b/i],
+  ['building', /\b(château|église|cathédrale|musée|bâtiment|stade|pont|monument|université|école|hôpital|abbaye|palais|tour|chapelle|théâtre|usine)\b/i],
+  ['trophy', /\b(championnat|tournoi|coupe|saison|match|compétition|jeux olympiques|élection|bataille|guerre|attentat|festival|grand prix|course)\b/i],
+  ['person', /\b(né|née|footballeu|joueu|acteur|actrice|homme politique|femme politique|député|sénateur|président|ministre|peintre|sculpteur|réalisat|cycliste|athlète|nageu|pilote|entraîneu|journaliste|philosophe|scientifique|médecin|militaire|général|roi|reine|empereur|pape|évêque|saint|personnalité|artiste|dirigeant)\b|\(\d{3,4}\s*[-–]/i],
+];
+const topic = c => { const t = (c.extract || '').slice(0, 240); for (const [k, re] of TOPICS) if (re.test(t)) return k; return 'spark'; };
+const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
 const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '' } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
-  <div class="img" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}><span class="chip">${ABBR[c.rarity]}</span></div>
+  <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
   ${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
@@ -113,7 +126,7 @@ function showCard(id) {
   const m = $('#modal');
   m.hidden = false;
   m.innerHTML = `<div class="detail"><div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''}" style="margin-bottom:12px">
-      <div class="img big" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}><span class="chip">${ABBR[c.rarity]}</span></div>
+      <div class="img big ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
       <div class="body"><div class="t">${esc(c.title)}</div>
         <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}${c.shiny ? ' · Shiny' : ''}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div></div></div>
     <p class="extract">${c.extract ? esc(c.extract) : '<span class="mut">Description en cours de chargement…</span>'}</p>
@@ -130,12 +143,12 @@ document.addEventListener('click', e => {
 
 /** Récupère description + image des cartes d'un tirage qui n'en ont pas encore (attend au plus ~3 s). */
 async function fillMissing(r) {
-  const ids = r.cards.filter(c => !c.extract).map(c => c.id);
+  const ids = r.cards.filter(c => !c.extract || (!c.image && c.enriched < 2)).map(c => c.id);
   if (!ids.length) return;
   try {
     const { cards } = await Promise.race([api('/cards/enrich', { ids }), new Promise((_, rej) => setTimeout(() => rej(new Error('lent')), 3000))]);
     const by = new Map(cards.map(x => [x.id, x]));
-    r.cards.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image }); });
+    r.cards.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image, enriched: x.enriched }); });
   } catch { /* on affiche sans : la carte se complétera plus tard */ }
 }
 
@@ -172,14 +185,18 @@ const views = {
     if (lastPack) show(lastPack);
     // ouverture animée : les cartes arrivent une par une, de la moins rare à la plus rare
     const openAnimated = path => safe(async () => {
-      $('#open').disabled = $('#buy').disabled = true; $('#open').textContent = 'Ouverture…'; $('#packart').classList.add('opening');
-      let r;
-      try { r = await api(path, {}); } catch (e) { $('#packart').classList.remove('opening'); $('#open').textContent = 'Ouvrir'; $('#open').disabled = !me.packs; $('#buy').disabled = false; throw e; }
-      await fillMissing(r);                       // description + image prêtes avant d'afficher la carte
-      lastPack = r;
-      await refreshMe();
-      await playReveal(r.cards, { labels: RAR, rank: RANK, fmt, cardHtml });
-      render();
+      $('#open').disabled = $('#buy').disabled = true; $('#open').textContent = 'Ouverture…';
+      // la requête part tout de suite et le paquet se déchire pendant ce temps : le chargement est masqué par l'animation
+      const cardsPromise = (async () => {
+        const r = await api(path, {});
+        await fillMissing(r);                       // description + image prêtes avant d'afficher la carte
+        lastPack = r;
+        refreshMe().catch(() => {});
+        return r.cards;
+      })();
+      cardsPromise.catch(() => {});
+      try { await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg }); }
+      finally { render(); }
     });
     $('#open').onclick = openAnimated('/packs/open');
     $('#buy').onclick = openAnimated('/packs/buy');
@@ -253,6 +270,17 @@ const views = {
       const r = await api('/discard-dupes', { max_rarity: b.dataset.bulk }); toast(`${r.count} cartes vendues, +${r.price} pièces`); await refreshMe(); render();
     }));
     draw();
+    // photos manquantes : on retente en arrière-plan (Wikipédia, puis Wikidata) et on complète les cartes sans recharger la page
+    const need = cards.filter(c => !c.image && c.enriched < 2).slice(0, 40);
+    if (need.length) api('/cards/enrich', { ids: need.map(c => c.id) }).then(({ cards: got }) => {
+      let changed = false;
+      for (const x of got) {
+        const c = cards.find(k => k.id === x.id); if (!c) continue;
+        if (x.image && !c.image) { c.image = x.image; changed = true; }
+        c.extract ||= x.extract; c.enriched = x.enriched;
+      }
+      if (changed && $('#g')) draw();
+    }).catch(() => {});
   },
 
   async duel(v) {
@@ -270,7 +298,7 @@ const views = {
     const { auctions } = await api('/auctions');
     v.innerHTML = `${pageHead('Marché', 'Enchères entre joueurs')}${seg(MARKET_SEG, 'market')}` + (auctions.length
       ? `<div class="list">${auctions.map(a => `<div class="item lot" style="--c:var(--${a.rarity})">
-          <div class="thumb" ${a.image ? `style="background-image:url('${esc(a.image)}')"` : ''}><span class="chip" style="--c:var(--${a.rarity})">${ABBR[a.rarity]}</span></div>
+          <div class="thumb ${a.image ? '' : 'noimg'}" ${a.image ? `style="background-image:url('${esc(a.image)}')"` : ''}>${a.image ? '' : noimg(a)}<span class="chip" style="--c:var(--${a.rarity})">${ABBR[a.rarity]}</span></div>
           <div class="info"><div class="nm">${esc(a.title)}</div>
             <div class="sub"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span><span>par ${esc(a.seller)}</span><span>prix moyen ${a.avg_price ?? '—'}</span></div>
             <div class="price">${ico('coin')}${a.bid || a.start_price}<span class="mut" style="font-size:12px;font-weight:400;font-family:var(--f-body)">${a.bid ? `${esc(a.bidder)}${a.leading ? ' (toi)' : ''}` : 'mise de départ'}</span></div>

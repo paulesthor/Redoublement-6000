@@ -43,11 +43,11 @@ CREATE TABLE IF NOT EXISTS cards (
   length INTEGER NOT NULL DEFAULT 0,
   rank INTEGER,                    -- 0 = page la plus consultée ; NULL pour les variantes shiny
   shiny INTEGER NOT NULL DEFAULT 0,
-  enriched INTEGER NOT NULL DEFAULT 0 -- 1 = description/image déjà récupérées via l'API MediaWiki
+  enriched INTEGER NOT NULL DEFAULT 0 -- 0 rien, 1 Wikipédia lu, 2 terminé (image cherchée sur Wikipédia puis Wikidata)
 );
 CREATE INDEX IF NOT EXISTS cards_rank ON cards(rank);
 CREATE INDEX IF NOT EXISTS cards_title ON cards(title COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS cards_enriched ON cards(enriched) WHERE enriched = 1;
+CREATE INDEX IF NOT EXISTS cards_enriched ON cards(enriched) WHERE enriched >= 1;
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS inventory (
   user_id INTEGER NOT NULL REFERENCES users(id),

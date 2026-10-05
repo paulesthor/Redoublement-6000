@@ -27,7 +27,7 @@ const live = require('./live');
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, '').split('='); return [k, v ?? true]; }));
 db.exec('PRAGMA synchronous = OFF');
 
-const UA = { 'User-Agent': 'WikimastersClone/1.0 (jeu prive entre amis)' }; // les serveurs Wikimedia refusent les clients sans User-Agent identifiable
+const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' }; // les serveurs Wikimedia refusent les clients sans User-Agent identifiable
 const urlOf = title => 'https://fr.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_'));
 
 function lastFullMonth(back = 1) {
@@ -80,7 +80,7 @@ async function loadPageviews(src) {
   // Le fichier est trié par projet : on s'arrête dès que le bloc fr.wikipedia est terminé.
   const awk = `$1=="fr.wikipedia"{seen=1;print $2"\\t"$5;next} seen{exit}`;
   // Téléchargement par blocs de 128 Mo, chacun repris en cas de coupure réseau (un proxy ou une box coupe parfois les très longs transferts).
-  const download = `UA="WikimastersClone/1.0 (jeu prive entre amis)"; URL="${src}"
+  const download = `UA="WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)"; URL="${src}"
     size=$(curl -sSI -L -A "$UA" "$URL" | tr -d '\r' | awk 'tolower($1)=="content-length:"{n=$2} END{print n}')
     [ -n "$size" ] || { echo "taille du fichier introuvable" >&2; exit 1; }
     tmp=$(mktemp); off=0; chunk=134217728

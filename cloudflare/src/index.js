@@ -4,7 +4,7 @@ import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json,
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
-const UA = { 'User-Agent': 'WikimastersClone/1.0 (jeu prive entre amis)' };
+const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
 const now = () => Date.now();
 
 // ---------- catalogue (fichiers statiques /catalog/*.json, servis par Workers Assets) ----------
@@ -62,21 +62,45 @@ const addCard = (env, uid, cid, n = 1) => st(env,
   'INSERT INTO inventory (user_id, card_id, qty) VALUES (?,?,?) ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty', uid, cid, n);
 
 // ---------- description + image via l'API MediaWiki, conservées en base ----------
+// enriched : 0 = rien, 1 = Wikipédia lu (image éventuellement manquante), 2 = terminé (Wikidata consulté pour les pages sans photo)
+const IMG_PROPS = ['P18', 'P154', 'P41', 'P94']; // image, logo, drapeau, armoiries (par ordre de préférence)
+async function wikidataImages(qids) {
+  const out = new Map();
+  if (!qids.length) return { out, ok: true };
+  const params = new URLSearchParams({ action: 'wbgetentities', ids: qids.join('|'), props: 'claims', format: 'json' });
+  try {
+    const r = await fetch('https://www.wikidata.org/w/api.php?' + params, { headers: UA });
+    if (!r.ok) return { out, ok: false };
+    const j = await r.json();
+    for (const [q, e] of Object.entries(j.entities || {})) {
+      for (const prop of IMG_PROPS) {
+        const name = e.claims?.[prop]?.[0]?.mainsnak?.datavalue?.value;
+        if (typeof name === 'string') { out.set(q, `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}?width=400`); break; }
+      }
+    }
+    return { out, ok: true };
+  } catch { return { out, ok: false }; }
+}
 async function enrich(env, ids) {
-  const rows = ids.length ? await all(env, `SELECT id FROM cards WHERE enriched = 0 AND id IN (${placeholders(ids.length)})`, ...ids) : [];
+  const rows = ids.length ? await all(env, `SELECT id FROM cards WHERE (enriched = 0 OR (enriched = 1 AND image IS NULL)) AND id IN (${placeholders(ids.length)})`, ...ids) : [];
   const pages = [...new Set(rows.map(r => (r.id >= SHINY_OFFSET ? r.id - SHINY_OFFSET : r.id)))];
   for (let i = 0; i < pages.length; i += 20) {
     const chunk = pages.slice(i, i + 20);
     const params = new URLSearchParams({
-      action: 'query', format: 'json', pageids: chunk.join('|'), prop: 'extracts|pageimages', exintro: '1', explaintext: '1',
+      action: 'query', format: 'json', pageids: chunk.join('|'), prop: 'extracts|pageimages|pageprops', ppprop: 'wikibase_item', exintro: '1', explaintext: '1',
       exlimit: 'max', exchars: '600', piprop: 'thumbnail', pithumbsize: '400', pilimit: 'max',
     });
     let j = null;
     try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) j = await r.json(); } catch { /* hors-ligne */ }
     if (!j?.query?.pages) continue;
+    // pages sans photo sur Wikipédia : on cherche une image sur Wikidata (photo, logo, drapeau ou armoiries)
+    const noPhoto = chunk.filter(pid => !j.query.pages[pid]?.thumbnail && j.query.pages[pid]?.pageprops?.wikibase_item);
+    const wd = await wikidataImages(noPhoto.map(pid => j.query.pages[pid].pageprops.wikibase_item));
     await env.DB.batch(chunk.map(pid => {
       const p = j.query.pages[pid] || {};
-      return st(env, 'UPDATE cards SET extract = ?, image = ?, enriched = 1 WHERE id IN (?, ?)', (p.extract || '').trim(), p.thumbnail?.source ?? null, pid, pid + SHINY_OFFSET);
+      const image = p.thumbnail?.source ?? wd.out.get(p.pageprops?.wikibase_item) ?? null;
+      const done = p.thumbnail || !noPhoto.includes(pid) || wd.ok ? 2 : 1; // 1 = on réessaiera plus tard (Wikidata injoignable)
+      return st(env, 'UPDATE cards SET extract = ?, image = COALESCE(?, image), enriched = ? WHERE id IN (?, ?)', (p.extract || '').trim(), image, done, pid, pid + SHINY_OFFSET);
     }));
   }
 }

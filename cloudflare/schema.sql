@@ -29,10 +29,10 @@ CREATE TABLE IF NOT EXISTS cards (
   atk INTEGER NOT NULL DEFAULT 0,
   def INTEGER NOT NULL DEFAULT 0,
   shiny INTEGER NOT NULL DEFAULT 0,
-  enriched INTEGER NOT NULL DEFAULT 0
+  enriched INTEGER NOT NULL DEFAULT 0   -- 0 rien, 1 Wikipédia lu, 2 terminé (image cherchée sur Wikipédia puis Wikidata)
 );
 CREATE INDEX IF NOT EXISTS cards_title ON cards(title COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS cards_enriched ON cards(enriched) WHERE enriched = 1;
+CREATE INDEX IF NOT EXISTS cards_enriched ON cards(enriched) WHERE enriched >= 1;
 CREATE TABLE IF NOT EXISTS inventory (
   user_id INTEGER NOT NULL REFERENCES users(id),
   card_id INTEGER NOT NULL REFERENCES cards(id),

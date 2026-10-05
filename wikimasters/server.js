@@ -103,7 +103,7 @@ function mask(extract, title) {
 }
 function makeQuestions() {
   // questions bâties sur des cartes déjà enrichies (description disponible)
-  const cards = all("SELECT id, title, extract, views FROM cards WHERE enriched = 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT ?", Q_COUNT * 4);
+  const cards = all("SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT ?", Q_COUNT * 4);
   if (cards.length < 8) bad('Pas assez de cartes enrichies pour un duel : ouvre quelques boosters d’abord', 503);
   const qs = [];
   for (let i = 0; i < Q_COUNT; i++) {
