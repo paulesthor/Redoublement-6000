@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0b0b">
+<title>WikiMasters</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="auth" class="auth">
+  <h1>WIKIMASTERS</h1>
+  <p class="mut">Les articles de Wikipédia en cartes à collectionner.</p>
+  <input id="a-name" placeholder="Pseudo" autocomplete="username">
+  <input id="a-pw" type="password" placeholder="Mot de passe" autocomplete="current-password">
+  <input id="a-invite" placeholder="Code d'invitation (si demandé)">
+  <div class="row"><button id="a-login">Connexion</button><button id="a-register" class="plain">Créer un compte</button></div>
+  <p id="a-err" class="err"></p>
+</div>
+<div id="app" hidden>
+  <aside>
+    <div class="logo">WIKIMASTERS</div>
+    <nav>
+      <button data-tab="packs">Boosters</button><button data-tab="album">Collection</button>
+      <button data-tab="duel">Combats</button><button data-tab="market">Enchères</button>
+      <button data-tab="trades">Échanges</button><button data-tab="rank">Classement</button>
+    </nav>
+    <div id="me"></div>
+  </aside>
+  <div class="content">
+    <div id="hits"><span class="hits-label">HITS<br>LÉGENDAIRES</span><span id="hits-text" class="mut">Les prochains tirages légendaires apparaîtront ici.</span></div>
+    <main id="view"></main>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="modal" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

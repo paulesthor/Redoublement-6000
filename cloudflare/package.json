@@ -1,0 +1,15 @@
+{
+  "name": "wikimasters-cloudflare",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WikiMasters privé sur Cloudflare (Workers + D1 + Durable Object), gratuit et toujours en ligne",
+  "scripts": {
+    "catalog": "node scripts/build-catalog.mjs",
+    "db:local": "wrangler d1 execute wikimasters --local --file=schema.sql",
+    "db:remote": "wrangler d1 execute wikimasters --remote --file=schema.sql",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": { "wrangler": "^4" }
+}
