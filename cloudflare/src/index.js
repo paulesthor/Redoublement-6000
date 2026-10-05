@@ -95,7 +95,7 @@ const wpPages = (extra) => wpJson({
 }).then(q => q?.pages ?? null);
 
 /** Illustrations présentes dans le corps de l'article (y compris images non libres, usage privé) pour les pages sans « image principale ». */
-async function articleImages(pids) {
+async function articleImages(pids, titleOf = new Map()) {
   const out = new Map();
   if (!pids.length) return { out, ok: true };
   const q = await wpJson({ pageids: pids.join('|'), prop: 'images', imlimit: 'max' });
@@ -103,7 +103,9 @@ async function articleImages(pids) {
   const cand = new Map(); // titre de fichier -> pid
   for (const pid of pids) {
     const files = (q.pages[pid]?.images || []).map(i => i.title).filter(t => !BAD_FILE.test(t));
-    files.sort((a, b) => /\.jpe?g$/i.test(b) - /\.jpe?g$/i.test(a));
+    const words = (titleOf.get(pid) || '').toLowerCase().split(/[^a-zà-ÿ0-9]+/).filter(w => w.length >= 4);
+    const score = f => (/\.jpe?g$/i.test(f) ? 1 : 0) + (words.some(w => f.toLowerCase().includes(w)) ? 2 : 0); // un nom de fichier qui ressemble au titre est plus fiable
+    files.sort((a, b) => score(b) - score(a));
     for (const t of files.slice(0, 2)) cand.set(t, pid);
   }
   const titles = [...cand.keys()].slice(0, 50);
@@ -137,9 +139,8 @@ async function enrich(env, ids) {
       got.set(pid, p);
     }
     const noThumb = [...got].filter(([, p]) => !p.thumbnail).map(([pid]) => pid);
-    const art = await articleImages(noThumb);
-    const wdQ = noThumb.filter(pid => !art.out.has(pid) && got.get(pid).pageprops?.wikibase_item);
-    const wd = await wikidataImages(wdQ.map(pid => got.get(pid).pageprops.wikibase_item));
+    const wdQ = noThumb.filter(pid => got.get(pid).pageprops?.wikibase_item);
+    const [art, wd] = await Promise.all([articleImages(noThumb, titleOf), wikidataImages(wdQ.map(pid => got.get(pid).pageprops.wikibase_item))]);
     if (!got.size) continue;
     await env.DB.batch([...got].map(([pid, p]) => {
       const image = p.thumbnail?.source ?? art.out.get(pid) ?? wd.out.get(p.pageprops?.wikibase_item) ?? null;
@@ -211,12 +212,14 @@ async function finishPack(env, ctx, user, drawn) {
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
   ]);
   ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {}));
+  // description + image : on laisse jusqu'à 5 s à Wikipédia pour répondre, le reste se termine en arrière-plan
+  const work = enrich(env, ids).catch(() => {});
+  ctx.waitUntil(work);
+  await Promise.race([work, new Promise(r => setTimeout(r, 5000))]);
   const rows = new Map((await cardRows(env, ids)).map(c => [c.id, c]));
   const seen = new Set();
   const cards = drawn.map(c => { const isNew = !before.has(c.id) && !seen.has(c.id); seen.add(c.id); return { ...rows.get(c.id), isNew }; })
     .sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || b.shiny - a.shiny);
-  // description/image : récupérées en arrière-plan ; le client les redemande via /api/cards/enrich
-  ctx.waitUntil(enrich(env, ids).catch(() => {}));
   const legends = cards.filter(c => c.rarity === 'legendary');
   if (legends.length) {
     await env.DB.batch(legends.map(c => st(env, 'INSERT INTO hits (user, title, shiny, ts) VALUES (?,?,?,?)', user.name, c.title, c.shiny, now())));

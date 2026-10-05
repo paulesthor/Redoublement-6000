@@ -202,7 +202,7 @@ async function fillMissing(r) {
   const ids = r.cards.filter(c => !c.extract || (!c.image && c.enriched < 2)).map(c => c.id);
   if (!ids.length) return;
   try {
-    const { cards } = await Promise.race([api('/cards/enrich', { ids }), new Promise((_, rej) => setTimeout(() => rej(new Error('lent')), 3000))]);
+    const { cards } = await Promise.race([api('/cards/enrich', { ids }), new Promise((_, rej) => setTimeout(() => rej(new Error('lent')), 9000))]);
     const by = new Map(cards.map(x => [x.id, x]));
     r.cards.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image, enriched: x.enriched }); });
   } catch { /* on affiche sans : la carte se complétera plus tard */ }
