@@ -702,6 +702,14 @@ function labelTables(root) {
     t.querySelectorAll('tr').forEach(tr => [...tr.children].forEach((td, i) => { if (td.tagName === 'TD' && heads[i]) td.dataset.label = heads[i]; }));
   });
 }
+// Page qui tient dans l'écran : on verrouille le défilement (plus de rebond ni de ligne cachée). Se recalcule dès que la hauteur change.
+function fitLock() {
+  const el = document.documentElement;
+  el.classList.remove('fit');
+  el.classList.toggle('fit', !game && el.scrollHeight <= innerHeight + 1);
+}
+if ('ResizeObserver' in window) new ResizeObserver(() => fitLock()).observe(document.querySelector('#view'));
+window.addEventListener('resize', fitLock); document.addEventListener('toggle', fitLock, true);
 const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
 const render = safe(async () => {
   clearInterval(tick); markTab();
@@ -709,7 +717,7 @@ const render = safe(async () => {
   const v = $('#view'), sk = setTimeout(() => { v.innerHTML = SKELETON; }, 140);   // squelette si les données tardent
   try { await views[tab](v); } finally { clearTimeout(sk); }
   labelTables($('#view'));
-  window.scrollTo(0, 0);
+  window.scrollTo(0, 0); fitLock();
 });
 async function refreshMe() {
   me = await api('/me');
