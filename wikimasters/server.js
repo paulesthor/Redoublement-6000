@@ -38,7 +38,7 @@ function refreshPacks(u) {
 }
 const publicUser = u => ({
   id: u.id, name: u.name, coins: u.coins, packs: u.pack_stock, wins: u.duel_wins, losses: u.duel_losses,
-  nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
+  test: !!u.test_mode, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
 });
 const addCard = (uid, cid, n = 1) => run(
   'INSERT INTO inventory (user_id, card_id, qty) VALUES (?,?,?) ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty', uid, cid, n);
@@ -272,6 +272,10 @@ function newSession(uid) {
   run('INSERT INTO sessions (token, user_id, created) VALUES (?,?,?)', token, uid, now());
   return { token };
 }
+route('POST', '/api/me/test-mode', ({ user, body }) => {
+  run('UPDATE users SET test_mode=? WHERE id=?', body.on ? 1 : 0, user.id);
+  return { ok: true };
+});
 route('GET', '/api/me', ({ user }) => ({ ...publicUser(refreshPacks(user)), badge: friendBadge(user.id) }));
 
 const hits = []; // derniers tirages légendaires (bandeau "Hits")
@@ -296,9 +300,11 @@ const ownedIds = uid => new Set(all('SELECT card_id FROM inventory WHERE user_id
 route('POST', '/api/packs/open', async ({ user }) => {
   const { ids, before } = tx(() => {
     const u = refreshPacks(one('SELECT * FROM users WHERE id=?', user.id));
-    if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
-    const wasFull = u.pack_stock >= PACK_MAX;
-    run('UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id=?', wasFull ? 1 : 0, now(), u.id);
+    if (!u.test_mode) {                                  // mode test : paquets illimités
+      if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
+      const wasFull = u.pack_stock >= PACK_MAX;
+      run('UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id=?', wasFull ? 1 : 0, now(), u.id);
+    }
     const before = ownedIds(u.id);
     const drawn = drawPack(); drawn.forEach(c => addCard(u.id, c));
     return { ids: drawn, before };

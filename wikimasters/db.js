@@ -7,6 +7,8 @@ const hasCards = db.prepare("SELECT 1 FROM sqlite_master WHERE name='cards'").ge
 if (hasCards && !db.prepare("SELECT 1 FROM pragma_table_info('cards') WHERE name='rank'").get()) {
   throw new Error('Ancien schéma de base détecté : supprime data/game.db (ou ton DB_PATH) puis relance `npm run seed`.');
 }
+const hasUsers = db.prepare("SELECT 1 FROM sqlite_master WHERE name='users'").get();
+if (hasUsers && !db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name='test_mode'").get()) db.exec('ALTER TABLE users ADD COLUMN test_mode INTEGER NOT NULL DEFAULT 0');
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -20,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   hash TEXT NOT NULL,
   coins INTEGER NOT NULL DEFAULT 200,
   pack_stock INTEGER NOT NULL DEFAULT 5,
+  test_mode INTEGER NOT NULL DEFAULT 0,
   pack_ts INTEGER NOT NULL,
   duel_wins INTEGER NOT NULL DEFAULT 0,
   duel_losses INTEGER NOT NULL DEFAULT 0,

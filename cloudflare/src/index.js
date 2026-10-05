@@ -173,7 +173,7 @@ async function refreshPacks(env, u) {
 }
 const publicUser = u => ({
   id: u.id, name: u.name, coins: u.coins, packs: u.pack_stock, wins: u.duel_wins, losses: u.duel_losses,
-  nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
+  test: !!u.test_mode, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
 });
 
 async function finishPack(env, ctx, user, drawn) {
@@ -257,12 +257,18 @@ route('GET', '/api/config', async ({ env, origin }) => {
   };
 }, false);
 
+route('POST', '/api/me/test-mode', async ({ env, user, body }) => {
+  await run(env, 'UPDATE users SET test_mode = ? WHERE id = ?', body.on ? 1 : 0, user.id);
+  return { ok: true };
+});
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   const u = await refreshPacks(env, user);
-  if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
-  const wasFull = u.pack_stock >= PACK_MAX;
-  const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
-  if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
+  if (!u.test_mode) {                                    // mode test : paquets illimités
+    if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
+    const wasFull = u.pack_stock >= PACK_MAX;
+    const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
+    if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
+  }
   return finishPack(env, ctx, user, await drawCards(env, origin, PACK_SIZE));
 });
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {

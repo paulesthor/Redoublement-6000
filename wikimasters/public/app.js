@@ -226,9 +226,9 @@ const views = {
     v.innerHTML = `<div class="hero"><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${packSvg('full')}</div>
-      <button id="open" ${me.packs ? '' : 'disabled'}>Ouvrir</button>
+      <button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button>
       <div class="stock"><div class="pips">${Array.from({ length: cfg.packMax }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
-        <p><b>${me.packs}</b> / ${cfg.packMax} paquets disponibles${me.packs < cfg.packMax ? ` · prochain dans <b id="cd"></b>` : ''}</p></div>
+        <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> / ${cfg.packMax} paquets disponibles${me.packs < cfg.packMax ? ` · prochain dans <b id="cd"></b>` : ''}`}</p></div>
       <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button>
       <details class="panel rates"><summary>Taux de drop</summary>
         <div class="ratelist">${cfg.rarities.map(r => `<div><span class="rar ${r}">${RAR[r]}</span><b>${pct(d[r])} %</b></div>`).join('')}</div>
@@ -632,7 +632,7 @@ const render = safe(async () => {
 async function refreshMe() {
   me = await api('/me');
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
-  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar" id="profile" aria-label="Profil">${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
+  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar" id="profile" aria-label="Profil">${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
 function profileSheet() {
@@ -640,9 +640,11 @@ function profileSheet() {
   m.hidden = false;
   m.innerHTML = `<div><div class="profile">${avatar(me.name)}<div><b>${esc(me.name)}</b><div class="mut">${me.wins} victoire${me.wins > 1 ? 's' : ''} · ${me.losses} défaite${me.losses > 1 ? 's' : ''}</div></div></div>
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
+    <label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>
     <div class="row" style="margin-top:18px"><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
   $('#pf-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   $('#pf-out').onclick = logout;
+  $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (tab !== b.dataset.tab) lastPack = null; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
