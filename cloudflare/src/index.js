@@ -238,9 +238,9 @@ async function finishPack(env, ctx, user, drawn) {
 // ---------- réserve de cartes prêtes (texte + photo déjà récupérés) ----------
 // Un tirage prend ses cartes dans cette réserve quand elle en a : plus aucune attente de Wikipédia à l'ouverture.
 // La tâche planifiée la remplit en continu avec des pages tirées au hasard (même loi que le tirage direct).
-const RESERVE_TARGET = { common: 40, uncommon: 20, rare: 20, super: 12, ultra: 8, legendary: 6 };
+const RESERVE_TARGET = { common: 60, uncommon: 30, rare: 30, super: 18, ultra: 12, legendary: 9 };
 const ASSET_ORIGIN = 'https://assets.local';
-async function refillReserve(env, max = 20) {
+async function refillReserve(env, max = 30) {
   const { ranges } = await getMeta(env, ASSET_ORIGIN);
   const have = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n FROM reserve GROUP BY rarity')).map(r => [r.rarity, r.n]));
   const want = [];
