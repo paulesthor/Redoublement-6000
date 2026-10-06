@@ -96,7 +96,7 @@ function onWs(m) {
     $('#ok').onclick = () => { send({ t: 'accept', from: m.from, mode: m.mode }); $('#modal').hidden = true; };
     $('#no').onclick = () => { send({ t: 'decline', from: m.from }); $('#modal').hidden = true; };
   }
-  else if (/^(duel|battle)|^(question|reveal|bq|bround)$/.test(m.t)) gameEvent(m);
+  else if (/^(duel|battle)|^(question|reveal|bq|bans|bround)$/.test(m.t)) gameEvent(m);
 }
 
 
@@ -445,7 +445,7 @@ const views = {
   async duel(v) {
     const { users } = await api('/users');
     v.innerHTML = `${pageHead('Combats', 'Défie un joueur connecté')}${seg(COMBAT_SEG, 'duel')}
-      <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Bataille</b> : chacun choisit 3 cartes, la n°1 affronte la n°1 de l'adversaire, etc. À chaque manche, tu réponds à une question sur la carte adverse : bonne réponse = ton attaque ×1,4, mauvaise ou trop lent = ×0,8. Puis ATK contre DEF. Victoire : +50 pièces (moitié moins contre un joueur simulé).</p></details></div>
+      <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Bataille</b> : chacun choisit 3 cartes, la n°1 affronte la n°1 de l'adversaire, etc. À chaque manche, tu réponds à une question sur la carte adverse : trois questions sur l'article de la carte adverse (dates, noms, définitions…) : 0 bonne réponse = attaque ×0,7, 3 bonnes = ×1,5. Puis ATK contre DEF. Victoire : +50 pièces (moitié moins contre un joueur simulé).</p></details></div>
       <button id="vs-bot" class="botbtn">${ico('sword')} Bataille contre un joueur simulé</button>
       <div class="list">${users.map(u => `<div class="item row1 ${u.me ? 'me' : ''}">${avatar(u.name, online.has(u.id))}
         <div class="grow"><div class="nm">${esc(u.name)}${u.me ? ' (toi)' : ''}</div><div class="sub">${online.has(u.id) ? 'En ligne' : 'Hors ligne'}</div></div>
@@ -557,8 +557,9 @@ function gameEvent(m) {
   else if (m.t === 'reveal') { game.reveal = m; game.score = m.score; }
   else if (m.t === 'duel_end') { game = { ...game, view: 'end', result: m }; refreshMe(); }
   else if (m.t === 'battle_start') game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [] };
-  else if (m.t === 'bq') game = { ...game, kind: 'battle', view: 'bq', bq: m, picked: null, reveal: null, end: Date.now() + m.time };
-  else if (m.t === 'bround') { game.reveal = m; }
+  else if (m.t === 'bq') game = { ...game, kind: 'battle', view: 'bq', bq: m, picked: null, ansRes: null, roundRes: null, end: Date.now() + m.time };
+  else if (m.t === 'bans') { game.ansRes = m; }
+  else if (m.t === 'bround') { game.roundRes = m; }
   else if (m.t === 'battle_cancel') game = null;
   else if (m.t === 'battle_end') { game = { ...game, kind: 'battle', view: 'end', result: m }; refreshMe(); }
   renderGame();
@@ -576,26 +577,26 @@ async function renderGame() {
     v.querySelectorAll('.opt').forEach(b => b.onclick = () => { game.picked = +b.dataset.i; send({ t: 'answer', id: game.id, choice: game.picked }); renderGame(); });
     if (!rv) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (game.end - Date.now()) / q.time * 100) + '%'; }, 100);
   } else if (game.kind === 'battle' && game.view === 'bq') {
-    const q = game.bq, rv = game.reveal, iA = rv ? rv.a === me.id : null;
+    const q = game.bq, av = game.ansRes, rr = game.roundRes, iA = (av || rr) ? (av || rr).a === me.id : null;
     const mini = (c, label) => `<div class="bcard" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
       <small>${label}</small><b>${esc(c.title)}</b><span>ATK <i>${fmt(c.atk)}</i> · DEF <i>${fmt(c.def)}</i></span></div>`;
-    const right = rv ? (iA ? rv.rightA : rv.rightB) : null, mine = rv ? (iA ? rv.round.okA : rv.round.okB) : null;
+    const right = av ? (iA ? av.rightA : av.rightB) : null;
     let result = '';
-    if (rv) {
-      const my = iA ? rv.round.da : rv.round.db, their = iA ? rv.round.db : rv.round.da, mm = iA ? rv.round.ma : rv.round.mb, tm = iA ? rv.round.mb : rv.round.ma;
-      const won = rv.round.winner === me.id, draw = rv.round.winner === null;
+    if (rr) {
+      const r = rr.round, my = iA ? r.da : r.db, their = iA ? r.db : r.da, mm = iA ? r.ma : r.mb, tm = iA ? r.mb : r.ma, myOk = iA ? r.okA : r.okB, theirOk = iA ? r.okB : r.okA;
+      const won = r.winner === me.id, draw = r.winner === null;
       result = `<div class="panel bres ${draw ? '' : won ? 'win' : 'lose'}"><b>${draw ? 'Manche nulle' : won ? 'Manche gagnée' : 'Manche perdue'}</b>
-        <p>${mine ? 'Bonne réponse' : 'Mauvaise réponse'} : ta carte frappe ×${mm} → <b>${fmt(my)}</b> dégâts<br>L'adversaire ${tm > 1 ? 'a bien répondu' : 'a raté sa question'} (×${tm}) → <b>${fmt(their)}</b> dégâts</p></div>`;
+        <p>Tes réponses : ${myOk} / ${r.of} → ta carte frappe ×${mm} : <b>${fmt(my)}</b> dégâts<br>Adversaire : ${theirOk} / ${r.of} (×${tm}) : <b>${fmt(their)}</b> dégâts</p></div>`;
     }
-    const wins = rv ? rv.wins : q.wins;
+    const wins = rr ? rr.wins : q.wins, dots = av ? (iA ? av.correct[av.a] : av.correct[av.b]) : null;
     v.innerHTML = `${pageHead(`Bataille · manche ${q.n} / ${q.total}`)}
-      <p class="mut" style="margin:-4px 0 8px">${Object.entries(game.names).map(([id, n]) => `${esc(n)} : <b>${wins?.[id] ?? 0}</b>`).join(' · ')}</p>
+      <p class="mut" style="margin:-4px 0 8px">${Object.entries(game.names).map(([id, n]) => `${esc(n)} : <b>${wins?.[id] ?? 0}</b>`).join(' · ')} · Question <b>${q.k} / ${q.kTotal}</b></p>
       <div class="bpair">${mini(q.mine, 'Ta carte')}<span class="vs">VS</span>${mini(q.theirs, 'Carte adverse')}</div>
-      <p class="bq-text">${rv ? '' : 'Réponds sur la carte adverse : '}${esc(q.text)}</p>
-      <div class="qbar"><i id="tb" style="width:${rv ? 0 : 100}%"></i></div>` + q.options.map((o, i) =>
-        `<button class="opt ${rv ? (i === right ? 'ok' : (rv.answers[me.id] === i ? 'ko' : '')) : (game.picked === i ? 'sel' : '')}" data-i="${i}" ${rv || game.picked !== null ? 'disabled' : ''}>${esc(o)}</button>`).join('') + result;
+      <p class="bq-text">${av ? '' : 'Sur la carte adverse : '}${esc(q.text)}</p>
+      <div class="qbar"><i id="tb" style="width:${av ? 0 : 100}%"></i></div>` + q.options.map((o, i) =>
+        `<button class="opt ${av ? (i === right ? 'ok' : (av.answers[me.id] === i ? 'ko' : '')) : (game.picked === i ? 'sel' : '')}" data-i="${i}" ${av || game.picked !== null ? 'disabled' : ''}>${esc(o)}</button>`).join('') + result;
     v.querySelectorAll('.opt').forEach(b => b.onclick = () => { game.picked = +b.dataset.i; send({ t: 'banswer', id: game.id, choice: game.picked }); renderGame(); });
-    if (!rv) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (game.end - Date.now()) / q.time * 100) + '%'; }, 100);
+    if (!av) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (game.end - Date.now()) / q.time * 100) + '%'; }, 100);
   } else if (game.kind === 'battle' && game.view === 'pick') {
     const { cards } = await api('/album');
     const draw = () => {
@@ -619,8 +620,8 @@ async function renderGame() {
       const iA = r.a === me.id, mine = x => (iA ? x : null);
       v.innerHTML = `${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire' : 'Défaite')}
         <table><tr><th>Manche</th><th>${esc(r.names[r.a])}</th><th></th><th>${esc(r.names[r.b])}</th></tr>
-        ${r.rounds.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.a.title)} <span class="mut">(${x.da}${x.okA ? ' ✓' : ''})</span></td>
-          <td>${x.winner === r.a ? '◀' : x.winner === r.b ? '▶' : '='}</td><td>${esc(x.b.title)} <span class="mut">(${x.db}${x.okB ? ' ✓' : ''})</span></td></tr>`).join('')}</table>
+        ${r.rounds.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.a.title)} <span class="mut">(${x.da} · ${x.okA}/${x.of ?? 3})</span></td>
+          <td>${x.winner === r.a ? '◀' : x.winner === r.b ? '▶' : '='}</td><td>${esc(x.b.title)} <span class="mut">(${x.db} · ${x.okB}/${x.of ?? 3})</span></td></tr>`).join('')}</table>
         <p><button id="back" style="margin-top:12px">Retour</button></p>`;
     }
     $('#back').onclick = () => { game = null; render(); };

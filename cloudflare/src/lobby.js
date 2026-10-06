@@ -2,8 +2,9 @@
 // L'état des parties en cours vit en mémoire ; seuls les résultats (pièces, victoires) sont écrits dans D1.
 import CFG from './config.js';
 import { one, all, run, st, placeholders, cardRows, userFromToken } from './util.js';
+import { makeArticleQuestions } from './quiz.js';
 
-const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 20000;
+const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, Q_PER_CARD = 3, SHINY = 100000000;
 const now = () => Date.now();
 
 function mask(extract, title) {
@@ -179,63 +180,79 @@ export class Lobby {
     }
     return ids.length === bt.picks[humanId].length ? ids : null;
   }
-  async makeCardQuestion(card, pool) {
-    const others = shuffle(pool.filter(p => p.id !== card.id));
-    const clip = c => { const t = mask(c.extract, c.title).replace(/\s+/g, ' ').trim(); return t.length > 150 ? t.slice(0, 147).replace(/\s+\S*$/, '') + '…' : t; };
-    if (card.extract && card.extract.length > 80 && others.length >= 3 && Math.random() < .7) {
-      const opts = shuffle([card, ...others.slice(0, 3)]);
-      return { text: `Quelle description correspond à « ${card.title} » ?`, options: opts.map(clip), answer: opts.indexOf(card) };
-    }
-    const o = others[0] || { title: 'France', views: 100000 };
-    return { text: `« ${card.title} » est-elle plus consultée sur Wikipédia que « ${o.title} » ?`, options: ['Oui', 'Non'], answer: card.views >= o.views ? 0 : 1 };
+  /** Texte de l'introduction de chaque article (jusqu'à 2 500 caractères), pour fabriquer des questions précises. */
+  async articleTexts(cards) {
+    const out = new Map(), UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
+    const pid = c => (c.id >= SHINY ? c.id - SHINY : c.id);
+    try {
+      const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '2500', exlimit: 'max', pageids: [...new Set(cards.map(pid))].join('|') });
+      const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA });
+      const pages = r.ok ? (await r.json()).query?.pages ?? {} : {};
+      for (const c of cards) { const p = pages[pid(c)]; if (p && p.title === c.title && p.extract) out.set(c.id, p.extract); }
+    } catch { /* repli sur l'extrait déjà stocké */ }
+    return out;
   }
   async resolveBattle(bt) {
     clearTimeout(bt.timer);
     const [a, b] = bt.players;
     const team = async uid => Object.fromEntries((await cardRows(this.env, bt.picks[uid])).map(c => [c.id, c]));
     const [ta, tb] = [await team(a), await team(b)];
-    const pool = await all(this.env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 24");
-    bt.cards = [];                                                   // [{ a, b, qA, qB }] : qA est posée au joueur A, au sujet de la carte de B
-    for (let i = 0; i < CFG.BATTLE_ROUNDS; i++) {
-      const ca = ta[bt.picks[a][i]], cb = tb[bt.picks[b][i]];
-      bt.cards.push({ a: ca, b: cb, qA: await this.makeCardQuestion(cb, pool), qB: await this.makeCardQuestion(ca, pool) });
-    }
+    const mine = bt.picks[a].map(i => ta[i]), theirs = bt.picks[b].map(i => tb[i]);
+    const [texts, pool] = await Promise.all([
+      this.articleTexts([...mine, ...theirs]),
+      all(this.env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 30"),
+    ]);
+    const qs = (card) => makeArticleQuestions(card, texts.get(card.id) || card.extract, { cards: pool }, Q_PER_CARD);
+    // qA : questions posées au joueur A, au sujet de la carte de B (et inversement) : 3 questions par carte, adaptées à l'article
+    bt.cards = mine.map((ca, i) => ({ a: ca, b: theirs[i], qA: qs(theirs[i]), qB: qs(ca) }));
     bt.i = -1; bt.rounds = []; bt.wins = { [a]: 0, [b]: 0 }; bt.dmg = { [a]: 0, [b]: 0 };
     setTimeout(() => this.nextBattleRound(bt), 800);
   }
   nextBattleRound(bt) {
-    bt.i++; bt.answers = {};
+    bt.i++; bt.k = -1; bt.right = { [bt.players[0]]: 0, [bt.players[1]]: 0 };
     if (bt.i >= CFG.BATTLE_ROUNDS) return this.endBattle(bt);
+    this.nextBattleQuestion(bt);
+  }
+  nextBattleQuestion(bt) {
+    bt.k++; bt.answers = {};
+    if (bt.k >= Q_PER_CARD) return this.closeBattleRound(bt);
     const [a, b] = bt.players, r = bt.cards[bt.i], pub = c => ({ id: c.id, title: c.title, rarity: c.rarity, shiny: c.shiny, atk: c.atk, def: c.def, image: c.image });
     bt.qStart = now();
-    for (const [uid, mine, theirs, q] of [[a, r.a, r.b, r.qA], [b, r.b, r.a, r.qB]]) {
-      this.push(uid, { t: 'bq', id: bt.id, n: bt.i + 1, total: CFG.BATTLE_ROUNDS, mine: pub(mine), theirs: pub(theirs), text: q.text, options: q.options, time: B_TIME, wins: bt.wins });
+    for (const [uid, mine, theirs, q] of [[a, r.a, r.b, r.qA[bt.k]], [b, r.b, r.a, r.qB[bt.k]]]) {
+      this.push(uid, { t: 'bq', id: bt.id, n: bt.i + 1, total: CFG.BATTLE_ROUNDS, k: bt.k + 1, kTotal: Q_PER_CARD, mine: pub(mine), theirs: pub(theirs), text: q.text, options: q.options, time: B_TIME, wins: bt.wins });
     }
     if (bt.bot) {                                                    // le joueur simulé répond après un temps de réflexion
-      const q = bt.bot === a ? r.qA : r.qB;
-      setTimeout(() => this.battleAnswer({ id: bt.bot }, { id: bt.id, choice: Math.random() < .55 ? q.answer : Math.floor(Math.random() * q.options.length) }), 3000 + Math.random() * 9000);
+      const q = (bt.bot === a ? r.qA : r.qB)[bt.k], id = bt.i + '-' + bt.k;
+      setTimeout(() => { if (`${bt.i}-${bt.k}` === id) this.battleAnswer({ id: bt.bot }, { id: bt.id, choice: Math.random() < .55 ? q.answer : Math.floor(Math.random() * q.options.length) }); }, 2500 + Math.random() * 7000);
     }
-    bt.timer = setTimeout(() => this.closeBattleRound(bt), B_TIME + 500);
+    bt.timer = setTimeout(() => this.closeBattleQuestion(bt), B_TIME + 500);
   }
   battleAnswer(user, msg) {
     const bt = this.battles.get(msg.id);
     if (!bt || !bt.cards || !bt.players.includes(user.id) || bt.answers[user.id] !== undefined || bt.i < 0) return;
     bt.answers[user.id] = +msg.choice;
-    if (bt.players.every(p => bt.answers[p] !== undefined)) this.closeBattleRound(bt);
+    if (bt.players.every(p => bt.answers[p] !== undefined)) this.closeBattleQuestion(bt);
+  }
+  closeBattleQuestion(bt) {
+    const key = bt.i + '-' + bt.k;
+    if (bt.closingQ === key) return; bt.closingQ = key; clearTimeout(bt.timer);
+    const [a, b] = bt.players, r = bt.cards[bt.i];
+    const qa = r.qA[bt.k], qb = r.qB[bt.k], okA = bt.answers[a] === qa.answer, okB = bt.answers[b] === qb.answer;
+    if (okA) bt.right[a]++; if (okB) bt.right[b]++;
+    for (const p of bt.players) this.push(p, { t: 'bans', id: bt.id, n: bt.i + 1, k: bt.k + 1, a, b, answers: bt.answers, rightA: qa.answer, rightB: qb.answer, okA, okB, correct: bt.right });
+    setTimeout(() => this.nextBattleQuestion(bt), 2200);
   }
   closeBattleRound(bt) {
-    if (bt.closing === bt.i) return; bt.closing = bt.i; clearTimeout(bt.timer);
     const [a, b] = bt.players, r = bt.cards[bt.i];
-    const okA = bt.answers[a] === r.qA.answer, okB = bt.answers[b] === r.qB.answer;
-    const mult = ok => ok ? CFG.BATTLE_RIGHT : CFG.BATTLE_WRONG;     // bonne réponse : l'attaque frappe plus fort ; mauvaise réponse ou temps écoulé : moins fort
-    const hit = (x, y, ok) => Math.max(1, x.atk * mult(ok) - y.def * 0.5) * (0.95 + Math.random() * 0.1);
-    const da = hit(r.a, r.b, okA), db = hit(r.b, r.a, okB);
+    const mult = n => CFG.BATTLE_MULT[Math.min(n, CFG.BATTLE_MULT.length - 1)];   // plus on connaît l'article adverse, plus la carte frappe fort
+    const hit = (x, y, n) => Math.max(1, x.atk * mult(n) - y.def * 0.5) * (0.95 + Math.random() * 0.1);
+    const da = hit(r.a, r.b, bt.right[a]), db = hit(r.b, r.a, bt.right[b]);
     bt.dmg[a] += da; bt.dmg[b] += db;
     const w = Math.round(da) === Math.round(db) ? null : da > db ? a : b;
     if (w) bt.wins[w]++;
-    const round = { a: r.a, b: r.b, da: Math.round(da), db: Math.round(db), winner: w, okA, okB, ma: mult(okA), mb: mult(okB) };
+    const round = { a: r.a, b: r.b, da: Math.round(da), db: Math.round(db), winner: w, okA: bt.right[a], okB: bt.right[b], ma: mult(bt.right[a]), mb: mult(bt.right[b]), of: Q_PER_CARD };
     bt.rounds.push(round);
-    for (const p of bt.players) this.push(p, { t: 'bround', id: bt.id, n: bt.i + 1, a, b, round, wins: bt.wins, answers: bt.answers, rightA: r.qA.answer, rightB: r.qB.answer });
+    for (const p of bt.players) this.push(p, { t: 'bround', id: bt.id, n: bt.i + 1, a, b, round, wins: bt.wins });
     setTimeout(() => this.nextBattleRound(bt), 5000);
   }
   async endBattle(bt) {
