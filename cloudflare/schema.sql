@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   packs_opened INTEGER NOT NULL DEFAULT 0,
   is_bot INTEGER NOT NULL DEFAULT 0,      -- joueurs simulés qui animent le marché
   is_admin INTEGER NOT NULL DEFAULT 0,    -- menu d'administration
+  drop_w TEXT,                            -- taux de drop personnalisés (JSON par rareté), réglés par l'admin
   pack_ts INTEGER NOT NULL,
   duel_wins INTEGER NOT NULL DEFAULT 0,
   duel_losses INTEGER NOT NULL DEFAULT 0,

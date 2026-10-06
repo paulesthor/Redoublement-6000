@@ -33,16 +33,21 @@ async function entryAt(env, origin, rank) {
 }
 
 // ---------- tirage ----------
-function pickRarity(ranges, min = 0) {
-  const avail = RARITIES.filter(r => RANK[r] >= min && ranges[r][1] > ranges[r][0]);
+function pickRarity(ranges, min = 0, w = CFG.DROP) {
+  let avail = RARITIES.filter(r => RANK[r] >= min && ranges[r][1] > ranges[r][0] && w[r] > 0);
+  if (!avail.length) avail = RARITIES.filter(r => ranges[r][1] > ranges[r][0]);           // poids personnalisés inutilisables : taux normaux
   if (!avail.length) bad('Catalogue vide', 503);
-  let roll = Math.random() * avail.reduce((s, r) => s + CFG.DROP[r], 0);
-  for (const r of avail) { if ((roll -= CFG.DROP[r]) < 0) return r; }
+  let roll = Math.random() * avail.reduce((s, r) => s + (w[r] > 0 ? w[r] : CFG.DROP[r]), 0);
+  for (const r of avail) { if ((roll -= (w[r] > 0 ? w[r] : CFG.DROP[r])) < 0) return r; }
   return avail.at(-1);
 }
-async function drawCards(env, origin, n) {
+/** Taux de drop personnalisés d'un joueur (réglés par l'admin), ou les taux normaux. */
+function userWeights(u) {
+  try { const w = u?.drop_w && JSON.parse(u.drop_w); return w && RARITIES.some(r => w[r] > 0) ? Object.fromEntries(RARITIES.map(r => [r, Math.max(0, +w[r] || 0)])) : CFG.DROP; } catch { return CFG.DROP; }
+}
+async function drawCards(env, origin, n, w = CFG.DROP) {
   const { ranges } = await getMeta(env, origin);
-  const rarities = Array.from({ length: n }, () => pickRarity(ranges, 0));
+  const rarities = Array.from({ length: n }, () => pickRarity(ranges, 0, w));
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
   try {
@@ -288,7 +293,7 @@ async function prepareFor(env, ctx, user, stock) {
   try {
     const have = (await one(env, 'SELECT COUNT(*) n FROM prepared WHERE user_id = ?', user.id)).n;
     for (let k = have; k < want; k++) {
-      const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE);
+      const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE, userWeights(user));
       const ids = [...new Set(drawn.map(c => c.id))];
       await env.DB.batch(drawn.map(c => insertCard(env, c)));
       await enrich(env, ids);
@@ -523,7 +528,7 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
-  const drawn = (await takePrepared(env, u.id)) ?? await drawCards(env, origin, PACK_SIZE);
+  const drawn = (await takePrepared(env, u.id)) ?? await drawCards(env, origin, PACK_SIZE, userWeights(u));
   ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (u.test_mode ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
   return finishPack(env, ctx, user, drawn);
 });
@@ -531,7 +536,7 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-  const drawn = (await takePrepared(env, user.id)) ?? await drawCards(env, origin, PACK_SIZE);
+  const drawn = (await takePrepared(env, user.id)) ?? await drawCards(env, origin, PACK_SIZE, userWeights(user));
   ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
   return finishPack(env, ctx, user, drawn);
 });
@@ -860,9 +865,9 @@ route('GET', '/api/admin/overview', admin(async ({ env }) => {
 }));
 route('GET', '/api/admin/users', admin(async ({ env }) => {
   const online = new Set(await onlineIds(env));
-  const rows = await all(env, `SELECT u.id, u.name, u.coins, u.pack_stock packs, u.packs_opened, u.duel_wins wins, u.duel_losses losses, u.test_mode test, u.is_admin admin, u.created,
+  const rows = await all(env, `SELECT u.id, u.name, u.coins, u.pack_stock packs, u.packs_opened, u.duel_wins wins, u.duel_losses losses, u.test_mode test, u.is_admin admin, u.created, u.drop_w,
     (SELECT COUNT(*) FROM inventory i WHERE i.user_id = u.id) cards, (SELECT COUNT(*) FROM push_subs p WHERE p.user_id = u.id) devices FROM users u WHERE u.is_bot = 0 ORDER BY u.id`);
-  return { users: rows.map(r => ({ ...r, online: online.has(r.id) })) };
+  return { defaults: CFG.DROP, rarities: RARITIES, labels: CFG.LABELS, users: rows.map(r => { let drop = null; try { drop = r.drop_w ? JSON.parse(r.drop_w) : null; } catch { /* ignoré */ } const { drop_w, ...rest } = r; return { ...rest, drop, online: online.has(r.id) }; }) };
 }));
 route('POST', '/api/admin/give', admin(async ({ env, ctx, body }) => {
   const id = +body.user_id, coins = Math.trunc(+body.coins || 0), packs = Math.trunc(+body.packs || 0);
@@ -881,6 +886,33 @@ route('POST', '/api/admin/password', admin(async ({ env, body }) => {
   const salt = randomHex(16);
   await env.DB.batch([st(env, 'UPDATE users SET salt = ?, hash = ? WHERE id = ?', salt, await hashPw(pw, salt), u.id), st(env, 'DELETE FROM sessions WHERE user_id = ?', u.id)]);   // le joueur devra se reconnecter
   return { ok: true, name: u.name };
+}));
+route('POST', '/api/admin/drop', admin(async ({ env, body }) => {
+  const id = +body.user_id, u = await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', id);
+  if (!u) bad('Joueur introuvable', 404);
+  let json = null;
+  if (body.weights) {
+    const w = Object.fromEntries(RARITIES.map(r => [r, Math.round(Math.min(1000, Math.max(0, +body.weights[r] || 0)) * 1000) / 1000]));
+    if (!RARITIES.some(r => w[r] > 0)) bad('Au moins une rareté doit avoir un taux supérieur à 0');
+    json = JSON.stringify(w);
+  }
+  await env.DB.batch([st(env, 'UPDATE users SET drop_w = ? WHERE id = ?', json, id), st(env, 'DELETE FROM prepared WHERE user_id = ?', id)]);   // les paquets déjà préparés avaient les anciens taux
+  return { ok: true, name: u.name, custom: !!json };
+}));
+route('GET', '/api/admin/cards', admin(async ({ env, query }) => {
+  const id = +query.get('user_id'), q = String(query.get('q') || '').trim();
+  const rows = await all(env, `SELECT c.id, c.title, c.rarity, c.shiny, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? ${q ? 'AND c.title LIKE ?' : ''}
+    ORDER BY i.qty DESC, c.title LIMIT 40`, ...(q ? [id, `%${q.replace(/[%_]/g, '')}%`] : [id]));
+  return { cards: rows, total: (await one(env, 'SELECT COALESCE(SUM(qty),0) n, COUNT(*) u FROM inventory WHERE user_id = ?', id)) };
+}));
+route('POST', '/api/admin/take-card', admin(async ({ env, body }) => {
+  const uid = +body.user_id, cid = +body.card_id;
+  const row = await one(env, 'SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', uid, cid);
+  if (!row) bad('Cette carte n’est pas dans la collection du joueur', 404);
+  const n = body.qty === 'all' ? row.qty : Math.min(row.qty, Math.max(1, Math.trunc(+body.qty) || 1));
+  await env.DB.batch([st(env, 'UPDATE inventory SET qty = qty - ? WHERE user_id = ? AND card_id = ?', n, uid, cid), st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', uid, cid),
+    st(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ? AND NOT EXISTS (SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?)', uid, cid, uid, cid)]);
+  return { ok: true, removed: n, left: row.qty - n };
 }));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
   const text = String(body.text || '').trim().slice(0, 180); if (!text) bad('Message vide');
@@ -933,3 +965,4 @@ export default {
     }
   },
 };
+export { pickRarity, userWeights };   // exportés pour les tests

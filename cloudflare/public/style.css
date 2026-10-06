@@ -631,3 +631,8 @@ html.fit,html.fit body{overflow:hidden;overscroll-behavior:none}
 .admuser .mut{margin:4px 0 8px;font-size:12.5px}.admrow{display:flex;gap:6px;margin-top:6px}.admrow input{flex:1;min-width:0}.admrow button{white-space:nowrap;padding:9px 12px;font-size:13px}
 /* les fiches de carte s'ouvrent aussi par-dessus le résumé d'un tirage (z-index de #reveal : 100) */
 #modal{z-index:120}
+
+.admpanel{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2)}.admpanel[hidden]{display:none}.admpanel>input{width:100%}
+.acrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}.acn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}.rd{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
+.acrow button{padding:6px 10px;font-size:12.5px}.cust{color:var(--gold)!important}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}.dgrid label{display:flex;flex-direction:column;gap:3px;border-left:3px solid var(--cc);padding-left:8px;font-size:12px;color:var(--mut)}.dgrid input{width:100%}.dgrid em{font-style:normal;font-size:11.5px;color:var(--fg)}

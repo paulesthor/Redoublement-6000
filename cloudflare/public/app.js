@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '0.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '0.7';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -897,21 +897,63 @@ views.admin = async v => {
         ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['IA générées aujourd\'hui', `${o.aiToday} (quota ≈ 250 / jour)`], ['Version serveur', o.version]];
       box.innerHTML = `<div class="admgrid">${rows.map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>`;
     } else if (adminTab === 'users') {
-      const { users } = await api('/admin/users');
-      box.innerHTML = users.map(u => `<div class="admuser" data-id="${u.id}"><div class="admhead"><b>${esc(u.name)}</b>${u.admin ? ' <small>admin</small>' : ''}<span class="dot ${u.online ? 'on' : ''}"></span><small>${u.online ? 'en ligne' : ''}</small></div>
+      const { users, defaults, rarities, labels } = await api('/admin/users');
+      const pct = w => { const t = rarities.reduce((s, r) => s + (+w[r] || 0), 0) || 1; return r => +((+w[r] || 0) / t * 100).toFixed(2); };
+      box.innerHTML = users.map(u => `<div class="admuser" data-id="${u.id}"><div class="admhead"><b>${esc(u.name)}</b>${u.admin ? ' <small>admin</small>' : ''}${u.drop ? ' <small class="cust">taux perso</small>' : ''}<span class="dot ${u.online ? 'on' : ''}"></span><small>${u.online ? 'en ligne' : ''}</small></div>
         <p class="mut">${fmt(u.coins)} pièces · ${u.packs} paquets · ${u.cards} cartes · ${u.packs_opened} ouverts · ${u.wins}V/${u.losses}D · ${u.devices} appareil${u.devices > 1 ? 's' : ''} notifié${u.devices > 1 ? 's' : ''}</p>
-        <div class="admrow"><input type="number" inputmode="numeric" placeholder="± pièces" class="a-c"><input type="number" inputmode="numeric" placeholder="± paquets" class="a-p"><button class="a-give">Donner</button></div>
-        <div class="admrow"><button class="plain a-test">Mode test : ${u.test ? 'oui' : 'non'}</button><button class="plain a-pw">Nouveau mot de passe</button></div></div>`).join('');
+        <div class="admrow"><input type="number" inputmode="numeric" min="0" placeholder="pièces" class="a-c"><input type="number" inputmode="numeric" min="0" placeholder="paquets" class="a-p"></div>
+        <div class="admrow"><button class="a-give">Donner</button><button class="plain a-take">Retirer</button></div>
+        <div class="admrow"><button class="plain a-cards">Cartes…</button><button class="plain a-drop">Taux de drop…</button></div>
+        <div class="admrow"><button class="plain a-test">Mode test : ${u.test ? 'oui' : 'non'}</button><button class="plain a-pw">Mot de passe</button></div>
+        <div class="admpanel" hidden></div></div>`).join('');
+      const panel = (card, kind) => { const p = card.querySelector('.admpanel'), same = p.dataset.kind === kind && !p.hidden; p.hidden = same; p.dataset.kind = same ? '' : kind; return same ? null : p; };
+      const cardList = async (p, id) => {
+        const q = p.querySelector('.ac-q').value.trim(), r = await api(`/admin/cards?user_id=${id}&q=${encodeURIComponent(q)}`);
+        p.querySelector('.ac-list').innerHTML = (r.cards.map(c => `<div class="acrow" data-cid="${c.id}"><span class="acn"><i class="rd" style="background:var(--${c.shiny ? 'shiny' : c.rarity})"></i>${esc(c.title)}${c.shiny ? ' ✦' : ''}</span><b>×${c.qty}</b><button class="plain ac-1">−1</button><button class="plain ac-all">Tout</button></div>`).join('')) || '<p class="mut">Aucune carte.</p>';
+        p.querySelector('.ac-info').textContent = `${fmt(r.total.n)} carte${r.total.n > 1 ? 's' : ''} au total, ${fmt(r.total.u)} différente${r.total.u > 1 ? 's' : ''}${r.cards.length === 40 ? ' · 40 premières affichées, précise ta recherche' : ''}`;
+      };
       box.onclick = safe(async e => {
         const card = e.target.closest('.admuser'); if (!card) return; const id = +card.dataset.id, u = users.find(x => x.id === id);
-        if (e.target.closest('.a-give')) {
-          const coins = +card.querySelector('.a-c').value || 0, packs = +card.querySelector('.a-p').value || 0;
+        const num = c => Math.abs(+card.querySelector(c).value || 0);
+        if (e.target.closest('.a-give') || e.target.closest('.a-take')) {
+          const sign = e.target.closest('.a-take') ? -1 : 1, coins = num('.a-c') * sign, packs = num('.a-p') * sign;
           if (!coins && !packs) return toast('Indique des pièces et/ou des paquets');
+          if (sign < 0 && !confirm(`Retirer ${num('.a-c') ? num('.a-c') + ' pièces ' : ''}${num('.a-p') ? num('.a-p') + ' paquets ' : ''}à ${u.name} ?`)) return;
           await api('/admin/give', { user_id: id, coins, packs }); toast(`${u.name} : mis à jour`); adminBody();
         } else if (e.target.closest('.a-test')) { await api('/admin/test-mode', { user_id: id, on: !u.test }); adminBody(); }
         else if (e.target.closest('.a-pw')) {
           const pw = prompt(`Nouveau mot de passe pour ${u.name} (il sera déconnecté) :`); if (!pw) return;
           await api('/admin/password', { user_id: id, password: pw }); toast('Mot de passe changé');
+        } else if (e.target.closest('.a-cards')) {
+          const p = panel(card, 'cards'); if (!p) return;
+          p.innerHTML = `<input class="ac-q" placeholder="Chercher une carte de ${esc(u.name)}…" autocomplete="off"><p class="mut ac-info" style="margin:6px 0"></p><div class="ac-list"></div>`;
+          let t; p.querySelector('.ac-q').oninput = () => { clearTimeout(t); t = setTimeout(() => cardList(p, id).catch(err => toast(err.message)), 250); };
+          await cardList(p, id);
+        } else if (e.target.closest('.ac-1') || e.target.closest('.ac-all')) {
+          const row = e.target.closest('.acrow'), all = !!e.target.closest('.ac-all'), name = row.querySelector('.acn').textContent;
+          if (!confirm(`Retirer ${all ? 'toutes les copies de' : '1 exemplaire de'} « ${name} » à ${u.name} ?`)) return;
+          await api('/admin/take-card', { user_id: id, card_id: +row.dataset.cid, qty: all ? 'all' : 1 });
+          await cardList(card.querySelector('.admpanel'), id); toast('Carte retirée');
+        } else if (e.target.closest('.a-drop')) {
+          const p = panel(card, 'drop'); if (!p) return;
+          const cur = u.drop || defaults;
+          p.innerHTML = `<p class="mut" style="margin:0 0 8px">Poids de tirage de chaque rareté (plus c'est grand, plus c'est fréquent). Les pourcentages sont recalculés automatiquement.</p>
+            <div class="dgrid">${rarities.map(r => `<label style="--cc:var(--${r})"><span>${esc(labels[r])}</span><input type="number" inputmode="decimal" step="any" min="0" max="1000" data-r="${r}" value="${cur[r]}"><em data-p="${r}"></em></label>`).join('')}</div>
+            <div class="admrow"><button class="ad-save">Enregistrer</button><button class="plain ad-reset">Taux normaux</button></div>
+            <div class="admrow"><button class="plain ad-pre" data-m="2">Chance ×2</button><button class="plain ad-pre" data-m="0.5">Malchance ÷2</button></div>`;
+          const read = () => Object.fromEntries(rarities.map(r => [r, +p.querySelector(`[data-r="${r}"]`).value || 0]));
+          const paint = () => { const w = read(), f = pct(w); rarities.forEach(r => { p.querySelector(`[data-p="${r}"]`).textContent = f(r) + ' %'; }); };
+          p.oninput = paint; paint();
+          p.onclick = safe(async ev => {
+            if (ev.target.closest('.ad-pre')) {                                  // multiplie le poids des raretés au-dessus de « commune » : on garde le reste inchangé
+              const m = +ev.target.closest('.ad-pre').dataset.m;
+              rarities.forEach((r, k) => { if (k > 0) p.querySelector(`[data-r="${r}"]`).value = +(defaults[r] * m).toFixed(3); else p.querySelector(`[data-r="${r}"]`).value = defaults[r]; }); paint();
+            } else if (ev.target.closest('.ad-save')) {
+              await api('/admin/drop', { user_id: id, weights: read() }); toast(`Taux de ${u.name} enregistrés`); adminBody();
+            } else if (ev.target.closest('.ad-reset')) {
+              await api('/admin/drop', { user_id: id, weights: null }); toast(`Taux normaux pour ${u.name}`); adminBody();
+            }
+          });
         }
       });
     } else if (adminTab === 'announce') {
