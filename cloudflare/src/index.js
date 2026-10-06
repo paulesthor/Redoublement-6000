@@ -293,6 +293,8 @@ async function prepareFor(env, ctx, user, stock) {
   if (want < 1) return;
   preparing.add(user.id);
   try {
+    const wk = user.drop_w ?? '';                       // empreinte des taux de drop : un paquet préparé avec d'autres taux est jeté
+    await run(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ?', user.id, wk);
     const have = (await one(env, 'SELECT COUNT(*) n FROM prepared WHERE user_id = ?', user.id)).n;
     for (let k = have; k < want; k++) {
       const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE, userWeights(user));
@@ -301,13 +303,14 @@ async function prepareFor(env, ctx, user, stock) {
       await enrich(env, ids);
       await env.DB.batch([
         ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', c.id - SHINY_OFFSET, c.id)),
-        st(env, 'INSERT INTO prepared (user_id, cards, ts) VALUES (?,?,?)', user.id, JSON.stringify(drawn), now()),
+        st(env, 'INSERT INTO prepared (user_id, cards, ts, w) VALUES (?,?,?,?)', user.id, JSON.stringify(drawn), now(), wk),
       ]);
     }
   } finally { preparing.delete(user.id); }
 }
 /** Le plus ancien paquet préparé du joueur (ou null). */
-async function takePrepared(env, uid) {
+async function takePrepared(env, uid, wk = '') {
+  await run(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ?', uid, wk).catch(() => {});
   const r = await run(env, 'DELETE FROM prepared WHERE id = (SELECT id FROM prepared WHERE user_id = ? ORDER BY id LIMIT 1) RETURNING cards', uid).catch(() => null);
   const row = r?.results?.[0];
   try { return row ? JSON.parse(row.cards) : null; } catch { return null; }
@@ -540,7 +543,7 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
-  const drawn = (await takePrepared(env, u.id)) ?? await drawCards(env, origin, PACK_SIZE, userWeights(u));
+  const drawn = (await takePrepared(env, u.id, u.drop_w ?? '')) ?? await drawCards(env, origin, PACK_SIZE, userWeights(u));
   ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
   return finishPack(env, ctx, user, drawn);
 });
@@ -548,7 +551,7 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-  const drawn = (await takePrepared(env, user.id)) ?? await drawCards(env, origin, PACK_SIZE, userWeights(user));
+  const drawn = (await takePrepared(env, user.id, user.drop_w ?? '')) ?? await drawCards(env, origin, PACK_SIZE, userWeights(user));
   ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
   return finishPack(env, ctx, user, drawn);
 });

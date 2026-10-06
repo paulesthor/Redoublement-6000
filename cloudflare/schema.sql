@@ -118,7 +118,8 @@ CREATE TABLE IF NOT EXISTS prepared (        -- paquets tirés et complétés d'
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,
   cards TEXT NOT NULL,
-  ts INTEGER NOT NULL
+  ts INTEGER NOT NULL,
+  w TEXT NOT NULL DEFAULT ''           -- taux de drop utilisés (users.drop_w) : un paquet préparé avec d'autres taux est jeté
 );
 CREATE INDEX IF NOT EXISTS prepared_user ON prepared(user_id, id);
 CREATE TABLE IF NOT EXISTS wanted (          -- cartes cherchées par un joueur : un joueur simulé les met en vente à l'heure indiquée
