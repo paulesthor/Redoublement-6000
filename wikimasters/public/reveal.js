@@ -167,7 +167,7 @@
       locked = true;
       root.className = '';
       root.innerHTML = `<div class="bg"></div><div class="sum"><h2>Ton tirage</h2>
-        <div class="grid">${[...seq].reverse().map(c => o.cardHtml(c)).join('')}</div>
+        <div class="grid">${[...seq].reverse().map(c => o.cardHtml(c, { star: true })).join('')}</div>
         <div class="sticky-bar"><button class="finish">Continuer</button></div></div>`;
       root.querySelector('.finish').onclick = close;
     }

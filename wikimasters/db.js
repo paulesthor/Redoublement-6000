@@ -71,6 +71,12 @@ CREATE TABLE IF NOT EXISTS auctions (
   status TEXT NOT NULL DEFAULT 'open'
 );
 CREATE INDEX IF NOT EXISTS auctions_open ON auctions(status, ends_at);
+CREATE TABLE IF NOT EXISTS favorites (
+  user_id INTEGER NOT NULL,
+  card_id INTEGER NOT NULL,
+  ts INTEGER NOT NULL,
+  PRIMARY KEY (user_id, card_id)
+);
 CREATE TABLE IF NOT EXISTS achievements (
   user_id INTEGER NOT NULL REFERENCES users(id),
   key TEXT NOT NULL,

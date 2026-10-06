@@ -298,6 +298,8 @@ async function finishPack(user, ids, before) {
   const seen = new Set();
   const cards = ids.map(id => { const isNew = !before.has(id) && !seen.has(id); seen.add(id); return { ...rows.get(id), isNew }; })
     .sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || b.shiny - a.shiny);
+  const favs = new Set(all(`SELECT card_id FROM favorites WHERE user_id=? AND card_id IN (${[...rows.keys()].map(() => '?').join(',')})`, user.id, ...rows.keys()).map(r => r.card_id));
+  cards.forEach(c => { c.fav = favs.has(c.id) ? 1 : 0; });
   announceHits(user, cards);
   run('UPDATE users SET packs_opened = packs_opened + 1 WHERE id=?', user.id);
   checkAchievements(user);
@@ -341,7 +343,7 @@ route('GET', '/api/config', () => ({
 
 const AVG = `(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))`;
 route('GET', '/api/album', ({ user }) => {
-  const cards = all(`SELECT c.*, i.qty, ${AVG} AS avg_price FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=?
+  const cards = all(`SELECT c.*, i.qty, ${AVG} AS avg_price, (SELECT 1 FROM favorites f WHERE f.user_id = i.user_id AND f.card_id = i.card_id) AS fav FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=?
     ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC`, user.id);
   const total = Object.fromEntries(RARITIES.map(r => [r, live.total(r)]));
   const rarityAvg = Object.fromEntries(all(`SELECT c.rarity, CAST(ROUND(AVG(s.price)) AS INTEGER) p, COUNT(*) n FROM sales s JOIN cards c ON c.id = s.card_id GROUP BY c.rarity`).map(r => [r.rarity, { avg: r.p, n: r.n }]));
@@ -490,6 +492,14 @@ route('GET', '/api/profile/:id', ({ user, params }) => {
     byRarity: Object.fromEntries(CFG.RARITIES.map(r => [r, inv.filter(x => x.rarity === r).reduce((t, x) => t + x.n, 0)])) } };
 });
 
+route('POST', '/api/favorites', ({ user, body }) => {
+  const id = +body.card_id;
+  if (body.on) {
+    if (!one('SELECT 1 x FROM inventory WHERE user_id=? AND card_id=?', user.id, id)) bad('Tu ne possèdes pas cette carte');
+    run('INSERT OR IGNORE INTO favorites (user_id, card_id, ts) VALUES (?,?,?)', user.id, id, now());
+  } else run('DELETE FROM favorites WHERE user_id=? AND card_id=?', user.id, id);
+  return { ok: true };
+});
 route('POST', '/api/trades', ({ user, body }) => {
   const to = +body.to;
   if (to === user.id || !one('SELECT 1 FROM users WHERE id=?', to)) bad('Destinataire invalide');

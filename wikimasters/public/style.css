@@ -572,3 +572,22 @@ html.fit,html.fit body{overflow:hidden;overscroll-behavior:none}
 .bq-text{margin:4px 0 10px;font-weight:600;white-space:pre-wrap}
 .opt{display:block;width:100%;text-align:left;margin-bottom:8px;padding:11px 14px;font-size:14px;line-height:1.35}
 .bres{margin-top:10px;text-align:center}.bres.win{border-color:#4cc27a77}.bres.lose{border-color:#ff6b6b66}.bres p{margin:6px 0 0;color:var(--mut);font-size:13px}
+
+/* combat : PV, decks, attaque */
+.hpwrap{display:grid;gap:8px;margin-bottom:6px}
+.hpb .hpt{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}.hpb .hpt b{font-family:var(--f-disp)}
+.hpbar{height:9px;border-radius:9px;background:#23232f;overflow:hidden}.hpbar i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#c0463c,#e8c36a 55%,#6fcf8f);transition:width .6s ease}
+.hpb.me .hpbar i{background:linear-gradient(90deg,#c0463c,#e8c36a 45%,#6fcf8f)}
+.deckrow{margin:8px 0}.deckrow small{display:block;color:var(--mut);font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.deckrow>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.bcard.used{opacity:.35;filter:grayscale(.7)}.bcard.pickable{cursor:pointer;outline:2px solid transparent;transition:outline-color .15s,transform .12s}.bcard.pickable:active{transform:scale(.97)}.bcard.pickable:hover{outline-color:var(--gold)}
+.atkcard{display:flex;gap:12px;align-items:stretch;margin:6px 0}.atkcard .bcard{flex:0 0 42%}
+.atkinfo{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}.atkinfo small{color:var(--mut);font-size:12px}.atkinfo b{font-family:var(--f-disp);font-size:24px}.atkinfo span{color:var(--mut);font-size:12.5px}
+
+/* favoris : petite étoile sur les cartes */
+.card .tags{pointer-events:none}.card .tags>*{pointer-events:auto}
+.starbtn{width:34px;height:34px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:19px;line-height:1;background:#0009;color:#ffffffb0;border:1px solid #ffffff30;box-shadow:none;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);transition:transform .15s,color .15s,background .15s}
+.starbtn:hover:not(:disabled){filter:none;color:#fff}
+.starbtn:active:not(:disabled){transform:scale(.88)}
+.starbtn.on{color:#f5c542;background:#2a2108cc;border-color:#f5c54299;text-shadow:0 0 10px #f5c54288}
+#reveal .card .tags{z-index:5}

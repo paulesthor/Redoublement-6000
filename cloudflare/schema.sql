@@ -129,3 +129,9 @@ CREATE TABLE IF NOT EXISTS quizzes (         -- questions d'un article écrites 
   model TEXT NOT NULL,
   ts INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS favorites (       -- cartes marquées d'une étoile
+  user_id INTEGER NOT NULL,
+  card_id INTEGER NOT NULL,
+  ts INTEGER NOT NULL,
+  PRIMARY KEY (user_id, card_id)
+);

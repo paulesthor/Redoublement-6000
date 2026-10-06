@@ -91,12 +91,12 @@ function onWs(m) {
   else if (m.t === 'refresh') { gcache.clear(); if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
-    $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'bataille de cartes' : 'duel de quiz'}.</p>
+    $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : 'duel de quiz'}.</p>
       <div class="row"><button id="ok">Accepter</button><button id="no" class="plain">Refuser</button></div></div>`;
     $('#ok').onclick = () => { send({ t: 'accept', from: m.from, mode: m.mode }); $('#modal').hidden = true; };
     $('#no').onclick = () => { send({ t: 'decline', from: m.from }); $('#modal').hidden = true; };
   }
-  else if (/^(duel|battle)|^(question|reveal|bq|bans|bround)$/.test(m.t)) gameEvent(m);
+  else if (/^(duel|battle|bf_)|^(question|reveal)$/.test(m.t)) gameEvent(m);
 }
 
 
@@ -189,9 +189,9 @@ const TOPICS = [
 const topic = c => { const t = (c.extract || '').slice(0, 240); for (const [k, re] of TOPICS) if (re.test(t)) return k; return 'spark'; };
 const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
   <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
-  <div class="tags">${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}</div>
+  <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori">★</button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
   ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`);
@@ -230,6 +230,19 @@ function showCard(id) {
   $('#det-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
 }
+/** Étoile des favoris : mise à jour immédiate, enregistrée en arrière-plan. */
+let albumFilter = '';
+async function toggleFav(id) {
+  const c = cardIndex.get(id); if (!c) return;
+  const on = !c.fav, paint = v => { c.fav = v ? 1 : 0; (lastPack?.cards || []).forEach(x => { if (x.id === id) x.fav = v ? 1 : 0; }); document.querySelectorAll(`[data-fav="${id}"]`).forEach(b => b.classList.toggle('on', v)); };
+  paint(on);
+  try { await api('/favorites', { card_id: id, on }); toast(on ? 'Ajoutée aux favoris' : 'Retirée des favoris'); if (tab === 'album' && albumFilter === 'fav' && !on) render(); }
+  catch (e) { paint(!on); toast(e.message); }
+}
+document.addEventListener('click', e => {
+  const star = e.target.closest('[data-fav]');
+  if (star) { e.stopPropagation(); e.preventDefault(); toggleFav(+star.dataset.fav); }
+}, true);
 document.addEventListener('click', e => {
   const card = e.target.closest('.card');
   if (!card || e.target.closest('button, a') || card.classList.contains('pick') || !$('#modal').hidden) return;
@@ -286,8 +299,8 @@ const views = {
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${packSvg('full')}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button>
-      <div class="stock"><div class="pips">${Array.from({ length: cfg.packMax }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
-        <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> / ${cfg.packMax} paquets disponibles${me.packs < cfg.packMax ? ` · prochain dans <b id="cd"></b>` : ''}`}</p></div>
+      <div class="stock"><div class="pips">${Array.from({ length: 10 }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
+        <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''} · prochain dans <b id="cd"></b>`}</p></div>
       <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button></div>
       <div class="lastpack" id="lastpack" hidden><h3 class="sec">Dernier tirage</h3><div id="out" class="grid"></div></div></div>`;
     // hauteur disponible sous l'en-tête et au-dessus de la barre du bas : les espaces de l'accueil s'en déduisent en pourcentage
@@ -304,7 +317,7 @@ const views = {
     };
     setAvail(); window.addEventListener('resize', setAvail);
     const show = r => {
-      lastPack = r; $('#lastpack').hidden = false; $('#out').innerHTML = [...r.cards].sort((a, b) => RANK[b.rarity] - RANK[a.rarity]).map(c => cardHtml(c)).join('');
+      lastPack = r; $('#lastpack').hidden = false; $('#out').innerHTML = [...r.cards].sort((a, b) => RANK[b.rarity] - RANK[a.rarity]).map(c => cardHtml(c, { star: true })).join('');
     };
     if (lastPack) show(lastPack);
     // ouverture animée : les cartes arrivent une par une, de la moins rare à la plus rare
@@ -354,7 +367,7 @@ const views = {
       return { r, n: part.reduce((t, c) => t + c.qty - 1, 0), price: part.reduce((t, c) => t + (c.qty - 1) * sellValue(c), 0) };
     });
     const bulkDefault = (bulkTiers.filter((t, i) => i <= 1 && t.n).at(-1) || bulkTiers.find(t => t.n) || bulkTiers[0]).r;
-    let rar = '';
+    let rar = albumFilter;
     v.innerHTML = `${pageHead('Collection', `${cards.length} cartes uniques`)}
       <div class="tiles">
         <div class="tile"><b>${cards.length}</b><span>cartes uniques</span></div>
@@ -367,9 +380,9 @@ const views = {
         <span class="mut" style="font-size:11.5px">vente moy. ${rarityAvg[r] ? fmt(rarityAvg[r].avg) : '—'}</span></div>`).join('')}</div></details>
       <div class="toolbar">
         <div class="search">${ico('search')}<input id="flt" placeholder="Rechercher une carte" autocomplete="off"></div>
-        <select id="srt"><option value="rar">Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
+        <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
         <label class="row" style="gap:8px;color:var(--mut);font-size:13px"><input type="checkbox" id="dup"> doublons</label>
-        <div class="chips" id="chips"><button class="on" data-r="">Toutes</button>${cfg.rarities.map(r => `<button data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+        <div class="chips" id="chips"><button class="${rar === '' ? 'on' : ''}" data-r="">Toutes</button><button class="${rar === 'fav' ? 'on' : ''}" data-r="fav" style="--cc:var(--legendary)">★ Favoris</button>${cfg.rarities.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
       <div class="bulk">
         <select id="bulk-r" aria-label="Rareté maximale">${bulkTiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>Doublons jusqu'à : ${RAR[t.r]} (${t.n} carte${t.n > 1 ? 's' : ''}, +${fmt(t.price)})</option>`).join('')}</select>
@@ -377,14 +390,14 @@ const views = {
       <div class="grid" id="g"></div>`;
     const draw = () => {
       const f = $('#flt').value.toLowerCase(), s = $('#srt').value, d = $('#dup').checked;
-      const list = cards.filter(c => c.title.toLowerCase().includes(f) && (!rar || c.rarity === rar) && (!d || c.qty > 1));
-      list.sort({ rar: (a, b) => RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, name: (a, b) => a.title.localeCompare(b.title, 'fr'),
+      const list = cards.filter(c => c.title.toLowerCase().includes(f) && (!rar || (rar === 'fav' ? c.fav : c.rarity === rar)) && (!d || c.qty > 1));
+      list.sort({ fav: (a, b) => (b.fav | 0) - (a.fav | 0) || RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, rar: (a, b) => RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, name: (a, b) => a.title.localeCompare(b.title, 'fr'),
         qty: (a, b) => b.qty - a.qty, val: (a, b) => value(b) - value(a) }[s]);
       $('#g').innerHTML = list.map(c => cardHtml(c, {
-        lazy: true,
+        lazy: true, star: true,
         extra: `<div class="meta">Défausse <b>${sellValue(c)}</b> · Marché <b>${c.avg_price ?? '—'}</b></div>`,
         acts: `<button class="plain" data-d="${c.id}">Défausser</button><button class="plain" data-a="${c.id}">Vendre</button>`,
-      })).join('') || '<div class="empty" style="grid-column:1/-1">Aucune carte ne correspond.</div>';
+      })).join('') || `<div class="empty" style="grid-column:1/-1">${rar === 'fav' ? 'Aucun favori pour l\'instant.<br>Touche l\'étoile ★ d\'une carte.' : 'Aucune carte ne correspond.'}</div>`;
       lazyImages($('#g'));
       $('#g').querySelectorAll('[data-d]').forEach(b => b.onclick = safe(async () => {
         const c = cards.find(x => x.id == b.dataset.d);
@@ -399,7 +412,7 @@ const views = {
     ['flt', 'srt', 'dup'].forEach(id => $('#' + id).oninput = draw);
     $('#chips').onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
-      rar = b.dataset.r; $('#chips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); draw();
+      rar = albumFilter = b.dataset.r; $('#chips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); draw();
     };
     const bulkSync = () => { const t = bulkTiers.find(x => x.r === $('#bulk-r').value); $('#bulk-go').disabled = !t.n; return t; };
     $('#bulk-r').onchange = bulkSync; bulkSync();
@@ -445,11 +458,11 @@ const views = {
   async duel(v) {
     const { users } = await api('/users');
     v.innerHTML = `${pageHead('Combats', 'Défie un joueur connecté')}${seg(COMBAT_SEG, 'duel')}
-      <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Bataille</b> : chacun choisit 3 cartes, la n°1 affronte la n°1 de l'adversaire, etc. À chaque manche, tu réponds à une question sur la carte adverse : trois questions sur l'article de la carte adverse (dates, noms, définitions…) : 0 bonne réponse = attaque ×0,7, 3 bonnes = ×1,5. Puis ATK contre DEF. Victoire : +50 pièces (moitié moins contre un joueur simulé).</p></details></div>
-      <button id="vs-bot" class="botbtn">${ico('sword')} Bataille contre un joueur simulé</button>
+      <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Combat</b> : chacun choisit 3 cartes (PV de départ = somme de leurs DEF). À tour de rôle, un joueur attaque avec une carte et l'autre répond à 3 questions sur son article : chaque mauvaise réponse coûte le tiers de l'ATK de la carte. Le plus de PV à la fin gagne : +50 pièces (moitié moins contre un joueur simulé).</p></details></div>
+      <button id="vs-bot" class="botbtn">${ico('sword')} Combat contre un joueur simulé</button>
       <div class="list">${users.map(u => `<div class="item row1 ${u.me ? 'me' : ''}">${avatar(u.name, online.has(u.id))}
         <div class="grow"><div class="nm">${esc(u.name)}${u.me ? ' (toi)' : ''}</div><div class="sub">${online.has(u.id) ? 'En ligne' : 'Hors ligne'}</div></div>
-        ${u.me ? '' : `<div class="acts">${['quiz', 'battle'].map(m => `<button data-id="${u.id}" data-mode="${m}" ${online.has(u.id) ? '' : 'disabled'} class="${m === 'quiz' ? 'plain' : ''}">${m === 'quiz' ? 'Quiz' : 'Bataille'}</button>`).join('')}</div>`}</div>`).join('')}</div>`;
+        ${u.me ? '' : `<div class="acts">${['quiz', 'battle'].map(m => `<button data-id="${u.id}" data-mode="${m}" ${online.has(u.id) ? '' : 'disabled'} class="${m === 'quiz' ? 'plain' : ''}">${m === 'quiz' ? 'Quiz' : 'Combat'}</button>`).join('')}</div>`}</div>`).join('')}</div>`;
     bindSeg(v);
     v.querySelectorAll('[data-id]').forEach(b => b.onclick = () => send({ t: 'challenge', to: +b.dataset.id, mode: b.dataset.mode }));
     $('#vs-bot').onclick = () => send({ t: 'challenge_bot' });
@@ -557,11 +570,15 @@ function gameEvent(m) {
   else if (m.t === 'reveal') { game.reveal = m; game.score = m.score; }
   else if (m.t === 'duel_end') { game = { ...game, view: 'end', result: m }; refreshMe(); }
   else if (m.t === 'battle_start') game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [] };
-  else if (m.t === 'bq') game = { ...game, kind: 'battle', view: 'bq', bq: m, picked: null, ansRes: null, roundRes: null, end: Date.now() + m.time };
-  else if (m.t === 'bans') { game.ansRes = m; }
-  else if (m.t === 'bround') { game.roundRes = m; }
+  else if (m.t === 'bf_start') game = { kind: 'fight', id: m.id, names: m.names, view: 'fight', f: { ...m, phase: 'intro' } };
+  else if (m.t === 'bf_turn') Object.assign(game.f, { turn: m.turn, attacker: m.attacker, defender: m.defender, left: m.left, hp: m.hp, phase: 'pick', card: null, q: null, res: null, picked: null, summary: null, end: Date.now() + m.time, time: m.time });
+  else if (m.t === 'bf_card') Object.assign(game.f, { card: m.card, hp: m.hp, phase: 'card' });
+  else if (m.t === 'bf_q') Object.assign(game.f, { q: m, picked: null, res: null, phase: 'q', end: Date.now() + m.time, time: m.time, hp: m.hp });
+  else if (m.t === 'bf_picked') game.f.picked = m.choice;
+  else if (m.t === 'bf_a') Object.assign(game.f, { res: m, hp: m.hp, phase: 'a' });
+  else if (m.t === 'bf_turn_end') Object.assign(game.f, { summary: m, hp: m.hp, phase: 'turnend' });
+  else if (m.t === 'bf_end') { game = { ...game, kind: 'fight', view: 'end', result: m }; refreshMe(); }
   else if (m.t === 'battle_cancel') game = null;
-  else if (m.t === 'battle_end') { game = { ...game, kind: 'battle', view: 'end', result: m }; refreshMe(); }
   renderGame();
 }
 async function renderGame() {
@@ -576,32 +593,40 @@ async function renderGame() {
         `<button class="opt ${rv ? (i === rv.answer ? 'ok' : (rv.picks[me.id] === i ? 'ko' : '')) : (game.picked === i ? 'sel' : '')}" data-i="${i}" ${rv || game.picked !== null ? 'disabled' : ''}>${esc(o)}</button>`).join('');
     v.querySelectorAll('.opt').forEach(b => b.onclick = () => { game.picked = +b.dataset.i; send({ t: 'answer', id: game.id, choice: game.picked }); renderGame(); });
     if (!rv) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (game.end - Date.now()) / q.time * 100) + '%'; }, 100);
-  } else if (game.kind === 'battle' && game.view === 'bq') {
-    const q = game.bq, av = game.ansRes, rr = game.roundRes, iA = (av || rr) ? (av || rr).a === me.id : null;
-    const mini = (c, label) => `<div class="bcard" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
-      <small>${label}</small><b>${esc(c.title)}</b><span>ATK <i>${fmt(c.atk)}</i> · DEF <i>${fmt(c.def)}</i></span></div>`;
-    const right = av ? (iA ? av.rightA : av.rightB) : null;
-    let result = '';
-    if (rr) {
-      const r = rr.round, my = iA ? r.da : r.db, their = iA ? r.db : r.da, mm = iA ? r.ma : r.mb, tm = iA ? r.mb : r.ma, myOk = iA ? r.okA : r.okB, theirOk = iA ? r.okB : r.okA;
-      const won = r.winner === me.id, draw = r.winner === null;
-      result = `<div class="panel bres ${draw ? '' : won ? 'win' : 'lose'}"><b>${draw ? 'Manche nulle' : won ? 'Manche gagnée' : 'Manche perdue'}</b>
-        <p>Tes réponses : ${myOk} / ${r.of} → ta carte frappe ×${mm} : <b>${fmt(my)}</b> dégâts<br>Adversaire : ${theirOk} / ${r.of} (×${tm}) : <b>${fmt(their)}</b> dégâts</p></div>`;
+  } else if (game.kind === 'fight' && game.view === 'fight') {
+    const f = game.f, nm = id => esc(game.names[id]), iAtt = f.attacker === me.id, iDef = f.defender === me.id;
+    const bar = id => { const pct = Math.max(0, Math.round((f.hp[id] ?? 0) / (f.max[id] || 1) * 100)); return `<div class="hpb ${id === me.id ? 'me' : ''}"><div class="hpt"><span>${nm(id)}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(f.hp[id] ?? 0)} PV</b></div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`; };
+    const mini = (c, cls = '', attrs = '') => `<div class="bcard ${cls}" ${attrs} style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
+      <b>${esc(c.title)}</b><span>ATK <i>${fmt(c.atk)}</i> · DEF <i>${fmt(c.def)}</i></span></div>`;
+    const deckRow = id => `<div class="deckrow"><small>${nm(id)}</small><div>${f.deck[id].map(c => mini(c, (f.left?.[id] && !f.left[id].includes(c.id)) ? 'used' : '')).join('')}</div></div>`;
+    let body = '';
+    if (f.phase === 'intro') {
+      body = `<p class="mut" style="text-align:center">Les decks sont prêts. ${nm(f.first)} attaque en premier.</p>${deckRow(f.a)}${deckRow(f.b)}`;
+    } else if (f.phase === 'pick') {
+      body = iAtt ? `<p class="bq-text">À toi d'attaquer : choisis une carte.</p><div class="qbar"><i id="tb" style="width:100%"></i></div>
+        <div class="deckrow"><div>${f.deck[me.id].filter(c => f.left[me.id].includes(c.id)).map(c => mini(c, 'pickable', `data-card="${c.id}"`)).join('')}</div></div>${deckRow(f.defender)}`
+        : `<p class="bq-text">${nm(f.attacker)} choisit une carte pour t'attaquer…</p><div class="qbar"><i id="tb" style="width:100%"></i></div>${deckRow(f.attacker)}${deckRow(me.id)}`;
+    } else {
+      const q = f.q, r = f.res, dots = [0, 1, 2].map(i => `<i class="${q && i < q.k - (r ? 0 : 1) ? 'done' : ''} ${q && i === q.k - 1 ? 'cur' : ''}"></i>`).join('');
+      body = `<div class="atkcard">${mini(f.card)}<div class="atkinfo"><small>Attaque de ${nm(f.attacker)}</small><b>${fmt(f.card.atk)} ATK</b><span>−${fmt(Math.round(f.card.atk / 3))} PV par mauvaise réponse</span></div></div>`;
+      if (q) {
+        const right = r ? r.right : null;
+        body += `<p class="mut" style="margin:6px 0 4px">Question <b>${q.k} / ${q.kTotal}</b> · ${iDef ? 'tu réponds' : nm(f.defender) + ' répond'}</p>
+          <p class="bq-text">${esc(q.text)}</p><div class="qbar"><i id="tb" style="width:${r ? 0 : 100}%"></i></div>` +
+          q.options.map((o, i) => `<button class="opt ${r ? (i === right ? 'ok' : (f.picked === i ? 'ko' : '')) : (f.picked === i ? 'sel' : '')}" data-i="${i}" ${(r || f.picked !== null || !iDef) ? 'disabled' : ''}>${esc(o)}</button>`).join('');
+        if (r) body += `<div class="panel bres ${r.ok ? 'win' : 'lose'}"><b>${r.ok ? 'Bonne réponse' : f.picked === null ? 'Temps écoulé' : 'Mauvaise réponse'}</b><p>${r.ok ? 'Aucun dégât.' : `${nm(f.defender)} perd <b>${fmt(r.dmg)}</b> PV.`}</p></div>`;
+      }
+      if (f.phase === 'turnend' && f.summary) body += `<div class="panel bres ${f.summary.wrong === 0 ? 'win' : ''}"><b>Fin de l'attaque</b><p>${f.summary.wrong} mauvaise${f.summary.wrong > 1 ? 's' : ''} réponse${f.summary.wrong > 1 ? 's' : ''} sur ${Q_PER_CARD_UI} : ${nm(f.defender)} perd ${fmt(f.summary.lost)} PV.</p></div>`;
     }
-    const wins = rr ? rr.wins : q.wins, dots = av ? (iA ? av.correct[av.a] : av.correct[av.b]) : null;
-    v.innerHTML = `${pageHead(`Bataille · manche ${q.n} / ${q.total}`)}
-      <p class="mut" style="margin:-4px 0 8px">${Object.entries(game.names).map(([id, n]) => `${esc(n)} : <b>${wins?.[id] ?? 0}</b>`).join(' · ')} · Question <b>${q.k} / ${q.kTotal}</b></p>
-      <div class="bpair">${mini(q.mine, 'Ta carte')}<span class="vs">VS</span>${mini(q.theirs, 'Carte adverse')}</div>
-      <p class="bq-text">${av ? '' : 'Sur la carte adverse : '}${esc(q.text)}</p>
-      <div class="qbar"><i id="tb" style="width:${av ? 0 : 100}%"></i></div>` + q.options.map((o, i) =>
-        `<button class="opt ${av ? (i === right ? 'ok' : (av.answers[me.id] === i ? 'ko' : '')) : (game.picked === i ? 'sel' : '')}" data-i="${i}" ${av || game.picked !== null ? 'disabled' : ''}>${esc(o)}</button>`).join('') + result;
-    v.querySelectorAll('.opt').forEach(b => b.onclick = () => { game.picked = +b.dataset.i; send({ t: 'banswer', id: game.id, choice: game.picked }); renderGame(); });
-    if (!av) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (game.end - Date.now()) / q.time * 100) + '%'; }, 100);
+    v.innerHTML = `${pageHead('Combat')}<div class="hpwrap">${bar(f.a)}${bar(f.b)}</div>${f.turn ? `<p class="mut" style="text-align:center;margin:4px 0 8px">Tour ${f.turn} / ${f.total}</p>` : ''}${body}`;
+    v.querySelectorAll('[data-card]').forEach(el => el.onclick = () => { send({ t: 'bf_pick', id: game.id, card: +el.dataset.card }); });
+    v.querySelectorAll('.opt').forEach(b => b.onclick = () => { if (f.picked !== null) return; f.picked = +b.dataset.i; send({ t: 'bf_answer', id: game.id, choice: f.picked }); renderGame(); });
+    if (f.end && (f.phase === 'pick' || (f.phase === 'q' && !f.res))) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (f.end - Date.now()) / f.time * 100) + '%'; }, 100);
   } else if (game.kind === 'battle' && game.view === 'pick') {
     const { cards } = await api('/album');
     const draw = () => {
-      v.innerHTML = `${pageHead(`Bataille — choisis ${game.rounds} cartes`)}
-        <p class="mut">L'ordre compte : la 1re carte affronte la 1re de l'adversaire. Sélection : ${game.sel.map(id => esc(cards.find(c => c.id === id).title)).join(' → ') || 'aucune'}</p>
+      v.innerHTML = `${pageHead(`Combat — choisis ${game.rounds} cartes`)}
+        <p class="mut">Ton deck : tes PV de départ sont la somme des DEF de tes 3 cartes. Tu choisis en même temps que l'adversaire. Sélection : ${game.sel.map(id => esc(cards.find(c => c.id === id).title)).join(' → ') || 'aucune'}</p>
         <div class="sticky-bar"><button id="go" ${game.sel.length === game.rounds ? '' : 'disabled'}>Valider l'équipe (${game.sel.length}/${game.rounds})</button></div>
         <div class="grid">${cards.map(c => cardHtml(c, { cls: 'pick ' + (game.sel.includes(c.id) ? 'sel' : ''), tag: game.sel.includes(c.id) ? `<span class="tag">n°${game.sel.indexOf(c.id) + 1}</span>` : '' })).join('')}</div>`;
       v.querySelectorAll('.card').forEach(el => el.onclick = () => {
@@ -609,7 +634,7 @@ async function renderGame() {
         if (i >= 0) game.sel.splice(i, 1); else if (game.sel.length < game.rounds) game.sel.push(id);
         draw();
       });
-      $('#go').onclick = () => { send({ t: 'pick', id: game.id, cards: game.sel }); v.innerHTML = pageHead('Bataille', 'Équipe validée, la partie commence…'); };
+      $('#go').onclick = () => { send({ t: 'pick', id: game.id, cards: game.sel }); v.innerHTML = pageHead('Combat', 'Deck validé, en attente de l’adversaire…'); };
     };
     draw();
   } else if (game.view === 'end') {
@@ -617,12 +642,9 @@ async function renderGame() {
     if (game.kind === 'quiz') {
       v.innerHTML = `${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire' : 'Défaite')}<div class="panel">${names(r.score)}</div><button id="back">Retour</button>`;
     } else {
-      const iA = r.a === me.id, mine = x => (iA ? x : null);
-      v.innerHTML = `${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire' : 'Défaite')}
-        <table><tr><th>Manche</th><th>${esc(r.names[r.a])}</th><th></th><th>${esc(r.names[r.b])}</th></tr>
-        ${r.rounds.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.a.title)} <span class="mut">(${x.da} · ${x.okA}/${x.of ?? 3})</span></td>
-          <td>${x.winner === r.a ? '◀' : x.winner === r.b ? '▶' : '='}</td><td>${esc(x.b.title)} <span class="mut">(${x.db} · ${x.okB}/${x.of ?? 3})</span></td></tr>`).join('')}</table>
-        <p><button id="back" style="margin-top:12px">Retour</button></p>`;
+      const bar = id => `<div class="hpb ${id === me.id ? 'me' : ''}"><div class="hpt"><span>${esc(r.names[id])}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(r.hp[id])} / ${fmt(r.max[id])} PV</b></div><div class="hpbar"><i style="width:${Math.round(r.hp[id] / (r.max[id] || 1) * 100)}%"></i></div></div>`;
+      v.innerHTML = `${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire' : 'Défaite')}<div class="hpwrap">${bar(r.a)}${bar(r.b)}</div>
+        <p class="mut" style="text-align:center">${r.winner === null ? 'Autant de PV de chaque côté.' : `${esc(r.names[r.winner])} termine avec le plus de PV.`}</p><p><button id="back" style="margin-top:12px">Retour</button></p>`;
     }
     $('#back').onclick = () => { game = null; render(); };
   }
@@ -755,6 +777,7 @@ function fitLock() {
 if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => fitLock()); ro.observe(document.querySelector('#view')); ro.observe(document.querySelector('#app')); }
 document.fonts?.ready.then(() => fitLock());
 window.addEventListener('resize', fitLock); document.addEventListener('toggle', fitLock, true);
+const Q_PER_CARD_UI = 3;
 const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
 const render = safe(async () => {
   clearInterval(tick); markTab();

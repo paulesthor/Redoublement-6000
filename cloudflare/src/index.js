@@ -225,8 +225,9 @@ async function finishPack(env, ctx, user, drawn) {
   ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {}));
   // description + image : le client les demande par vagues (/api/cards/enrich), dans l'ordre de révélation
   const rows = new Map((await cardRows(env, ids)).map(c => [c.id, c]));
+  const favs = new Set((await all(env, `SELECT card_id FROM favorites WHERE user_id = ? AND card_id IN (${placeholders(ids.length)})`, user.id, ...ids)).map(r => r.card_id));
   const seen = new Set();
-  const cards = drawn.map(c => { const isNew = !before.has(c.id) && !seen.has(c.id); seen.add(c.id); return { ...rows.get(c.id), isNew }; })
+  const cards = drawn.map(c => { const isNew = !before.has(c.id) && !seen.has(c.id); seen.add(c.id); return { ...rows.get(c.id), isNew, fav: favs.has(c.id) ? 1 : 0 }; })
     .sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || b.shiny - a.shiny);
   const legends = cards.filter(c => c.rarity === 'legendary');
   if (legends.length) {
@@ -543,9 +544,17 @@ route('GET', '/api/hits', async ({ env }) => ({
 }));
 
 const AVG = '(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))';
+route('POST', '/api/favorites', async ({ env, user, body }) => {
+  const id = +body.card_id;
+  if (body.on) {
+    if (!(await one(env, 'SELECT 1 x FROM inventory WHERE user_id = ? AND card_id = ?', user.id, id))) bad('Tu ne possèdes pas cette carte');
+    await run(env, 'INSERT OR IGNORE INTO favorites (user_id, card_id, ts) VALUES (?,?,?)', user.id, id, now());
+  } else await run(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ?', user.id, id);
+  return { ok: true };
+});
 route('GET', '/api/album', async ({ env, user, origin }) => {
   const meta = await getMeta(env, origin);
-  const cards = await all(env, `SELECT c.*, i.qty, ${AVG} AS avg_price FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
+  const cards = await all(env, `SELECT c.*, i.qty, ${AVG} AS avg_price, (SELECT 1 FROM favorites f WHERE f.user_id = i.user_id AND f.card_id = i.card_id) AS fav FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
     ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC`, user.id);
   const total = Object.fromEntries(RARITIES.map(r => [r, meta.ranges[r][1] - meta.ranges[r][0]]));
   const rarityAvg = Object.fromEntries((await all(env, 'SELECT c.rarity, CAST(ROUND(AVG(s.price)) AS INTEGER) p, COUNT(*) n FROM sales s JOIN cards c ON c.id = s.card_id GROUP BY c.rarity'))
