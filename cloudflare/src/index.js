@@ -75,7 +75,7 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
 const insertCard = (env, c) => st(env, 'INSERT OR IGNORE INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?)',
   c.id, c.title, c.views, c.rarity, c.atk, c.def, c.shiny, urlOf(c.title));
 const addCard = (env, uid, cid, n = 1) => st(env,
-  'INSERT INTO inventory (user_id, card_id, qty) VALUES (?,?,?) ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty', uid, cid, n);
+  'INSERT INTO inventory (user_id, card_id, qty, acquired) VALUES (?,?,?,?) ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty, acquired = excluded.acquired', uid, cid, n, now());   // acquired = dernière obtention (tri par date)
 
 // ---------- description + image via l'API MediaWiki, conservées en base ----------
 // enriched : 0 = rien, 1 = Wikipédia lu (image éventuellement manquante), 2 = terminé (Wikidata consulté pour les pages sans photo)
@@ -572,10 +572,10 @@ route('POST', '/api/favorites', async ({ env, user, body }) => {
 });
 route('GET', '/api/album', async ({ env, user, origin, query }) => {
   if (query.get('lite')) {                                          // version allégée (choix du deck) : pas de description, pas de prix moyen
-    return { cards: await all(env, `SELECT c.id, c.title, c.rarity, c.atk, c.def, c.image, c.shiny, c.views, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?`, user.id) };
+    return { cards: await all(env, `SELECT c.id, c.title, c.rarity, c.atk, c.def, c.image, c.shiny, c.views, i.qty, i.acquired, i.rowid ord FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?`, user.id) };
   }
   const meta = await getMeta(env, origin);
-  const cards = await all(env, `SELECT c.*, i.qty, ${AVG} AS avg_price, (SELECT 1 FROM favorites f WHERE f.user_id = i.user_id AND f.card_id = i.card_id) AS fav FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
+  const cards = await all(env, `SELECT c.*, i.qty, i.acquired, i.rowid AS ord, ${AVG} AS avg_price, (SELECT 1 FROM favorites f WHERE f.user_id = i.user_id AND f.card_id = i.card_id) AS fav FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
     ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC`, user.id);
   const total = Object.fromEntries(RARITIES.map(r => [r, meta.ranges[r][1] - meta.ranges[r][0]]));
   const rarityAvg = Object.fromEntries((await all(env, 'SELECT c.rarity, CAST(ROUND(AVG(s.price)) AS INTEGER) p, COUNT(*) n FROM sales s JOIN cards c ON c.id = s.card_id GROUP BY c.rarity'))

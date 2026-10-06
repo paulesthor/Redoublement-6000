@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '1.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '1.7';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -471,7 +471,7 @@ const views = {
         <span class="mut" style="font-size:11.5px">vente moy. ${rarityAvg[r] ? fmt(rarityAvg[r].avg) : '—'}</span></div>`).join('')}</div></details>
       <div class="toolbar">
         <div class="search">${ico('search')}<input id="flt" placeholder="Rechercher une carte" autocomplete="off"></div>
-        <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
+        <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="new">Tri : plus récentes</option><option value="old">Tri : plus anciennes</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
         <label class="row" style="gap:8px;color:var(--mut);font-size:13px"><input type="checkbox" id="dup"> doublons</label>
         <div class="chips" id="chips"><button class="${rar === '' ? 'on' : ''}" data-r="">Toutes</button><button class="${rar === 'fav' ? 'on' : ''}" data-r="fav" style="--cc:var(--gold-fav)">★ Favoris</button>${cfg.rarities.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
@@ -483,6 +483,7 @@ const views = {
       const f = $('#flt').value.toLowerCase(), s = $('#srt').value, d = $('#dup').checked;
       const list = cards.filter(c => c.title.toLowerCase().includes(f) && (!rar || (rar === 'fav' ? c.fav : c.rarity === rar)) && (!d || c.qty > 1));
       list.sort({ fav: (a, b) => (b.fav | 0) - (a.fav | 0) || RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, rar: (a, b) => RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, name: (a, b) => a.title.localeCompare(b.title, 'fr'),
+        new: (a, b) => (b.acquired || 0) - (a.acquired || 0) || (b.ord || 0) - (a.ord || 0), old: (a, b) => (a.acquired || 0) - (b.acquired || 0) || (a.ord || 0) - (b.ord || 0),
         qty: (a, b) => b.qty - a.qty, val: (a, b) => value(b) - value(a) }[s]);
       if (!list.length) $('#g').innerHTML = `<div class="empty" style="grid-column:1/-1">${rar === 'fav' ? 'Aucun favori pour l\'instant.<br>Touche l\'étoile ★ d\'une carte.' : 'Aucune carte ne correspond.'}</div>`;
       else chunked($('#g'), list, c => cardHtml(c, {

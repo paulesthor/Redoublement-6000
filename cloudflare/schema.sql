@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   user_id INTEGER NOT NULL REFERENCES users(id),
   card_id INTEGER NOT NULL REFERENCES cards(id),
   qty INTEGER NOT NULL,
+  acquired INTEGER,                   -- date de la dernière obtention (tri par date) ; vide pour les cartes d'avant la mise en place
   PRIMARY KEY (user_id, card_id)
 );
 CREATE TABLE IF NOT EXISTS auctions (
