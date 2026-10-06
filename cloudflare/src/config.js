@@ -30,6 +30,7 @@ export default {
 
   // Combat : équipe de 3 cartes, une manche par carte
   BATTLE_ROUNDS: 3,
+  BATTLE_RIGHT: 1.4, BATTLE_WRONG: 0.8,     // multiplicateur d'attaque après une bonne / mauvaise réponse à la question sur la carte adverse
   BATTLE_WIN: 50, BATTLE_LOSE: 10, BATTLE_DRAW: 25,
   QUIZ_WIN: 50, QUIZ_LOSE: 10, QUIZ_DRAW: 25,
 };
