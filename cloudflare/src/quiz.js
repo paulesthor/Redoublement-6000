@@ -1,6 +1,5 @@
 // Questions sur un article précis, fabriquées à partir de son propre texte (aucun service d'IA) :
 //   - phrase à compléter : on masque une date, un nombre ou un nom propre de l'article, les autres choix sont plausibles ;
-//   - vrai ou faux : une phrase de l'article, telle quelle ou avec une date / un nom remplacé.
 // Si l'article est trop court pour fournir 3 questions, on complète avec la description à retrouver, puis le nombre de vues.
 const CAP = 'A-ZÀ-ÖØ-Þ', LOW = 'a-zà-öø-ÿ';
 const MONTHS = 'janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre';
@@ -134,7 +133,7 @@ function candidates(sentence, ctx) {
       const art = d.split(/\s+/)[0].toLowerCase().replace(/’/, "'"), others = ctx.poolDefs.filter(x => x !== d && x.split(/\s+/)[0].toLowerCase().replace(/’/, "'") === art);
       if (others.length >= 3) list.push({ kind: 'def', make: () => { const opts = shuffle([d, ...pickN(others, 3)]); return { text: `Que désigne « ${title} » ?`, options: opts, answer: opts.indexOf(d) }; } });
     }
-    const al = aliasesIn(sentence).filter(a => !ctx.titleWords.has(a.toLowerCase()));
+    const al = [];                                   // les questions de surnom (proches du synonyme) ne sont plus posées
     if (al.length) {
       const a = al[0], others = ctx.poolQuotes.filter(x => x.toLowerCase() !== a.toLowerCase() && !sentence.includes(x)).filter(x => Math.abs(x.length - a.length) <= 12);
       if (others.length >= 3) list.push({ kind: 'alias', make: () => { const opts = shuffle([a, ...pickN(others, 3)]); return { text: `Quel autre nom ou surnom est donné à « ${title} » ?`, options: opts, answer: opts.indexOf(a) }; } });
@@ -180,7 +179,7 @@ export function makeArticleQuestions(card, text, pool, n = 3) {
   ctx.poolQuotes = uniq(pool.cards.flatMap(c => sentencesOf(c.extract || '').slice(0, 2).flatMap(aliasesIn)));
   const per = sents.map((s, i) => ({ s, c: candidates(s, { ...ctx, first: i === 0 }) })).filter(x => x.c.length);
   const out = [], used = new Set(), usedKind = new Set();
-  const NATURAL = new Set(['birthYear', 'birthPlace', 'deathYear', 'deathPlace', 'created', 'located', 'by', 'def', 'alias']);
+  const NATURAL = new Set(['birthYear', 'birthPlace', 'deathYear', 'deathPlace', 'created', 'located', 'by', 'def']);
   const CLOZE = new Set(['year', 'num', 'ent']);
   // toutes les questions possibles, mélangées à chaque partie ; les questions précises passent avant les phrases à trous
   const pool_ = shuffle(per.flatMap(x => x.c.map(c => ({ ...c, s: x.s })))).sort((a, b) => (NATURAL.has(b.kind) - NATURAL.has(a.kind)) * (Math.random() < .8 ? 1 : 0));
@@ -193,12 +192,11 @@ export function makeArticleQuestions(card, text, pool, n = 3) {
     if (CLOZE.has(c.kind)) clozes++;
     add(c);
   }
-  // 2e passe : on complète avec n'importe quelle autre question (vrai/faux compris)
+  // 2e passe : on complète avec n'importe quelle autre question à 4 choix (jamais de vrai/faux)
   for (const c of pool_) {
     if (out.length >= n) break;
     if (used.has(c.s) && CLOZE.has(c.kind)) continue;
-    if (usedKind.has(c.kind) && !c.tf) continue;
-    if (c.tf && Math.random() < .5 && !used.has(c.s)) add(c, true); else if (!usedKind.has(c.kind)) add(c);
+    if (!usedKind.has(c.kind)) add(c);
   }
   // repli : description à retrouver, puis nombre de vues
   const others = shuffle(pool.cards.filter(p => p.title !== title));
@@ -210,8 +208,10 @@ export function makeArticleQuestions(card, text, pool, n = 3) {
       descDone = true;
       out.push({ text: `Quelle description correspond à « ${title} » ?`, options: opts.map(clip), answer: opts.indexOf(card) });
     } else {
-      const o = others[out.length] || { title: 'France', views: 100000 };
-      out.push({ text: `« ${title} » est-elle plus consultée sur Wikipédia que « ${o.title} » ?`, options: ['Oui', 'Non'], answer: (card.views ?? 0) >= (o.views ?? 0) ? 0 : 1 });
+      const extra = others.filter(o => o.title).slice(out.length, out.length + 3), fill = ['France', 'Internet', 'Paris', 'Football'].filter(t => t !== title).map(t => ({ title: t, views: 100000 }));
+      const four = [card, ...extra, ...fill].slice(0, 4), best = four.reduce((m, c) => ((c.views ?? 0) > (m.views ?? 0) ? c : m));
+      const opts = shuffle(four);
+      out.push({ text: 'Lequel de ces articles est le plus consulté sur Wikipédia ?', options: opts.map(c => c.title), answer: opts.indexOf(best) });
     }
   }
   return shuffle(out.slice(0, n));

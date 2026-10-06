@@ -694,3 +694,5 @@ label:not(.switch)>input[type=checkbox]{height:22px}
 
 .bwait{display:flex;flex-direction:column;gap:2px;margin:0 0 10px;padding:10px 12px;border-radius:12px;border:1px solid #b8862f;background:#2a2110}.bwait[hidden]{display:none}
 .bwait span{font-size:13px;color:#e8d3a2}
+
+.jlog .bad{color:#ff8a80;font-weight:700}

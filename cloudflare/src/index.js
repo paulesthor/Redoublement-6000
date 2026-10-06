@@ -1044,6 +1044,7 @@ route('POST', '/api/admin/lot/remove', admin(async ({ env, ctx, body }) => {
   notify(env, ctx, { t: 'refresh', what: 'auctions' });
   return { ok: true };
 }));
+route('GET', '/api/admin/fights', admin(async ({ env }) => ({ events: await all(env, 'SELECT ts, battle, players, kind, detail FROM fight_events ORDER BY id DESC LIMIT 80') })));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
   const text = String(body.text || '').trim().slice(0, 180); if (!text) bad('Message vide');
   notify(env, ctx, { t: 'notify', msg: text });

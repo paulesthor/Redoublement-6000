@@ -168,3 +168,13 @@ CREATE INDEX IF NOT EXISTS inventory_nk ON inventory(user_id, nk, card_id);
 CREATE INDEX IF NOT EXISTS inventory_qty ON inventory(user_id, qty, card_id);
 CREATE INDEX IF NOT EXISTS inventory_fav ON inventory(user_id, fav, skey, card_id);
 CREATE INDEX IF NOT EXISTS inventory_stats ON inventory(user_id, rar, sh, qty);
+
+CREATE TABLE IF NOT EXISTS fight_events (     -- journal des combats (début, pauses, reprises, fin, erreurs) : sert à comprendre pourquoi un combat s'arrête
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  battle TEXT NOT NULL,
+  players TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS fight_events_ts ON fight_events(ts);
