@@ -6,7 +6,7 @@ import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
-const AWAY_MAX = 60000;     // un joueur absent plus d'une minute en plein combat déclare forfait
+const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met le combat en pause et on l'attend jusqu'à 3 minutes, puis forfait
 // pauses entre les étapes du combat (ms)
 const T = { intro: 1800, card: 1300, closeAfterAnswer: 600, nextQ: 2000, nextTurn: 2200 };
 const now = () => Date.now();
@@ -109,6 +109,7 @@ export class Lobby {
     } else if (g.fight) {                                              // combat en cours
       this.push(uid, g.startMsg);
       for (const { m, dl } of g.fight.log) this.push(uid, dl ? { ...m, time: Math.max(0, dl - now()), full: m.time } : m);
+      if (g.paused) { const gone = this.absent(g); if (gone.length) this.push(uid, { t: 'bf_wait', id: g.id, names: gone.map(x => g.names[x]), until: Math.min(...gone.map(p => (this.away.get(p) ?? now()) + AWAY_PAUSE)) }); }
     } else if (g.picks[uid]) this.push(uid, { t: 'battle_wait', id: g.id, msg: 'Deck validé, en attente de l\'adversaire…' });
     else this.push(uid, { t: 'battle_start', id: g.id, names: g.names, rounds: CFG.BATTLE_ROUNDS, resume: true });
   }
@@ -253,7 +254,8 @@ export class Lobby {
     await Promise.all(all6.map(async ({ uid, c }) => f.qs.set(uid + ':' + c.id, await battleQuestions(this.env, c, texts.get(c.id) || c.extract, { cards: pool }, Q_PER_CARD))));
     bt.startMsg = { t: 'bf_start', id: bt.id, names: bt.names, a, b, deck: f.deck, hp: f.hp, max: f.max, first, total: f.total };
     for (const p of bt.players) this.push(p, bt.startMsg);
-    setTimeout(() => this.fightTurn(bt), T.intro);
+    bt.gen = 0;
+    this.step(bt, T.intro, () => this.fightTurn(bt));
   }
   /** Envoie un évènement aux deux joueurs et le garde pour rejouer l'état à qui revient dans la partie (dl = heure limite éventuelle). */
   emit(bt, m, dl = 0) {
@@ -263,63 +265,103 @@ export class Lobby {
     f.log.push({ m, dl });
     for (const p of bt.players) this.push(p, m);
   }
-  /** Joueur humain absent depuis trop longtemps ? */
-  deserters(bt) { return bt.players.filter(p => p !== bt.bot && this.away.has(p) && now() - this.away.get(p) > AWAY_MAX); }
+  /** Joueurs humains actuellement déconnectés. */
+  absent(bt) { return bt.players.filter(p => p !== bt.bot && !this.clients.has(p)); }
+  /**
+   * Planifie l'étape suivante du combat. Si un joueur est déconnecté au moment de l'exécuter, le combat est mis en pause (personne n'est pénalisé) :
+   * on le reprend dès son retour (les étapes chronométrées repartent avec un temps neuf), ou forfait si l'absence dépasse AWAY_PAUSE.
+   */
+  step(bt, ms, fn, timed = false) {
+    const g = bt.gen;
+    const run = () => {
+      if (bt.over || g !== bt.gen) return;                             // partie finie, ou étape remplacée par une plus récente
+      const gone = this.absent(bt);
+      if (!gone.length) {
+        if (bt.paused) { bt.paused = false; for (const p of bt.players) this.push(p, { t: 'bf_resume', id: bt.id }); if (timed && bt.rearm) return bt.rearm(); }
+        return fn();
+      }
+      const lost = gone.filter(p => now() - (this.away.get(p) ?? now()) > AWAY_PAUSE);
+      if (lost.length) return this.endFight(bt, lost);
+      if (!bt.paused) {
+        bt.paused = true;
+        const until = Math.min(...gone.map(p => (this.away.get(p) ?? now()) + AWAY_PAUSE));
+        for (const p of bt.players) this.push(p, { t: 'bf_wait', id: bt.id, names: gone.map(x => bt.names[x]), until });
+      }
+      setTimeout(run, 1500);
+    };
+    return setTimeout(run, ms);
+  }
+  /** Envoie un évènement aux deux joueurs et le garde pour rejouer l'état à qui revient dans la partie (dl = heure limite éventuelle). */
+  emit(bt, m, dl = 0) {
+    const f = bt.fight;
+    if (m.t === 'bf_turn') f.log = [];
+    else if (m.t === 'bf_q') f.log = f.log.filter(e => e.m.t === 'bf_turn' || e.m.t === 'bf_card');
+    f.log.push({ m, dl });
+    for (const p of bt.players) this.push(p, m);
+  }
   fightTurn(bt) {
     if (bt.over) return;
     const f = bt.fight; f.turn++; f.cur = null;
-    if (f.turn > f.total || this.deserters(bt).length) return this.endFight(bt);
+    if (f.turn > f.total) return this.endFight(bt);
     f.attacker = f.order[(f.turn - 1) % 2]; f.defender = bt.players.find(p => p !== f.attacker);
+    this.beginPick(bt);
+  }
+  beginPick(bt) {
+    const f = bt.fight; bt.gen++;
     this.emit(bt, { t: 'bf_turn', id: bt.id, turn: f.turn, total: f.total, attacker: f.attacker, defender: f.defender, hp: { ...f.hp }, left: Object.fromEntries(bt.players.map(u => [u, [...f.left[u]]])), time: FIGHT_PICK }, now() + FIGHT_PICK);
+    bt.rearm = () => this.beginPick(bt);                               // reprise après une pause : le joueur retrouve ses 30 s entières
     const auto = () => { const ids = [...f.left[f.attacker]]; this.fightPick({ id: f.attacker }, { id: bt.id, card: ids[Math.floor(Math.random() * ids.length)] }); };
-    bt.timer = setTimeout(auto, bt.bot === f.attacker ? 2000 + Math.random() * 2500 : FIGHT_PICK + 500);   // trop lent : carte tirée au hasard
+    this.step(bt, bt.bot === f.attacker ? 2000 + Math.random() * 2500 : FIGHT_PICK + 500, auto, true);   // trop lent : carte tirée au hasard
   }
   fightPick(user, msg) {
     const bt = this.battles.get(msg.id), f = bt?.fight;
     if (!f || bt.over || f.cur || f.attacker !== user.id || !f.left[user.id].has(+msg.card)) return;
-    clearTimeout(bt.timer);
+    bt.gen++; bt.rearm = null;
     const card = f.deck[user.id].find(c => c.id === +msg.card);
     f.left[user.id].delete(card.id);
     f.cur = { card, qs: f.qs.get(user.id + ':' + card.id), k: -1, wrong: 0, lost: 0 };
     this.emit(bt, { t: 'bf_card', id: bt.id, turn: f.turn, attacker: f.attacker, defender: f.defender, card, hp: { ...f.hp } });
-    setTimeout(() => this.fightQuestion(bt), T.card);
+    this.step(bt, T.card, () => this.fightQuestion(bt));
   }
   fightQuestion(bt) {
     if (bt.over) return;
     const f = bt.fight, c = f.cur; c.k++; c.choice = undefined; c.closed = false;
     if (c.k >= Q_PER_CARD) return this.fightTurnEnd(bt);
-    if (this.deserters(bt).length) return this.endFight(bt);
-    const q = c.qs[c.k];
+    this.beginQuestion(bt);
+  }
+  beginQuestion(bt) {
+    const f = bt.fight, c = f.cur, q = c.qs[c.k]; bt.gen++; c.choice = undefined; c.closed = false;
     this.emit(bt, { t: 'bf_q', id: bt.id, turn: f.turn, k: c.k + 1, kTotal: Q_PER_CARD, attacker: f.attacker, defender: f.defender, card: c.card, text: q.text, options: q.options, time: B_TIME, hp: { ...f.hp } }, now() + B_TIME);
+    bt.rearm = () => this.beginQuestion(bt);                           // reprise après une pause : la question est reposée avec un temps neuf
     if (bt.bot === f.defender) setTimeout(() => this.fightAnswer({ id: bt.bot }, { id: bt.id, choice: Math.random() < .55 ? q.answer : Math.floor(Math.random() * q.options.length) }), 2500 + Math.random() * 7000);
-    bt.timer = setTimeout(() => this.closeFightQuestion(bt), B_TIME + 500);
+    this.step(bt, B_TIME + 500, () => this.closeFightQuestion(bt), true);
   }
   fightAnswer(user, msg) {
     const bt = this.battles.get(msg.id), f = bt?.fight, c = f?.cur;
     if (!c || bt.over || c.k < 0 || c.k >= Q_PER_CARD || c.closed || c.choice !== undefined || f.defender !== user.id) return;
     c.choice = +msg.choice;
     this.emit(bt, { t: 'bf_picked', id: bt.id, turn: f.turn, k: c.k + 1, choice: c.choice });   // les deux voient la réponse choisie
-    clearTimeout(bt.timer);
-    bt.timer = setTimeout(() => this.closeFightQuestion(bt), T.closeAfterAnswer);
+    bt.gen++; bt.rearm = null;
+    this.step(bt, T.closeAfterAnswer, () => this.closeFightQuestion(bt));
   }
   closeFightQuestion(bt) {
     if (bt.over) return;
-    const f = bt.fight, c = f.cur; if (c.closed || c.k >= Q_PER_CARD) return; c.closed = true; clearTimeout(bt.timer);
+    const f = bt.fight, c = f.cur; if (c.closed || c.k >= Q_PER_CARD) return; c.closed = true; bt.gen++; bt.rearm = null;
     const q = c.qs[c.k], ok = c.choice === q.answer, dmg = ok ? 0 : Math.round(c.card.atk / 3);
     f.hp[f.defender] = Math.max(0, f.hp[f.defender] - dmg);
     if (!ok) c.wrong++; c.lost += dmg;
     this.emit(bt, { t: 'bf_a', id: bt.id, turn: f.turn, k: c.k + 1, choice: c.choice ?? null, right: q.answer, ok, dmg, hp: { ...f.hp }, defender: f.defender });
-    setTimeout(() => this.fightQuestion(bt), T.nextQ);
+    this.step(bt, T.nextQ, () => this.fightQuestion(bt));
   }
   fightTurnEnd(bt) {
     if (bt.over) return;
     const f = bt.fight, c = f.cur;
     this.emit(bt, { t: 'bf_turn_end', id: bt.id, turn: f.turn, attacker: f.attacker, defender: f.defender, wrong: c.wrong, lost: c.lost, hp: { ...f.hp } });
-    setTimeout(() => this.fightTurn(bt), T.nextTurn);
+    this.step(bt, T.nextTurn, () => this.fightTurn(bt));
   }
-  async endFight(bt, quitters = this.deserters(bt)) {
+  async endFight(bt, quitters = []) {
     if (bt.over) return;
-    bt.over = true; clearTimeout(bt.timer); this.battles.delete(bt.id);
+    bt.over = true; bt.gen++; this.battles.delete(bt.id);
     const f = bt.fight, [a, b] = bt.players;
     if (quitters.length === 2) return;                                // plus personne : rien à récompenser
     const win = quitters.length ? bt.players.find(p => !quitters.includes(p)) : f.hp[a] === f.hp[b] ? null : f.hp[a] > f.hp[b] ? a : b;

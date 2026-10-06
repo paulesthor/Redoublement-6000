@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '2.1';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '2.2';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -687,7 +687,7 @@ const views = {
 let lastEvt = 0;
 function gameEvent(m) {
   if (m.t === 'game_none') {                                       // le serveur n'a plus (ou pas) de partie pour moi
-    if (game && game.view !== 'end') { game = null; toast('La partie est terminée.'); render(); }
+    if (game && game.view !== 'end') { game = null; toast('La partie a été interrompue (le serveur a redémarré). Aucune perte.'); render(); }
     return;
   }
   lastEvt = Date.now();
@@ -710,6 +710,8 @@ function gameEvent(m) {
   else if (m.t === 'bf_picked') game.f.picked = m.choice;
   else if (m.t === 'bf_a') Object.assign(game.f, { res: m, hp: m.hp, phase: 'a' });
   else if (m.t === 'bf_turn_end') Object.assign(game.f, { summary: m, hp: m.hp, phase: 'turnend' });
+  else if (m.t === 'bf_wait') { if (game?.f) game.f.wait = { names: m.names, until: m.until }; }
+  else if (m.t === 'bf_resume') { if (game?.f) game.f.wait = null; }
   else if (m.t === 'bf_end') { game = { ...game, kind: 'fight', view: 'end', result: m }; refreshMe(); }
   else if (m.t === 'battle_cancel') game = null;
   renderGame();
@@ -762,7 +764,7 @@ async function renderGame() {
     // l'écran est monté une seule fois : ensuite on ne met à jour que les PV (avec animation) et la zone centrale
     let sh = v.querySelector('#fshell');
     if (!sh || sh.dataset.gid !== game.id) {
-      v.innerHTML = `${pageHead('Combat')}<div id="fshell" data-gid="${game.id}"><div class="hpwrap">${bar(f.a)}${bar(f.b)}</div><p class="mut" id="fturn" style="text-align:center;margin:4px 0 8px"></p><div id="fbody"></div></div>`;
+      v.innerHTML = `${pageHead('Combat')}<div id="fshell" data-gid="${game.id}"><div class="bwait" id="fwait" hidden></div><div class="hpwrap">${bar(f.a)}${bar(f.b)}</div><p class="mut" id="fturn" style="text-align:center;margin:4px 0 8px"></p><div id="fbody"></div></div>`;
       sh = v.querySelector('#fshell');
     } else {
       for (const id of [f.a, f.b]) {
@@ -787,6 +789,12 @@ async function renderGame() {
       send({ t: 'bf_answer', id: game.id, choice: f.picked });
     });
     if (f.end && (f.phase === 'pick' || (f.phase === 'q' && !f.res))) runBar($('#tb'), f.end - Date.now(), f.time);
+    // adversaire déconnecté : le combat est en pause, personne n'est pénalisé ; compte à rebours avant forfait
+    const fw = $('#fwait');
+    if (f.wait) {
+      const paint = () => { const s = Math.max(0, Math.round((f.wait.until - Date.now()) / 1000)); fw.hidden = false; fw.innerHTML = `<b>⏸ Combat en pause</b><span>${esc(f.wait.names.join(' et '))} ${f.wait.names.length > 1 ? 'sont déconnectés' : 'est déconnecté'}. On ${f.wait.names.length > 1 ? 'les' : 'l\''}attend encore ${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s.</span>`; };
+      paint(); tick = setInterval(paint, 1000);
+    } else fw.hidden = true;
   } else if (game.kind === 'battle' && game.view === 'pick') {
     const known = new Map();                       // cartes vues (pour afficher le nom des cartes choisies même après un changement de filtre)
     let q = '', rf = '', t;
