@@ -353,7 +353,7 @@ async function getBots(env) {
 const botPrice = (rarity, views, avg) => { const [lo, hi] = BOT_PRICE[rarity], d = demand(views); return Math.max(1, Math.round((avg ?? rand(lo, hi)) * rand(.8, 1.3) * (.85 + .5 * d))); };
 
 async function botTick(env, ctx, force = false) {
-  if (!force && now() - lastBot < 40000) return;
+  if (!force && now() - lastBot < 150000) return;
   lastBot = now();
   const bots = await getBots(env);
   if (!bots.length) return;
@@ -489,7 +489,8 @@ route('POST', '/api/login', async ({ env, body }) => {
   return newSession(env, u.id);
 }, false);
 route('GET', '/api/me', async ({ env, ctx, user }) => {
-  if (now() - (lastCheck.get(user.id) || 0) > 30000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
+  // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
+  if (now() - (lastCheck.get(user.id) || 0) > 600000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
   return { ...publicUser(u), badge: await friendBadge(env, user.id) };
@@ -676,11 +677,12 @@ route('GET', '/api/quiz/preview', async ({ env, query }) => {
   const questions = await battleQuestions(env, card, page.extract, { cards: pool }, 3);
   return { title: card.title, ia: !!env.AI, deja_en_base: cached, questions_ia_disponibles: ai, derniere_erreur_ia: ai ? null : lastAiError(), questions: questions.map(x => ({ source: x.ai ? 'ia' : 'regles', question: x.text, choix: x.options, bonne_reponse: x.options[x.answer] })) };
 });
-route('GET', '/api/leaderboard', async ({ env }) => ({
+let lbCache = { t: 0, v: null };                                        // classement partagé : lecture lourde (toutes les collections), gardé 60 s
+route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 && lbCache.v) || (lbCache = { t: now(), v: {
   players: await all(env, `SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
     COALESCE(SUM(${caseSql('c.rarity', POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(c.id) AS uniques
     FROM users u LEFT JOIN inventory i ON i.user_id = u.id LEFT JOIN cards c ON c.id = i.card_id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
-}));
+} }).v);
 
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
   ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée

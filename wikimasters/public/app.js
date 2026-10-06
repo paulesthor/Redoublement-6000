@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '1.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '1.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -36,6 +36,8 @@ let tick, lastPack = null;
 // Lectures de listes : on répond tout de suite avec la dernière réponse connue (< 30 s) et on la rafraîchit en arrière-plan.
 // Si les données ont changé et que rien n'est en cours de saisie, la vue se redessine toute seule. Toute écriture vide ce cache.
 const SWR = /^\/(album|auctions|friends|leaderboard|users|trades|achievements|hits)$/;
+// la collection est lourde à lire côté serveur (milliers de lignes) : on la garde longtemps ; elle est vidée par toute action du joueur et par les évènements serveur (enchère gagnée, échange…)
+const TTL = { '/album': 600000, '/leaderboard': 120000 }, REVAL = { '/album': 300000, '/leaderboard': 60000 };
 const gcache = new Map();
 function revalidate(path) {
   const before = gcache.get(path)?.raw;
@@ -47,7 +49,8 @@ async function api(path, body) {
   if (body) { gcache.clear(); return fetchJson(path, body).then(r => r.j); }
   if (SWR.test(path)) {
     const c = gcache.get(path);
-    if (c && Date.now() - c.t < 30000) { if (Date.now() - c.t > 2000 && !c.busy) { c.busy = true; revalidate(path).finally(() => { c.busy = false; }); } return JSON.parse(c.raw); }
+    const ttl = TTL[path] ?? 30000, again = REVAL[path] ?? 2000, age = c ? Date.now() - c.t : 0;
+    if (c && age < ttl) { if (age > again && !c.busy) { c.busy = true; revalidate(path).finally(() => { c.busy = false; }); } return JSON.parse(c.raw); }
   }
   return fetchJson(path).then(r => r.j);
 }
