@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '0.4';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '0.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -881,12 +881,16 @@ const Q_PER_CARD_UI = 3;
 const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
 let adminTab = 'overview';
 views.admin = async v => {
-  if (!me.admin) { tab = 'packs'; return render(); }
+  jlog('ouverture de l\'administration');
+  if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
   const seg = [['overview', 'Aperçu'], ['users', 'Joueurs'], ['announce', 'Annonce'], ['tools', 'Outils']];
   v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
-  const adminBody = safe(async () => {
-    const box = $('#adm');
+  const adminBody = async () => {
+    const box = $('#adm'); box.innerHTML = '<p class="mut" style="text-align:center;padding:24px 0">Chargement…</p>';
+    try { await adminLoad(box); } catch (e) { jlog('administration : ' + e.message); box.innerHTML = `<div class="panel"><b>Impossible de charger</b><p class="mut">${esc(e.message)}</p><button id="adm-retry">Réessayer</button></div>`; $('#adm-retry').onclick = adminBody; }
+  };
+  const adminLoad = async box => {
     if (adminTab === 'overview') {
       const o = await api('/admin/overview');
       const rows = [['Joueurs', o.users], ['En ligne maintenant', o.online], ['Joueurs simulés', o.bots], ['Paquets ouverts', fmt(o.packs)], ['Cartes possédées', fmt(o.owned)], ['Cartes en base', fmt(o.cards)], ['Pièces en circulation', fmt(o.coins)],
@@ -925,7 +929,7 @@ views.admin = async v => {
       act('#t-bots', 'bots', 'Marché animé'); act('#t-res', 'reserve', 'Réserve remplie');
       $('#t-log').onclick = () => { $('#adm').insertAdjacentHTML('beforeend', `<div class="jlog panel">${(JSON.parse(localStorage.getItem('wm_log') || '[]')).slice().reverse().map(([t, x]) => `<div><b>${hms(new Date(t))}</b> ${esc(x)}</div>`).join('') || 'Vide'}</div>`); $('#t-log').remove(); };
     }
-  });
+  };
   await adminBody();
 };
 
