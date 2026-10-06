@@ -337,14 +337,22 @@ async function wishListing(env, c) {
   ]);
 }
 
-async function botTick(env, ctx, force = false) {
-  if (!force && now() - lastBot < 40000) return;
-  lastBot = now();
+/** Joueurs simulés (créés au besoin) : ils vendent et enchérissent à la place de vrais joueurs. */
+async function getBots(env) {
   let bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
   if (bots.length < BOT_NAMES.length) {
     await env.DB.batch(BOT_NAMES.map(n => st(env, "INSERT OR IGNORE INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, is_bot) VALUES (?,?,?,?,?,?,?,1)", n, 'bot', '!', 1e9, 0, now(), now())));
     bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
   }
+  return bots;
+}
+/** Prix de départ d'une vente simulée : prix moyen du marché s'il existe, sinon fourchette de la rareté ; une page très visitée coûte un peu plus. */
+const botPrice = (rarity, views, avg) => { const [lo, hi] = BOT_PRICE[rarity], d = demand(views); return Math.max(1, Math.round((avg ?? rand(lo, hi)) * rand(.8, 1.3) * (.85 + .5 * d))); };
+
+async function botTick(env, ctx, force = false) {
+  if (!force && now() - lastBot < 40000) return;
+  lastBot = now();
+  const bots = await getBots(env);
   if (!bots.length) return;
   const botName = new Map(bots.map(b => [b.id, b.name]));
   const open = await all(env, `SELECT a.id, a.seller_id, a.bid, a.bidder_id, a.start_price, a.ends_at, a.card_id, c.rarity, c.title, c.views, c.extract, ${AVG} avg_price,
@@ -638,7 +646,7 @@ route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) =>
     const e = await entryAt(env, origin, rank);
     return { id: e[0], title: p.title, rarity, rank, views: e[2], image: p.thumbnail?.source ?? null, extract: (p.extract || '').trim(), ...stats(p.title, rarity, false), enriched: 2 };
   }))).filter(Boolean);
-  if (cards[0] && q.length >= 3) ctx.waitUntil(wishListing(env, cards[0]).catch(() => {}));   // la carte cherchée sera bientôt en vente
+  if (cards[0] && q.length >= 3 && !(user.is_admin && query.get('admin'))) ctx.waitUntil(wishListing(env, cards[0]).catch(() => {}));   // la carte cherchée sera bientôt en vente
   const own = cards.length ? await all(env, `SELECT card_id, SUM(qty) qty FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(cards.length)}) GROUP BY card_id`, user.id, ...cards.map(c => c.id)) : [];
   const owned = new Map(own.map(r => [r.card_id, r.qty]));
   return { cards: cards.map(c => ({ ...c, owned: owned.get(c.id) || 0 })) };
@@ -735,6 +743,11 @@ route('GET', '/api/trades', async ({ env, user }) => ({
     WHERE t.status = 'pending' AND (t.from_id = ? OR t.to_id = ?) ORDER BY t.id DESC`, user.id, user.id),
 }));
 // Recherche d'une carte à demander : parmi les cartes déjà connues du jeu (tirées au moins une fois)
+route('GET', '/api/players/:id/cards', async ({ env, params }) => {
+  const id = +params.id;
+  if (!(await one(env, 'SELECT 1 x FROM users WHERE id = ? AND is_bot = 0', id))) bad('Joueur introuvable', 404);
+  return { cards: await all(env, 'SELECT c.id, c.title, c.rarity, c.atk, c.def, c.image, c.shiny, c.views, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?', id) };
+});
 route('GET', '/api/cards/search', async ({ env, query }) => {
   const q = (query.get('q') || '').trim();
   if (q.length < 2) return { cards: [] };
@@ -745,7 +758,7 @@ route('POST', '/api/trades', async ({ env, ctx, user, body }) => {
   const to = +body.to;
   if (to === user.id || !(await one(env, 'SELECT 1 FROM users WHERE id = ?', to))) bad('Destinataire invalide');
   if (!(await one(env, 'SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?', user.id, +body.offer_card))) bad('Tu ne possèdes pas la carte proposée');
-  if (!(await one(env, 'SELECT 1 FROM cards WHERE id = ?', +body.want_card))) bad('Carte demandée inconnue');
+  if (!(await one(env, 'SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?', to, +body.want_card))) bad('Ce joueur ne possède pas la carte demandée');
   await run(env, 'INSERT INTO trades (from_id, to_id, offer_card, want_card, created) VALUES (?,?,?,?,?)', user.id, to, +body.offer_card, +body.want_card, now());
   notify(env, ctx, { t: 'notify', msg: `${user.name} te propose un échange !` }, to);
   notify(env, ctx, { t: 'refresh', what: 'trades' }, to);
@@ -917,6 +930,55 @@ route('POST', '/api/admin/take-card', admin(async ({ env, body }) => {
   await env.DB.batch([st(env, 'UPDATE inventory SET qty = qty - ? WHERE user_id = ? AND card_id = ?', n, uid, cid), st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', uid, cid),
     st(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ? AND NOT EXISTS (SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?)', uid, cid, uid, cid)]);
   return { ok: true, removed: n, left: row.qty - n };
+}));
+// ---- enchères « truquées » par l'admin : vendues sous le pseudo d'un joueur simulé ----
+route('GET', '/api/admin/market', admin(async ({ env }) => {
+  const bots = await getBots(env);
+  const lots = await all(env, `SELECT a.id, a.start_price, a.bid, a.bidder_id, a.ends_at, c.title, c.rarity, c.shiny, u.name seller FROM auctions a JOIN cards c ON c.id = a.card_id JOIN users u ON u.id = a.seller_id
+    WHERE a.status = 'open' AND a.ends_at > ? AND u.is_bot = 1 ORDER BY a.id DESC LIMIT 25`, now());
+  return { bots: bots.map(b => ({ id: b.id, name: b.name })), lots, rarities: RARITIES, labels: CFG.LABELS };
+}));
+route('POST', '/api/admin/lot', admin(async ({ env, ctx, origin, body }) => {
+  const title = String(body.title || '').trim(); if (!title) bad('Choisis une carte');
+  const rank = await rankOf(env, origin, title); if (rank == null) bad('Cette page n’est pas dans le catalogue', 404);
+  const { ranges } = await getMeta(env, origin), rarity = RARITIES.find(r => rank >= ranges[r][0] && rank < ranges[r][1]);
+  const [id, t, views] = await entryAt(env, origin, rank);
+  if (await one(env, "SELECT 1 x FROM auctions WHERE card_id = ? AND status = 'open'", id)) bad('Cette carte est déjà en vente');
+  const bots = await getBots(env), seller = body.seller_id ? bots.find(b => b.id === +body.seller_id) : bots[Math.floor(Math.random() * bots.length)];
+  if (!seller) bad('Vendeur simulé introuvable', 404);
+  const mins = Math.min(1440, Math.max(5, Math.trunc(+body.minutes) || 360));
+  const avg = (await one(env, 'SELECT CAST(ROUND(AVG(price)) AS INTEGER) p FROM sales WHERE card_id = ?', id))?.p ?? null;
+  const price = body.price > 0 ? Math.min(1e7, Math.trunc(+body.price)) : botPrice(rarity, views, avg);
+  await env.DB.batch([insertCard(env, { id, title: t, views, rarity, shiny: 0, ...stats(t, rarity, false) }),
+    st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', seller.id, id, price, now() + mins * 60000)]);
+  ctx.waitUntil(enrich(env, [id]).catch(() => {}));
+  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  return { ok: true, title: t, rarity, price, seller: seller.name };
+}));
+route('POST', '/api/admin/lots-random', admin(async ({ env, ctx, origin, body }) => {
+  const n = Math.min(30, Math.max(1, Math.trunc(+body.count) || 1)), want = RARITIES.includes(body.rarity) ? body.rarity : null;
+  const mins = body.minutes ? Math.min(1440, Math.max(5, Math.trunc(+body.minutes))) : null;
+  const bots = await getBots(env), { ranges } = await getMeta(env, origin);
+  const open = new Set((await all(env, "SELECT card_id FROM auctions WHERE status = 'open'")).map(r => r.card_id));
+  const picks = Array.from({ length: n * 2 }, () => { const rarity = want ?? pickW(BOT_MIX); return { rarity, rank: ranges[rarity][0] + Math.floor(rand(0, ranges[rarity][1] - ranges[rarity][0])) }; });
+  const entries = await Promise.all(picks.map(p => entryAt(env, origin, p.rank)));
+  const chosen = [];
+  picks.forEach((p, i) => { const [id, title, views] = entries[i]; if (chosen.length < n && !open.has(id)) { open.add(id); chosen.push({ id, title, views, rarity: p.rarity }); } });
+  if (!chosen.length) bad('Aucune carte disponible, réessaie');
+  const avgRows = await all(env, `SELECT card_id, CAST(ROUND(AVG(price)) AS INTEGER) p FROM sales WHERE card_id IN (${placeholders(chosen.length)}) GROUP BY card_id`, ...chosen.map(c => c.id));
+  const avg = new Map(avgRows.map(r => [r.card_id, r.p]));
+  await env.DB.batch(chosen.flatMap(c => [insertCard(env, { id: c.id, title: c.title, views: c.views, rarity: c.rarity, shiny: 0, ...stats(c.title, c.rarity, false) }),
+    st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', bots[Math.floor(Math.random() * bots.length)].id, c.id, botPrice(c.rarity, c.views, avg.get(c.id) ?? null),
+      now() + Math.round((mins ?? pickW(BOT_MINUTES) * rand(.2, 1)) * 60000))]));
+  ctx.waitUntil(enrich(env, chosen.map(c => c.id).slice(0, 20)).catch(() => {}));
+  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  return { ok: true, added: chosen.length, cards: chosen.map(c => c.title) };
+}));
+route('POST', '/api/admin/lot/remove', admin(async ({ env, ctx, body }) => {
+  const r = await run(env, "DELETE FROM auctions WHERE id = ? AND status = 'open' AND bidder_id IS NULL AND seller_id IN (SELECT id FROM users WHERE is_bot = 1)", +body.id);
+  if (!r.meta.changes) bad('Retrait impossible : la vente a déjà reçu une offre ou n’est pas simulée');
+  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  return { ok: true };
 }));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
   const text = String(body.text || '').trim().slice(0, 180); if (!text) bad('Message vide');

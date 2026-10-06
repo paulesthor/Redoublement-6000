@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '1.1';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '1.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -358,6 +358,31 @@ const timeLeft = ms => { const r = Math.max(0, Math.round(ms / 1000)); return r 
 const COMBAT_SEG = [['duel', 'Combats'], ['rank', 'Classement'], ['ach', 'Succès']];
 const MARKET_SEG = [['market', 'Enchères'], ['trades', 'Échanges']];
 
+/** Fenêtre « bibliothèque » : recherche par nom, filtre par rareté, une touche sur une carte la choisit. Renvoie la carte (ou null si on annule). */
+function cardPicker(title, cards) {
+  return new Promise(resolve => {
+    const m = $('#modal'); m.hidden = false;
+    let q = '', rf = '';
+    const list = [...cards].sort((x, y) => (RANK[y.rarity] - RANK[x.rarity]) || (y.shiny - x.shiny) || ((y.views || 0) - (x.views || 0)));
+    m.innerHTML = `<div class="picker"><h2>${esc(title)}</h2>
+      <div class="search wide">${ico('search')}<input id="cp-q" placeholder="Chercher par nom (${fmt(cards.length)} carte${cards.length > 1 ? 's' : ''})" autocomplete="off"></div>
+      <div class="chips" id="cp-r"><button class="on" data-r="">Toutes</button>${cfg.rarities.map(r => `<button data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+      <div class="pgrid" id="cp-g"></div><div class="row"><button class="plain" id="cp-x">Annuler</button></div></div>`;
+    const done = c => { m.hidden = true; m.innerHTML = ''; m.onclick = null; resolve(c); };
+    const tile = c => `<button class="ptile ${c.rarity} ${c.shiny ? 'shiny' : ''}" data-id="${c.id}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="pimg ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}><span class="chip">${ABBR[c.rarity]}</span>${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ''}</div><b>${esc(c.title)}</b><small>ATK ${fmt(c.atk)} · DEF ${fmt(c.def)}</small></button>`;
+    const fill = () => {
+      const shown = list.filter(c => (!q || c.title.toLowerCase().includes(q)) && (!rf || c.rarity === rf));
+      if (!shown.length) $('#cp-g').innerHTML = '<div class="empty" style="grid-column:1/-1">Aucune carte ne correspond.</div>';
+      else chunked($('#cp-g'), shown, tile, () => {});
+    };
+    $('#cp-q').oninput = e => { q = e.target.value.trim().toLowerCase(); fill(); };
+    $('#cp-r').onclick = e => { const b = e.target.closest('button'); if (!b) return; rf = b.dataset.r; $('#cp-r').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); fill(); };
+    $('#cp-g').onclick = e => { const t = e.target.closest('.ptile'); if (t) done(cards.find(c => c.id === +t.dataset.id) || null); };
+    $('#cp-x').onclick = () => done(null);
+    m.onclick = e => { if (e.target === m) done(null); };
+    fill();
+  });
+}
 const views = {
   async packs(v) {
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
@@ -448,10 +473,10 @@ const views = {
         <div class="search">${ico('search')}<input id="flt" placeholder="Rechercher une carte" autocomplete="off"></div>
         <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
         <label class="row" style="gap:8px;color:var(--mut);font-size:13px"><input type="checkbox" id="dup"> doublons</label>
-        <div class="chips" id="chips"><button class="${rar === '' ? 'on' : ''}" data-r="">Toutes</button><button class="${rar === 'fav' ? 'on' : ''}" data-r="fav" style="--cc:var(--legendary)">★ Favoris</button>${cfg.rarities.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+        <div class="chips" id="chips"><button class="${rar === '' ? 'on' : ''}" data-r="">Toutes</button><button class="${rar === 'fav' ? 'on' : ''}" data-r="fav" style="--cc:var(--gold-fav)">★ Favoris</button>${cfg.rarities.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
       <div class="bulk">
-        <select id="bulk-r" aria-label="Rareté maximale">${bulkTiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>Doublons jusqu'à : ${RAR[t.r]} (${t.n} carte${t.n > 1 ? 's' : ''}, +${fmt(t.price)})</option>`).join('')}</select>
+        <select id="bulk-r" aria-label="Rareté maximale">${bulkTiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>${RAR[t.r]} et moins · ${t.n} carte${t.n > 1 ? 's' : ''} · +${fmt(t.price)}</option>`).join('')}</select>
         <button class="plain" id="bulk-go">Vendre</button></div>
       <div class="grid" id="g"></div>`;
     const draw = () => {
@@ -553,11 +578,14 @@ const views = {
 
   async trades(v) {
     const [{ trades }, { users }, { cards }] = await Promise.all([api('/trades'), api('/users'), api('/album')]);
+    const others = users.filter(u => !u.me);
+    let give = null, want = null; const theirs = new Map();
+    const slot = (c, label) => `<small>${label}</small>` + (c ? `<div class="tpick ${c.rarity}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="pimg ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}><span class="chip">${ABBR[c.rarity]}</span></div><b>${esc(c.title)}</b></div><em>Changer</em>` : '<span class="plus">+</span><em>Choisir une carte</em>');
     v.innerHTML = `${pageHead('Marché', 'Échange des cartes avec un joueur')}${seg(MARKET_SEG, 'trades')}
-      <div class="panel"><h3>Proposer un échange</h3><div class="tform">
-        <select id="t-to">${users.filter(u => !u.me).map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>
-        <select id="t-off">${cards.map(c => `<option value="${c.id}">Je donne : ${esc(c.title)}</option>`).join('')}</select>
-        <input id="t-q" placeholder="Carte voulue (tape son nom)" list="t-list" autocomplete="off"><datalist id="t-list"></datalist><button id="t-go">Proposer l'échange</button></div></div>
+      <div class="panel"><h3>Proposer un échange</h3>${others.length ? `<div class="tform">
+        <select id="t-to" aria-label="Joueur">${others.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>
+        <div class="tslots"><button class="tslot" id="t-offs"></button><div class="tarrow" aria-hidden="true">⇄</div><button class="tslot" id="t-wants"></button></div>
+        <button id="t-go" disabled>Proposer l'échange</button></div>` : '<p class="mut">Aucun autre joueur pour le moment.</p>'}</div>
       ` + (trades.length ? `<h3 class="sec">En attente</h3><div class="list">${trades.map(t => {
         const mine = t.from_id === me.id;
         return `<div class="item">${avatar(mine ? t.to_name : t.from_name)}<div class="grow"><div class="nm">${mine ? 'Toi' : esc(t.from_name)} → ${mine ? esc(t.to_name) : 'toi'}</div>
@@ -565,12 +593,21 @@ const views = {
           <div class="acts">${mine ? `<button class="plain" data-a="cancel" data-id="${t.id}">Annuler</button>` : `<button data-a="accept" data-id="${t.id}">Accepter</button><button class="plain" data-a="decline" data-id="${t.id}">Refuser</button>`}</div></div>`;
       }).join('')}</div>` : '<div class="empty">Aucun échange en attente.</div>');
     bindSeg(v);
-    let found = [];
-    $('#t-q').oninput = safe(async e => { found = (await api('/cards/search?q=' + encodeURIComponent(e.target.value))).cards; $('#t-list').innerHTML = found.map(c => `<option value="${esc(c.title)}">`).join(''); });
-    $('#t-go').onclick = safe(async () => {
-      const want = found.find(c => c.title === $('#t-q').value); if (!want) throw new Error('Choisis une carte dans la liste');
-      await api('/trades', { to: $('#t-to').value, offer_card: $('#t-off').value, want_card: want.id }); toast('Proposition envoyée'); render();
-    });
+    if (others.length) {
+      const paint = () => { $('#t-offs').innerHTML = slot(give, 'Tu donnes'); $('#t-wants').innerHTML = slot(want, 'Tu veux'); $('#t-go').disabled = !(give && want); };
+      paint();
+      $('#t-to').onchange = () => { want = null; paint(); };
+      $('#t-offs').onclick = async () => { const c = await cardPicker('Quelle carte donnes-tu ?', cards); if (c) { give = c; paint(); } };
+      $('#t-wants').onclick = safe(async () => {
+        const id = +$('#t-to').value, name = others.find(u => u.id === id).name;
+        if (!theirs.has(id)) theirs.set(id, (await api(`/players/${id}/cards`)).cards);
+        if (!theirs.get(id).length) return toast(`${name} n'a aucune carte pour le moment`);
+        const c = await cardPicker(`Quelle carte veux-tu à ${name} ?`, theirs.get(id)); if (c) { want = c; paint(); }
+      });
+      $('#t-go').onclick = safe(async () => {
+        await api('/trades', { to: $('#t-to').value, offer_card: give.id, want_card: want.id }); toast('Proposition envoyée'); render();
+      });
+    }
     v.querySelectorAll('[data-a]').forEach(b => b.onclick = safe(async () => { await api(`/trades/${b.dataset.id}/${b.dataset.a}`, {}); await refreshMe(); render(); }));
   },
 
@@ -683,7 +720,7 @@ async function renderGame() {
     const f = game.f, nm = id => esc(game.names[id]), iAtt = f.attacker === me.id, iDef = f.defender === me.id;
     const bar = id => { const pct = Math.max(0, Math.round((f.hp[id] ?? 0) / (f.max[id] || 1) * 100)); return `<div class="hpb ${id === me.id ? 'me' : ''}" data-id="${id}"><div class="hpt"><span>${nm(id)}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(f.hp[id] ?? 0)} PV</b></div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`; };
     const mini = (c, cls = '', attrs = '') => `<div class="bcard ${cls}" ${attrs} style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
-      <b>${esc(c.title)}</b><span>ATK <i>${fmt(c.atk)}</i> · DEF <i>${fmt(c.def)}</i></span></div>`;
+      <b>${esc(c.title)}</b><span class="st"><em>ATK <i>${fmt(c.atk)}</i></em><em>DEF <i>${fmt(c.def)}</i></em></span></div>`;
     const deckRow = id => `<div class="deckrow"><small>${nm(id)}</small><div>${f.deck[id].map(c => mini(c, (f.left?.[id] && !f.left[id].includes(c.id)) ? 'used' : '')).join('')}</div></div>`;
     let body = '';
     if (f.phase === 'intro') {
@@ -912,8 +949,8 @@ let adminTab = 'overview';
 views.admin = async v => {
   jlog('ouverture de l\'administration');
   if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
-  const seg = [['overview', 'Aperçu'], ['users', 'Joueurs'], ['announce', 'Annonce'], ['tools', 'Outils']];
-  v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
+  const seg = [['overview', 'Aperçu'], ['users', 'Joueurs'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
+  v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips wrap" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
   const adminBody = async () => {
     const box = $('#adm'); box.innerHTML = '<p class="mut" style="text-align:center;padding:24px 0">Chargement…</p>';
@@ -923,7 +960,7 @@ views.admin = async v => {
     if (adminTab === 'overview') {
       const o = await api('/admin/overview');
       const rows = [['Joueurs', o.users], ['En ligne maintenant', o.online], ['Joueurs simulés', o.bots], ['Paquets ouverts', fmt(o.packs)], ['Cartes possédées', fmt(o.owned)], ['Cartes en base', fmt(o.cards)], ['Pièces en circulation', fmt(o.coins)],
-        ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['IA générées aujourd\'hui', `${o.aiToday} (quota ≈ 250 / jour)`], ['Version serveur', o.version]];
+        ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['Questions IA aujourd\'hui', `${o.aiToday} / ≈ 250`], ['Version serveur', o.version]];
       box.innerHTML = `<div class="admgrid">${rows.map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>`;
     } else if (adminTab === 'users') {
       const { users, defaults, rarities, labels } = await api('/admin/users');
@@ -985,6 +1022,51 @@ views.admin = async v => {
           });
         }
       });
+    } else if (adminTab === 'market') {
+      const m = await api('/admin/market'); let pick = null, mins = 360, rmins = 0;
+      const durs = [[60, '1 h'], [360, '6 h'], [720, '12 h'], [1440, '24 h']];
+      const chips = (id, cur, withAuto) => `<div class="chips wrap" id="${id}">${withAuto ? `<button data-m="0" class="${cur === 0 ? 'on' : ''}">Variée</button>` : ''}${durs.map(([v, l]) => `<button data-m="${v}" class="${v === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+      box.innerHTML = `<div class="panel"><b>Cacher une carte précise dans le marché</b>
+          <p class="mut">Elle est mise en vente sous le pseudo d'un joueur simulé : personne ne peut deviner que c'est toi.</p>
+          <div class="search wide">${ico('search')}<input id="ml-q" placeholder="Chercher une page Wikipédia…" autocomplete="off"></div>
+          <div id="ml-res" class="mlres"></div>
+          <div id="ml-form" hidden>
+            <p class="mlsel" id="ml-sel"></p>
+            <label class="fld">Prix de départ (vide = prix du marché)<input id="ml-price" type="number" inputmode="numeric" min="1" placeholder="Automatique"></label>
+            <div class="fld" style="margin:8px 0 6px">Durée</div>${chips('ml-d', mins, false)}
+            <label class="fld" style="margin-top:10px">Vendeur<select id="ml-seller"><option value="">Un joueur simulé au hasard</option>${m.bots.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></label>
+            <div class="row"><button id="ml-go">Mettre en vente</button></div>
+          </div></div>
+        <div class="panel"><b>Ajouter des cartes au hasard</b>
+          <p class="mut">Des ventes réalistes sous des pseudos simulés, pour garnir le marché d'un coup.</p>
+          <div class="admrow"><input id="rd-n" type="number" inputmode="numeric" min="1" max="30" value="5" style="max-width:90px"><select id="rd-r"><option value="">Raretés variées</option>${m.rarities.map(r => `<option value="${r}">${esc(m.labels[r])} seulement</option>`).join('')}</select></div>
+          <div class="fld" style="margin:8px 0 6px">Durée</div>${chips('rd-d', rmins, true)}
+          <div class="row"><button id="rd-go">Ajouter</button></div></div>
+        <div class="panel"><b>Ventes simulées ouvertes</b><p class="mut">Tu peux retirer celles qui n'ont reçu aucune offre.</p>
+          <div id="ml-lots">${m.lots.map(l => `<div class="acrow" data-id="${l.id}"><span class="acn"><i class="rd" style="background:var(--${l.shiny ? 'shiny' : l.rarity})"></i>${esc(l.title)}</span><small class="mut">${esc(l.seller)}</small><b>${fmt(l.bid || l.start_price)}</b>${l.bidder_id ? '<small class="mut">offre</small>' : '<button class="plain ml-rm">Retirer</button>'}</div>`).join('') || '<p class="mut">Aucune.</p>'}</div></div>`;
+      const durClick = (id, set) => { $(id).onclick = e => { const b = e.target.closest('button'); if (!b) return; set(+b.dataset.m); $(id).querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }; };
+      durClick('#ml-d', v => { mins = v; }); durClick('#rd-d', v => { rmins = v; });
+      let t; $('#ml-q').oninput = () => {
+        clearTimeout(t); const q = $('#ml-q').value.trim();
+        if (q.length < 2) { $('#ml-res').innerHTML = ''; return; }
+        t = setTimeout(async () => {
+          try {
+            const r = await api(`/catalog/search?q=${encodeURIComponent(q)}&admin=1`);
+            $('#ml-res').innerHTML = r.cards.map((c, i) => `<button class="plain mlitem" data-i="${i}"><i class="rd" style="background:var(--${c.rarity})"></i><span>${esc(c.title)}</span><small>${esc(m.labels[c.rarity])} · ${fmt(c.views)} vues</small></button>`).join('') || '<p class="mut">Aucun résultat dans le catalogue.</p>';
+            $('#ml-res').onclick = e => { const b = e.target.closest('.mlitem'); if (!b) return; pick = r.cards[+b.dataset.i]; $('#ml-sel').innerHTML = `Carte choisie : <b>${esc(pick.title)}</b> (${esc(m.labels[pick.rarity])})`; $('#ml-form').hidden = false; $('#ml-res').innerHTML = ''; };
+          } catch (err) { $('#ml-res').innerHTML = `<p class="mut">${esc(err.message)}</p>`; }
+        }, 350);
+      };
+      $('#ml-go').onclick = safe(async () => {
+        if (!pick) return toast('Choisis une carte');
+        const r = await api('/admin/lot', { title: pick.title, price: +$('#ml-price').value || 0, minutes: mins, seller_id: +$('#ml-seller').value || 0 });
+        toast(`« ${r.title} » en vente par ${r.seller} (${fmt(r.price)})`); adminBody();
+      });
+      $('#rd-go').onclick = safe(async () => {
+        $('#rd-go').disabled = true;
+        try { const r = await api('/admin/lots-random', { count: +$('#rd-n').value || 1, rarity: $('#rd-r').value, minutes: rmins }); toast(`${r.added} carte${r.added > 1 ? 's' : ''} ajoutée${r.added > 1 ? 's' : ''} au marché`); adminBody(); } finally { $('#rd-go').disabled = false; }
+      });
+      $('#ml-lots').onclick = safe(async e => { const b = e.target.closest('.ml-rm'); if (!b) return; await api('/admin/lot/remove', { id: +b.closest('.acrow').dataset.id }); toast('Vente retirée'); adminBody(); });
     } else if (adminTab === 'announce') {
       box.innerHTML = `<p class="mut">Le message s'affiche en bulle chez les joueurs connectés et part en notification chez ceux qui l'ont activée.</p>
         <textarea id="an-t" rows="3" maxlength="180" placeholder="Ex. : Nouvelle mise à jour disponible, rechargez l'appli !" style="width:100%"></textarea>
@@ -1088,9 +1170,9 @@ function profileSheet() {
     ${me.admin ? `<label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>` : ''}
     <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
     <label class="switch" id="pf-pushrow"><span>Notifications<small id="pf-pushtxt">Vérification…</small></span><input type="checkbox" id="pf-push" disabled></label>
-    ${me.admin ? '<button class="plain" id="pf-admin" style="width:100%;margin-top:8px">Administration</button>' : ''}
+    ${me.admin ? '<button class="plain" id="pf-admin" style="width:100%;margin-top:16px">Administration</button>' : ''}
     <p class="build" id="build">Build ${BUILD} · chargé à ${hms(LOADED)}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p>
-    <div class="row" style="margin-top:18px"><button class="plain" id="pf-me" style="flex:1">Mon profil</button><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
+    <div class="row pfbtns" style="margin-top:18px"><button class="plain" id="pf-me" style="flex:1">Mon profil</button><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Déconnexion</button></div></div>`;
   $('#pf-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   $('#pf-out').onclick = logout;
   let taps = 0; $('#build').onclick = () => {

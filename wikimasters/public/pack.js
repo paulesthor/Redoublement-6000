@@ -7,7 +7,7 @@
   const PW = 172, PH = 244, TY = 46;                      // taille du dessin, ligne de déchirure
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const GEMS = ['#a4b5a0', '#79a9d9', '#a78bdc', '#e07fae', '#f08a4b', '#e7bd5e']; // une pierre par rareté
+  const GEMS = ['#a4b5a0', '#79a9d9', '#a78bdc', '#e07fae', '#f08a4b', '#f4f4f7']; // une pierre par rareté
 
   function tearPts() {                                     // dents de scie, de gauche à droite
     const teeth = 16, pts = [];
