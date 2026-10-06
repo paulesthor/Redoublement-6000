@@ -213,9 +213,11 @@ async function refreshPacks(env, u) {
   }
   return u;
 }
+/** Le mode test (paquets illimités) n'existe que pour un administrateur, même si la colonne a été activée autrement. */
+const testOn = u => !!(u.test_mode && u.is_admin);
 const publicUser = u => ({
   id: u.id, name: u.name, coins: u.coins, packs: u.pack_stock, wins: u.duel_wins, losses: u.duel_losses,
-  test: !!u.test_mode, admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
+  test: testOn(u), admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
 });
 
 async function finishPack(env, ctx, user, drawn) {
@@ -287,7 +289,7 @@ const PREPARE_MAX = 3;
 const preparing = new Set();
 async function prepareFor(env, ctx, user, stock) {
   if (user.is_bot || preparing.has(user.id)) return;
-  const want = Math.min(PREPARE_MAX, Math.max(stock, user.test_mode ? PREPARE_MAX : 0, user.coins >= CFG.PACK_PRICE ? 1 : 0));
+  const want = Math.min(PREPARE_MAX, Math.max(stock, testOn(user) ? PREPARE_MAX : 0, user.coins >= CFG.PACK_PRICE ? 1 : 0));
   if (want < 1) return;
   preparing.add(user.id);
   try {
@@ -517,20 +519,21 @@ route('GET', '/api/config', async ({ env, origin }) => {
 }, false);
 
 route('POST', '/api/me/test-mode', async ({ env, user, body }) => {
+  if (!user.is_admin) bad('Le mode test est réservé à l’administrateur', 403);
   await run(env, 'UPDATE users SET test_mode = ? WHERE id = ?', body.on ? 1 : 0, user.id);
   return { ok: true };
 });
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const u = await refreshPacks(env, user);
-  if (!u.test_mode) {                                    // mode test : paquets illimités
+  if (!testOn(u)) {                                      // mode test : paquets illimités
     if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
     const wasFull = u.pack_stock >= PACK_MAX;
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
   const drawn = (await takePrepared(env, u.id)) ?? await drawCards(env, origin, PACK_SIZE, userWeights(u));
-  ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (u.test_mode ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
+  ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
   return finishPack(env, ctx, user, drawn);
 });
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
@@ -880,7 +883,7 @@ route('POST', '/api/admin/give', admin(async ({ env, ctx, body }) => {
   if (parts.length && (coins > 0 || packs > 0)) notify(env, ctx, { t: 'notify', msg: `Cadeau de l'admin : ${parts.join(' et ')}` }, id);
   return { ok: true, name: u.name };
 }));
-route('POST', '/api/admin/test-mode', admin(async ({ env, body }) => { await run(env, 'UPDATE users SET test_mode = ? WHERE id = ? AND is_bot = 0', body.on ? 1 : 0, +body.user_id); return { ok: true }; }));
+route('POST', '/api/admin/test-mode', admin(async ({ env, body }) => { await run(env, 'UPDATE users SET test_mode = ? WHERE id = ? AND is_bot = 0 AND is_admin = 1', body.on ? 1 : 0, +body.user_id); return { ok: true }; }));   // jamais pour un joueur ordinaire
 route('POST', '/api/admin/password', admin(async ({ env, body }) => {
   const pw = String(body.password || ''); if (pw.length < 4) bad('Mot de passe trop court (4 min.)');
   const u = await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', +body.user_id); if (!u) bad('Joueur introuvable', 404);
