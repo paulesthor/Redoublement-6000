@@ -1,7 +1,7 @@
 // Durable Object unique : WebSocket de tous les joueurs (présence, défis, duels de quiz, combats de cartes, notifications).
 // L'état des parties en cours vit en mémoire ; seuls les résultats (pièces, victoires) sont écrits dans D1.
 import CFG from './config.js';
-import { one, all, run, st, placeholders, cardRows, userFromToken } from './util.js';
+import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
 
@@ -166,7 +166,7 @@ export class Lobby {
 
   // ---------- quiz ----------
   async makeQuestions() {
-    const cards = await all(this.env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT ?", Q_COUNT * 4);
+    const cards = await randomPool(this.env, Q_COUNT * 4);
     if (cards.length < 8) throw new Error('Pas assez de cartes enrichies pour un duel : ouvre quelques boosters d’abord');
     const qs = [];
     for (let i = 0; i < Q_COUNT; i++) {
@@ -265,8 +265,12 @@ export class Lobby {
     const byId = new Map(mine.map(c => [c.id, c]));
     const ids = [];
     for (const id of bt.picks[humanId]) {
-      const r = await one(this.env, `SELECT id FROM cards WHERE shiny = 0 AND rarity = ? ${ids.length ? `AND id NOT IN (${placeholders(ids.length)})` : ''} ORDER BY RANDOM() LIMIT 1`, byId.get(id).rarity, ...ids);
-      if (r) ids.push(r.id);
+      const r = await one(this.env, `SELECT id FROM reserve WHERE rarity = ? ${ids.length ? `AND id NOT IN (${placeholders(ids.length)})` : ''} ORDER BY RANDOM() LIMIT 1`, byId.get(id).rarity, ...ids);
+      if (r) { ids.push(r.id); continue; }
+      const max = (await one(this.env, 'SELECT MAX(id) m FROM cards'))?.m ?? 0;                 // réserve vide pour cette rareté : carte quelconque de la même rareté, sans tri complet
+      const alt = await one(this.env, `SELECT id FROM cards WHERE shiny = 0 AND rarity = ? AND id >= ? ${ids.length ? `AND id NOT IN (${placeholders(ids.length)})` : ''} ORDER BY id LIMIT 1`, byId.get(id).rarity, Math.floor(Math.random() * max), ...ids)
+        ?? await one(this.env, `SELECT id FROM cards WHERE shiny = 0 AND rarity = ? ${ids.length ? `AND id NOT IN (${placeholders(ids.length)})` : ''} ORDER BY id LIMIT 1`, byId.get(id).rarity, ...ids);
+      if (alt) ids.push(alt.id);
     }
     return ids.length === bt.picks[humanId].length ? ids : null;
   }
@@ -301,7 +305,7 @@ export class Lobby {
     const all6 = bt.players.flatMap(uid => rows[uid].map(c => ({ uid, c })));
     const [texts, pool] = await Promise.all([
       this.articleTexts(all6.map(x => x.c)),
-      all(this.env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 30"),
+      randomPool(this.env, 30),
     ]);
     await Promise.all(all6.map(async ({ uid, c }) => f.qs.set(uid + ':' + c.id, await battleQuestions(this.env, c, texts.get(c.id) || c.extract, { cards: pool }, Q_PER_CARD))));
     bt.startMsg = { t: 'bf_start', id: bt.id, names: bt.names, a, b, deck: f.deck, hp: f.hp, max: f.max, first, total: f.total };

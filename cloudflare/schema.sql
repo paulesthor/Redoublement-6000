@@ -178,3 +178,11 @@ CREATE TABLE IF NOT EXISTS fight_events (     -- journal des combats (début, pa
   detail TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS fight_events_ts ON fight_events(ts);
+
+CREATE TABLE IF NOT EXISTS usage (            -- lignes lues par type de requête et par jour (limite gratuite D1 : 5 millions par jour)
+  day TEXT NOT NULL,
+  sig TEXT NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0,
+  rows INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, sig)
+);

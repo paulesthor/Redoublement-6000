@@ -1,6 +1,6 @@
 import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
-  userFromToken, hashPw, randomHex, notify, searchBucket } from './util.js';
+  userFromToken, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool } from './util.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -51,7 +51,7 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
   try {
-    const res = await env.DB.batch(rarities.map(r => st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? ORDER BY RANDOM() LIMIT 1) RETURNING id', r)));
+    const res = await env.DB.batch(rarities.map(r => st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? LIMIT 1) RETURNING id', r)));
     claimed = res.map(x => x.results?.[0]?.id ?? null);
   } catch { /* table absente ou erreur : tirage direct */ }
   const ready = claimed.filter(Boolean);
@@ -236,7 +236,7 @@ async function finishPack(env, ctx, user, drawn) {
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
   ]);
   statsCache.delete(user.id);
-  ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {}));
+  if (now() - (lastCheck.get(user.id) || 0) > 180000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }   // la vérification relit toute la collection : au plus toutes les 3 min
   // description + image : le client les demande par vagues (/api/cards/enrich), dans l'ordre de révélation
   const rows = new Map((await cardRows(env, ids)).map(c => [c.id, c]));
   const favs = new Set((await all(env, `SELECT card_id FROM favorites WHERE user_id = ? AND card_id IN (${placeholders(ids.length)})`, user.id, ...ids)).map(r => r.card_id));
@@ -282,7 +282,7 @@ async function refillReserve(env, max = 30) {
 let lastRefill = 0;
 /** Remplissage de la réserve à la demande (au plus toutes les 30 s par instance) : la tâche planifiée n'est qu'un renfort. */
 function maybeRefill(env, ctx) {
-  if (now() - lastRefill < 30000) return;
+  if (now() - lastRefill < 120000) return;
   lastRefill = now();
   ctx.waitUntil(refillReserve(env).catch(e => console.error('refillReserve', e)));
 }
@@ -439,7 +439,7 @@ async function botTick(env, ctx, force = false) {
         : `${bot.name} a enchéri ${amount} pièces sur « ${a.title} »`;
       notify(env, ctx, { t: 'notify', msg }, uid);
     }
-    notify(env, ctx, { t: 'refresh', what: 'auctions' });
+    (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   }
 }
 
@@ -464,7 +464,7 @@ async function settleAuctions(env, ctx) {
       await addCard(env, a.seller_id, a.card_id).run();
       notify(env, ctx, { t: 'notify', msg: `Enchère sans offre : « ${card.title} » t'est rendue.` }, a.seller_id);
     }
-    notify(env, ctx, { t: 'refresh', what: 'auctions' });
+    (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   }
 }
 
@@ -722,7 +722,7 @@ route('GET', '/api/quiz/preview', async ({ env, query }) => {
   try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) page = Object.values((await r.json()).query?.pages ?? {})[0]; } catch { /* hors-ligne */ }
   if (!page || page.missing !== undefined || !page.extract) bad('Article introuvable ou Wikipédia injoignable', 404);
   const card = { id: page.pageid, title: page.title, extract: page.extract.slice(0, 600), views: 0 };
-  const pool = await all(env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 30");
+  const pool = await randomPool(env, 30);
   const only = query.get('model');                 // ?model=@cf/... : essaie ce modèle seul, sans rien enregistrer
   if (only) {
     if (!/^@cf\/[\w./-]+$/.test(only)) bad('Modèle invalide');
@@ -742,15 +742,18 @@ route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 &
     FROM users u LEFT JOIN inventory i ON i.user_id = u.id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 } }).v);
 
+let auctionsCache = { t: 0, rows: null };                         // la liste est la même pour tous (hors drapeaux « à moi / en tête ») : lue au plus toutes les 8 s
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
   ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée
   maybeRefill(env, ctx);
   await settleAuctions(env, ctx);
-  const rows = await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
+  if (now() - auctionsCache.t > 8000 || !auctionsCache.rows) {
+    auctionsCache = { t: now(), rows: await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
     c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
     (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) bids FROM auctions a JOIN cards c ON c.id = a.card_id
-    JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id WHERE a.status = 'open' ORDER BY a.ends_at`);
-  return { auctions: rows.map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id })) };
+    JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id WHERE a.status = 'open' ORDER BY a.ends_at`) };
+  }
+  return { auctions: auctionsCache.rows.map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id })) };
 });
 route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
   const price = Math.floor(+body.price), minutes = Math.min(1440, Math.max(1, Math.floor(+body.minutes || 10)));
@@ -763,7 +766,7 @@ route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
   ]);
   const card = await one(env, 'SELECT title FROM cards WHERE id = ?', +body.card_id);
   notify(env, ctx, { t: 'notify', msg: `${user.name} met « ${card.title} » aux enchères (${price} pièces)`, except: user.id });
-  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   return { ok: true };
 });
 route('GET', '/api/auctions/:id/bids', async ({ env, params }) => ({
@@ -794,7 +797,7 @@ route('POST', '/api/auctions/:id/bid', async ({ env, ctx, user, params, body }) 
       : `${user.name} a enchéri ${amount} pièces sur « ${title} »`;
     notify(env, ctx, { t: 'notify', msg }, uid);
   }
-  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   return { ok: true };
 });
 
@@ -1016,7 +1019,7 @@ route('POST', '/api/admin/lot', admin(async ({ env, ctx, origin, body }) => {
   await env.DB.batch([insertCard(env, { id, title: t, views, rarity, shiny: 0, ...stats(t, rarity, false) }),
     st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', seller.id, id, price, now() + mins * 60000)]);
   ctx.waitUntil(enrich(env, [id]).catch(() => {}));
-  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   return { ok: true, title: t, rarity, price, seller: seller.name };
 }));
 route('POST', '/api/admin/lots-random', admin(async ({ env, ctx, origin, body }) => {
@@ -1035,14 +1038,19 @@ route('POST', '/api/admin/lots-random', admin(async ({ env, ctx, origin, body })
     st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', bots[Math.floor(Math.random() * bots.length)].id, c.id, botPrice(c.rarity, c.views, avg.get(c.id) ?? null),
       now() + Math.round((mins ?? pickW(BOT_MINUTES) * rand(.2, 1)) * 60000))]));
   ctx.waitUntil(enrich(env, chosen.map(c => c.id).slice(0, 20)).catch(() => {}));
-  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   return { ok: true, added: chosen.length, cards: chosen.map(c => c.title) };
 }));
 route('POST', '/api/admin/lot/remove', admin(async ({ env, ctx, body }) => {
   const r = await run(env, "DELETE FROM auctions WHERE id = ? AND status = 'open' AND bidder_id IS NULL AND seller_id IN (SELECT id FROM users WHERE is_bot = 1)", +body.id);
   if (!r.meta.changes) bad('Retrait impossible : la vente a déjà reçu une offre ou n’est pas simulée');
-  notify(env, ctx, { t: 'refresh', what: 'auctions' });
+  (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   return { ok: true };
+}));
+route('GET', '/api/admin/usage', admin(async ({ env }) => {
+  const day = new Date().toISOString().slice(0, 10);
+  const rows = await all(env, 'SELECT sig, n, rows FROM usage WHERE day = ? ORDER BY rows DESC LIMIT 30', day);
+  return { day, total: rows.reduce((t, r) => t + r.rows, 0), rows };
 }));
 route('GET', '/api/admin/fights', admin(async ({ env }) => ({ events: await all(env, 'SELECT ts, battle, players, kind, detail FROM fight_events ORDER BY id DESC LIMIT 80') })));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
@@ -1064,6 +1072,7 @@ route('POST', '/api/admin/run', admin(async ({ env, ctx, body }) => {
 
 // ---------- point d'entrée ----------
 async function api(req, env, ctx, url) {
+  ctx.waitUntil(flushUsage(env));
   const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
   if (!r) bad('Route inconnue', 404);
   const params = url.pathname.match(r.re).groups || {};

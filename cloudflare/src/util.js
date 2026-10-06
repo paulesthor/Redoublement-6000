@@ -22,10 +22,26 @@ export const bad = (msg, code = 400) => { throw new HttpError(code, msg); };
 export const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
 
 // ---- accès D1 ----
-export const one = (env, sql, ...p) => env.DB.prepare(sql).bind(...p).first();
-export const all = async (env, sql, ...p) => (await env.DB.prepare(sql).bind(...p).all()).results;
-export const run = (env, sql, ...p) => env.DB.prepare(sql).bind(...p).run();
+// Chaque requête comptabilise les lignes lues (limite gratuite : 5 millions par jour) ; le total par type de requête est enregistré dans la table usage (consultable dans l'admin).
+const usage = new Map(); let lastFlush = Date.now();
+export const track = (sql, rows) => { const k = sql.replace(/\s+/g, ' ').trim().slice(0, 100); const x = usage.get(k) ?? { n: 0, rows: 0 }; x.n++; x.rows += rows || 0; usage.set(k, x); };
+export async function flushUsage(env) {
+  if (!usage.size || Date.now() - lastFlush < 120000) return;
+  lastFlush = Date.now();
+  const day = new Date().toISOString().slice(0, 10), items = [...usage]; usage.clear();
+  await env.DB.batch(items.map(([k, x]) => env.DB.prepare('INSERT INTO usage (day, sig, n, rows) VALUES (?,?,?,?) ON CONFLICT(day, sig) DO UPDATE SET n = n + excluded.n, rows = rows + excluded.rows').bind(day, k, x.n, x.rows))).catch(() => {});
+}
+export const one = async (env, sql, ...p) => { const r = await env.DB.prepare(sql).bind(...p).all(); track(sql, r.meta?.rows_read); return r.results[0] ?? null; };
+export const all = async (env, sql, ...p) => { const r = await env.DB.prepare(sql).bind(...p).all(); track(sql, r.meta?.rows_read); return r.results; };
+export const run = async (env, sql, ...p) => { const r = await env.DB.prepare(sql).bind(...p).run(); track(sql, r.meta?.rows_read); return r; };
 export const st = (env, sql, ...p) => env.DB.prepare(sql).bind(...p);          // statement pour env.DB.batch([...])
+/** Quelques articles complets pris au hasard (mauvaises réponses des questions) : on part d'un identifiant tiré au hasard au lieu de trier toute la table. */
+export async function randomPool(env, n) {
+  const max = (await one(env, 'SELECT MAX(id) m FROM cards'))?.m ?? 0, start = Math.floor(Math.random() * max);
+  const sel = 'SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 AND id ';
+  const a = await all(env, sel + '>= ? ORDER BY id LIMIT ?', start, n);
+  return a.length >= n ? a : [...a, ...await all(env, sel + '< ? ORDER BY id LIMIT ?', start, n - a.length)];
+}
 export const placeholders = n => Array(n).fill('?').join(',');
 export const cardRows = (env, ids) => (ids.length ? all(env, `SELECT * FROM cards WHERE id IN (${placeholders(ids.length)})`, ...ids) : Promise.resolve([]));
 

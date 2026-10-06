@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '2.3';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '2.4';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1100,10 +1100,16 @@ views.admin = async v => {
     } else {
       box.innerHTML = `<div class="panel"><b>Marché</b><p class="mut">Fait agir les joueurs simulés tout de suite (ventes, enchères).</p><button id="t-bots">Animer le marché</button></div>
         <div class="panel"><b>Réserve de cartes</b><p class="mut">Prépare des cartes complétées (texte + photo) pour que les paquets s'ouvrent sans attente.</p><button id="t-res">Remplir la réserve</button></div>
+        <div class="panel"><b>Lectures de la base (aujourd'hui)</b><p class="mut">Quelles requêtes consomment la limite gratuite de 5 millions de lectures par jour. Les chiffres s'accumulent au fil de la journée.</p><button class="plain" id="t-usage">Afficher</button></div>
         <div class="panel"><b>Journal des combats</b><p class="mut">Début, pauses, reprises, fin et erreurs des derniers combats (pour comprendre pourquoi l'un s'arrête).</p><button class="plain" id="t-fights">Afficher</button></div>
         <div class="panel"><b>Journal de l'appli</b><p class="mut">Les 40 derniers évènements sur cet appareil.</p><button class="plain" id="t-log">Afficher</button></div>`;
       const act = (id, action, msg) => { $(id).onclick = safe(async () => { $(id).disabled = true; try { await api('/admin/run', { action }); toast(msg); } finally { $(id).disabled = false; } }); };
       act('#t-bots', 'bots', 'Marché animé'); act('#t-res', 'reserve', 'Réserve remplie');
+      $('#t-usage').onclick = safe(async () => {
+        const u = await api('/admin/usage');
+        $('#t-usage').closest('.panel').insertAdjacentHTML('beforeend', `<p style="margin:10px 0 4px"><b>${fmt(u.total)}</b> lignes lues enregistrées le ${esc(u.day)}</p><div class="jlog">${u.rows.map(r => `<div><b>${fmt(r.rows)}</b> · ${fmt(r.n)}× · ${esc(r.sig)}</div>`).join('') || 'Pas encore de données.'}</div>`);
+        $('#t-usage').remove();
+      });
       $('#t-fights').onclick = safe(async () => {
         const { events } = await api('/admin/fights');
         $('#t-fights').closest('.panel').insertAdjacentHTML('beforeend', `<div class="jlog" style="margin-top:10px">${events.map(e => `<div><b>${hms(new Date(e.ts))}</b> ${esc(e.battle)} · ${esc(e.players)} · <span class="${e.kind === 'erreur' ? 'bad' : ''}">${esc(e.kind)}</span> ${esc(e.detail)}</div>`).join('') || 'Aucun combat enregistré.'}</div>`);
