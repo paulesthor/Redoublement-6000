@@ -507,6 +507,7 @@ route('GET', '/api/profile/:id', async ({ env, user, params }) => {
     byRarity: Object.fromEntries(RARITIES.map(r => [r, inv.filter(x => x.rarity === r).reduce((t, x) => t + x.n, 0)])) } };
 });
 
+route('GET', '/api/version', async () => ({ v: CFG.VERSION }), false);
 route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
