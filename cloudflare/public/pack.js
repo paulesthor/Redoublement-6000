@@ -18,7 +18,7 @@
   /** kind : 'full' | 'top' | 'body'. opts.anim : reflet animé en continu (SMIL). */
   function packSvg(kind, opts = {}) {
     const anim = opts.anim !== false, id = 'pk' + Math.random().toString(36).slice(2, 7);
-    const pts = tearPts(), str = p => p.join(',');
+    const pts = opts.tear || tearPts(), str = p => p.join(',');
     const top = `0,0 ${PW},0 ${[...pts].reverse().map(str).join(' ')}`;
     const body = `${pts.map(str).join(' ')} ${PW},${PH} 0,${PH}`;
     const tear = kind === 'full' ? '' : `<clipPath id="${id}t"><polygon points="${kind === 'top' ? top : body}"/></clipPath>`;
@@ -125,7 +125,7 @@
           <div class="ps-cards">${[0, 1, 2, 3, 4].map(k => `<div class="ps-card" style="--k:${k}"><b>W</b></div>`).join('')}</div>
           <div class="ps-inner"></div>
           <div class="ps-pack"><div class="ps-piece ps-body">${packSvg('body', { anim: false })}</div><div class="ps-piece ps-top">${packSvg('top', { anim: false })}</div></div>
-          <svg class="ps-rip" viewBox="0 0 ${PW} ${PH}" aria-hidden="true"><path class="r1" pathLength="1" d="${tearPts().map((p, i) => (i ? 'L' : 'M') + p.join(' ')).join('')}"/><path class="r2" pathLength="1" d="${tearPts().map((p, i) => (i ? 'L' : 'M') + p.join(' ')).join('')}"/></svg>
+          <svg class="ps-rip" viewBox="0 0 ${PW} ${PH}" aria-hidden="true"><path class="r0" d=""/><path class="r1" d=""/><path class="r2" d=""/></svg>
           <div class="ps-guide"><i></i></div>
         </div><div class="ps-shadow"></div></div>
       </div><div class="ps-ring"></div><div class="ps-flash"></div>
@@ -133,13 +133,30 @@
     root.style.touchAction = 'none';
     const $ = s => root.querySelector(s);
     const scene = $('.ps-scene'), wrap = $('.ps-wrap'), tiltEl = $('.ps-tilt'), topP = $('.ps-top'), inner = $('.ps-inner'), cardsEl = $('.ps-cards');
-    const r1 = $('.r1'), r2 = $('.r2'), hint = $('.ps-hint'), holo = root.querySelectorAll('[data-holo]');
+    const r0 = $('.r0'), r1 = $('.r1'), r2 = $('.r2'), hint = $('.ps-hint'), holo = root.querySelectorAll('[data-holo]');
     const fx = makeFx($('.ps-fx'));
     let err = null; dataP.catch(e => { err = e; });
 
     // état de l'animation
     let p = 0, target = 0, dragging = false, torn = false, sx = 0, t0 = performance.now(), lastTick = 0, lastStep = 0, px = 0, py = 0, tx = 0, ty = 0, cx = 0, cy = 0, raf = 0, down = 0;
-    const innerBox = () => { const b = inner.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2, b.width]; };
+    // trajectoire du doigt en coordonnées du dessin (0..PW, 0..PH) : la coupe suivra exactement ce tracé
+    let trail = [], tearMid = [PW / 2, TY];
+    const toLocal = e => { const r = wrap.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * PW, (e.clientY - r.top) / r.height * PH]; };
+    const toClient = (x, y) => { const r = wrap.getBoundingClientRect(); return [r.left + x / PW * r.width, r.top + y / PH * r.height]; };
+    const lineD = pts => pts.map((q, i) => (i ? 'L' : 'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('');
+    const drawTrail = () => { const d = trail.length > 1 ? lineD(trail) : ''; r0.setAttribute('d', d); r1.setAttribute('d', d); r2.setAttribute('d', d); };
+    const coverage = () => trail.length < 2 ? 0 : (Math.max(...trail.map(q => q[0])) - Math.min(...trail.map(q => q[0]))) / PW;
+    /** Ligne de déchirure finale : le tracé du doigt (trié de gauche à droite, prolongé jusqu'aux bords), avec de petites dents. */
+    function buildTear(points) {
+      const sorted = points.map(q => [...q]).sort((a, b) => a[0] - b[0]), mono = [];
+      for (const q of sorted) { const l = mono.at(-1); if (l && q[0] - l[0] < 3) l[1] = (l[1] + q[1]) / 2; else mono.push(q); }
+      if (mono[0][0] > 0) mono.unshift([0, mono[0][1]]);
+      if (mono.at(-1)[0] < PW) mono.push([PW, mono.at(-1)[1]]);
+      const yAt = x => { for (let i = 1; i < mono.length; i++) if (x <= mono[i][0]) { const [x0, y0] = mono[i - 1], [x1, y1] = mono[i]; return x1 === x0 ? y1 : y0 + (y1 - y0) * (x - x0) / (x1 - x0); } return mono.at(-1)[1]; };
+      const out = [];
+      for (let k = 0; k <= 16; k++) { const x = k * PW / 16; out.push([+x.toFixed(1), +clamp(yAt(x) + (k % 2 ? 2.5 : -2.5) + (k % 3 ? 0 : 1.5), 18, PH - 40).toFixed(1)]); }
+      return out;
+    }
 
     const loop = now => {
       const t = (now - t0) / 1000;
@@ -151,11 +168,6 @@
       tiltEl.style.transform = `translateY(${bob}px) rotateX(${(-cy).toFixed(2)}deg) rotateY(${cx.toFixed(2)}deg)`;
       const hx = (cx * 11 + (now / 40 % 380) - 190).toFixed(1);
       holo.forEach(h => h.setAttribute('gradientTransform', `translate(${hx} 0)`));
-      // le haut se soulève au fur et à mesure de la déchirure
-      topP.style.transform = torn ? '' : `rotate(${(-p * 11).toFixed(2)}deg) translate(${(p * 5).toFixed(1)}px,${(-p * 7).toFixed(1)}px)`;
-      r1.style.strokeDashoffset = r2.style.strokeDashoffset = (1 - p).toFixed(3);
-      r1.style.opacity = r2.style.opacity = p > .005 ? 1 : 0;
-      inner.style.setProperty('--p', p.toFixed(3));
       cardsEl.style.transform = torn ? '' : `translateY(${(-p * 6).toFixed(2)}%)`;
       raf = requestAnimationFrame(loop);
     };
@@ -164,30 +176,38 @@
     const stopLoop = () => { cancelAnimationFrame(raf); fx.stop(); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onUp); };
 
     let resolveTorn; const tornP = new Promise(r => { resolveTorn = r; });
-    const complete = () => {
+    const complete = (points = null) => {
       if (torn) return; torn = true; dragging = false; target = 1; root.style.touchAction = '';
+      // la coupe devient la vraie séparation du paquet : le haut et le bas sont redessinés le long du tracé
+      const tear = points && points.length > 1 ? buildTear(points) : tearPts();
+      tearMid = tear[8];
+      $('.ps-body').innerHTML = packSvg('body', { anim: false, tear }); topP.innerHTML = packSvg('top', { anim: false, tear });
+      r0.setAttribute('d', lineD(tear)); r1.setAttribute('d', lineD(tear)); r2.setAttribute('d', lineD(tear));
       scene.classList.add('is-tearing'); hint.style.opacity = 0; snd.rip(1.4); buzz([12, 20, 30]);
       setTimeout(resolveTorn, 340);
     };
     function onMove(e) {
       if (!dragging || torn) return;
-      const w = wrap.getBoundingClientRect().width;
-      target = clamp((e.clientX - sx) / (w * .8), 0, 1);
+      const [x, y] = toLocal(e), last = trail.at(-1);
+      if (!last || Math.hypot(x - last[0], y - last[1]) > 1.5) { trail.push([x, y]); drawTrail(); }
+      const cov = coverage(); target = cov;
       const r = wrap.getBoundingClientRect();
       tx = clamp((e.clientX - (r.left + r.width / 2)) / r.width, -1, 1) * 14; ty = clamp((e.clientY - (r.top + r.height / 2)) / r.height, -1, 1) * 10;
       const now = performance.now();
-      if (now - lastTick > 45 && target > p - .001 && target > .02) { snd.rip(.8); lastTick = now; }
-      const step = Math.floor(target * 10); if (step !== lastStep) { buzz(6); lastStep = step; }
-      if (target >= .97) complete();
+      if (now - lastTick > 45 && trail.length > 2) { snd.rip(.8); lastTick = now; }
+      const step = Math.floor(cov * 10); if (step !== lastStep) { buzz(6); lastStep = step; }
+      if (cov >= .93) complete(trail);
     }
     function onUp() {
       if (!dragging) return; dragging = false;
-      const quick = performance.now() - down < 280 && Math.abs(target) < .08;
-      if (quick || target > .55) complete(); else target = 0;
+      const quick = performance.now() - down < 280 && coverage() < .08;
+      if (quick) complete(null);                          // simple toucher : déchirure standard
+      else if (coverage() > .55) complete(trail);         // assez loin : on termine la coupe le long du tracé
+      else { trail = []; drawTrail(); target = 0; }       // trop court : le paquet se referme
     }
     root.addEventListener('pointerdown', e => {
       if (torn || e.target.closest('button')) return;
-      snd.unlock(); dragging = true; sx = e.clientX; down = performance.now(); scene.classList.add('is-touched'); hint.style.opacity = 0;
+      snd.unlock(); dragging = true; trail = []; sx = e.clientX; down = performance.now(); scene.classList.add('is-touched'); hint.style.opacity = 0;
       onMove(e);
     });
     window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); window.addEventListener('pointercancel', onUp);
@@ -201,7 +221,7 @@
     clearTimeout(auto);
 
     // --- explosion de lumière ---
-    const [bx, by] = innerBox();
+    const [bx, by] = toClient(tearMid[0], tearMid[1]);
     const waitingTimer = setTimeout(() => { hint.textContent = 'Chargement des cartes…'; hint.style.opacity = ''; hint.classList.add('wait'); scene.classList.add('is-wait'); }, 450);
     scene.classList.add('is-open');
     snd.boom(.9); buzz(40);
