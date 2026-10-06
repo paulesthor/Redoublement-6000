@@ -584,10 +584,18 @@ html.fit,html.fit body{overflow:hidden;overscroll-behavior:none}
 .atkcard{display:flex;gap:12px;align-items:stretch;margin:6px 0}.atkcard .bcard{flex:0 0 42%}
 .atkinfo{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}.atkinfo small{color:var(--mut);font-size:12px}.atkinfo b{font-family:var(--f-disp);font-size:24px}.atkinfo span{color:var(--mut);font-size:12.5px}
 
-/* favoris : petite étoile sur les cartes */
+/* favoris : seulement le contour d'une étoile (vide), jaune léger translucide quand la carte est en favori */
 .card .tags{pointer-events:none}.card .tags>*{pointer-events:auto}
-.starbtn{width:34px;height:34px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:19px;line-height:1;background:#0009;color:#ffffffb0;border:1px solid #ffffff30;box-shadow:none;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);transition:transform .15s,color .15s,background .15s}
-.starbtn:hover:not(:disabled){filter:none;color:#fff}
-.starbtn:active:not(:disabled){transform:scale(.88)}
-.starbtn.on{color:#f5c542;background:#2a2108cc;border-color:#f5c54299;text-shadow:0 0 10px #f5c54288}
+.starbtn{width:34px;height:34px;padding:0;margin:0;display:grid;place-items:center;background:none!important;border:0!important;border-radius:0;box-shadow:none!important;color:#fff;-webkit-tap-highlight-color:transparent}
+.starbtn:hover:not(:disabled){filter:none;background:none}
+.starbtn:active:not(:disabled){transform:scale(.85)}
+.starbtn svg{width:26px;height:26px;overflow:visible;fill:none;stroke-linejoin:round;stroke-linecap:round}
+.starbtn .sh{stroke:#0007;stroke-width:3.6}
+.starbtn .st{stroke:#ffffffe6;stroke-width:1.7;transition:fill .18s,stroke .18s}
+.starbtn.on .st{fill:rgba(245,197,66,.42);stroke:#f5c542}
 #reveal .card .tags{z-index:5}
+
+/* choix du deck : numéro de la carte choisie, rendu allégé */
+.card.pick{position:relative}
+.pickno{position:absolute;left:9px;top:44px;z-index:4;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--gold);color:#111;font-weight:800;font-size:14px;box-shadow:0 2px 8px #0008}
+#pg .card,#g .card{content-visibility:auto;contain-intrinsic-size:auto 320px}

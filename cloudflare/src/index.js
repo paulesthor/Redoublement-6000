@@ -552,7 +552,10 @@ route('POST', '/api/favorites', async ({ env, user, body }) => {
   } else await run(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ?', user.id, id);
   return { ok: true };
 });
-route('GET', '/api/album', async ({ env, user, origin }) => {
+route('GET', '/api/album', async ({ env, user, origin, query }) => {
+  if (query.get('lite')) {                                          // version allégée (choix du deck) : pas de description, pas de prix moyen
+    return { cards: await all(env, `SELECT c.id, c.title, c.rarity, c.atk, c.def, c.image, c.shiny, c.views, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?`, user.id) };
+  }
   const meta = await getMeta(env, origin);
   const cards = await all(env, `SELECT c.*, i.qty, ${AVG} AS avg_price, (SELECT 1 FROM favorites f WHERE f.user_id = i.user_id AND f.card_id = i.card_id) AS fav FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
     ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC`, user.id);

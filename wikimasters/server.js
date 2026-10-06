@@ -342,7 +342,8 @@ route('GET', '/api/config', () => ({
 }), false);
 
 const AVG = `(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))`;
-route('GET', '/api/album', ({ user }) => {
+route('GET', '/api/album', ({ user, query }) => {
+  if (query.get('lite')) return { cards: all('SELECT c.id, c.title, c.rarity, c.atk, c.def, c.image, c.shiny, c.views, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=?', user.id) };
   const cards = all(`SELECT c.*, i.qty, ${AVG} AS avg_price, (SELECT 1 FROM favorites f WHERE f.user_id = i.user_id AND f.card_id = i.card_id) AS fav FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id=?
     ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC`, user.id);
   const total = Object.fromEntries(RARITIES.map(r => [r, live.total(r)]));

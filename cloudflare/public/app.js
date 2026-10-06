@@ -191,10 +191,26 @@ const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
 const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
   <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
-  <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori">★</button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}</div>
+  <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/><path class="st" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/></svg></button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
   ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`);
+
+/** Longue liste : on dessine 60 cartes puis la suite à l'approche du bas (une collection de 1 000+ cartes ne bloque plus le téléphone). */
+let chunkObs = null;
+function chunked(box, items, html, after, step = 60) {
+  chunkObs?.disconnect();
+  let n = 0; box.innerHTML = '';
+  const sentinel = document.createElement('div'); sentinel.style.cssText = 'grid-column:1/-1;height:1px'; box.append(sentinel);
+  const more = () => {
+    const part = items.slice(n, n + step); n += part.length;
+    sentinel.insertAdjacentHTML('beforebegin', part.map(html).join(''));
+    after?.(box);
+    if (n >= items.length) { chunkObs?.disconnect(); sentinel.remove(); }
+  };
+  chunkObs = new IntersectionObserver(es => { if (es[0].isIntersecting) more(); }, { rootMargin: '900px 0px' });
+  more(); if (n < items.length) chunkObs.observe(sentinel);
+}
 
 /** Les prochains paquets sont préparés par le serveur : on met leurs images en cache avant l'ouverture. */
 const prefetched = new Set();
@@ -393,22 +409,22 @@ const views = {
       const list = cards.filter(c => c.title.toLowerCase().includes(f) && (!rar || (rar === 'fav' ? c.fav : c.rarity === rar)) && (!d || c.qty > 1));
       list.sort({ fav: (a, b) => (b.fav | 0) - (a.fav | 0) || RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, rar: (a, b) => RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, name: (a, b) => a.title.localeCompare(b.title, 'fr'),
         qty: (a, b) => b.qty - a.qty, val: (a, b) => value(b) - value(a) }[s]);
-      $('#g').innerHTML = list.map(c => cardHtml(c, {
+      if (!list.length) $('#g').innerHTML = `<div class="empty" style="grid-column:1/-1">${rar === 'fav' ? 'Aucun favori pour l\'instant.<br>Touche l\'étoile ★ d\'une carte.' : 'Aucune carte ne correspond.'}</div>`;
+      else chunked($('#g'), list, c => cardHtml(c, {
         lazy: true, star: true,
         extra: `<div class="meta">Défausse <b>${sellValue(c)}</b> · Marché <b>${c.avg_price ?? '—'}</b></div>`,
         acts: `<button class="plain" data-d="${c.id}">Défausser</button><button class="plain" data-a="${c.id}">Vendre</button>`,
-      })).join('') || `<div class="empty" style="grid-column:1/-1">${rar === 'fav' ? 'Aucun favori pour l\'instant.<br>Touche l\'étoile ★ d\'une carte.' : 'Aucune carte ne correspond.'}</div>`;
-      lazyImages($('#g'));
-      $('#g').querySelectorAll('[data-d]').forEach(b => b.onclick = safe(async () => {
-        const c = cards.find(x => x.id == b.dataset.d);
+      }), () => lazyImages($('#g')));
+    };
+    // un seul gestionnaire pour tous les boutons (les cartes arrivent par paquets)
+    $('#g').onclick = safe(async e => {
+      const bd = e.target.closest('[data-d]'), ba = e.target.closest('[data-a]');
+      if (bd) {
+        const c = cards.find(x => x.id == bd.dataset.d);
         if (c.qty === 1 && !(await ask('Défausser ?', [], { text: `Ta dernière « ${c.title} » pour ${sellValue(c)} pièces.`, ok: 'Défausser' }))) return;
         const r = await api('/discard', { card_id: c.id, qty: 1 }); toast(`+${r.price} pièces`); await refreshMe(); render();
-      }));
-      $('#g').querySelectorAll('[data-a]').forEach(b => b.onclick = safe(async () => {
-        const c = cards.find(x => x.id == b.dataset.a);
-        await sellSheet(c);
-      }));
-    };
+      } else if (ba) await sellSheet(cards.find(x => x.id == ba.dataset.a));
+    });
     ['flt', 'srt', 'dup'].forEach(id => $('#' + id).oninput = draw);
     $('#chips').onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -623,20 +639,40 @@ async function renderGame() {
     v.querySelectorAll('.opt').forEach(b => b.onclick = () => { if (f.picked !== null) return; f.picked = +b.dataset.i; send({ t: 'bf_answer', id: game.id, choice: f.picked }); renderGame(); });
     if (f.end && (f.phase === 'pick' || (f.phase === 'q' && !f.res))) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (f.end - Date.now()) / f.time * 100) + '%'; }, 100);
   } else if (game.kind === 'battle' && game.view === 'pick') {
-    const { cards } = await api('/album');
-    const draw = () => {
-      v.innerHTML = `${pageHead(`Combat — choisis ${game.rounds} cartes`)}
-        <p class="mut">Ton deck : tes PV de départ sont la somme des DEF de tes 3 cartes. Tu choisis en même temps que l'adversaire. Sélection : ${game.sel.map(id => esc(cards.find(c => c.id === id).title)).join(' → ') || 'aucune'}</p>
-        <div class="sticky-bar"><button id="go" ${game.sel.length === game.rounds ? '' : 'disabled'}>Valider l'équipe (${game.sel.length}/${game.rounds})</button></div>
-        <div class="grid">${cards.map(c => cardHtml(c, { cls: 'pick ' + (game.sel.includes(c.id) ? 'sel' : ''), tag: game.sel.includes(c.id) ? `<span class="tag">n°${game.sel.indexOf(c.id) + 1}</span>` : '' })).join('')}</div>`;
-      v.querySelectorAll('.card').forEach(el => el.onclick = () => {
-        const id = +el.dataset.id, i = game.sel.indexOf(id);
-        if (i >= 0) game.sel.splice(i, 1); else if (game.sel.length < game.rounds) game.sel.push(id);
-        draw();
+    const { cards } = await api('/album?lite=1');
+    const sorted = [...cards].sort((a, b) => (b.atk + b.def) - (a.atk + a.def)), byId = new Map(cards.map(c => [c.id, c]));   // les plus fortes d'abord
+    let q = '', rf = '';
+    v.innerHTML = `${pageHead(`Combat — choisis ${game.rounds} cartes`)}
+      <p class="mut" id="selinfo" style="margin:0 0 8px"></p>
+      <div class="sticky-bar"><button id="go" disabled>Valider le deck</button></div>
+      <div class="search wide">${ico('search')}<input id="pq" placeholder="Chercher parmi tes ${fmt(cards.length)} cartes" autocomplete="off"></div>
+      <div class="chips" id="pchips" style="margin-bottom:10px"><button class="on" data-r="">Toutes</button>${cfg.rarities.map(r => `<button data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+      <div class="grid" id="pg"></div>`;
+    // aucune redessinée complète à chaque clic : on ne met à jour que les cartes concernées
+    const mark = () => {
+      $('#selinfo').innerHTML = game.sel.length ? `PV de départ = somme des DEF. Deck : <b>${game.sel.map(id => esc(byId.get(id)?.title ?? '')).join(' · ')}</b>` : 'Tes PV de départ sont la somme des DEF de tes 3 cartes. Tu choisis en même temps que l\'adversaire.';
+      $('#go').disabled = game.sel.length !== game.rounds; $('#go').textContent = `Valider le deck (${game.sel.length}/${game.rounds})`;
+      $('#pg').querySelectorAll('.card').forEach(el => {
+        const i = game.sel.indexOf(+el.dataset.id); el.classList.toggle('sel', i >= 0);
+        let n = el.querySelector('.pickno');
+        if (i >= 0) { if (!n) { n = document.createElement('span'); n.className = 'pickno'; el.append(n); } n.textContent = i + 1; } else n?.remove();
       });
-      $('#go').onclick = () => { send({ t: 'pick', id: game.id, cards: game.sel }); v.innerHTML = pageHead('Combat', 'Deck validé, en attente de l’adversaire…'); };
     };
-    draw();
+    const fill = () => {
+      const list = sorted.filter(c => (!q || c.title.toLowerCase().includes(q)) && (!rf || c.rarity === rf));
+      if (!list.length) $('#pg').innerHTML = '<div class="empty" style="grid-column:1/-1">Aucune carte ne correspond.</div>';
+      else chunked($('#pg'), list, c => cardHtml(c, { cls: 'pick', lazy: true }), () => { lazyImages($('#pg')); mark(); });
+    };
+    $('#pg').onclick = e => {
+      const el = e.target.closest('.card'); if (!el) return;
+      const id = +el.dataset.id, i = game.sel.indexOf(id);
+      if (i >= 0) game.sel.splice(i, 1); else if (game.sel.length < game.rounds) game.sel.push(id);
+      mark();
+    };
+    $('#pq').oninput = e => { q = e.target.value.trim().toLowerCase(); fill(); };
+    $('#pchips').onclick = e => { const b = e.target.closest('button'); if (!b) return; rf = b.dataset.r; $('#pchips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); fill(); };
+    $('#go').onclick = () => { send({ t: 'pick', id: game.id, cards: game.sel }); v.innerHTML = pageHead('Combat', 'Deck validé, en attente de l’adversaire…'); };
+    mark(); fill();
   } else if (game.view === 'end') {
     const r = game.result;
     if (game.kind === 'quiz') {
