@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '0.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '0.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -930,7 +930,7 @@ views.admin = async v => {
       $('#t-log').onclick = () => { $('#adm').insertAdjacentHTML('beforeend', `<div class="jlog panel">${(JSON.parse(localStorage.getItem('wm_log') || '[]')).slice().reverse().map(([t, x]) => `<div><b>${hms(new Date(t))}</b> ${esc(x)}</div>`).join('') || 'Vide'}</div>`); $('#t-log').remove(); };
     }
   };
-  await adminBody();
+  adminBody();   // sans attendre : la vue est déjà dessinée, sinon le squelette (affiché après 140 ms) l'écraserait
 };
 
 const render = safe(async () => {
