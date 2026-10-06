@@ -2,6 +2,7 @@ import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
   userFromToken, hashPw, randomHex, notify, searchBucket } from './util.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
+import { battleQuestions, aiQuestions, lastAiError } from './aiquiz.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -621,6 +622,21 @@ route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) =>
   return { cards: cards.map(c => ({ ...c, owned: owned.get(c.id) || 0 })) };
 });
 
+// aperçu des questions qui seraient posées pour un article (utile pour tester le modèle) : /api/quiz/preview?q=TotalEnergies
+route('GET', '/api/quiz/preview', async ({ env, query }) => {
+  const q = (query.get('q') || '').trim().slice(0, 80);
+  if (!q) bad('Donne un titre : ?q=TotalEnergies');
+  const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '2500', redirects: '1', titles: q });
+  let page = null;
+  try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) page = Object.values((await r.json()).query?.pages ?? {})[0]; } catch { /* hors-ligne */ }
+  if (!page || page.missing !== undefined || !page.extract) bad('Article introuvable ou Wikipédia injoignable', 404);
+  const card = { id: page.pageid, title: page.title, extract: page.extract.slice(0, 600), views: 0 };
+  const pool = await all(env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 30");
+  const cached = !!(await one(env, 'SELECT 1 x FROM quizzes WHERE card_id = ?', card.id));
+  const ai = (await aiQuestions(env, card, page.extract)).length;
+  const questions = await battleQuestions(env, card, page.extract, { cards: pool }, 3);
+  return { title: card.title, ia: !!env.AI, deja_en_base: cached, questions_ia_disponibles: ai, derniere_erreur_ia: ai ? null : lastAiError(), questions: questions.map(x => ({ source: x.ai ? 'ia' : 'regles', question: x.text, choix: x.options, bonne_reponse: x.options[x.answer] })) };
+});
 route('GET', '/api/leaderboard', async ({ env }) => ({
   players: await all(env, `SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
     COALESCE(SUM(${caseSql('c.rarity', POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(c.id) AS uniques

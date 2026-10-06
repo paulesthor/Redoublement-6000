@@ -123,3 +123,9 @@ CREATE TABLE IF NOT EXISTS wanted (          -- cartes cherchées par un joueur 
   at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS wanted_at ON wanted(at);
+CREATE TABLE IF NOT EXISTS quizzes (         -- questions d'un article écrites par le modèle de langage (une seule génération par article)
+  card_id INTEGER PRIMARY KEY,
+  questions TEXT NOT NULL,
+  model TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);

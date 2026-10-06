@@ -2,7 +2,7 @@
 // L'état des parties en cours vit en mémoire ; seuls les résultats (pièces, victoires) sont écrits dans D1.
 import CFG from './config.js';
 import { one, all, run, st, placeholders, cardRows, userFromToken } from './util.js';
-import { makeArticleQuestions } from './quiz.js';
+import { battleQuestions, aiQuestions } from './aiquiz.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, Q_PER_CARD = 3, SHINY = 100000000;
 const now = () => Date.now();
@@ -159,6 +159,7 @@ export class Lobby {
     const owned = new Set((await all(this.env, `SELECT card_id FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(ids.length)})`, user.id, ...ids)).map(r => r.card_id));
     if (!ids.every(i => owned.has(i))) return this.push(user.id, { t: 'error', msg: 'Carte non possédée' });
     bt.picks[user.id] = ids;
+    this.prefetchQuizzes(ids);                                       // les questions des cartes choisies se préparent pendant que l'adversaire choisit
     if (bt.bot) { const bp = await this.botPicks(bt, user.id); if (!bp) { this.battles.delete(bt.id); return this.push(user.id, { t: 'error', msg: 'Le joueur simulé n’a pas trouvé d’équipe, réessaie' }); } bt.picks[bt.bot] = bp; }
     else this.push(user.id, { t: 'info', msg: 'Équipe validée, en attente de l’adversaire…' });
     if (bt.players.every(p => bt.picks[p])) await this.resolveBattle(bt);
@@ -192,6 +193,12 @@ export class Lobby {
     } catch { /* repli sur l'extrait déjà stocké */ }
     return out;
   }
+  async prefetchQuizzes(ids) {
+    try {
+      const rows = await cardRows(this.env, ids), texts = await this.articleTexts(rows);
+      await Promise.all(rows.map(c => aiQuestions(this.env, c, texts.get(c.id) || c.extract)));
+    } catch { /* tant pis : les règles prendront le relais */ }
+  }
   async resolveBattle(bt) {
     clearTimeout(bt.timer);
     const [a, b] = bt.players;
@@ -202,9 +209,10 @@ export class Lobby {
       this.articleTexts([...mine, ...theirs]),
       all(this.env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 30"),
     ]);
-    const qs = (card) => makeArticleQuestions(card, texts.get(card.id) || card.extract, { cards: pool }, Q_PER_CARD);
-    // qA : questions posées au joueur A, au sujet de la carte de B (et inversement) : 3 questions par carte, adaptées à l'article
-    bt.cards = mine.map((ca, i) => ({ a: ca, b: theirs[i], qA: qs(theirs[i]), qB: qs(ca) }));
+    const qs = card => battleQuestions(this.env, card, texts.get(card.id) || card.extract, { cards: pool }, Q_PER_CARD);
+    // qA : questions posées au joueur A, au sujet de la carte de B (et inversement) : 3 questions par carte, écrites par le modèle (sinon par les règles)
+    const qsA = await Promise.all(theirs.map(qs)), qsB = await Promise.all(mine.map(qs));
+    bt.cards = mine.map((ca, i) => ({ a: ca, b: theirs[i], qA: qsA[i], qB: qsB[i] }));
     bt.i = -1; bt.rounds = []; bt.wins = { [a]: 0, [b]: 0 }; bt.dmg = { [a]: 0, [b]: 0 };
     setTimeout(() => this.nextBattleRound(bt), 800);
   }
