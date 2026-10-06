@@ -690,3 +690,4 @@ button:has(>.ic){display:inline-flex;align-items:center;justify-content:center;g
 .switch input{height:28px}
 label:not(.switch)>input[type=checkbox]{height:22px}
 #adm-tabs button{padding:8px 11px;font-size:14px;min-height:0}
+#reveal .sum .sticky-bar{z-index:20}   /* le bouton Continuer passe au-dessus des étoiles et des pastilles « Nouveau » des cartes */
