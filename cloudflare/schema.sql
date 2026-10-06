@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   test_mode INTEGER NOT NULL DEFAULT 0,
   packs_opened INTEGER NOT NULL DEFAULT 0,
   is_bot INTEGER NOT NULL DEFAULT 0,      -- joueurs simulés qui animent le marché
+  is_admin INTEGER NOT NULL DEFAULT 0,    -- menu d'administration
   pack_ts INTEGER NOT NULL,
   duel_wins INTEGER NOT NULL DEFAULT 0,
   duel_losses INTEGER NOT NULL DEFAULT 0,
@@ -135,3 +136,21 @@ CREATE TABLE IF NOT EXISTS favorites (       -- cartes marquées d'une étoile
   ts INTEGER NOT NULL,
   PRIMARY KEY (user_id, card_id)
 );
+
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);   -- clés VAPID des notifications, etc.
+CREATE TABLE IF NOT EXISTS push_subs (        -- appareils abonnés aux notifications (un joueur peut en avoir plusieurs)
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_subs_user ON push_subs(user_id);
+CREATE TABLE IF NOT EXISTS push_msgs (        -- notifications en attente de lecture par le service worker
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  endpoint TEXT NOT NULL,                       -- appareil destinataire
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  tag TEXT,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_msgs_ep ON push_msgs(endpoint);

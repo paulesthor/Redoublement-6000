@@ -3,6 +3,7 @@
 import CFG from './config.js';
 import { one, all, run, st, placeholders, cardRows, userFromToken } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
+import { pushFor } from './push.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
 const AWAY_MAX = 60000;     // un joueur absent plus d'une minute en plein combat déclare forfait
@@ -24,6 +25,7 @@ export class Lobby {
     this.clients = new Map(); // userId -> Set<WebSocket>
     this.duels = new Map();
     this.battles = new Map();
+    this.hidden = new Map();  // userId -> true quand l'appli est en arrière-plan (écran verrouillé, autre appli) : on le notifie alors par push
     this.away = new Map();   // userId -> heure de la dernière déconnexion complète
     setInterval(() => this.broadcast({ t: 'ping' }), 30000); // garde les connexions ouvertes
   }
@@ -39,7 +41,8 @@ export class Lobby {
     const url = new URL(req.url);
     if (url.pathname === '/push') {                      // appelé par le Worker (notifications, rafraîchissements, hits)
       const { to, msg } = await req.json();
-      to ? this.push(to, msg) : this.broadcast(msg, msg.except ?? null);
+      if (to) { this.push(to, msg); if (!this.clients.has(to) || this.hidden.get(to)) await pushFor(this.env, to, msg); }
+      else this.broadcast(msg, msg.except ?? null);
       return new Response('ok');
     }
     if (url.pathname === '/online') return Response.json({ ids: [...this.clients.keys()] });
@@ -51,7 +54,7 @@ export class Lobby {
     server.accept();
     if (!this.clients.has(user.id)) this.clients.set(user.id, new Set());
     this.clients.get(user.id).add(server);
-    this.away.delete(user.id);
+    this.away.delete(user.id); this.hidden.delete(user.id);
     this.presence();
     this.sync(user.id);                                  // reprise d'une partie en cours après coupure ou retour sur l'appli
     server.addEventListener('message', ev => { this.onMessage(user, JSON.parse(ev.data)).catch(e => console.error(e)); });
@@ -66,12 +69,14 @@ export class Lobby {
   async onMessage(user, msg) {
     const mode = msg.mode === 'battle' ? 'battle' : 'quiz';
     if (msg.t === 'sync') return this.sync(user.id);
+    if (msg.t === 'vis') { this.hidden.set(user.id, !msg.v); return; }
     if ((msg.t === 'challenge' || msg.t === 'accept' || msg.t === 'challenge_bot') && this.gameOf(user.id)) return this.push(user.id, { t: 'info', msg: 'Tu es déjà dans une partie.' });
     if (msg.t === 'challenge') {
       const target = +msg.to;
       if (this.gameOf(target)) return this.push(user.id, { t: 'error', msg: 'Ce joueur est déjà en partie' });
       if (target === user.id || !this.clients.has(target)) return this.push(user.id, { t: 'error', msg: 'Joueur hors ligne' });
       this.push(target, { t: 'challenge', from: user.id, name: user.name, mode });
+      if (this.hidden.get(target)) await pushFor(this.env, target, { t: 'challenge', name: user.name });
       this.push(user.id, { t: 'info', msg: 'Défi envoyé.' });
     } else if (msg.t === 'accept') {
       const from = await one(this.env, 'SELECT id, name FROM users WHERE id = ?', +msg.from);

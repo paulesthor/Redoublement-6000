@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '0.3';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '0.4';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -78,18 +78,22 @@ async function auth(kind) {
   } catch (e) { $('#a-err').textContent = e.message; }
 }
 $('#a-login').onclick = () => auth('login'); $('#a-register').onclick = () => auth('register');
-function logout() { store.clear(); location.reload(); }
+async function logout() {
+  try { await Promise.race([api('/push/unsubscribe', {}), new Promise(r => setTimeout(r, 900))]); } catch { /* hors ligne : tant pis */ }   // cet appareil ne doit plus recevoir les notifications de ce compte
+  store.clear(); location.reload();
+}
 
 // ---------- websocket ----------
 function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws?token=' + token);
   ws.onmessage = e => onWs(JSON.parse(e.data));
-  ws.onopen = () => jlog('connexion temps réel ouverte');
+  ws.onopen = () => { jlog('connexion temps réel ouverte'); if (document.visibilityState !== 'visible') send({ t: 'vis', v: false }); };
   ws.onclose = () => { jlog('connexion temps réel coupée'); if (token) setTimeout(connect, 1500); };
 }
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   jlog(document.visibilityState === 'visible' ? 'retour sur l\'appli' : 'appli en arrière-plan');
+  send({ t: 'vis', v: document.visibilityState === 'visible' });                         // le serveur sait si on regarde l'écran : sinon il envoie une notification
   if (document.visibilityState !== 'visible') { hiddenAt = Date.now(); return; }
   if (!token || !me) return;
   const away = Date.now() - hiddenAt;
@@ -312,6 +316,7 @@ async function fillMissing(r) {
 }
 
 // ---------- vues ----------
+
 const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'duel', ach: 'duel', market: 'market', trades: 'market', friends: 'friends' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
@@ -874,6 +879,56 @@ document.fonts?.ready.then(() => fitLock());
 window.addEventListener('resize', fitLock); document.addEventListener('toggle', fitLock, true);
 const Q_PER_CARD_UI = 3;
 const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
+let adminTab = 'overview';
+views.admin = async v => {
+  if (!me.admin) { tab = 'packs'; return render(); }
+  const seg = [['overview', 'Aperçu'], ['users', 'Joueurs'], ['announce', 'Annonce'], ['tools', 'Outils']];
+  v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
+  $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
+  const adminBody = safe(async () => {
+    const box = $('#adm');
+    if (adminTab === 'overview') {
+      const o = await api('/admin/overview');
+      const rows = [['Joueurs', o.users], ['En ligne maintenant', o.online], ['Joueurs simulés', o.bots], ['Paquets ouverts', fmt(o.packs)], ['Cartes possédées', fmt(o.owned)], ['Cartes en base', fmt(o.cards)], ['Pièces en circulation', fmt(o.coins)],
+        ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['IA générées aujourd\'hui', `${o.aiToday} (quota ≈ 250 / jour)`], ['Version serveur', o.version]];
+      box.innerHTML = `<div class="admgrid">${rows.map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>`;
+    } else if (adminTab === 'users') {
+      const { users } = await api('/admin/users');
+      box.innerHTML = users.map(u => `<div class="admuser" data-id="${u.id}"><div class="admhead"><b>${esc(u.name)}</b>${u.admin ? ' <small>admin</small>' : ''}<span class="dot ${u.online ? 'on' : ''}"></span><small>${u.online ? 'en ligne' : ''}</small></div>
+        <p class="mut">${fmt(u.coins)} pièces · ${u.packs} paquets · ${u.cards} cartes · ${u.packs_opened} ouverts · ${u.wins}V/${u.losses}D · ${u.devices} appareil${u.devices > 1 ? 's' : ''} notifié${u.devices > 1 ? 's' : ''}</p>
+        <div class="admrow"><input type="number" inputmode="numeric" placeholder="± pièces" class="a-c"><input type="number" inputmode="numeric" placeholder="± paquets" class="a-p"><button class="a-give">Donner</button></div>
+        <div class="admrow"><button class="plain a-test">Mode test : ${u.test ? 'oui' : 'non'}</button><button class="plain a-pw">Nouveau mot de passe</button></div></div>`).join('');
+      box.onclick = safe(async e => {
+        const card = e.target.closest('.admuser'); if (!card) return; const id = +card.dataset.id, u = users.find(x => x.id === id);
+        if (e.target.closest('.a-give')) {
+          const coins = +card.querySelector('.a-c').value || 0, packs = +card.querySelector('.a-p').value || 0;
+          if (!coins && !packs) return toast('Indique des pièces et/ou des paquets');
+          await api('/admin/give', { user_id: id, coins, packs }); toast(`${u.name} : mis à jour`); adminBody();
+        } else if (e.target.closest('.a-test')) { await api('/admin/test-mode', { user_id: id, on: !u.test }); adminBody(); }
+        else if (e.target.closest('.a-pw')) {
+          const pw = prompt(`Nouveau mot de passe pour ${u.name} (il sera déconnecté) :`); if (!pw) return;
+          await api('/admin/password', { user_id: id, password: pw }); toast('Mot de passe changé');
+        }
+      });
+    } else if (adminTab === 'announce') {
+      box.innerHTML = `<p class="mut">Le message s'affiche en bulle chez les joueurs connectés et part en notification chez ceux qui l'ont activée.</p>
+        <textarea id="an-t" rows="3" maxlength="180" placeholder="Ex. : Nouvelle mise à jour disponible, rechargez l'appli !" style="width:100%"></textarea>
+        <label class="switch"><span>Envoyer aussi en notification</span><input type="checkbox" id="an-p" checked></label>
+        <div class="row"><button id="an-go">Envoyer à tous</button><button class="plain" id="an-me">Test sur moi</button></div>`;
+      $('#an-go').onclick = safe(async () => { const text = $('#an-t').value.trim(); if (!text) return toast('Écris un message'); const r = await api('/admin/announce', { text, push: $('#an-p').checked }); toast(`Envoyé (${r.push} notification${r.push > 1 ? 's' : ''})`); $('#an-t').value = ''; });
+      $('#an-me').onclick = safe(async () => { const r = await api('/push/test', {}); toast(r.sent ? 'Notification envoyée' : 'Aucun appareil abonné sur ton compte'); });
+    } else {
+      box.innerHTML = `<div class="panel"><b>Marché</b><p class="mut">Fait agir les joueurs simulés tout de suite (ventes, enchères).</p><button id="t-bots">Animer le marché</button></div>
+        <div class="panel"><b>Réserve de cartes</b><p class="mut">Prépare des cartes complétées (texte + photo) pour que les paquets s'ouvrent sans attente.</p><button id="t-res">Remplir la réserve</button></div>
+        <div class="panel"><b>Journal de l'appli</b><p class="mut">Les 40 derniers évènements sur cet appareil.</p><button class="plain" id="t-log">Afficher</button></div>`;
+      const act = (id, action, msg) => { $(id).onclick = safe(async () => { $(id).disabled = true; try { await api('/admin/run', { action }); toast(msg); } finally { $(id).disabled = false; } }); };
+      act('#t-bots', 'bots', 'Marché animé'); act('#t-res', 'reserve', 'Réserve remplie');
+      $('#t-log').onclick = () => { $('#adm').insertAdjacentHTML('beforeend', `<div class="jlog panel">${(JSON.parse(localStorage.getItem('wm_log') || '[]')).slice().reverse().map(([t, x]) => `<div><b>${hms(new Date(t))}</b> ${esc(x)}</div>`).join('') || 'Vide'}</div>`); $('#t-log').remove(); };
+    }
+  });
+  await adminBody();
+};
+
 const render = safe(async () => {
   clearInterval(tick); markTab();
   if (tab === 'duel' && game) return renderGame();
@@ -911,6 +966,45 @@ async function playerSheet(id) {
   $('#pl-ach')?.addEventListener('click', () => { close(); tab = 'ach'; render(); });
 }
 
+// ---------- notifications push ----------
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const u8 = b64 => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+/** 'ok' : actif · 'off' : possible mais pas activé · 'denied' : refusé dans les réglages · 'install' : iPhone, ajouter d'abord à l'écran d'accueil · 'none' : impossible ici */
+async function pushState() {
+  if (isIOS && !standalone()) return 'install';
+  if (!pushSupported()) return 'none';
+  if (Notification.permission === 'denied') return 'denied';
+  try { const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(no, 3000))]); return Notification.permission === 'granted' && await reg.pushManager.getSubscription() ? 'ok' : 'off'; } catch { return 'none'; }
+}
+async function enablePush() {
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error('Notifications refusées : autorise-les dans les réglages du téléphone');
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(cfg.vapid) });
+  await api('/push/subscribe', { endpoint: sub.endpoint });
+}
+async function disablePush() {
+  const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+  if (sub) { await api('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+}
+/** Au démarrage : réattache cet appareil au compte connecté (changement de compte, abonnement renouvelé) et propose d'activer si ce n'est pas fait. */
+async function pushStartup() {
+  try {
+    const st = await pushState();
+    if (st === 'ok') { const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription(); await api('/push/subscribe', { endpoint: sub.endpoint }); return; }
+    if ((st !== 'off' && st !== 'install') || localStorage.getItem('wm_push_ask') === '1') return;
+    const bar = document.createElement('div'); bar.className = 'pushbar';
+    bar.innerHTML = st === 'install'
+      ? `<p><b>Reçois les notifications</b><br>Ajoute d'abord l'appli à l'écran d'accueil : bouton Partager, puis « Sur l'écran d'accueil », et rouvre-la depuis l'icône.</p><button class="plain" id="pb-no">OK</button>`
+      : `<p><b>Active les notifications</b><br>Enchères dépassées, défis, demandes d'amis… même téléphone verrouillé.</p><div><button id="pb-yes">Activer</button><button class="plain" id="pb-no">Plus tard</button></div>`;
+    $('#app').prepend(bar);
+    const close = () => { try { localStorage.setItem('wm_push_ask', '1'); } catch { /* stockage indisponible */ } bar.remove(); };
+    $('#pb-no').onclick = close;
+    if (st === 'off') $('#pb-yes').onclick = async () => { try { await enablePush(); toast('Notifications activées'); } catch (e) { toast(e.message); } close(); };
+  } catch { /* pas de notifications ici */ }
+}
 function profileSheet() {
   const m = $('#modal');
   m.hidden = false;
@@ -918,6 +1012,8 @@ function profileSheet() {
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
     <label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>
     <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
+    <label class="switch" id="pf-pushrow"><span>Notifications<small id="pf-pushtxt">Vérification…</small></span><input type="checkbox" id="pf-push" disabled></label>
+    ${me.admin ? '<button class="plain" id="pf-admin" style="width:100%;margin-top:8px">Administration</button>' : ''}
     <p class="build" id="build">Build ${BUILD} · chargé à ${hms(LOADED)}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p>
     <div class="row" style="margin-top:18px"><button class="plain" id="pf-me" style="flex:1">Mon profil</button><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
   $('#pf-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
@@ -929,6 +1025,13 @@ function profileSheet() {
     $('#jl-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   };
   $('#pf-me').onclick = () => playerSheet(me.id);
+  if (me.admin) $('#pf-admin').onclick = () => { m.hidden = true; m.innerHTML = ''; tab = 'admin'; render(); };
+  pushState().then(st => {
+    const t = $('#pf-pushtxt'), c = $('#pf-push'); if (!t) return;
+    t.textContent = { ok: 'Activées sur cet appareil', off: 'Enchères, défis, amis… même écran verrouillé', denied: 'Bloquées : autorise-les dans les réglages du téléphone', install: 'Ajoute d\'abord l\'appli à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil)', none: 'Non disponibles sur ce navigateur' }[st];
+    c.checked = st === 'ok'; c.disabled = !(st === 'ok' || st === 'off');
+    c.onchange = async () => { c.disabled = true; try { if (c.checked) { await enablePush(); toast('Notifications activées'); api('/push/test', {}).catch(() => {}); } else { await disablePush(); toast('Notifications désactivées'); } } catch (e) { c.checked = !c.checked; toast(e.message); } c.disabled = false; };
+  });
   $('#pf-snd').onchange = e => { try { localStorage.setItem('wm_sound', e.target.checked ? '1' : '0'); } catch { /* stockage indisponible */ } };
   $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
@@ -955,6 +1058,7 @@ async function start() {
   setTimeout(() => ['/album', '/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500); schedulePrefetch();   // pré-chargement des onglets suivants
   let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
   if (pending) addByCode(pending);
+  setTimeout(pushStartup, 2500);
 }
 const urlCode = new URLSearchParams(location.search).get('friend');
 if (urlCode) { try { localStorage.setItem('wm_friend_code', urlCode); } catch { /* stockage indisponible */ } history.replaceState(null, '', location.pathname); }

@@ -213,7 +213,7 @@ th{font-weight:600;color:var(--mut);font-size:12px}td.num,th.num{text-align:righ
 .sticky-bar{position:sticky;top:0;z-index:4;padding:8px 0;background:linear-gradient(var(--bg) 70%,transparent)}
 
 /* toasts, bandeau, modales */
-#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:95;align-items:center;pointer-events:none}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:130;align-items:center;pointer-events:none}
 #toast div{background:#1d1d29f2;border:1px solid var(--line2);backdrop-filter:blur(10px);padding:10px 18px;border-radius:13px;box-shadow:0 10px 30px #000a;animation:toast-in .3s var(--ease) both}
 @keyframes toast-in{from{opacity:0;transform:translateY(10px)}}
 #banner{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top));transform:translateX(-50%);z-index:110;width:min(94vw,430px);background:linear-gradient(180deg,#1b1b26,#14141d);border:1px solid var(--line2);border-radius:16px;padding:13px 17px;box-shadow:0 14px 44px #000b,0 0 0 1px #ffffff10;cursor:pointer;animation:banner-in .4s var(--ease) both}
@@ -620,3 +620,14 @@ html.fit,html.fit body{overflow:hidden;overscroll-behavior:none}
 .bres{border-radius:10px;padding:8px 12px;margin:-6px 0 8px;font-size:13.5px;border:1px solid var(--line2);background:var(--panel)}
 .bres.win{background:#14301f;border-color:#3e8f58}.bres.lose{background:#341a1d;border-color:#b0524a}
 #fbody{min-height:0}
+
+/* notifications + admin */
+.pushbar{position:sticky;top:0;z-index:30;margin:8px 12px;padding:10px 12px;border:1px solid var(--line2);border-radius:14px;background:var(--panel2);display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:0 6px 24px #0008}
+.pushbar p{margin:0;font-size:13px;line-height:1.35;color:var(--mut)}.pushbar p b{color:var(--fg)}.pushbar>div{display:flex;gap:6px;flex-shrink:0}.pushbar button{padding:8px 12px;font-size:13px}
+.admgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.admgrid>div{background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.admgrid span{font-size:11.5px;color:var(--mut)}.admgrid b{font-family:var(--f-disp);font-size:17px;overflow-wrap:anywhere}
+.admuser{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:12px;margin-bottom:10px}
+.admhead{display:flex;align-items:center;gap:6px}.admhead small{color:var(--mut)}.dot{width:8px;height:8px;border-radius:50%;background:#444;margin-left:auto}.dot.on{background:#4ec97b}
+.admuser .mut{margin:4px 0 8px;font-size:12.5px}.admrow{display:flex;gap:6px;margin-top:6px}.admrow input{flex:1;min-width:0}.admrow button{white-space:nowrap;padding:9px 12px;font-size:13px}
+/* les fiches de carte s'ouvrent aussi par-dessus le résumé d'un tirage (z-index de #reveal : 100) */
+#modal{z-index:120}

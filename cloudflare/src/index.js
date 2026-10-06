@@ -3,6 +3,7 @@ import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json,
   userFromToken, hashPw, randomHex, notify, searchBucket } from './util.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
+import { getVapid, pushTo, wake, pull } from './push.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -209,7 +210,7 @@ async function refreshPacks(env, u) {
 }
 const publicUser = u => ({
   id: u.id, name: u.name, coins: u.coins, packs: u.pack_stock, wins: u.duel_wins, losses: u.duel_losses,
-  test: !!u.test_mode, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
+  test: !!u.test_mode, admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
 });
 
 async function finishPack(env, ctx, user, drawn) {
@@ -505,7 +506,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
     rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: meta.n,
-    version: CFG.VERSION, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, ach: ACH.map(a => ({ k: a.k, t: a.t })),
+    vapid: (await getVapid(env)).pub, version: CFG.VERSION, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, ach: ACH.map(a => ({ k: a.k, t: a.t })),
   };
 }, false);
 
@@ -826,6 +827,77 @@ route('POST', '/api/friends/remove', async ({ env, user, body }) => {
   return { ok: true };
 });
 route('POST', '/api/friends/seen', async ({ env, user }) => { await run(env, 'UPDATE friends SET seen = 1 WHERE user_id = ?', user.id); return { ok: true }; });
+
+
+// ---------- notifications push ----------
+route('POST', '/api/push/subscribe', async ({ env, user, body }) => {
+  const ep = String(body.endpoint || '');
+  if (!/^https:\/\//.test(ep) || ep.length > 1000) bad('Abonnement invalide');
+  await run(env, 'INSERT INTO push_subs (endpoint, user_id, ts) VALUES (?,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, ts = excluded.ts', ep, user.id, now());
+  return { ok: true };
+});
+route('POST', '/api/push/unsubscribe', async ({ env, user, body }) => {
+  await run(env, 'DELETE FROM push_subs WHERE user_id = ?' + (body.endpoint ? ' AND endpoint = ?' : ''), ...(body.endpoint ? [user.id, String(body.endpoint)] : [user.id]));
+  return { ok: true };
+});
+route('POST', '/api/push/test', async ({ env, user }) => ({ sent: await pushTo(env, user.id, 'Clodo Wiki', 'Les notifications fonctionnent !', 'test') }));
+// lu par le service worker quand un push arrive (l'endpoint de l'appareil sert d'identifiant)
+route('POST', '/api/push/pull', async ({ env, body }) => ({ msgs: await pull(env, String(body.endpoint || '')) }), false);
+
+// ---------- administration (réservée aux comptes is_admin) ----------
+const admin = fn => async ctx => { if (!ctx.user.is_admin) bad('Réservé à l’administrateur', 403); return fn(ctx); };
+const onlineIds = async env => { try { return (await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids; } catch { return []; } };
+route('GET', '/api/admin/overview', admin(async ({ env }) => {
+  const day = new Date(); day.setUTCHours(0, 0, 0, 0);
+  const n = async (sql, ...p) => (await one(env, sql, ...p)).n;
+  const [users, bots, cards, owned, auctions, packs, coins, subs, quizzes, aiToday, reserve, bids] = await Promise.all([
+    n('SELECT COUNT(*) n FROM users WHERE is_bot = 0'), n('SELECT COUNT(*) n FROM users WHERE is_bot = 1'), n('SELECT COUNT(*) n FROM cards'),
+    n('SELECT COALESCE(SUM(qty),0) n FROM inventory'), n("SELECT COUNT(*) n FROM auctions WHERE status = 'open'").catch(() => 0), n('SELECT COALESCE(SUM(packs_opened),0) n FROM users'),
+    n('SELECT COALESCE(SUM(coins),0) n FROM users WHERE is_bot = 0'), n('SELECT COUNT(*) n FROM push_subs'), n('SELECT COUNT(*) n FROM quizzes'),
+    n('SELECT COUNT(*) n FROM quizzes WHERE ts >= ?', day.getTime()), n('SELECT COUNT(*) n FROM reserve'), n('SELECT COUNT(*) n FROM bids'),
+  ]);
+  return { users, bots, cards, owned, auctions, packs, coins, subs, quizzes, aiToday, reserve, bids, online: (await onlineIds(env)).length, version: CFG.VERSION };
+}));
+route('GET', '/api/admin/users', admin(async ({ env }) => {
+  const online = new Set(await onlineIds(env));
+  const rows = await all(env, `SELECT u.id, u.name, u.coins, u.pack_stock packs, u.packs_opened, u.duel_wins wins, u.duel_losses losses, u.test_mode test, u.is_admin admin, u.created,
+    (SELECT COUNT(*) FROM inventory i WHERE i.user_id = u.id) cards, (SELECT COUNT(*) FROM push_subs p WHERE p.user_id = u.id) devices FROM users u WHERE u.is_bot = 0 ORDER BY u.id`);
+  return { users: rows.map(r => ({ ...r, online: online.has(r.id) })) };
+}));
+route('POST', '/api/admin/give', admin(async ({ env, ctx, body }) => {
+  const id = +body.user_id, coins = Math.trunc(+body.coins || 0), packs = Math.trunc(+body.packs || 0);
+  const u = await one(env, 'SELECT id, name, coins, pack_stock FROM users WHERE id = ? AND is_bot = 0', id);
+  if (!u) bad('Joueur introuvable', 404);
+  if (Math.abs(coins) > 1e7 || Math.abs(packs) > 1e4) bad('Quantité trop grande');
+  await run(env, 'UPDATE users SET coins = MAX(0, coins + ?), pack_stock = MAX(0, pack_stock + ?) WHERE id = ?', coins, packs, id);
+  const parts = [coins && `${coins > 0 ? '+' : ''}${coins} pièces`, packs && `${packs > 0 ? '+' : ''}${packs} paquets`].filter(Boolean);
+  if (parts.length && (coins > 0 || packs > 0)) notify(env, ctx, { t: 'notify', msg: `Cadeau de l'admin : ${parts.join(' et ')}` }, id);
+  return { ok: true, name: u.name };
+}));
+route('POST', '/api/admin/test-mode', admin(async ({ env, body }) => { await run(env, 'UPDATE users SET test_mode = ? WHERE id = ? AND is_bot = 0', body.on ? 1 : 0, +body.user_id); return { ok: true }; }));
+route('POST', '/api/admin/password', admin(async ({ env, body }) => {
+  const pw = String(body.password || ''); if (pw.length < 4) bad('Mot de passe trop court (4 min.)');
+  const u = await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', +body.user_id); if (!u) bad('Joueur introuvable', 404);
+  const salt = randomHex(16);
+  await env.DB.batch([st(env, 'UPDATE users SET salt = ?, hash = ? WHERE id = ?', salt, await hashPw(pw, salt), u.id), st(env, 'DELETE FROM sessions WHERE user_id = ?', u.id)]);   // le joueur devra se reconnecter
+  return { ok: true, name: u.name };
+}));
+route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
+  const text = String(body.text || '').trim().slice(0, 180); if (!text) bad('Message vide');
+  notify(env, ctx, { t: 'notify', msg: text });
+  let sent = 0;
+  if (body.push !== false) {
+    const ids = (await all(env, 'SELECT DISTINCT user_id FROM push_subs LIMIT 20')).map(r => r.user_id);   // 20 joueurs max par envoi (limite de requêtes d'un Worker)
+    for (const uid of ids) sent += await pushTo(env, uid, 'Clodo Wiki', text, 'announce').catch(() => 0);
+  }
+  return { ok: true, push: sent };
+}));
+route('POST', '/api/admin/run', admin(async ({ env, ctx, body }) => {
+  if (body.action === 'bots') await botTick(env, ctx, true);
+  else if (body.action === 'reserve') await refillReserve(env, 10);
+  else bad('Action inconnue');
+  return { ok: true };
+}));
 
 // ---------- point d'entrée ----------
 async function api(req, env, ctx, url) {
