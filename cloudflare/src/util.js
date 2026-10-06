@@ -17,6 +17,10 @@ export function stats(title, rarity, shiny = false) {
 export const urlOf = title => 'https://fr.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_'));
 export const caseSql = (col, map) => `CASE ${col} ${CFG.RARITIES.map(r => `WHEN '${r}' THEN ${map[r]}`).join(' ')} END`;
 
+/** Limite gratuite de la base atteinte (5 millions de lectures / 100 000 écritures par jour) : D1 renvoie alors une erreur jusqu'à minuit UTC. */
+export const isQuotaError = e => /D1_ERROR|D1 |SQLITE|database|base de donn/i.test(String(e?.message ?? e)) && /limit|quota|exceed|free tier|billing/i.test(String(e?.message ?? e));
+export const nextResetMs = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return d.getTime(); };
+export const QUOTA_MSG = 'Limite de requêtes atteinte pour aujourd’hui. Le jeu revient automatiquement à minuit UTC (2 h du matin en France).';
 export class HttpError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 export const bad = (msg, code = 400) => { throw new HttpError(code, msg); };
 export const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });

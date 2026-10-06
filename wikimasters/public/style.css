@@ -696,3 +696,6 @@ label:not(.switch)>input[type=checkbox]{height:22px}
 .bwait span{font-size:13px;color:#e8d3a2}
 
 .jlog .bad{color:#ff8a80;font-weight:700}
+
+.quotabar{position:fixed;left:12px;right:12px;top:calc(8px + env(safe-area-inset-top));z-index:400;display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:14px;border:1px solid #b0524a;background:#341a1d;box-shadow:0 10px 30px #000a}
+.quotabar b{color:#ffb4ab}.quotabar span{font-size:13px;color:#e8c9c5;line-height:1.35}

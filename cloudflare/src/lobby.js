@@ -1,7 +1,7 @@
 // Durable Object unique : WebSocket de tous les joueurs (présence, défis, duels de quiz, combats de cartes, notifications).
 // L'état des parties en cours vit en mémoire ; seuls les résultats (pièces, victoires) sont écrits dans D1.
 import CFG from './config.js';
-import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool } from './util.js';
+import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
 
@@ -77,7 +77,7 @@ export class Lobby {
     this.trace(bt, 'erreur', e?.message ?? e);
     if (bt.over) return;
     bt.over = true; bt.gen++; this.battles.delete(bt.id); this.forget(bt);
-    for (const p of bt.players) this.push(p, { t: 'bf_error', id: bt.id });
+    for (const p of bt.players) this.push(p, { t: 'bf_error', id: bt.id, quota: isQuotaError(e) });
   }
 
   push(uid, msg) {
@@ -107,7 +107,7 @@ export class Lobby {
     this.away.delete(user.id); this.hidden.delete(user.id);
     this.presence();
     this.sync(user.id);                                  // reprise d'une partie en cours après coupure ou retour sur l'appli
-    server.addEventListener('message', ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } this.onMessage(user, m).catch(e => console.error(e)); });
+    server.addEventListener('message', ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } this.onMessage(user, m).catch(e => { console.error(e); this.push(user.id, isQuotaError(e) ? { t: 'error', msg: QUOTA_MSG, quota: true, until: nextResetMs() } : { t: 'error', msg: 'Erreur du serveur, réessaie.' }); }); });
     server.addEventListener('close', () => {
       const s = this.clients.get(user.id); s?.delete(server);
       if (s && !s.size) { this.clients.delete(user.id); this.away.set(user.id, now()); }

@@ -1,6 +1,6 @@
 import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
-  userFromToken, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool } from './util.js';
+  userFromToken, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -1101,6 +1101,7 @@ export default {
       return env.ASSETS.fetch(req);
     } catch (e) {
       if (!(e instanceof HttpError)) console.error(e);
+      if (isQuotaError(e)) return json({ error: QUOTA_MSG, quota: true, until: nextResetMs() }, 503);   // message clair quand la limite gratuite de la base est atteinte
       return json({ error: e instanceof HttpError ? e.message : 'Erreur serveur' }, e.code || 500);
     }
   },

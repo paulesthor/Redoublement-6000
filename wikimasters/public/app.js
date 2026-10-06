@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '2.4';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '2.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -62,10 +62,20 @@ async function fetchJson(path, body) {
   const raw = await r.text();
   let j = {}; try { j = JSON.parse(raw); } catch { /* réponse vide */ }
   if (r.status === 401 && token) logout();
-  if (!r.ok) { const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
+  if (!r.ok) { if (j.quota) showQuota(j.until); const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
+  if (quotaBar && Date.now() - quotaAt > 8000) hideQuota();   // la base répond à nouveau (on laisse 8 s après la dernière erreur pour ne pas clignoter)
   if (!body && SWR.test(path)) gcache.set(path, { t: Date.now(), raw });
   return { j, raw };
 }
+// ---------- limite gratuite de la base atteinte ----------
+let quotaBar = null, quotaTimer = null, quotaAt = 0;
+function showQuota(until) {
+  quotaAt = Date.now();
+  if (!quotaBar) { quotaBar = document.createElement('div'); quotaBar.className = 'quotabar'; document.body.append(quotaBar); }
+  const paint = () => { const s = Math.max(0, Math.round(((until || Date.now()) - Date.now()) / 60000)); quotaBar.innerHTML = `<b>Limite de requêtes atteinte pour aujourd'hui</b><span>Le jeu revient tout seul à minuit UTC (2 h du matin en France)${until ? `, dans environ ${Math.floor(s / 60)} h ${String(s % 60).padStart(2, '0')} min` : ''}. Rien n'est perdu.</span>`; };
+  paint(); clearInterval(quotaTimer); quotaTimer = setInterval(paint, 30000);
+}
+function hideQuota() { quotaBar?.remove(); quotaBar = null; clearInterval(quotaTimer); }
 function toast(msg) { const d = document.createElement('div'); d.textContent = msg; $('#toast').append(d); setTimeout(() => d.remove(), 3500); }
 const safe = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
 const fmt = n => (n ?? 0).toLocaleString('fr-FR');
@@ -76,7 +86,7 @@ async function auth(kind) {
   try {
     const r = await fetch('/api/' + kind, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: $('#a-name').value, password: $('#a-pw').value, invite: $('#a-invite').value }) });
-    const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    const j = await r.json(); if (!r.ok) { if (j.quota) showQuota(j.until); throw new Error(j.error); }
     token = j.token; store.set(token); start();
   } catch (e) { $('#a-err').textContent = e.message; }
 }
@@ -137,7 +147,7 @@ const send = o => ws?.readyState === 1 && ws.send(JSON.stringify(o));
 function onWs(m) {
   if (m.t === 'online') { online = new Set(m.ids); if (tab === 'duel' && !game) render(); }
   else if (m.t === 'notify' || m.t === 'info') { toast(m.msg); refreshMe(); }
-  else if (m.t === 'error') toast(m.msg);
+  else if (m.t === 'error') { if (m.quota) showQuota(m.until); toast(m.msg); }
   else if (m.t === 'friend') onFriend(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
   else if (m.t === 'refresh') { gcache.clear(); if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
@@ -690,7 +700,7 @@ function gameEvent(m) {
     if (game && game.view !== 'end') { game = null; toast('La partie a été interrompue (le serveur a redémarré). Aucune perte.'); render(); }
     return;
   }
-  if (m.t === 'bf_error') { game = null; toast('Erreur du serveur pendant le combat. Aucune perte : relance un combat.'); render(); return; }
+  if (m.t === 'bf_error') { game = null; if (m.quota) showQuota(Date.now() + 1); toast(m.quota ? 'Limite de requêtes atteinte pour aujourd\'hui : le combat est annulé, sans perte.' : 'Erreur du serveur pendant le combat. Aucune perte : relance un combat.'); render(); return; }
   lastEvt = Date.now();
   tab = 'duel'; markTab();
   const t = m.time;                                                // `time` = temps restant (rejeu après reconnexion), `full` = durée totale pour la barre
