@@ -19,7 +19,16 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '0.1';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '0.2';   // numéro de build de l'interface (affiché en bas du profil)
+// journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
+const LOADED = new Date();
+const hms = d => d.toLocaleTimeString('fr-FR');
+function jlog(txt) { try { const l = JSON.parse(localStorage.getItem('wm_log') || '[]'); l.push([Date.now(), txt]); localStorage.setItem('wm_log', JSON.stringify(l.slice(-40))); } catch { /* stockage indisponible */ } }
+{ const nav = performance.getEntriesByType?.('navigation')?.[0]; jlog(`chargement de la page (${nav?.type || '?'}${nav?.transferSize === 0 ? ', depuis le cache' : ''}) — build ${BUILD}`); }
+window.addEventListener('error', e => jlog('erreur : ' + String(e.message).slice(0, 90)));
+window.addEventListener('unhandledrejection', e => jlog('promesse rejetée : ' + String(e.reason?.message || e.reason).slice(0, 90)));
+window.addEventListener('pageshow', e => { if (e.persisted) jlog('page restaurée depuis le cache du navigateur'); });
+navigator.serviceWorker?.addEventListener('controllerchange', () => jlog('nouvelle version installée (service worker)'));
 let token = store.get(), me = null, cfg = null, tab = 'packs', ws = null, online = new Set();
 let game = null; // duel de quiz ou combat en cours
 let tick, lastPack = null;
@@ -75,12 +84,17 @@ function logout() { store.clear(); location.reload(); }
 function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws?token=' + token);
   ws.onmessage = e => onWs(JSON.parse(e.data));
-  ws.onclose = () => { if (token) setTimeout(connect, 1500); };
+  ws.onopen = () => jlog('connexion temps réel ouverte');
+  ws.onclose = () => { jlog('connexion temps réel coupée'); if (token) setTimeout(connect, 1500); };
 }
+let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible' || !token || !me) return;
+  jlog(document.visibilityState === 'visible' ? 'retour sur l\'appli' : 'appli en arrière-plan');
+  if (document.visibilityState !== 'visible') { hiddenAt = Date.now(); return; }
+  if (!token || !me) return;
+  const away = Date.now() - hiddenAt;
   if (!ws || ws.readyState > 1) connect();                  // la connexion a été coupée en arrière-plan
-  refreshMe().then(() => { if (!game) render(); }).catch(() => {});
+  refreshMe().then(() => { if (!game && away > 30000) render(); }).catch(() => {});   // pas de reconstruction de l'écran pour un simple aller-retour rapide
 });
 const send = o => ws?.readyState === 1 && ws.send(JSON.stringify(o));
 function onWs(m) {
@@ -314,7 +328,7 @@ const views = {
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
     v.innerHTML = `<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
-      <div class="packart" id="packart">${packSvg('full')}</div>
+      <div class="packart" id="packart">${packSvg('full', { anim: false })}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button>
       <div class="stock"><div class="pips">${Array.from({ length: 10 }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
         <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''} · prochain dans <b id="cd"></b>`}</p></div>
@@ -807,9 +821,8 @@ function labelTables(root) {
 }
 // Page qui tient dans l'écran : on verrouille le défilement (plus de rebond ni de ligne cachée). Se recalcule dès que la hauteur change.
 function fitLock() {
-  const el = document.documentElement;
-  el.classList.remove('fit');
-  el.classList.toggle('fit', !game && el.scrollHeight <= innerHeight + 1);
+  const el = document.documentElement, fits = !game && el.scrollHeight <= innerHeight + 1;
+  if (fits !== el.classList.contains('fit')) el.classList.toggle('fit', fits);   // pas de bascule inutile (elle faisait re-calculer la mise en page)
 }
 if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => fitLock()); ro.observe(document.querySelector('#view')); ro.observe(document.querySelector('#app')); }
 document.fonts?.ready.then(() => fitLock());
@@ -860,10 +873,16 @@ function profileSheet() {
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
     <label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>
     <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
-    <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p>
+    <p class="build" id="build">Build ${BUILD} · chargé à ${hms(LOADED)}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p>
     <div class="row" style="margin-top:18px"><button class="plain" id="pf-me" style="flex:1">Mon profil</button><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
   $('#pf-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   $('#pf-out').onclick = logout;
+  let taps = 0; $('#build').onclick = () => {
+    if (++taps < 5) return; taps = 0;
+    let l = []; try { l = JSON.parse(localStorage.getItem('wm_log') || '[]'); } catch { /* vide */ }
+    m.innerHTML = `<div><h2>Journal</h2><p class="mut" style="margin:0 0 8px">Build ${BUILD} · chargé à ${hms(LOADED)}</p><div class="jlog">${l.slice().reverse().map(([t, x]) => `<div><b>${hms(new Date(t))}</b> ${esc(x)}</div>`).join('') || 'Vide'}</div><div class="row"><button class="plain" id="jl-close">Fermer</button></div></div>`;
+    $('#jl-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
+  };
   $('#pf-me').onclick = () => playerSheet(me.id);
   $('#pf-snd').onchange = e => { try { localStorage.setItem('wm_sound', e.target.checked ? '1' : '0'); } catch { /* stockage indisponible */ } };
   $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
