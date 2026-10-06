@@ -69,9 +69,19 @@ export async function tryModel(env, model, card, text) {
 }
 let backoffUntil = 0;     // quota épuisé ou modèle saturé : on laisse la main aux règles quelques minutes
 const lastError = { msg: null };
+// Mistral (le plus fin, ~39 neurons par article) tant qu'on en a généré moins de MISTRAL_PER_DAY aujourd'hui ; ensuite Llama 8B (~15 neurons, 2,6 fois plus d'articles par jour).
+const MISTRAL_PER_DAY = 120;
+let mistralCount = { n: 0, at: 0 };
+async function modelOrder(env) {
+  if (Date.now() - mistralCount.at > 60000) {
+    const day = new Date(); day.setUTCHours(0, 0, 0, 0);
+    try { mistralCount = { n: (await env.DB.prepare("SELECT COUNT(*) n FROM quizzes WHERE model LIKE '%mistral%' AND ts >= ?").bind(day.getTime()).first()).n, at: Date.now() }; } catch { mistralCount = { n: 0, at: Date.now() }; }
+  }
+  return mistralCount.n < MISTRAL_PER_DAY ? MODELS : [...MODELS].reverse();
+}
 async function generate(env, card, text) {
   if (!env.AI || Date.now() < backoffUntil || env.AI_QUIZ === '0') return null;
-  for (const model of MODELS) {
+  for (const model of await modelOrder(env)) {
     try {
       const out = await env.AI.run(model, { messages: buildMessages(card.title, text), max_tokens: 1200, temperature: .5 });
       const raw = typeof out === 'string' ? out : (out?.response ?? out?.result?.response ?? out?.choices?.[0]?.message?.content ?? out);
@@ -94,7 +104,7 @@ export async function aiQuestions(env, card, text) {
   } catch { /* table absente : on génère quand même */ }
   const g = await generate(env, card, text);
   if (!g) return [];
-  try { await env.DB.prepare('INSERT OR REPLACE INTO quizzes (card_id, questions, model, ts) VALUES (?,?,?,?)').bind(card.id, JSON.stringify(g.qs), g.model, Date.now()).run(); } catch { /* pas grave */ }
+  try { await env.DB.prepare('INSERT OR REPLACE INTO quizzes (card_id, questions, model, ts) VALUES (?,?,?,?)').bind(card.id, JSON.stringify(g.qs), g.model, Date.now()).run(); if (/mistral/.test(g.model)) mistralCount.n++; } catch { /* pas grave */ }
   return g.qs;
 }
 export const lastAiError = () => lastError.msg;
