@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '0.2';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '0.3';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -93,7 +93,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') { hiddenAt = Date.now(); return; }
   if (!token || !me) return;
   const away = Date.now() - hiddenAt;
-  if (!ws || ws.readyState > 1) connect();                  // la connexion a été coupée en arrière-plan
+  if (!ws || ws.readyState > 1) connect();                  // la connexion a été coupée en arrière-plan (le serveur renvoie alors l'état de la partie)
+  else send({ t: 'sync' });                                   // connexion encore ouverte mais peut-être sourde : on redemande l'état de la partie
   refreshMe().then(() => { if (!game && away > 30000) render(); }).catch(() => {});   // pas de reconstruction de l'écran pour un simple aller-retour rapide
 });
 const send = o => ws?.readyState === 1 && ws.send(JSON.stringify(o));
@@ -111,7 +112,7 @@ function onWs(m) {
     $('#ok').onclick = () => { send({ t: 'accept', from: m.from, mode: m.mode }); $('#modal').hidden = true; };
     $('#no').onclick = () => { send({ t: 'decline', from: m.from }); $('#modal').hidden = true; };
   }
-  else if (/^(duel|battle|bf_)|^(question|reveal)$/.test(m.t)) gameEvent(m);
+  else if (/^(duel|battle|bf_|game_)|^(question|reveal)$/.test(m.t)) gameEvent(m);
 }
 
 
@@ -594,17 +595,29 @@ const views = {
 };
 
 // ---------- quiz & combat en cours ----------
+let lastEvt = 0;
 function gameEvent(m) {
+  if (m.t === 'game_none') {                                       // le serveur n'a plus (ou pas) de partie pour moi
+    if (game && game.view !== 'end') { game = null; toast('La partie est terminée.'); render(); }
+    return;
+  }
+  lastEvt = Date.now();
   tab = 'duel'; markTab();
-  if (m.t === 'duel_start') game = { kind: 'quiz', id: m.id, names: m.names, score: {}, view: 'wait' };
-  else if (m.t === 'question') game = { ...game, view: 'q', q: m, picked: null, reveal: null, end: Date.now() + m.time };
+  const t = m.time;                                                // `time` = temps restant (rejeu après reconnexion), `full` = durée totale pour la barre
+  if (m.t === 'duel_start') { if (!(game && game.id === m.id && game.kind === 'quiz')) game = { kind: 'quiz', id: m.id, names: m.names, score: {}, view: 'wait' }; }
+  else if (m.t === 'question') game = { ...game, view: 'q', q: { ...m, time: m.full ?? t }, picked: m.picked ?? null, reveal: null, end: Date.now() + t };
   else if (m.t === 'reveal') { game.reveal = m; game.score = m.score; }
   else if (m.t === 'duel_end') { game = { ...game, view: 'end', result: m }; refreshMe(); }
-  else if (m.t === 'battle_start') game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [] };
-  else if (m.t === 'bf_start') game = { kind: 'fight', id: m.id, names: m.names, view: 'fight', f: { ...m, phase: 'intro' } };
-  else if (m.t === 'bf_turn') Object.assign(game.f, { turn: m.turn, attacker: m.attacker, defender: m.defender, left: m.left, hp: m.hp, phase: 'pick', card: null, q: null, res: null, picked: null, summary: null, end: Date.now() + m.time, time: m.time });
+  else if (m.t === 'battle_start') { if (!(game && game.id === m.id && game.view === 'pick')) game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [] }; }
+  else if (m.t === 'battle_wait') game = { ...game, kind: 'battle', id: m.id, view: 'wait', waitMsg: m.msg };
+  else if (m.t === 'battle_prep') game = { ...game, view: 'wait', waitMsg: 'Préparation des questions…' };
+  else if (m.t === 'bf_start') {
+    game = { kind: 'fight', id: m.id, names: m.names, view: 'fight', f: { ...m, phase: 'intro' } };
+    for (const c of Object.values(m.deck).flat()) if (c.image) new Image().src = c.image;   // photos déjà chargées quand les cartes apparaissent
+  }
+  else if (m.t === 'bf_turn') Object.assign(game.f, { turn: m.turn, attacker: m.attacker, defender: m.defender, left: m.left, hp: m.hp, phase: 'pick', card: null, q: null, res: null, picked: null, sent: false, summary: null, end: Date.now() + t, time: m.full ?? t });
   else if (m.t === 'bf_card') Object.assign(game.f, { card: m.card, hp: m.hp, phase: 'card' });
-  else if (m.t === 'bf_q') Object.assign(game.f, { q: m, picked: null, res: null, phase: 'q', end: Date.now() + m.time, time: m.time, hp: m.hp });
+  else if (m.t === 'bf_q') Object.assign(game.f, { q: m, picked: null, sent: false, res: null, phase: 'q', end: Date.now() + t, time: m.full ?? t, hp: m.hp });
   else if (m.t === 'bf_picked') game.f.picked = m.choice;
   else if (m.t === 'bf_a') Object.assign(game.f, { res: m, hp: m.hp, phase: 'a' });
   else if (m.t === 'bf_turn_end') Object.assign(game.f, { summary: m, hp: m.hp, phase: 'turnend' });
@@ -612,21 +625,29 @@ function gameEvent(m) {
   else if (m.t === 'battle_cancel') game = null;
   renderGame();
 }
+// surveillance : si plus rien n'arrive pendant une partie, on redemande l'état au serveur (et on abandonne s'il n'y a plus de partie)
+setInterval(() => { if (game && game.view !== 'end' && game.view !== 'pick' && Date.now() - lastEvt > 40000) { lastEvt = Date.now(); if (ws?.readyState === 1) send({ t: 'sync' }); else connect(); } }, 5000);
+/** Barre de temps animée par le navigateur (pas de minuteur JavaScript) : part du temps restant et se vide en continu. */
+function runBar(el, remaining, full) {
+  if (!el) return;
+  el.style.transition = 'none'; el.style.width = Math.max(0, Math.min(100, remaining / full * 100)) + '%'; void el.offsetWidth;
+  el.style.transition = `width ${Math.max(0, remaining)}ms linear`; el.style.width = '0%';
+}
 async function renderGame() {
   const v = $('#view'); clearInterval(tick);
   if (!game) return render();
   const names = o => Object.entries(game.names).map(([id, n]) => `${esc(n)} : <b>${o?.[id] ?? 0}</b>`).join(' · ');
-  if (game.view === 'wait') return v.innerHTML = pageHead('Duel de quiz', 'Début dans un instant…');
+  if (game.view === 'wait') return v.innerHTML = pageHead(game.kind === 'quiz' ? 'Duel de quiz' : 'Combat', game.waitMsg || 'Début dans un instant…');
   if (game.kind === 'quiz' && game.view === 'q') {
     const q = game.q, rv = game.reveal;
     v.innerHTML = `${pageHead(`Question ${q.n} / ${q.total}`)}<p class="mut">${names(game.score)}</p><div class="qbar"><i id="tb" style="width:100%"></i></div>
       <p style="white-space:pre-wrap">${esc(q.text)}</p>` + q.options.map((o, i) =>
         `<button class="opt ${rv ? (i === rv.answer ? 'ok' : (rv.picks[me.id] === i ? 'ko' : '')) : (game.picked === i ? 'sel' : '')}" data-i="${i}" ${rv || game.picked !== null ? 'disabled' : ''}>${esc(o)}</button>`).join('');
     v.querySelectorAll('.opt').forEach(b => b.onclick = () => { game.picked = +b.dataset.i; send({ t: 'answer', id: game.id, choice: game.picked }); renderGame(); });
-    if (!rv) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (game.end - Date.now()) / q.time * 100) + '%'; }, 100);
+    if (!rv) runBar($('#tb'), game.end - Date.now(), q.time); else $('#tb').style.width = '0%';
   } else if (game.kind === 'fight' && game.view === 'fight') {
     const f = game.f, nm = id => esc(game.names[id]), iAtt = f.attacker === me.id, iDef = f.defender === me.id;
-    const bar = id => { const pct = Math.max(0, Math.round((f.hp[id] ?? 0) / (f.max[id] || 1) * 100)); return `<div class="hpb ${id === me.id ? 'me' : ''}"><div class="hpt"><span>${nm(id)}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(f.hp[id] ?? 0)} PV</b></div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`; };
+    const bar = id => { const pct = Math.max(0, Math.round((f.hp[id] ?? 0) / (f.max[id] || 1) * 100)); return `<div class="hpb ${id === me.id ? 'me' : ''}" data-id="${id}"><div class="hpt"><span>${nm(id)}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(f.hp[id] ?? 0)} PV</b></div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`; };
     const mini = (c, cls = '', attrs = '') => `<div class="bcard ${cls}" ${attrs} style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
       <b>${esc(c.title)}</b><span>ATK <i>${fmt(c.atk)}</i> · DEF <i>${fmt(c.def)}</i></span></div>`;
     const deckRow = id => `<div class="deckrow"><small>${nm(id)}</small><div>${f.deck[id].map(c => mini(c, (f.left?.[id] && !f.left[id].includes(c.id)) ? 'used' : '')).join('')}</div></div>`;
@@ -642,17 +663,41 @@ async function renderGame() {
       body = `<div class="atkcard">${mini(f.card)}<div class="atkinfo"><small>Attaque de ${nm(f.attacker)}</small><b>${fmt(f.card.atk)} ATK</b><span>−${fmt(Math.round(f.card.atk / 3))} PV par mauvaise réponse</span></div></div>`;
       if (q) {
         const right = r ? r.right : null;
-        body += `<p class="mut" style="margin:6px 0 4px">Question <b>${q.k} / ${q.kTotal}</b> · ${iDef ? 'tu réponds' : nm(f.defender) + ' répond'}</p>
-          <p class="bq-text">${esc(q.text)}</p><div class="qbar"><i id="tb" style="width:${r ? 0 : 100}%"></i></div>` +
+        const res = r ? `<div class="bres ${r.ok ? 'win' : 'lose'}"><b>${r.ok ? 'Bonne réponse — aucun dégât' : `${f.picked === null ? 'Temps écoulé' : 'Mauvaise réponse'} — ${nm(f.defender)} perd ${fmt(r.dmg)} PV`}</b></div>` : '';
+        body += `<p class="mut" style="margin:4px 0 2px">Question <b>${q.k} / ${q.kTotal}</b> · ${iDef ? 'tu réponds' : nm(f.defender) + ' répond'}</p>
+          <p class="bq-text">${esc(q.text)}</p><div class="qbar"><i id="tb" style="width:${r ? 0 : 100}%"></i></div>${res}` +
           q.options.map((o, i) => `<button class="opt ${r ? (i === right ? 'ok' : (f.picked === i ? 'ko' : '')) : (f.picked === i ? 'sel' : '')}" data-i="${i}" ${(r || f.picked !== null || !iDef) ? 'disabled' : ''}>${esc(o)}</button>`).join('');
-        if (r) body += `<div class="panel bres ${r.ok ? 'win' : 'lose'}"><b>${r.ok ? 'Bonne réponse' : f.picked === null ? 'Temps écoulé' : 'Mauvaise réponse'}</b><p>${r.ok ? 'Aucun dégât.' : `${nm(f.defender)} perd <b>${fmt(r.dmg)}</b> PV.`}</p></div>`;
       }
       if (f.phase === 'turnend' && f.summary) body += `<div class="panel bres ${f.summary.wrong === 0 ? 'win' : ''}"><b>Fin de l'attaque</b><p>${f.summary.wrong} mauvaise${f.summary.wrong > 1 ? 's' : ''} réponse${f.summary.wrong > 1 ? 's' : ''} sur ${Q_PER_CARD_UI} : ${nm(f.defender)} perd ${fmt(f.summary.lost)} PV.</p></div>`;
     }
-    v.innerHTML = `${pageHead('Combat')}<div class="hpwrap">${bar(f.a)}${bar(f.b)}</div>${f.turn ? `<p class="mut" style="text-align:center;margin:4px 0 8px">Tour ${f.turn} / ${f.total}</p>` : ''}${body}`;
-    v.querySelectorAll('[data-card]').forEach(el => el.onclick = () => { send({ t: 'bf_pick', id: game.id, card: +el.dataset.card }); });
-    v.querySelectorAll('.opt').forEach(b => b.onclick = () => { if (f.picked !== null) return; f.picked = +b.dataset.i; send({ t: 'bf_answer', id: game.id, choice: f.picked }); renderGame(); });
-    if (f.end && (f.phase === 'pick' || (f.phase === 'q' && !f.res))) tick = setInterval(() => { const t = $('#tb'); if (t) t.style.width = Math.max(0, (f.end - Date.now()) / f.time * 100) + '%'; }, 100);
+    // l'écran est monté une seule fois : ensuite on ne met à jour que les PV (avec animation) et la zone centrale
+    let sh = v.querySelector('#fshell');
+    if (!sh || sh.dataset.gid !== game.id) {
+      v.innerHTML = `${pageHead('Combat')}<div id="fshell" data-gid="${game.id}"><div class="hpwrap">${bar(f.a)}${bar(f.b)}</div><p class="mut" id="fturn" style="text-align:center;margin:4px 0 8px"></p><div id="fbody"></div></div>`;
+      sh = v.querySelector('#fshell');
+    } else {
+      for (const id of [f.a, f.b]) {
+        const el = sh.querySelector(`.hpb[data-id="${id}"]`), nv = f.hp[id] ?? 0, old = +el.dataset.hp;
+        el.querySelector('.hpbar i').style.width = Math.max(0, Math.round(nv / (f.max[id] || 1) * 100)) + '%';
+        el.querySelector('.hpt b').textContent = fmt(nv) + ' PV';
+        if (old > nv) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); const d = document.createElement('em'); d.className = 'dmgpop'; d.textContent = '−' + fmt(old - nv); el.append(d); setTimeout(() => d.remove(), 1100); }
+      }
+    }
+    for (const id of [f.a, f.b]) sh.querySelector(`.hpb[data-id="${id}"]`).dataset.hp = f.hp[id] ?? 0;
+    $('#fturn').textContent = f.turn ? `Tour ${f.turn} / ${f.total}` : '';
+    const fb = $('#fbody'), key = f.turn + ':' + (f.phase === 'q' || f.phase === 'a' ? 'q' + f.q?.k : f.phase);
+    fb.innerHTML = body;
+    if (fb.dataset.key !== key) { fb.dataset.key = key; fb.classList.remove('fin'); void fb.offsetWidth; fb.classList.add('fin'); }
+    fb.querySelectorAll('[data-card]').forEach(el => el.onclick = () => {
+      if (f.sent) return; f.sent = true; el.classList.add('chosen');
+      send({ t: 'bf_pick', id: game.id, card: +el.dataset.card });
+    });
+    fb.querySelectorAll('.opt').forEach(b => b.onclick = () => {
+      if (f.picked !== null || f.sent) return; f.picked = +b.dataset.i; f.sent = true;
+      fb.querySelectorAll('.opt').forEach(x => { x.disabled = true; x.classList.toggle('sel', x === b); });   // réaction immédiate, sans attendre le serveur
+      send({ t: 'bf_answer', id: game.id, choice: f.picked });
+    });
+    if (f.end && (f.phase === 'pick' || (f.phase === 'q' && !f.res))) runBar($('#tb'), f.end - Date.now(), f.time);
   } else if (game.kind === 'battle' && game.view === 'pick') {
     const { cards } = await api('/album?lite=1');
     const sorted = [...cards].sort((a, b) => (b.atk + b.def) - (a.atk + a.def)), byId = new Map(cards.map(c => [c.id, c]));   // les plus fortes d'abord
@@ -695,7 +740,7 @@ async function renderGame() {
     } else {
       const bar = id => `<div class="hpb ${id === me.id ? 'me' : ''}"><div class="hpt"><span>${esc(r.names[id])}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(r.hp[id])} / ${fmt(r.max[id])} PV</b></div><div class="hpbar"><i style="width:${Math.round(r.hp[id] / (r.max[id] || 1) * 100)}%"></i></div></div>`;
       v.innerHTML = `${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire' : 'Défaite')}<div class="hpwrap">${bar(r.a)}${bar(r.b)}</div>
-        <p class="mut" style="text-align:center">${r.winner === null ? 'Autant de PV de chaque côté.' : `${esc(r.names[r.winner])} termine avec le plus de PV.`}</p><p><button id="back" style="margin-top:12px">Retour</button></p>`;
+        <p class="mut" style="text-align:center">${r.winner === null ? 'Autant de PV de chaque côté.' : (r.forfeit ? `${esc(r.names[r.forfeit])} a quitté la partie : ${esc(r.names[r.winner])} gagne par forfait.` : `${esc(r.names[r.winner])} termine avec le plus de PV.`)}</p><p><button id="back" style="margin-top:12px">Retour</button></p>`;
     }
     $('#back').onclick = () => { game = null; render(); };
   }

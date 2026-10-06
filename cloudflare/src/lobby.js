@@ -5,6 +5,9 @@ import { one, all, run, st, placeholders, cardRows, userFromToken } from './util
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
+const AWAY_MAX = 60000;     // un joueur absent plus d'une minute en plein combat déclare forfait
+// pauses entre les étapes du combat (ms)
+const T = { intro: 1800, card: 1300, closeAfterAnswer: 600, nextQ: 2000, nextTurn: 2200 };
 const now = () => Date.now();
 
 function mask(extract, title) {
@@ -21,6 +24,7 @@ export class Lobby {
     this.clients = new Map(); // userId -> Set<WebSocket>
     this.duels = new Map();
     this.battles = new Map();
+    this.away = new Map();   // userId -> heure de la dernière déconnexion complète
     setInterval(() => this.broadcast({ t: 'ping' }), 30000); // garde les connexions ouvertes
   }
 
@@ -47,11 +51,13 @@ export class Lobby {
     server.accept();
     if (!this.clients.has(user.id)) this.clients.set(user.id, new Set());
     this.clients.get(user.id).add(server);
+    this.away.delete(user.id);
     this.presence();
+    this.sync(user.id);                                  // reprise d'une partie en cours après coupure ou retour sur l'appli
     server.addEventListener('message', ev => { this.onMessage(user, JSON.parse(ev.data)).catch(e => console.error(e)); });
     server.addEventListener('close', () => {
       const s = this.clients.get(user.id); s?.delete(server);
-      if (s && !s.size) this.clients.delete(user.id);
+      if (s && !s.size) { this.clients.delete(user.id); this.away.set(user.id, now()); }
       this.presence();
     });
     return new Response(null, { status: 101, webSocket: client });
@@ -59,13 +65,17 @@ export class Lobby {
 
   async onMessage(user, msg) {
     const mode = msg.mode === 'battle' ? 'battle' : 'quiz';
+    if (msg.t === 'sync') return this.sync(user.id);
+    if ((msg.t === 'challenge' || msg.t === 'accept' || msg.t === 'challenge_bot') && this.gameOf(user.id)) return this.push(user.id, { t: 'info', msg: 'Tu es déjà dans une partie.' });
     if (msg.t === 'challenge') {
       const target = +msg.to;
+      if (this.gameOf(target)) return this.push(user.id, { t: 'error', msg: 'Ce joueur est déjà en partie' });
       if (target === user.id || !this.clients.has(target)) return this.push(user.id, { t: 'error', msg: 'Joueur hors ligne' });
       this.push(target, { t: 'challenge', from: user.id, name: user.name, mode });
       this.push(user.id, { t: 'info', msg: 'Défi envoyé.' });
     } else if (msg.t === 'accept') {
       const from = await one(this.env, 'SELECT id, name FROM users WHERE id = ?', +msg.from);
+      if (from && this.gameOf(from.id)) return this.push(user.id, { t: 'error', msg: 'Ce joueur est déjà en partie' });
       if (from && this.clients.has(from.id)) await (mode === 'battle' ? this.startBattle(from, user) : this.startDuel(from, user));
     } else if (msg.t === 'decline') {
       this.push(+msg.from, { t: 'info', msg: `${user.name} a refusé.` });
@@ -80,6 +90,22 @@ export class Lobby {
     } else if (msg.t === 'bf_answer') {
       this.fightAnswer(user, msg);
     }
+  }
+
+  gameOf(uid) { for (const g of [...this.battles.values(), ...this.duels.values()]) if (!g.over && g.players.includes(uid)) return g; return null; }
+  /** Renvoie à un joueur l'état exact de sa partie (après une reconnexion, un retour sur l'appli ou un rechargement). */
+  sync(uid) {
+    const g = this.gameOf(uid);
+    if (!g) return this.push(uid, { t: 'game_none' });
+    if (g.qs && g.i !== undefined) {                                   // duel de quiz
+      this.push(uid, { t: 'duel_start', id: g.id, names: g.names, total: Q_COUNT, resume: true });
+      if (g.qMsg) this.push(uid, { ...g.qMsg, time: Math.max(0, Q_TIME - (now() - g.qStart)), full: Q_TIME, picked: g.answers[uid] ?? null });
+      if (g.rev) this.push(uid, g.rev);
+    } else if (g.fight) {                                              // combat en cours
+      this.push(uid, g.startMsg);
+      for (const { m, dl } of g.fight.log) this.push(uid, dl ? { ...m, time: Math.max(0, dl - now()), full: m.time } : m);
+    } else if (g.picks[uid]) this.push(uid, { t: 'battle_wait', id: g.id, msg: 'Deck validé, en attente de l\'adversaire…' });
+    else this.push(uid, { t: 'battle_start', id: g.id, names: g.names, rounds: CFG.BATTLE_ROUNDS, resume: true });
   }
 
   // ---------- quiz ----------
@@ -113,13 +139,16 @@ export class Lobby {
     d.i++; d.answers = {};
     if (d.i >= Q_COUNT) return this.endDuel(d);
     const q = d.qs[d.i]; d.qStart = now();
-    for (const p of d.players) this.push(p, { t: 'question', id: d.id, n: d.i + 1, total: Q_COUNT, text: q.text, options: q.options, time: Q_TIME });
+    d.rev = null; d.qMsg = { t: 'question', id: d.id, n: d.i + 1, total: Q_COUNT, text: q.text, options: q.options, time: Q_TIME };
+    for (const p of d.players) this.push(p, d.qMsg);
     d.timer = setTimeout(() => this.closeQuestion(d), Q_TIME + 500);
   }
   closeQuestion(d) {
+    if (d.over || d.rev) return;
     clearTimeout(d.timer);
     const q = d.qs[d.i];
-    for (const p of d.players) this.push(p, { t: 'reveal', id: d.id, answer: q.answer, score: d.score, picks: d.answers });
+    d.rev = { t: 'reveal', id: d.id, answer: q.answer, score: d.score, picks: d.answers };
+    for (const p of d.players) this.push(p, d.rev);
     setTimeout(() => this.nextQuestion(d), 2500);
   }
   answer(user, msg) {
@@ -205,10 +234,11 @@ export class Lobby {
   // Chaque mauvaise réponse coûte au défenseur le tiers de l'ATK de la carte ; bonne réponse = rien. PV de départ = somme des DEF des 3 cartes. Le plus de PV à la fin gagne.
   async resolveBattle(bt) {                                          // appelé quand les deux équipes sont validées
     clearTimeout(bt.timer);
+    for (const p of bt.players) this.push(p, { t: 'battle_prep', id: bt.id });
     const [a, b] = bt.players, pub = c => ({ id: c.id, title: c.title, rarity: c.rarity, shiny: c.shiny, atk: c.atk, def: c.def, image: c.image });
     const rows = {}; for (const uid of bt.players) rows[uid] = await cardRows(this.env, bt.picks[uid]);
     const first = Math.random() < .5 ? a : b;
-    const f = bt.fight = { turn: 0, total: CFG.BATTLE_ROUNDS * 2, order: [first, first === a ? b : a], hp: {}, max: {}, deck: {}, left: {}, qs: new Map(), cur: null };
+    const f = bt.fight = { turn: 0, total: CFG.BATTLE_ROUNDS * 2, order: [first, first === a ? b : a], hp: {}, max: {}, deck: {}, left: {}, qs: new Map(), cur: null, log: [] };
     for (const uid of bt.players) { f.deck[uid] = rows[uid].map(pub); f.max[uid] = f.hp[uid] = f.deck[uid].reduce((t, c) => t + c.def, 0); f.left[uid] = new Set(f.deck[uid].map(c => c.id)); }
     const all6 = bt.players.flatMap(uid => rows[uid].map(c => ({ uid, c })));
     const [texts, pool] = await Promise.all([
@@ -216,62 +246,80 @@ export class Lobby {
       all(this.env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 30"),
     ]);
     await Promise.all(all6.map(async ({ uid, c }) => f.qs.set(uid + ':' + c.id, await battleQuestions(this.env, c, texts.get(c.id) || c.extract, { cards: pool }, Q_PER_CARD))));
-    for (const p of bt.players) this.push(p, { t: 'bf_start', id: bt.id, names: bt.names, a, b, deck: f.deck, hp: f.hp, max: f.max, first, total: f.total });
-    setTimeout(() => this.fightTurn(bt), 2500);
+    bt.startMsg = { t: 'bf_start', id: bt.id, names: bt.names, a, b, deck: f.deck, hp: f.hp, max: f.max, first, total: f.total };
+    for (const p of bt.players) this.push(p, bt.startMsg);
+    setTimeout(() => this.fightTurn(bt), T.intro);
   }
+  /** Envoie un évènement aux deux joueurs et le garde pour rejouer l'état à qui revient dans la partie (dl = heure limite éventuelle). */
+  emit(bt, m, dl = 0) {
+    const f = bt.fight;
+    if (m.t === 'bf_turn') f.log = [];
+    else if (m.t === 'bf_q') f.log = f.log.filter(e => e.m.t === 'bf_turn' || e.m.t === 'bf_card');
+    f.log.push({ m, dl });
+    for (const p of bt.players) this.push(p, m);
+  }
+  /** Joueur humain absent depuis trop longtemps ? */
+  deserters(bt) { return bt.players.filter(p => p !== bt.bot && this.away.has(p) && now() - this.away.get(p) > AWAY_MAX); }
   fightTurn(bt) {
+    if (bt.over) return;
     const f = bt.fight; f.turn++; f.cur = null;
-    if (f.turn > f.total) return this.endFight(bt);
+    if (f.turn > f.total || this.deserters(bt).length) return this.endFight(bt);
     f.attacker = f.order[(f.turn - 1) % 2]; f.defender = bt.players.find(p => p !== f.attacker);
-    for (const p of bt.players) this.push(p, { t: 'bf_turn', id: bt.id, turn: f.turn, total: f.total, attacker: f.attacker, defender: f.defender, hp: f.hp, left: Object.fromEntries(bt.players.map(u => [u, [...f.left[u]]])), time: FIGHT_PICK });
+    this.emit(bt, { t: 'bf_turn', id: bt.id, turn: f.turn, total: f.total, attacker: f.attacker, defender: f.defender, hp: { ...f.hp }, left: Object.fromEntries(bt.players.map(u => [u, [...f.left[u]]])), time: FIGHT_PICK }, now() + FIGHT_PICK);
     const auto = () => { const ids = [...f.left[f.attacker]]; this.fightPick({ id: f.attacker }, { id: bt.id, card: ids[Math.floor(Math.random() * ids.length)] }); };
     bt.timer = setTimeout(auto, bt.bot === f.attacker ? 2000 + Math.random() * 2500 : FIGHT_PICK + 500);   // trop lent : carte tirée au hasard
   }
   fightPick(user, msg) {
     const bt = this.battles.get(msg.id), f = bt?.fight;
-    if (!f || f.cur || f.attacker !== user.id || !f.left[user.id].has(+msg.card)) return;
+    if (!f || bt.over || f.cur || f.attacker !== user.id || !f.left[user.id].has(+msg.card)) return;
     clearTimeout(bt.timer);
     const card = f.deck[user.id].find(c => c.id === +msg.card);
     f.left[user.id].delete(card.id);
     f.cur = { card, qs: f.qs.get(user.id + ':' + card.id), k: -1, wrong: 0, lost: 0 };
-    for (const p of bt.players) this.push(p, { t: 'bf_card', id: bt.id, turn: f.turn, attacker: f.attacker, defender: f.defender, card, hp: f.hp });
-    setTimeout(() => this.fightQuestion(bt), 1800);
+    this.emit(bt, { t: 'bf_card', id: bt.id, turn: f.turn, attacker: f.attacker, defender: f.defender, card, hp: { ...f.hp } });
+    setTimeout(() => this.fightQuestion(bt), T.card);
   }
   fightQuestion(bt) {
+    if (bt.over) return;
     const f = bt.fight, c = f.cur; c.k++; c.choice = undefined; c.closed = false;
     if (c.k >= Q_PER_CARD) return this.fightTurnEnd(bt);
+    if (this.deserters(bt).length) return this.endFight(bt);
     const q = c.qs[c.k];
-    for (const p of bt.players) this.push(p, { t: 'bf_q', id: bt.id, turn: f.turn, k: c.k + 1, kTotal: Q_PER_CARD, attacker: f.attacker, defender: f.defender, card: c.card, text: q.text, options: q.options, time: B_TIME, hp: f.hp });
+    this.emit(bt, { t: 'bf_q', id: bt.id, turn: f.turn, k: c.k + 1, kTotal: Q_PER_CARD, attacker: f.attacker, defender: f.defender, card: c.card, text: q.text, options: q.options, time: B_TIME, hp: { ...f.hp } }, now() + B_TIME);
     if (bt.bot === f.defender) setTimeout(() => this.fightAnswer({ id: bt.bot }, { id: bt.id, choice: Math.random() < .55 ? q.answer : Math.floor(Math.random() * q.options.length) }), 2500 + Math.random() * 7000);
     bt.timer = setTimeout(() => this.closeFightQuestion(bt), B_TIME + 500);
   }
   fightAnswer(user, msg) {
     const bt = this.battles.get(msg.id), f = bt?.fight, c = f?.cur;
-    if (!c || c.k < 0 || c.closed || c.choice !== undefined || f.defender !== user.id) return;
+    if (!c || bt.over || c.k < 0 || c.k >= Q_PER_CARD || c.closed || c.choice !== undefined || f.defender !== user.id) return;
     c.choice = +msg.choice;
-    for (const p of bt.players) this.push(p, { t: 'bf_picked', id: bt.id, turn: f.turn, k: c.k + 1, choice: c.choice });   // les deux voient la réponse choisie
+    this.emit(bt, { t: 'bf_picked', id: bt.id, turn: f.turn, k: c.k + 1, choice: c.choice });   // les deux voient la réponse choisie
     clearTimeout(bt.timer);
-    bt.timer = setTimeout(() => this.closeFightQuestion(bt), 1000);
+    bt.timer = setTimeout(() => this.closeFightQuestion(bt), T.closeAfterAnswer);
   }
   closeFightQuestion(bt) {
-    const f = bt.fight, c = f.cur; if (c.closed) return; c.closed = true; clearTimeout(bt.timer);
+    if (bt.over) return;
+    const f = bt.fight, c = f.cur; if (c.closed || c.k >= Q_PER_CARD) return; c.closed = true; clearTimeout(bt.timer);
     const q = c.qs[c.k], ok = c.choice === q.answer, dmg = ok ? 0 : Math.round(c.card.atk / 3);
     f.hp[f.defender] = Math.max(0, f.hp[f.defender] - dmg);
     if (!ok) c.wrong++; c.lost += dmg;
-    for (const p of bt.players) this.push(p, { t: 'bf_a', id: bt.id, turn: f.turn, k: c.k + 1, choice: c.choice ?? null, right: q.answer, ok, dmg, hp: f.hp, defender: f.defender });
-    setTimeout(() => this.fightQuestion(bt), 2800);
+    this.emit(bt, { t: 'bf_a', id: bt.id, turn: f.turn, k: c.k + 1, choice: c.choice ?? null, right: q.answer, ok, dmg, hp: { ...f.hp }, defender: f.defender });
+    setTimeout(() => this.fightQuestion(bt), T.nextQ);
   }
   fightTurnEnd(bt) {
+    if (bt.over) return;
     const f = bt.fight, c = f.cur;
-    for (const p of bt.players) this.push(p, { t: 'bf_turn_end', id: bt.id, turn: f.turn, attacker: f.attacker, defender: f.defender, wrong: c.wrong, lost: c.lost, hp: f.hp });
-    setTimeout(() => this.fightTurn(bt), 3000);
+    this.emit(bt, { t: 'bf_turn_end', id: bt.id, turn: f.turn, attacker: f.attacker, defender: f.defender, wrong: c.wrong, lost: c.lost, hp: { ...f.hp } });
+    setTimeout(() => this.fightTurn(bt), T.nextTurn);
   }
-  async endFight(bt) {
-    this.battles.delete(bt.id);
+  async endFight(bt, quitters = this.deserters(bt)) {
+    if (bt.over) return;
+    bt.over = true; clearTimeout(bt.timer); this.battles.delete(bt.id);
     const f = bt.fight, [a, b] = bt.players;
-    const win = f.hp[a] === f.hp[b] ? null : f.hp[a] > f.hp[b] ? a : b;
+    if (quitters.length === 2) return;                                // plus personne : rien à récompenser
+    const win = quitters.length ? bt.players.find(p => !quitters.includes(p)) : f.hp[a] === f.hp[b] ? null : f.hp[a] > f.hp[b] ? a : b;
     const k = bt.bot ? .5 : 1;                                        // contre un joueur simulé, gains réduits de moitié
     await this.reward(bt.players.filter(p => p !== bt.bot), win, Math.round(CFG.BATTLE_WIN * k), Math.round(CFG.BATTLE_LOSE * k), Math.round(CFG.BATTLE_DRAW * k));
-    for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win });
+    for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null });
   }
 }
