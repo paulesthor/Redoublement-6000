@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '0.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '1.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -91,36 +91,30 @@ function connect() {
   ws.onclose = () => { jlog('connexion temps réel coupée'); if (token) setTimeout(connect, 1500); };
 }
 // ---------- mises à jour automatiques ----------
-/** Retélécharge l'appli (contourne tous les caches) puis la recharge : une seule fois par version, pour ne jamais boucler. */
-async function applyUpdate(target) {
-  let tried = null; try { tried = sessionStorage.getItem('wm_upd'); } catch { /* stockage indisponible */ }
-  if (tried === target) return false;                           // déjà tenté pour cette version : on ne boucle pas
-  try { sessionStorage.setItem('wm_upd', target); } catch { /* stockage indisponible */ }
+/** Met l'appli à jour : supprime le service worker et tous les caches (indépendant de la version du service worker installé), puis recharge. */
+async function applyUpdate(target, force = false) {
+  let last = null; try { last = JSON.parse(sessionStorage.getItem('wm_upd') || 'null'); } catch { /* stockage indisponible */ }
+  if (!force && last && last.v === target && Date.now() - last.t < 120000) return false;      // tentative toute récente pour cette version : pas de boucle
+  try { sessionStorage.setItem('wm_upd', JSON.stringify({ v: target, t: Date.now() })); } catch { /* stockage indisponible */ }
   jlog(`mise à jour ${BUILD} → ${target}`);
   const veil = document.createElement('div'); veil.className = 'updveil'; veil.innerHTML = '<div><b>Mise à jour…</b><span>Une nouvelle version arrive</span></div>'; document.body.append(veil);
-  try {
-    const reg = await navigator.serviceWorker?.ready;
-    if (reg?.active) await new Promise(res => {
-      const t = setTimeout(res, 5000), on = e => { if (e.data?.t === 'refreshed') { clearTimeout(t); navigator.serviceWorker.removeEventListener('message', on); res(); } };
-      navigator.serviceWorker.addEventListener('message', on); reg.active.postMessage({ t: 'refresh' });
-    });
-    await reg?.update().catch(() => {});
-  } catch { /* pas de service worker : le rechargement suffit */ }
+  try { await Promise.all((await navigator.serviceWorker.getRegistrations()).map(r => r.unregister())); } catch { /* pas de service worker */ }
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch { /* pas de cache */ }
   location.reload();
   return true;
 }
-/** Compare la version du serveur à celle de l'appli. Au calme : mise à jour immédiate ; en pleine partie ou tirage : bandeau à toucher. */
+/** Compare la version du serveur à celle de l'appli. Au calme : mise à jour immédiate ; en pleine partie, ou si l'automatique a échoué : bandeau à toucher. */
 let updBanner = false;
 async function checkVersion(server) {
   try {
     const v = server ?? (await (await fetch('/api/version', { cache: 'no-store' })).json()).v;
     if (!v || v === BUILD) return;
     const busy = game || document.getElementById('reveal') || !$('#modal').hidden;
-    if (!busy) { await applyUpdate(v); return; }
+    if (!busy && await applyUpdate(v)) return;
     if (updBanner) return; updBanner = true;
     const b = document.createElement('div'); b.className = 'pushbar';
-    b.innerHTML = '<p><b>Nouvelle version disponible</b><br>Touche pour mettre à jour (ta partie en cours sera quittée).</p><button id="upd-go">Mettre à jour</button>';
-    $('#app').prepend(b); $('#upd-go').onclick = () => applyUpdate(v).then(ok => { if (!ok) location.reload(); });
+    b.innerHTML = `<p><b>Nouvelle version disponible (${esc(v)})</b><br>${busy ? 'Touche pour mettre à jour (ta partie en cours sera quittée).' : 'La mise à jour automatique n\'a pas abouti : touche pour la forcer.'}</p><button id="upd-go">Mettre à jour</button>`;
+    $('#app').prepend(b); $('#upd-go').onclick = () => applyUpdate(v, true);
   } catch { /* hors ligne */ }
 }
 setInterval(() => { if (document.visibilityState === 'visible') checkVersion(); }, 5 * 60000);
@@ -1125,7 +1119,7 @@ async function start() {
   for (let essai = 0; essai < 8 && !ok; essai++) {  // réseau absent ou serveur qui démarre : on réessaie sans déconnecter
     try {
       const [c, , h] = await Promise.all([api('/config'), refreshMe(), api('/hits')]);   // trois appels en parallèle au démarrage
-      if (c.version && c.version !== BUILD && await applyUpdate(c.version)) return;   // appli ouverte depuis un cache plus ancien que le serveur : on se met à jour avant d'afficher quoi que ce soit
+      if (c.version && c.version !== BUILD) { if (await applyUpdate(c.version)) return; setTimeout(() => checkVersion(c.version), 2500); }   // appli ouverte depuis un cache plus ancien que le serveur : on se met à jour avant d'afficher quoi que ce soit
       cfg = c; RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
       showHits(h.hits); ACH_NAMES = cfg.ach || [];
       ok = true;
