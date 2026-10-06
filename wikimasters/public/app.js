@@ -19,6 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
+const BUILD = '0.1';   // numéro de build de l'interface (affiché en bas du profil)
 let token = store.get(), me = null, cfg = null, tab = 'packs', ws = null, online = new Set();
 let game = null; // duel de quiz ou combat en cours
 let tick, lastPack = null;
@@ -859,6 +860,7 @@ function profileSheet() {
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
     <label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>
     <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
+    <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p>
     <div class="row" style="margin-top:18px"><button class="plain" id="pf-me" style="flex:1">Mon profil</button><button class="plain" id="pf-close" style="flex:1">Fermer</button><button class="plain" id="pf-out" style="flex:1;color:#ff8a80">Se déconnecter</button></div></div>`;
   $('#pf-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   $('#pf-out').onclick = logout;

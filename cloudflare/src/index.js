@@ -505,7 +505,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
     rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: meta.n,
-    packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, ach: ACH.map(a => ({ k: a.k, t: a.t })),
+    version: CFG.VERSION, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, ach: ACH.map(a => ({ k: a.k, t: a.t })),
   };
 }, false);
 
