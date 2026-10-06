@@ -60,6 +60,13 @@ export function parseQuestions(raw, title, text) {
   return out;
 }
 
+/** Essai d'un modèle précis, sans rien enregistrer (comparaison des modèles). */
+export async function tryModel(env, model, card, text) {
+  const t0 = Date.now();
+  const out = await env.AI.run(model, { messages: buildMessages(card.title, text), max_tokens: 1200, temperature: .5 });
+  const raw = typeof out === 'string' ? out : (out?.response ?? out?.result?.response ?? out?.choices?.[0]?.message?.content ?? out);
+  return { qs: parseQuestions(raw, card.title, text), usage: out?.usage ?? null, ms: Date.now() - t0, sample: typeof raw === 'string' ? raw.slice(0, 160) : null };
+}
 let backoffUntil = 0;     // quota épuisé ou modèle saturé : on laisse la main aux règles quelques minutes
 const lastError = { msg: null };
 async function generate(env, card, text) {

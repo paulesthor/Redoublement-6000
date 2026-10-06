@@ -2,7 +2,7 @@ import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
   userFromToken, hashPw, randomHex, notify, searchBucket } from './util.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
-import { battleQuestions, aiQuestions, lastAiError } from './aiquiz.js';
+import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -632,6 +632,12 @@ route('GET', '/api/quiz/preview', async ({ env, query }) => {
   if (!page || page.missing !== undefined || !page.extract) bad('Article introuvable ou Wikipédia injoignable', 404);
   const card = { id: page.pageid, title: page.title, extract: page.extract.slice(0, 600), views: 0 };
   const pool = await all(env, "SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 ORDER BY RANDOM() LIMIT 30");
+  const only = query.get('model');                 // ?model=@cf/... : essaie ce modèle seul, sans rien enregistrer
+  if (only) {
+    if (!/^@cf\/[\w./-]+$/.test(only)) bad('Modèle invalide');
+    try { const r = await tryModel(env, only, card, page.extract); return { modele: only, questions_valides: r.qs.length, duree_ms: r.ms, usage: r.usage, debut_reponse: r.qs.length ? undefined : r.sample, questions: r.qs.map(x => ({ question: x.text, choix: x.options, bonne_reponse: x.options[x.answer] })) }; }
+    catch (e) { return { modele: only, erreur: String(e.message || e).slice(0, 200) }; }
+  }
   const cached = !!(await one(env, 'SELECT 1 x FROM quizzes WHERE card_id = ?', card.id));
   const ai = (await aiQuestions(env, card, page.extract)).length;
   const questions = await battleQuestions(env, card, page.extract, { cards: pool }, 3);
