@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '1.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '2.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -35,7 +35,9 @@ let tick, lastPack = null;
 
 // Lectures de listes : on répond tout de suite avec la dernière réponse connue (< 30 s) et on la rafraîchit en arrière-plan.
 // Si les données ont changé et que rien n'est en cours de saisie, la vue se redessine toute seule. Toute écriture vide ce cache.
-const SWR = /^\/(album|auctions|friends|leaderboard|users|trades|achievements|hits)$/;
+const SWR = /^\/(album\/stats|auctions|friends|leaderboard|users|trades|achievements|hits)$/;
+// la collection est lourde à lire côté serveur (milliers de lignes) : on la garde longtemps ; elle est vidée par toute action du joueur et par les évènements serveur (enchère gagnée, échange…)
+const TTL = { '/album/stats': 600000, '/leaderboard': 120000 }, REVAL = { '/album/stats': 300000, '/leaderboard': 60000 };
 const gcache = new Map();
 function revalidate(path) {
   const before = gcache.get(path)?.raw;
@@ -47,7 +49,8 @@ async function api(path, body) {
   if (body) { gcache.clear(); return fetchJson(path, body).then(r => r.j); }
   if (SWR.test(path)) {
     const c = gcache.get(path);
-    if (c && Date.now() - c.t < 30000) { if (Date.now() - c.t > 2000 && !c.busy) { c.busy = true; revalidate(path).finally(() => { c.busy = false; }); } return JSON.parse(c.raw); }
+    const ttl = TTL[path] ?? 30000, again = REVAL[path] ?? 2000, age = c ? Date.now() - c.t : 0;
+    if (c && age < ttl) { if (age > again && !c.busy) { c.busy = true; revalidate(path).finally(() => { c.busy = false; }); } return JSON.parse(c.raw); }
   }
   return fetchJson(path).then(r => r.j);
 }
@@ -358,29 +361,52 @@ const timeLeft = ms => { const r = Math.max(0, Math.round(ms / 1000)); return r 
 const COMBAT_SEG = [['duel', 'Combats'], ['rank', 'Classement'], ['ach', 'Succès']];
 const MARKET_SEG = [['market', 'Enchères'], ['trades', 'Échanges']];
 
-/** Fenêtre « bibliothèque » : recherche par nom, filtre par rareté, une touche sur une carte la choisit. Renvoie la carte (ou null si on annule). */
-function cardPicker(title, cards) {
+/** Liste paginée : charge les pages du serveur au fil du défilement (une page de plus quand le bas approche). */
+function pager(box, { fetchPage, tile, root = null, empty = 'Aucune carte ne correspond.', onPage }) {
+  let params = {}, cursor = null, done = false, busy = false, gen = 0;
+  const items = [], sentinel = document.createElement('div');
+  sentinel.style.cssText = 'grid-column:1/-1;height:1px';
+  const obs = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { root, rootMargin: '700px 0px' });
+  async function more() {
+    if (busy || done) return;
+    busy = true; const g = gen;
+    try {
+      const r = await fetchPage(params, cursor); if (g !== gen) return;
+      items.push(...r.cards); cursor = r.next; done = !r.next;
+      if (!items.length) box.innerHTML = `<div class="empty" style="grid-column:1/-1">${typeof empty === 'function' ? empty(params) : empty}</div>`;
+      else sentinel.insertAdjacentHTML('beforebegin', r.cards.map(tile).join(''));
+      onPage?.(r.cards, box);
+    } catch (e) { toast(e.message); }
+    finally { if (g === gen) { busy = false; if (!done) { obs.unobserve(sentinel); obs.observe(sentinel); } } }   // ré-observer relance le chargement si le bas est encore visible
+  }
+  return {
+    items,
+    reset(p = {}) { gen++; params = p; cursor = null; done = false; busy = false; items.length = 0; obs.disconnect(); box.innerHTML = ''; box.append(sentinel); more(); },
+    stop() { gen++; obs.disconnect(); },
+  };
+}
+const qs = o => new URLSearchParams(Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== '' && v !== null))).toString();
+const cardPage = (user) => (p, cur) => api('/album/page?' + qs({ ...p, user, cursor: cur ? JSON.stringify(cur) : '' }));
+
+/** Fenêtre « bibliothèque » : recherche par nom, filtre par rareté, une touche sur une carte la choisit. `user` = joueur dont on regarde les cartes (le sien par défaut). Renvoie la carte, ou null si on annule. */
+function cardPicker(title, { user } = {}) {
   return new Promise(resolve => {
     const m = $('#modal'); m.hidden = false;
-    let q = '', rf = '';
-    const list = [...cards].sort((x, y) => (RANK[y.rarity] - RANK[x.rarity]) || (y.shiny - x.shiny) || ((y.views || 0) - (x.views || 0)));
     m.innerHTML = `<div class="picker"><h2>${esc(title)}</h2>
-      <div class="search wide">${ico('search')}<input id="cp-q" placeholder="Chercher par nom (${fmt(cards.length)} carte${cards.length > 1 ? 's' : ''})" autocomplete="off"></div>
+      <div class="search wide">${ico('search')}<input id="cp-q" placeholder="Chercher par nom" autocomplete="off"></div>
       <div class="chips" id="cp-r"><button class="on" data-r="">Toutes</button>${cfg.rarities.map(r => `<button data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       <div class="pgrid" id="cp-g"></div><div class="row"><button class="plain" id="cp-x">Annuler</button></div></div>`;
-    const done = c => { m.hidden = true; m.innerHTML = ''; m.onclick = null; resolve(c); };
     const tile = c => `<button class="ptile ${c.rarity} ${c.shiny ? 'shiny' : ''}" data-id="${c.id}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="pimg ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}><span class="chip">${ABBR[c.rarity]}</span>${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ''}</div><b>${esc(c.title)}</b><small>ATK ${fmt(c.atk)} · DEF ${fmt(c.def)}</small></button>`;
-    const fill = () => {
-      const shown = list.filter(c => (!q || c.title.toLowerCase().includes(q)) && (!rf || c.rarity === rf));
-      if (!shown.length) $('#cp-g').innerHTML = '<div class="empty" style="grid-column:1/-1">Aucune carte ne correspond.</div>';
-      else chunked($('#cp-g'), shown, tile, () => {});
-    };
-    $('#cp-q').oninput = e => { q = e.target.value.trim().toLowerCase(); fill(); };
-    $('#cp-r').onclick = e => { const b = e.target.closest('button'); if (!b) return; rf = b.dataset.r; $('#cp-r').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); fill(); };
-    $('#cp-g').onclick = e => { const t = e.target.closest('.ptile'); if (t) done(cards.find(c => c.id === +t.dataset.id) || null); };
+    const P = pager($('#cp-g'), { fetchPage: cardPage(user), tile, root: $('#cp-g'), empty: 'Aucune carte ne correspond.' });
+    let q = '', rf = '', t;
+    const go = () => P.reset({ sort: 'rar', rar: rf, q });
+    const done = c => { P.stop(); m.hidden = true; m.innerHTML = ''; m.onclick = null; resolve(c); };
+    $('#cp-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); go(); }, 300); };
+    $('#cp-r').onclick = e => { const b = e.target.closest('button'); if (!b) return; rf = b.dataset.r; $('#cp-r').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); go(); };
+    $('#cp-g').onclick = e => { const t = e.target.closest('.ptile'); if (t) done(P.items.find(c => c.id === +t.dataset.id) || null); };
     $('#cp-x').onclick = () => done(null);
     m.onclick = e => { if (e.target === m) done(null); };
-    fill();
+    go();
   });
 }
 const views = {
@@ -447,84 +473,77 @@ const views = {
   },
 
   async album(v) {
-    const { cards, total, rarityAvg } = await api('/album');
-    const value = c => c.avg_price ?? sellValue(c);
-    const have = {}; cards.forEach(c => { if (!c.shiny) have[c.rarity] = (have[c.rarity] || 0) + 1; });
-    const worth = cards.reduce((s, c) => s + value(c) * c.qty, 0);
-    const dupes = cards.reduce((s, c) => s + c.qty - 1, 0);
-    // doublons vendables « jusqu'à » chaque rareté (cumulé) : on garde toujours un exemplaire de chaque carte
-    const bulkTiers = cfg.rarities.map((r, i) => {
-      const part = cards.filter(c => RANK[c.rarity] <= i && c.qty > 1);
-      return { r, n: part.reduce((t, c) => t + c.qty - 1, 0), price: part.reduce((t, c) => t + (c.qty - 1) * sellValue(c), 0) };
-    });
-    const bulkDefault = (bulkTiers.filter((t, i) => i <= 1 && t.n).at(-1) || bulkTiers.find(t => t.n) || bulkTiers[0]).r;
-    let rar = albumFilter;
-    v.innerHTML = `${pageHead('Collection', `${cards.length} cartes uniques`)}
+    const S = await api('/album/stats');
+    const { uniques, copies, dupes, worth, have, tiers, total, rarityAvg } = S;
+    const bulkDefault = (tiers.filter((t, i) => i <= 1 && t.n).at(-1) || tiers.find(t => t.n) || tiers[0]).r;
+    let rar = albumFilter, sort = 'rar', q = '', dup = false;
+    v.innerHTML = `${pageHead('Collection', `${uniques} cartes uniques`)}
       <div class="tiles">
-        <div class="tile"><b>${cards.length}</b><span>cartes uniques</span></div>
-        <div class="tile"><b>${cards.reduce((s, c) => s + c.qty, 0)}</b><span>exemplaires</span></div>
+        <div class="tile"><b>${uniques}</b><span>cartes uniques</span></div>
+        <div class="tile"><b>${copies}</b><span>exemplaires</span></div>
         <div class="tile"><b>${dupes}</b><span>doublons</span></div>
         <div class="tile gold"><b>${fmt(worth)}</b><span>valeur estimée (pièces)</span></div>
       </div>
-      <details class="panel progd" ${innerWidth > 820 ? 'open' : ''}><summary>Progression <span class="mut">${cfg.rarities.map(r => `${have[r] || 0}`).join(' · ')}</span></summary><div class="prog" style="margin:12px 0 0">${cfg.rarities.map(r => `<div><div class="top"><span class="rar ${r}">${RAR[r]}</span><span>${have[r] || 0} / ${fmt(total[r] ?? 0)}</span></div>
+      <details class="panel progd" ${innerWidth > 820 ? 'open' : ''}><summary>Progression <span class="mut">${cfg.rarities.map(r => `${have[r] || 0}`).join(' · ')}</span></summary><div class="prog" style="margin:12px 0 0">${cfg.rarities.map(r => `<div><div class="top"><span class="rar ${r}">${RAR[r]}</span><span>${have[r] || 0} / ${fmt(total[r])}</span></div>
         <div class="bar" style="color:var(--${r})"><i style="width:${Math.max((have[r] || 0) ? 3 : 0, (have[r] || 0) / (total[r] || 1) * 100)}%;background:var(--${r})"></i></div>
         <span class="mut" style="font-size:11.5px">vente moy. ${rarityAvg[r] ? fmt(rarityAvg[r].avg) : '—'}</span></div>`).join('')}</div></details>
       <div class="toolbar">
         <div class="search">${ico('search')}<input id="flt" placeholder="Rechercher une carte" autocomplete="off"></div>
-        <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="new">Tri : plus récentes</option><option value="old">Tri : plus anciennes</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="val">Tri : valeur</option></select>
+        <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="new">Tri : plus récentes</option><option value="old">Tri : plus anciennes</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option></select>
         <label class="row" style="gap:8px;color:var(--mut);font-size:13px"><input type="checkbox" id="dup"> doublons</label>
         <div class="chips" id="chips"><button class="${rar === '' ? 'on' : ''}" data-r="">Toutes</button><button class="${rar === 'fav' ? 'on' : ''}" data-r="fav" style="--cc:var(--gold-fav)">★ Favoris</button>${cfg.rarities.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
       <div class="bulk">
-        <select id="bulk-r" aria-label="Rareté maximale">${bulkTiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>${RAR[t.r]} et moins · ${t.n} carte${t.n > 1 ? 's' : ''} · +${fmt(t.price)}</option>`).join('')}</select>
+        <select id="bulk-r" aria-label="Rareté maximale">${tiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>${RAR[t.r]} et moins · ${t.n} carte${t.n > 1 ? 's' : ''} · +${fmt(t.price)}</option>`).join('')}</select>
         <button class="plain" id="bulk-go">Vendre</button></div>
       <div class="grid" id="g"></div>`;
-    const draw = () => {
-      const f = $('#flt').value.toLowerCase(), s = $('#srt').value, d = $('#dup').checked;
-      const list = cards.filter(c => c.title.toLowerCase().includes(f) && (!rar || (rar === 'fav' ? c.fav : c.rarity === rar)) && (!d || c.qty > 1));
-      list.sort({ fav: (a, b) => (b.fav | 0) - (a.fav | 0) || RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, rar: (a, b) => RANK[b.rarity] - RANK[a.rarity] || b.views - a.views, name: (a, b) => a.title.localeCompare(b.title, 'fr'),
-        new: (a, b) => (b.acquired || 0) - (a.acquired || 0) || (b.ord || 0) - (a.ord || 0), old: (a, b) => (a.acquired || 0) - (b.acquired || 0) || (a.ord || 0) - (b.ord || 0),
-        qty: (a, b) => b.qty - a.qty, val: (a, b) => value(b) - value(a) }[s]);
-      if (!list.length) $('#g').innerHTML = `<div class="empty" style="grid-column:1/-1">${rar === 'fav' ? 'Aucun favori pour l\'instant.<br>Touche l\'étoile ★ d\'une carte.' : 'Aucune carte ne correspond.'}</div>`;
-      else chunked($('#g'), list, c => cardHtml(c, {
+    // les cartes arrivent 40 par 40 depuis le serveur (tri et filtres faits par la base)
+    const P = pager($('#g'), {
+      fetchPage: cardPage(), root: null,
+      tile: c => cardHtml(c, {
         lazy: true, star: true,
         extra: `<div class="meta">Défausse <b>${sellValue(c)}</b> · Marché <b>${c.avg_price ?? '—'}</b></div>`,
         acts: `<button class="plain" data-d="${c.id}">Défausser</button><button class="plain" data-a="${c.id}">Vendre</button>`,
-      }), () => lazyImages($('#g')));
-    };
-    // un seul gestionnaire pour tous les boutons (les cartes arrivent par paquets)
+      }),
+      empty: p => p.fav ? 'Aucun favori pour l\'instant.<br>Touche l\'étoile ★ d\'une carte.' : 'Aucune carte ne correspond.',
+      onPage: (page, box) => {
+        lazyImages(box);
+        // photos manquantes : on retente en arrière-plan (Wikipédia, puis Wikidata) et on remplace seulement les cartes concernées
+        const need = page.filter(c => !c.image && c.enriched < 2).slice(0, 20);
+        if (need.length) api('/cards/enrich', { ids: need.map(c => c.id) }).then(({ cards: got }) => {
+          for (const x of got) {
+            const c = page.find(k => k.id === x.id); if (!c || !x.image) continue;
+            c.image = x.image; c.extract ||= x.extract; c.enriched = x.enriched;
+            const el = box.querySelector(`.card[data-id="${c.id}"]`); if (el) { el.outerHTML = cardHtml(c, { lazy: true, star: true, extra: `<div class="meta">Défausse <b>${sellValue(c)}</b> · Marché <b>${c.avg_price ?? '—'}</b></div>`, acts: `<button class="plain" data-d="${c.id}">Défausser</button><button class="plain" data-a="${c.id}">Vendre</button>` }); lazyImages(box); }
+          }
+        }).catch(() => {});
+      },
+    });
+    const load = () => P.reset({ sort, ...(rar === 'fav' ? { fav: 1 } : rar ? { rar } : {}), q, dup: dup ? 1 : '' });
+    // un seul gestionnaire pour tous les boutons (les cartes arrivent par pages)
     $('#g').onclick = safe(async e => {
       const bd = e.target.closest('[data-d]'), ba = e.target.closest('[data-a]');
       if (bd) {
-        const c = cards.find(x => x.id == bd.dataset.d);
+        const c = P.items.find(x => x.id == bd.dataset.d);
         if (c.qty === 1 && !(await ask('Défausser ?', [], { text: `Ta dernière « ${c.title} » pour ${sellValue(c)} pièces.`, ok: 'Défausser' }))) return;
         const r = await api('/discard', { card_id: c.id, qty: 1 }); toast(`+${r.price} pièces`); await refreshMe(); render();
-      } else if (ba) await sellSheet(cards.find(x => x.id == ba.dataset.a));
+      } else if (ba) await sellSheet(P.items.find(x => x.id == ba.dataset.a));
     });
-    ['flt', 'srt', 'dup'].forEach(id => $('#' + id).oninput = draw);
+    let t; $('#flt').oninput = e => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); load(); }, 300); };
+    $('#srt').onchange = e => { sort = e.target.value; load(); };
+    $('#dup').onchange = e => { dup = e.target.checked; load(); };
     $('#chips').onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
-      rar = albumFilter = b.dataset.r; $('#chips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); draw();
+      rar = albumFilter = b.dataset.r; $('#chips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); load();
     };
-    const bulkSync = () => { const t = bulkTiers.find(x => x.r === $('#bulk-r').value); $('#bulk-go').disabled = !t.n; return t; };
+    const bulkSync = () => { const t = tiers.find(x => x.r === $('#bulk-r').value); $('#bulk-go').disabled = !t.n; return t; };
     $('#bulk-r').onchange = bulkSync; bulkSync();
     $('#bulk-go').onclick = safe(async () => {
       const t = bulkSync(); if (!t.n) return;
       if (!(await ask('Vendre les doublons ?', [], { text: `${t.n} carte${t.n > 1 ? 's' : ''} jusqu'à « ${RAR[t.r]} » pour ${fmt(t.price)} pièces. Un exemplaire de chaque carte est conservé.`, ok: 'Vendre' }))) return;
       const r = await api('/discard-dupes', { max_rarity: t.r }); toast(`${r.count} cartes vendues, +${r.price} pièces`); await refreshMe(); render();
     });
-    draw();
-    // photos manquantes : on retente en arrière-plan (Wikipédia, puis Wikidata) et on complète les cartes sans recharger la page
-    const need = cards.filter(c => !c.image && c.enriched < 2).slice(0, 40);
-    if (need.length) api('/cards/enrich', { ids: need.map(c => c.id) }).then(({ cards: got }) => {
-      let changed = false;
-      for (const x of got) {
-        const c = cards.find(k => k.id === x.id); if (!c) continue;
-        if (x.image && !c.image) { c.image = x.image; changed = true; }
-        c.extract ||= x.extract; c.enriched = x.enriched;
-      }
-      if (changed && $('#g')) draw();
-    }).catch(() => {});
+    load();
   },
 
   async search(v) {
@@ -578,9 +597,9 @@ const views = {
   },
 
   async trades(v) {
-    const [{ trades }, { users }, { cards }] = await Promise.all([api('/trades'), api('/users'), api('/album')]);
+    const [{ trades }, { users }] = await Promise.all([api('/trades'), api('/users')]);
     const others = users.filter(u => !u.me);
-    let give = null, want = null; const theirs = new Map();
+    let give = null, want = null;
     const slot = (c, label) => `<small>${label}</small>` + (c ? `<div class="tpick ${c.rarity}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="pimg ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}><span class="chip">${ABBR[c.rarity]}</span></div><b>${esc(c.title)}</b></div><em>Changer</em>` : '<span class="plus">+</span><em>Choisir une carte</em>');
     v.innerHTML = `${pageHead('Marché', 'Échange des cartes avec un joueur')}${seg(MARKET_SEG, 'trades')}
       <div class="panel"><h3>Proposer un échange</h3>${others.length ? `<div class="tform">
@@ -598,12 +617,10 @@ const views = {
       const paint = () => { $('#t-offs').innerHTML = slot(give, 'Tu donnes'); $('#t-wants').innerHTML = slot(want, 'Tu veux'); $('#t-go').disabled = !(give && want); };
       paint();
       $('#t-to').onchange = () => { want = null; paint(); };
-      $('#t-offs').onclick = async () => { const c = await cardPicker('Quelle carte donnes-tu ?', cards); if (c) { give = c; paint(); } };
+      $('#t-offs').onclick = async () => { const c = await cardPicker('Quelle carte donnes-tu ?'); if (c) { give = c; paint(); } };
       $('#t-wants').onclick = safe(async () => {
         const id = +$('#t-to').value, name = others.find(u => u.id === id).name;
-        if (!theirs.has(id)) theirs.set(id, (await api(`/players/${id}/cards`)).cards);
-        if (!theirs.get(id).length) return toast(`${name} n'a aucune carte pour le moment`);
-        const c = await cardPicker(`Quelle carte veux-tu à ${name} ?`, theirs.get(id)); if (c) { want = c; paint(); }
+        const c = await cardPicker(`Quelle carte veux-tu à ${name} ?`, { user: id }); if (c) { want = c; paint(); }
       });
       $('#t-go').onclick = safe(async () => {
         await api('/trades', { to: $('#t-to').value, offer_card: give.id, want_card: want.id }); toast('Proposition envoyée'); render();
@@ -771,18 +788,17 @@ async function renderGame() {
     });
     if (f.end && (f.phase === 'pick' || (f.phase === 'q' && !f.res))) runBar($('#tb'), f.end - Date.now(), f.time);
   } else if (game.kind === 'battle' && game.view === 'pick') {
-    const { cards } = await api('/album?lite=1');
-    const sorted = [...cards].sort((a, b) => (b.atk + b.def) - (a.atk + a.def)), byId = new Map(cards.map(c => [c.id, c]));   // les plus fortes d'abord
-    let q = '', rf = '';
+    const known = new Map();                       // cartes vues (pour afficher le nom des cartes choisies même après un changement de filtre)
+    let q = '', rf = '', t;
     v.innerHTML = `${pageHead(`Combat — choisis ${game.rounds} cartes`)}
       <p class="mut" id="selinfo" style="margin:0 0 8px"></p>
       <div class="sticky-bar"><button id="go" disabled>Valider le deck</button></div>
-      <div class="search wide">${ico('search')}<input id="pq" placeholder="Chercher parmi tes ${fmt(cards.length)} cartes" autocomplete="off"></div>
+      <div class="search wide">${ico('search')}<input id="pq" placeholder="Chercher parmi tes cartes" autocomplete="off"></div>
       <div class="chips" id="pchips" style="margin-bottom:10px"><button class="on" data-r="">Toutes</button>${cfg.rarities.map(r => `<button data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       <div class="grid" id="pg"></div>`;
     // aucune redessinée complète à chaque clic : on ne met à jour que les cartes concernées
     const mark = () => {
-      $('#selinfo').innerHTML = game.sel.length ? `PV de départ = somme des DEF. Deck : <b>${game.sel.map(id => esc(byId.get(id)?.title ?? '')).join(' · ')}</b>` : 'Tes PV de départ sont la somme des DEF de tes 3 cartes. Tu choisis en même temps que l\'adversaire.';
+      $('#selinfo').innerHTML = game.sel.length ? `PV de départ = somme des DEF. Deck : <b>${game.sel.map(id => esc(known.get(id)?.title ?? '…')).join(' · ')}</b>` : 'Tes PV de départ sont la somme des DEF de tes 3 cartes. Tu choisis en même temps que l\'adversaire.';
       $('#go').disabled = game.sel.length !== game.rounds; $('#go').textContent = `Valider le deck (${game.sel.length}/${game.rounds})`;
       $('#pg').querySelectorAll('.card').forEach(el => {
         const i = game.sel.indexOf(+el.dataset.id); el.classList.toggle('sel', i >= 0);
@@ -790,18 +806,15 @@ async function renderGame() {
         if (i >= 0) { if (!n) { n = document.createElement('span'); n.className = 'pickno'; el.append(n); } n.textContent = i + 1; } else n?.remove();
       });
     };
-    const fill = () => {
-      const list = sorted.filter(c => (!q || c.title.toLowerCase().includes(q)) && (!rf || c.rarity === rf));
-      if (!list.length) $('#pg').innerHTML = '<div class="empty" style="grid-column:1/-1">Aucune carte ne correspond.</div>';
-      else chunked($('#pg'), list, c => cardHtml(c, { cls: 'pick', lazy: true }), () => { lazyImages($('#pg')); mark(); });
-    };
+    const P = pager($('#pg'), { fetchPage: cardPage(), tile: c => (known.set(c.id, c), cardHtml(c, { cls: 'pick', lazy: true })), onPage: (page, box) => { lazyImages(box); mark(); } });
+    const fill = () => P.reset({ sort: 'rar', rar: rf, q });
     $('#pg').onclick = e => {
       const el = e.target.closest('.card'); if (!el) return;
       const id = +el.dataset.id, i = game.sel.indexOf(id);
       if (i >= 0) game.sel.splice(i, 1); else if (game.sel.length < game.rounds) game.sel.push(id);
       mark();
     };
-    $('#pq').oninput = e => { q = e.target.value.trim().toLowerCase(); fill(); };
+    $('#pq').oninput = e => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); fill(); }, 300); };
     $('#pchips').onclick = e => { const b = e.target.closest('button'); if (!b) return; rf = b.dataset.r; $('#pchips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); fill(); };
     $('#go').onclick = () => { send({ t: 'pick', id: game.id, cards: game.sel }); v.innerHTML = pageHead('Combat', 'Deck validé, en attente de l’adversaire…'); };
     mark(); fill();
@@ -1214,7 +1227,7 @@ async function start() {
   }
   $('#boot').hidden = true;
   if (!ok) { $('#auth').hidden = false; $('#a-err').textContent = 'Serveur injoignable. Réessaie dans un instant (tu restes connecté).'; return; } $('#app').hidden = false; connect(); render();
-  setTimeout(() => ['/album', '/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500); schedulePrefetch();   // pré-chargement des onglets suivants
+  setTimeout(() => ['/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500); schedulePrefetch();   // pré-chargement des onglets suivants
   let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
   if (pending) addByCode(pending);
   setTimeout(pushStartup, 2500);

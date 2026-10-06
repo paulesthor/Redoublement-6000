@@ -74,8 +74,13 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
 }
 const insertCard = (env, c) => st(env, 'INSERT OR IGNORE INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?)',
   c.id, c.title, c.views, c.rarity, c.atk, c.def, c.shiny, urlOf(c.title));
-const addCard = (env, uid, cid, n = 1) => st(env,
-  'INSERT INTO inventory (user_id, card_id, qty, acquired) VALUES (?,?,?,?) ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty, acquired = excluded.acquired', uid, cid, n, now());   // acquired = dernière obtention (tri par date)
+/** Rang de rareté (0..5) d'une colonne de rareté. */
+const rarIdx = col => caseSql(col, RANK);
+/** Ajoute des exemplaires à la collection. L'inventaire garde une copie des champs de tri (rareté, nom, popularité) : la collection se pagine ainsi sans relire la table des cartes. */
+const addCard = (env, uid, cid, n = 1) => (statsCache.delete(uid), st(env,
+  `INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav)
+   SELECT ?1, c.id, ?2, ?3, ${rarIdx('c.rarity')}, c.shiny, ${rarIdx('c.rarity')} * 1000000000 + MIN(c.views, 999999999), lower(c.title), 0 FROM cards c WHERE c.id = ?4
+   ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty, acquired = excluded.acquired`, uid, n, now(), cid));   // acquired = dernière obtention (tri par date)
 
 // ---------- description + image via l'API MediaWiki, conservées en base ----------
 // enriched : 0 = rien, 1 = Wikipédia lu (image éventuellement manquante), 2 = terminé (Wikidata consulté pour les pages sans photo)
@@ -170,7 +175,7 @@ async function enrich(env, ids) {
 async function userStats(env, uid) {
   const [u, inv, mk] = await Promise.all([
     one(env, 'SELECT duel_wins wins, packs_opened packs, coins FROM users WHERE id = ?', uid),
-    all(env, 'SELECT c.rarity, c.shiny, COUNT(*) n FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? GROUP BY c.rarity, c.shiny', uid),
+    all(env, 'SELECT rar, sh shiny, COUNT(*) n FROM inventory WHERE user_id = ? GROUP BY rar, sh', uid).then(rows => rows.map(r => ({ rarity: RARITIES[r.rar], shiny: r.shiny, n: r.n }))),
     one(env, "SELECT (SELECT COUNT(*) FROM auctions WHERE seller_id = ? AND status = 'sold') sold, (SELECT COUNT(*) FROM auctions WHERE bidder_id = ? AND status = 'sold') won, (SELECT COUNT(*) FROM friends WHERE user_id = ?) friends", uid, uid, uid),
   ]);
   return { ...u, ...mk, ...statsFromInventory(inv, RARITIES) };
@@ -230,6 +235,7 @@ async function finishPack(env, ctx, user, drawn) {
     ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', c.id - SHINY_OFFSET, c.id)),
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
   ]);
+  statsCache.delete(user.id);
   ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {}));
   // description + image : le client les demande par vagues (/api/cards/enrich), dans l'ordre de révélation
   const rows = new Map((await cardRows(env, ids)).map(c => [c.id, c]));
@@ -511,10 +517,11 @@ route('GET', '/api/profile/:id', async ({ env, user, params }) => {
   const id = +params.id;
   const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs FROM users WHERE id = ? AND is_bot = 0', id);
   if (!u) bad('Joueur introuvable', 404);
-  const inv = await all(env, 'SELECT c.rarity, c.shiny, COUNT(*) n FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? GROUP BY c.rarity, c.shiny', id);
+  const inv = (await all(env, 'SELECT rar, sh shiny, COUNT(*) n FROM inventory WHERE user_id = ? GROUP BY rar, sh', id)).map(r => ({ rarity: RARITIES[r.rar], shiny: r.shiny, n: r.n }));
   const score = inv.reduce((t, r) => t + (POINTS[r.rarity] || 0) * r.n, 0) + u.wins * 10;
-  const best = await all(env, `SELECT c.id, c.title, c.rarity, c.shiny, c.image, c.atk, c.def FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
-    ORDER BY ${caseSql('c.rarity', Object.fromEntries(RARITIES.map(r => [r, RARITIES.length - 1 - RANK[r]])))}, c.shiny DESC, c.views DESC LIMIT 6`, id);
+  const top = await all(env, 'SELECT card_id FROM inventory WHERE user_id = ? ORDER BY skey DESC, card_id DESC LIMIT 6', id);   // meilleures cartes : lues dans l'ordre de l'index, sans parcourir toute la collection
+  const det = top.length ? new Map((await all(env, `SELECT id, title, rarity, shiny, image, atk, def FROM cards WHERE id IN (${placeholders(top.length)})`, ...top.map(t => t.card_id))).map(c => [c.id, c])) : new Map();
+  const best = top.map(t => det.get(t.card_id)).filter(Boolean);
   const ach = await all(env, 'SELECT key, ts FROM achievements WHERE user_id = ? ORDER BY ts DESC', id);
   const fr = await one(env, 'SELECT 1 x FROM friends WHERE user_id = ? AND friend_id = ?', user.id, id);
   return { profile: { ...u, uniques: inv.reduce((t, r) => t + r.n, 0), score, best, achievements: ach, total: ACH.length, isMe: id === user.id, isFriend: !!fr,
@@ -572,7 +579,58 @@ route('POST', '/api/favorites', async ({ env, user, body }) => {
     if (!(await one(env, 'SELECT 1 x FROM inventory WHERE user_id = ? AND card_id = ?', user.id, id))) bad('Tu ne possèdes pas cette carte');
     await run(env, 'INSERT OR IGNORE INTO favorites (user_id, card_id, ts) VALUES (?,?,?)', user.id, id, now());
   } else await run(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ?', user.id, id);
+  await run(env, 'UPDATE inventory SET fav = ? WHERE user_id = ? AND card_id = ?', body.on ? 1 : 0, user.id, id);
   return { ok: true };
+});
+// ---- collection paginée : 40 cartes par page, tri et filtres faits par la base grâce aux colonnes de tri de l'inventaire ----
+const PAGE = 40;
+const SORTS = {                     // colonnes de l'ordre (index inventory_*) et sens ; la dernière colonne départage toujours (card_id)
+  rar: { cols: ['skey', 'card_id'], dir: 'DESC' }, new: { cols: ['acquired', 'card_id'], dir: 'DESC' }, old: { cols: ['acquired', 'card_id'], dir: 'ASC' },
+  name: { cols: ['nk', 'card_id'], dir: 'ASC' }, qty: { cols: ['qty', 'card_id'], dir: 'DESC' }, fav: { cols: ['fav', 'skey', 'card_id'], dir: 'DESC' },
+};
+route('GET', '/api/album/page', async ({ env, user, query }) => {
+  const uid = query.get('user') ? +query.get('user') : user.id;
+  if (uid !== user.id && !(await one(env, 'SELECT 1 x FROM users WHERE id = ? AND is_bot = 0', uid))) bad('Joueur introuvable', 404);
+  const sort = SORTS[query.get('sort')] ?? SORTS.rar, { cols, dir } = sort;
+  const where = ['i.user_id = ?'], args = [uid];
+  const r = RANK[query.get('rar')];
+  if (r !== undefined) { where.push('i.skey >= ? AND i.skey < ?'); args.push(r * 1e9, (r + 1) * 1e9); }
+  if (query.get('fav')) where.push('i.fav = 1');
+  if (query.get('dup')) where.push('i.qty > 1');
+  const q = String(query.get('q') || '').toLowerCase().replace(/[%_\\]/g, '').trim().slice(0, 60);
+  if (q) { where.push('i.nk LIKE ?'); args.push(`%${q}%`); }
+  let cur = null; try { cur = JSON.parse(query.get('cursor') || 'null'); } catch { /* ignoré */ }
+  if (Array.isArray(cur) && cur.length === cols.length) {
+    where.push(`(${cols.map(c => 'i.' + c).join(', ')}) ${dir === 'DESC' ? '<' : '>'} (${cols.map(() => '?').join(', ')})`); args.push(...cur);
+  }
+  const order = cols.map(c => `i.${c} ${dir}`).join(', ');
+  const rows = await all(env, `SELECT i.card_id, i.qty, i.acquired, i.fav, i.skey, i.nk FROM inventory i WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ${PAGE + 1}`, ...args);
+  const more = rows.length > PAGE, page = rows.slice(0, PAGE);
+  const det = page.length ? new Map((await all(env, `SELECT c.*, ${AVG} AS avg_price FROM cards c WHERE c.id IN (${placeholders(page.length)})`, ...page.map(x => x.card_id))).map(c => [c.id, c])) : new Map();
+  const cards = page.map(x => ({ ...det.get(x.card_id), qty: x.qty, acquired: x.acquired, fav: x.fav }));
+  return { cards, next: more ? cols.map(c => page.at(-1)[c === 'card_id' ? 'card_id' : c]) : null };
+});
+const statsCache = new Map();         // userId -> { t, v } : relire toute la collection coûte cher, on garde le résultat 60 s (vidé par les ventes)
+let rarityAvgCache = { t: 0, v: null };
+route('GET', '/api/album/stats', async ({ env, user, origin }) => {
+  const hit = statsCache.get(user.id);
+  if (hit && now() - hit.t < 60000) return hit.v;
+  const [agg, meta] = await Promise.all([
+    all(env, 'SELECT rar, sh, COUNT(*) u, SUM(qty) q, SUM(CASE WHEN qty > 1 THEN qty - 1 ELSE 0 END) d FROM inventory WHERE user_id = ? GROUP BY rar, sh', user.id),
+    getMeta(env, origin),
+  ]);
+  if (now() - rarityAvgCache.t > 600000) rarityAvgCache = { t: now(), v: Object.fromEntries((await all(env, 'SELECT c.rarity, CAST(ROUND(AVG(s.price)) AS INTEGER) p, COUNT(*) n FROM sales s JOIN cards c ON c.id = s.card_id GROUP BY c.rarity')).map(r => [r.rarity, { avg: r.p, n: r.n }])) };
+  const have = Object.fromEntries(RARITIES.map(r => [r, 0]));
+  let uniques = 0, copies = 0, dupes = 0, worth = 0;
+  const tiers = RARITIES.map(r => ({ r, n: 0, price: 0 }));
+  for (const x of agg) {
+    const rar = RARITIES[x.rar]; uniques += x.u; copies += x.q; dupes += x.d; worth += x.q * SELL[rar];
+    if (!x.sh) have[rar] += x.u;
+    for (let k = x.rar; k < RARITIES.length; k++) { tiers[k].n += x.d; tiers[k].price += x.d * SELL[rar]; }
+  }
+  const v = { uniques, copies, dupes, worth, have, tiers, total: Object.fromEntries(RARITIES.map(r => [r, meta.ranges[r][1] - meta.ranges[r][0]])), rarityAvg: rarityAvgCache.v };
+  statsCache.set(user.id, { t: now(), v });
+  return v;
 });
 route('GET', '/api/album', async ({ env, user, origin, query }) => {
   if (query.get('lite')) {                                          // version allégée (choix du deck) : pas de description, pas de prix moyen
@@ -598,20 +656,19 @@ route('POST', '/api/discard', async ({ env, user, body }) => {
     st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', user.id, cid),
     st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id),
   ]);
+  statsCache.delete(user.id);
   return { price };
 });
 // vend tous les exemplaires en trop (on garde 1 exemplaire) des cartes de rareté <= max_rarity
 route('POST', '/api/discard-dupes', async ({ env, user, body }) => {
   const max = RANK[body.max_rarity] ?? 0;
-  const rars = RARITIES.filter(r => RANK[r] <= max);
-  const where = `i.user_id = ? AND i.qty > 1 AND c.rarity IN (${placeholders(rars.length)})`;
-  const agg = await one(env, `SELECT COALESCE(SUM((i.qty - 1) * ${caseSql('c.rarity', SELL)}), 0) price, COALESCE(SUM(i.qty - 1), 0) count
-    FROM inventory i JOIN cards c ON c.id = i.card_id WHERE ${where}`, user.id, ...rars);
+  const agg = await one(env, `SELECT COALESCE(SUM((qty - 1) * ${byRar(SELL, 'rar')}), 0) price, COALESCE(SUM(qty - 1), 0) count FROM inventory WHERE user_id = ? AND qty > 1 AND rar <= ?`, user.id, max);
   if (!agg.count) return { price: 0, count: 0 };
   await env.DB.batch([
-    st(env, `UPDATE inventory SET qty = 1 WHERE user_id = ? AND qty > 1 AND card_id IN (SELECT id FROM cards WHERE rarity IN (${placeholders(rars.length)}))`, user.id, ...rars),
+    st(env, 'UPDATE inventory SET qty = 1 WHERE user_id = ? AND qty > 1 AND rar <= ?', user.id, max),
     st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', agg.price, user.id),
   ]);
+  statsCache.delete(user.id);
   return { price: agg.price, count: agg.count };
 });
 
@@ -678,10 +735,11 @@ route('GET', '/api/quiz/preview', async ({ env, query }) => {
   return { title: card.title, ia: !!env.AI, deja_en_base: cached, questions_ia_disponibles: ai, derniere_erreur_ia: ai ? null : lastAiError(), questions: questions.map(x => ({ source: x.ai ? 'ia' : 'regles', question: x.text, choix: x.options, bonne_reponse: x.options[x.answer] })) };
 });
 let lbCache = { t: 0, v: null };                                        // classement partagé : lecture lourde (toutes les collections), gardé 60 s
+const byRar = (map, col = 'i.rar') => `CASE ${col} ${RARITIES.map((r, k) => `WHEN ${k} THEN ${map[r]}`).join(' ')} ELSE 0 END`;   // valeur selon le rang de rareté
 route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 && lbCache.v) || (lbCache = { t: now(), v: {
   players: await all(env, `SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
-    COALESCE(SUM(${caseSql('c.rarity', POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(c.id) AS uniques
-    FROM users u LEFT JOIN inventory i ON i.user_id = u.id LEFT JOIN cards c ON c.id = i.card_id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
+    COALESCE(SUM(${byRar(POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(i.card_id) AS uniques
+    FROM users u LEFT JOIN inventory i ON i.user_id = u.id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 } }).v);
 
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
@@ -934,6 +992,7 @@ route('POST', '/api/admin/take-card', admin(async ({ env, body }) => {
   const n = body.qty === 'all' ? row.qty : Math.min(row.qty, Math.max(1, Math.trunc(+body.qty) || 1));
   await env.DB.batch([st(env, 'UPDATE inventory SET qty = qty - ? WHERE user_id = ? AND card_id = ?', n, uid, cid), st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', uid, cid),
     st(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ? AND NOT EXISTS (SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?)', uid, cid, uid, cid)]);
+  statsCache.delete(uid);
   return { ok: true, removed: n, left: row.qty - n };
 }));
 // ---- enchères « truquées » par l'admin : vendues sous le pseudo d'un joueur simulé ----

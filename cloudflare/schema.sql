@@ -42,7 +42,12 @@ CREATE TABLE IF NOT EXISTS inventory (
   user_id INTEGER NOT NULL REFERENCES users(id),
   card_id INTEGER NOT NULL REFERENCES cards(id),
   qty INTEGER NOT NULL,
-  acquired INTEGER,                   -- date de la dernière obtention (tri par date) ; vide pour les cartes d'avant la mise en place
+  acquired INTEGER,                   -- date de la dernière obtention (tri par date)
+  rar INTEGER NOT NULL DEFAULT 0,     -- copies des champs de tri de la carte : la collection se pagine sans relire la table cards
+  sh INTEGER NOT NULL DEFAULT 0,
+  skey INTEGER NOT NULL DEFAULT 0,    -- rang de rareté * 1e9 + popularité
+  nk TEXT NOT NULL DEFAULT '',        -- titre en minuscules
+  fav INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, card_id)
 );
 CREATE TABLE IF NOT EXISTS auctions (
@@ -157,3 +162,9 @@ CREATE TABLE IF NOT EXISTS push_msgs (        -- notifications en attente de lec
   ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS push_msgs_ep ON push_msgs(endpoint);
+CREATE INDEX IF NOT EXISTS inventory_skey ON inventory(user_id, skey, card_id);
+CREATE INDEX IF NOT EXISTS inventory_acq ON inventory(user_id, acquired, card_id);
+CREATE INDEX IF NOT EXISTS inventory_nk ON inventory(user_id, nk, card_id);
+CREATE INDEX IF NOT EXISTS inventory_qty ON inventory(user_id, qty, card_id);
+CREATE INDEX IF NOT EXISTS inventory_fav ON inventory(user_id, fav, skey, card_id);
+CREATE INDEX IF NOT EXISTS inventory_stats ON inventory(user_id, rar, sh, qty);
