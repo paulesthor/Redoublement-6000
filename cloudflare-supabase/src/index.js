@@ -584,7 +584,7 @@ route('POST', '/api/me/showcase', async ({ env, user, body }) => {
   return { ok: true, showcase: await showcaseOf(env, user.id, JSON.stringify(ids)) };
 });
 
-route('GET', '/api/version', async () => ({ v: CFG.VERSION }), false);
+route('GET', '/api/version', async () => ({ v: CFG.VERSION, db: 'supabase' }), false);
 route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
