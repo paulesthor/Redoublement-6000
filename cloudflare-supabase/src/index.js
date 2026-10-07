@@ -1061,6 +1061,34 @@ route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
   bq(env, ctx, user.id, { sell_auction: 1 });
   return { ok: true };
 });
+// met en vente plusieurs cartes d'un coup (une enchère par carte, même durée) ; une carte refusée n'empêche pas les autres
+route('POST', '/api/auctions/many', async ({ env, ctx, user, body }) => {
+  const items = (Array.isArray(body.items) ? body.items : []).slice(0, 40), minutes = Math.min(1440, Math.max(1, Math.floor(+body.minutes || 360)));
+  if (!items.length) bad('Aucune carte choisie');
+  const done = [], failed = [], seen = new Set();
+  for (const it of items) {
+    const cid = +it.card_id, price = Math.floor(+it.price);
+    try {
+      if (!Number.isInteger(cid) || seen.has(cid)) throw new HttpError(400, 'Carte en double');
+      seen.add(cid);
+      if (!(price >= 1 && price <= 1e6)) throw new HttpError(400, 'Prix invalide');
+      const taken = await run(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty > 0', user.id, cid);
+      if (!taken.meta.changes) throw new HttpError(400, 'Tu ne possèdes pas cette carte');
+      await env.DB.batch([
+        st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', user.id, cid),
+        st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', user.id, cid, price, now() + minutes * 60000),
+      ]);
+      done.push(cid);
+    } catch (e) { if (!(e instanceof HttpError)) throw e; failed.push({ card_id: cid, error: e.message }); }
+  }
+  if (done.length) {
+    statsCache.delete(user.id);
+    notify(env, ctx, { t: 'notify', msg: `${user.name} met ${done.length} carte${done.length > 1 ? 's' : ''} aux enchères`, except: user.id });
+    (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
+    bq(env, ctx, user.id, { sell_auction: done.length });
+  }
+  return { ok: true, listed: done.length, failed };
+});
 route('GET', '/api/auctions/:id/bids', async ({ env, params }) => ({
   bids: await all(env, 'SELECT b.amount, b.ts, u.name, u.id user_id, u.is_bot bot FROM bids b JOIN users u ON u.id = b.user_id WHERE b.auction_id = ? ORDER BY b.id DESC LIMIT 50', +params.id),
 }));

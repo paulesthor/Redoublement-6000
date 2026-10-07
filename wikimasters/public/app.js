@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -181,6 +181,33 @@ function sellSheet(c) {
     $('#s-ok').onclick = safe(async () => {
       await api('/auctions', { card_id: c.id, price: $('#sp').value, minutes: mins });
       toast('Mise en vente'); close(); render();
+    });
+  });
+}
+
+/** Mise en vente de plusieurs cartes : un prix de départ par carte (prix moyen du marché par défaut), une durée commune. Renvoie vrai si au moins une carte est partie. */
+function sellManySheet(list) {
+  return new Promise(resolve => {
+    const m = $('#modal'); let mins = 360;
+    const start = c => c.avg_price ?? sellValue(c) * 3;
+    m.hidden = false;
+    m.innerHTML = `<div class="sellmany"><h2>Mettre ${list.length} carte${list.length > 1 ? 's' : ''} aux enchères</h2><p class="mut" style="margin:0 0 8px">Un exemplaire de chaque. Prix de départ : le prix moyen du marché, modifiable.</p>
+      <div class="smlist">${list.map(c => `<label class="smrow"><span class="smt"><b>${esc(c.title)}</b><small><span class="rar ${c.rarity}">${RAR[c.rarity]}</span> · marché ${c.avg_price ?? '—'}</small></span><input type="number" inputmode="numeric" min="1" data-id="${c.id}" value="${start(c)}"></label>`).join('')}</div>
+      <div class="fld" style="margin:10px 0 6px">Durée des enchères</div>
+      <div class="chips wrap" id="smd">${DURATIONS.map(([v, l]) => `<button data-m="${v}" class="${v === mins ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <p class="mut" id="smtot" style="margin:8px 0"></p>
+      <div class="row"><button id="sm-ok">Tout mettre en vente</button><button id="sm-no" class="plain">Annuler</button></div></div>`;
+    const tot = () => { const t = [...m.querySelectorAll('.smrow input')].reduce((s, i) => s + (+i.value || 0), 0); $('#smtot').innerHTML = `Total des prix de départ : <b>${fmt(t)}</b> pièces`; };
+    tot(); m.querySelector('.smlist').oninput = tot;
+    const close = ok => { m.hidden = true; m.innerHTML = ''; resolve(ok); };
+    $('#smd').onclick = e => { const b = e.target.closest('button'); if (!b) return; mins = +b.dataset.m; $('#smd').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+    $('#sm-no').onclick = () => close(false); m.onclick = e => { if (e.target === m) close(false); };
+    $('#sm-ok').onclick = safe(async () => {
+      $('#sm-ok').disabled = true;
+      const items = [...m.querySelectorAll('.smrow input')].map(i => ({ card_id: +i.dataset.id, price: +i.value }));
+      const r = await api('/auctions/many', { items, minutes: mins });
+      toast(r.failed.length ? `${r.listed} mise${r.listed > 1 ? 's' : ''} en vente, ${r.failed.length} refusée${r.failed.length > 1 ? 's' : ''} (${r.failed[0].error})` : `${r.listed} carte${r.listed > 1 ? 's' : ''} en vente`);
+      await refreshMe(); close(r.listed > 0);
     });
   });
 }
@@ -536,15 +563,16 @@ const views = {
         <select id="bulk-r" aria-label="Rareté maximale">${tiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>${RAR[t.r]} et moins · ${t.n} carte${t.n > 1 ? 's' : ''} · +${fmt(t.price)}</option>`).join('')}</select>
         <button class="plain" id="bulk-go">Vendre</button><button class="plain" id="fuse-all">Tout fusionner</button><button class="plain" id="selmode">Sélectionner</button></div>
       <div class="grid" id="g"></div>
-      <div class="selbar" id="selbar" hidden><span id="selinfo2"></span><button class="plain" id="sel-cancel">Annuler</button><button id="sel-go">Défausser</button></div>`;
+      <div class="selbar" id="selbar" hidden><span id="selinfo2"></span><button class="plain" id="sel-cancel">Annuler</button><button class="plain" id="sel-sell">Vendre</button><button id="sel-go">Défausser</button></div>`;
     // sélection multiple : un appui sur chaque carte, puis une seule défausse
     let selMode = false; const picked = new Map();
     const markPicked = root => root.querySelectorAll('.card').forEach(el => el.classList.toggle('picked', picked.has(+el.dataset.id)));
     const selSync = () => {
       const n = picked.size, gain = [...picked.values()].reduce((t, c) => t + sellValue(c), 0);
       $('#g').classList.toggle('selecting', selMode); $('#selmode').textContent = selMode ? 'Terminer' : 'Sélectionner';
-      $('#selbar').hidden = !selMode; $('#selinfo2').innerHTML = n ? `<b>${n}</b> carte${n > 1 ? 's' : ''} · +${fmt(gain)} pièces` : 'Touche les cartes à défausser';
+      $('#selbar').hidden = !selMode; $('#selinfo2').innerHTML = n ? `<b>${n}</b> carte${n > 1 ? 's' : ''} · défausse +${fmt(gain)}` : 'Touche les cartes à défausser ou à vendre';
       $('#sel-go').disabled = !n; $('#sel-go').textContent = n ? `Défausser (${n})` : 'Défausser';
+      $('#sel-sell').disabled = !n; $('#sel-sell').textContent = n ? `Vendre (${n})` : 'Vendre';
     };
     $('#selmode').onclick = () => { selMode = !selMode; if (!selMode) { picked.clear(); markPicked($('#g')); } selSync(); };
     $('#sel-cancel').onclick = () => { selMode = false; picked.clear(); markPicked($('#g')); selSync(); };
@@ -561,6 +589,10 @@ const views = {
       const gain = list.reduce((t, c) => t + sellValue(c), 0), last = list.filter(c => c.qty === 1).length;
       if (!(await ask(`Défausser ${list.length} carte${list.length > 1 ? 's' : ''} ?`, [], { text: `Un exemplaire de chaque pour ${fmt(gain)} pièces.${last ? ` ${last} ${last > 1 ? 'sont tes dernières' : 'est ta dernière'} (elles quitteront ta collection).` : ''}`, ok: 'Défausser' }))) return;
       const r = await api('/discard-many', { ids: list.map(c => c.id) }); toast(`${r.count} cartes défaussées, +${fmt(r.price)} pièces`); await refreshMe(); render();
+    });
+    $('#sel-sell').onclick = safe(async () => {
+      const list = [...picked.values()]; if (!list.length) return;
+      if (await sellManySheet(list)) { selMode = false; picked.clear(); selSync(); render(); }
     });
     // les cartes arrivent 40 par 40 depuis le serveur (tri et filtres faits par la base)
     const P = pager($('#g'), {

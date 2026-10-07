@@ -114,6 +114,20 @@ console.log('— fiche de carte avec un très long article');
   ok('la fiche défile (un seul défilement)', sc.scrollable && sc.ov === 'auto' && (await p.$eval('.detail', e => e.scrollTop)) > 100, J(sc));
   await p.click('#det-close'); await p.waitForTimeout(300); ok('la fiche se ferme', (await p.$('.detail')) === null);
 }
+console.log('— mise en vente multiple (interface)');
+{
+  await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'album'; render(); }); await p.waitForSelector('#g .card'); await p.waitForTimeout(500);
+  await p.click('#chips [data-r=""]'); await p.selectOption('#srt', 'rar'); await p.waitForTimeout(600);
+  await p.click('#selmode'); const cards = await p.$$('#g .card'); for (const c of cards.slice(0, 3)) await c.click();
+  ok('barre de sélection : Vendre (3)', (await p.textContent('#sel-sell')).includes('3'));
+  const nbA = (await DB.prepare('SELECT COUNT(*) n FROM auctions WHERE seller_id = 1').all()).results[0].n;
+  await p.click('#sel-sell'); await p.waitForSelector('.sellmany'); await p.waitForTimeout(300); await shot(p, 'vente-multiple');
+  ok('3 lignes de prix pré-remplies', (await p.$$('.smrow input')).length === 3 && (await p.$$eval('.smrow input', is => is.every(i => +i.value >= 1))));
+  await p.fill('.smrow input', '77'); await p.click('#smd [data-m="720"]'); await p.click('#sm-ok'); await p.waitForTimeout(1200);
+  const nbB = (await DB.prepare('SELECT COUNT(*) n FROM auctions WHERE seller_id = 1').all()).results[0].n;
+  ok('3 enchères créées d\'un coup', nbB - nbA === 3, [nbA, nbB]);
+  ok('prix modifié pris en compte', (await DB.prepare('SELECT COUNT(*) n FROM auctions WHERE seller_id = 1 AND start_price = 77').all()).results[0].n === 1);
+}
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
 ok('3 types de combat en onglets', (await p.$$('#dm-seg button')).length === 3);
