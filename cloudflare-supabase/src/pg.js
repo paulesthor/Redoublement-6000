@@ -78,10 +78,12 @@ export function supabaseTransport(url, key) {
     // Les lectures peuvent être rejouées sans risque après un incident réseau ; une écriture n'est JAMAIS rejouée (elle a pu passer).
     const readOnly = stmts.every(s => /^\s*(select|with)\b/i.test(s.sql));
     const body = JSON.stringify({ stmts });
+    const headers = { 'Content-Type': 'application/json', apikey: key };
+    if (key.startsWith('eyJ')) headers.Authorization = 'Bearer ' + key;   // clé « service_role » classique (JWT) : envoyée aussi en Authorization ; les nouvelles clés « sb_secret_… » ne vont que dans apikey
     for (let attempt = 1; ; attempt++) {
       let r, t;
       try {
-        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: key, Authorization: 'Bearer ' + key }, body, signal: AbortSignal.timeout(10000) });
+        r = await fetch(endpoint, { method: 'POST', headers: headers, body, signal: AbortSignal.timeout(10000) });
         t = await r.text();
       } catch (e) {
         if (readOnly && attempt < 3) { await wait(150 * attempt); continue; }
