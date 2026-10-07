@@ -513,19 +513,47 @@ route('GET', '/api/achievements', async ({ env, ctx, user }) => {
   const got = new Map((await all(env, 'SELECT key, ts FROM achievements WHERE user_id = ?', user.id)).map(r => [r.key, r.ts]));
   return { achievements: achievements(stats).map(a => ({ k: a.k, t: a.t, d: a.d, n: a.n, r: a.r, value: a.value, done: got.has(a.k), ts: got.get(a.k) || null })) };
 });
+const profileCache = new Map();               // id -> { t, v } : la partie lourde du profil (statistiques) est gardée 60 s
+/** Cartes de la vitrine d'un joueur : seulement celles qu'il possède encore, dans l'ordre choisi. */
+async function showcaseOf(env, uid, raw) {
+  let ids = []; try { ids = JSON.parse(raw || '[]'); } catch { /* vitrine illisible : vide */ }
+  ids = (Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger).slice(0, 3);
+  if (!ids.length) return [];
+  const rows = await all(env, `SELECT c.id, c.title, c.rarity, c.shiny, c.image, c.atk, c.def, c.views, substr(c.extract, 1, 400) extract, c.enriched FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.card_id IN (${placeholders(ids.length)})`, uid, ...ids);
+  const by = new Map(rows.map(c => [c.id, c]));
+  return ids.map(id => by.get(id)).filter(Boolean);
+}
 route('GET', '/api/profile/:id', async ({ env, user, params }) => {
   const id = +params.id;
-  const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs FROM users WHERE id = ? AND is_bot = 0', id);
-  if (!u) bad('Joueur introuvable', 404);
-  const inv = (await all(env, 'SELECT rar, sh shiny, COUNT(*) n FROM inventory WHERE user_id = ? GROUP BY rar, sh', id)).map(r => ({ rarity: RARITIES[r.rar], shiny: r.shiny, n: r.n }));
-  const score = inv.reduce((t, r) => t + (POINTS[r.rarity] || 0) * r.n, 0) + u.wins * 10;
-  const top = await all(env, 'SELECT card_id FROM inventory WHERE user_id = ? ORDER BY skey DESC, card_id DESC LIMIT 6', id);   // meilleures cartes : lues dans l'ordre de l'index, sans parcourir toute la collection
-  const det = top.length ? new Map((await all(env, `SELECT id, title, rarity, shiny, image, atk, def FROM cards WHERE id IN (${placeholders(top.length)})`, ...top.map(t => t.card_id))).map(c => [c.id, c])) : new Map();
-  const best = top.map(t => det.get(t.card_id)).filter(Boolean);
-  const ach = await all(env, 'SELECT key, ts FROM achievements WHERE user_id = ? ORDER BY ts DESC', id);
+  let hit = profileCache.get(id);
+  if (!hit || now() - hit.t > 60000) {
+    const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs, showcase FROM users WHERE id = ? AND is_bot = 0', id);
+    if (!u) bad('Joueur introuvable', 404);
+    const inv = (await all(env, 'SELECT rar, sh shiny, COUNT(*) n FROM inventory WHERE user_id = ? GROUP BY rar, sh', id)).map(r => ({ rarity: RARITIES[r.rar], shiny: r.shiny, n: r.n }));
+    const score = inv.reduce((t, r) => t + (POINTS[r.rarity] || 0) * r.n, 0) + u.wins * 10;
+    const top = await all(env, 'SELECT card_id FROM inventory WHERE user_id = ? ORDER BY skey DESC, card_id DESC LIMIT 6', id);   // meilleures cartes : lues dans l'ordre de l'index, sans parcourir toute la collection
+    const det = top.length ? new Map((await all(env, `SELECT id, title, rarity, shiny, image, atk, def FROM cards WHERE id IN (${placeholders(top.length)})`, ...top.map(t => t.card_id))).map(c => [c.id, c])) : new Map();
+    const best = top.map(t => det.get(t.card_id)).filter(Boolean);
+    const ach = await all(env, 'SELECT key, ts FROM achievements WHERE user_id = ? ORDER BY ts DESC', id);
+    const { showcase: sc, ...rest } = u;
+    hit = { t: now(), v: { ...rest, uniques: inv.reduce((t, r) => t + r.n, 0), score, best, achievements: ach, total: ACH.length, showcase: await showcaseOf(env, id, sc),
+      byRarity: Object.fromEntries(RARITIES.map(r => [r, inv.filter(x => x.rarity === r).reduce((t, x) => t + x.n, 0)])) } };
+    profileCache.set(id, hit);
+  }
   const fr = await one(env, 'SELECT 1 x FROM friends WHERE user_id = ? AND friend_id = ?', user.id, id);
-  return { profile: { ...u, uniques: inv.reduce((t, r) => t + r.n, 0), score, best, achievements: ach, total: ACH.length, isMe: id === user.id, isFriend: !!fr,
-    byRarity: Object.fromEntries(RARITIES.map(r => [r, inv.filter(x => x.rarity === r).reduce((t, x) => t + x.n, 0)])) } };
+  return { profile: { ...hit.v, isMe: id === user.id, isFriend: !!fr } };
+});
+// vitrine : jusqu'à trois cartes de sa collection, exposées sur son profil
+route('POST', '/api/me/showcase', async ({ env, user, body }) => {
+  const ids = [...new Set((Array.isArray(body.cards) ? body.cards : []).map(Number).filter(Number.isInteger))];
+  if (ids.length > 3) bad('Trois cartes au maximum dans la vitrine');
+  if (ids.length) {
+    const own = new Set((await all(env, `SELECT card_id FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(ids.length)})`, user.id, ...ids)).map(r => r.card_id));
+    if (!ids.every(i => own.has(i))) bad('Tu ne possèdes pas une de ces cartes');
+  }
+  await run(env, 'UPDATE users SET showcase = ? WHERE id = ?', JSON.stringify(ids), user.id);
+  profileCache.delete(user.id);
+  return { ok: true, showcase: await showcaseOf(env, user.id, JSON.stringify(ids)) };
 });
 
 route('GET', '/api/version', async () => ({ v: CFG.VERSION }), false);
@@ -770,7 +798,7 @@ route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
   return { ok: true };
 });
 route('GET', '/api/auctions/:id/bids', async ({ env, params }) => ({
-  bids: await all(env, 'SELECT b.amount, b.ts, u.name FROM bids b JOIN users u ON u.id = b.user_id WHERE b.auction_id = ? ORDER BY b.id DESC LIMIT 50', +params.id),
+  bids: await all(env, 'SELECT b.amount, b.ts, u.name, u.id user_id, u.is_bot bot FROM bids b JOIN users u ON u.id = b.user_id WHERE b.auction_id = ? ORDER BY b.id DESC LIMIT 50', +params.id),
 }));
 route('POST', '/api/auctions/:id/bid', async ({ env, ctx, user, params, body }) => {
   await settleAuctions(env, ctx);

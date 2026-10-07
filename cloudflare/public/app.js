@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '2.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '2.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -201,7 +201,7 @@ async function lotSheet(id) {
       <div class="row"><button id="bid-ok">Enchérir</button><button id="bid-no" class="plain">Fermer</button></div>`}
     ${a.mine ? '<div class="row"><button id="bid-no" class="plain">Fermer</button></div>' : ''}
     <h3 class="hist-h">Historique des offres</h3>
-    <div class="hist">${bids.length ? bids.map(b => `<div><span>${esc(b.name)}</span><b>${ico('coin')}${b.amount}</b><em>${new Date(b.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</em></div>`).join('') : '<p class="mut">Aucune offre pour l\'instant.</p>'}</div></div>`;
+    <div class="hist">${bids.length ? bids.map(b => `<div><span>${b.bot ? esc(b.name) : `<a href="#" class="plink" data-pl="${b.user_id}">${esc(b.name)}</a>`}</span><b>${ico('coin')}${b.amount}</b><em>${new Date(b.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</em></div>`).join('') : '<p class="mut">Aucune offre pour l\'instant.</p>'}</div></div>`;
   m.querySelectorAll('.plink').forEach(a => a.onclick = e => { e.preventDefault(); lotOpen = null; clearInterval(lotTick); playerSheet(a.dataset.pl); });
   const close = () => { m.hidden = true; m.innerHTML = ''; lotOpen = null; clearInterval(lotTick); };
   const upd = () => { const t = m.querySelector('[data-end]'); if (t) { const ms = t.dataset.end - Date.now(); t.querySelector('span').textContent = timeLeft(ms); t.classList.toggle('hot', ms < 60000); } };
@@ -581,10 +581,10 @@ const views = {
     v.innerHTML = `${pageHead('Combats', 'Défie un joueur connecté')}${seg(COMBAT_SEG, 'duel')}
       <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Combat</b> : chacun choisit 3 cartes (PV de départ = somme de leurs DEF). À tour de rôle, un joueur attaque avec une carte et l'autre répond à 3 questions sur son article : chaque mauvaise réponse coûte le tiers de l'ATK de la carte. Le plus de PV à la fin gagne : +50 pièces (moitié moins contre un joueur simulé).</p></details></div>
       <button id="vs-bot" class="botbtn">${ico('sword')} Combat contre un joueur simulé</button>
-      <div class="list">${users.map(u => `<div class="item row1 ${u.me ? 'me' : ''}">${avatar(u.name, online.has(u.id))}
+      <div class="list">${users.map(u => `<div class="item row1 tap ${u.me ? 'me' : ''}" data-pl="${u.id}">${avatar(u.name, online.has(u.id))}
         <div class="grow"><div class="nm">${esc(u.name)}${u.me ? ' (toi)' : ''}</div><div class="sub">${online.has(u.id) ? 'En ligne' : 'Hors ligne'}</div></div>
         ${u.me ? '' : `<div class="acts">${['quiz', 'battle'].map(m => `<button data-id="${u.id}" data-mode="${m}" ${online.has(u.id) ? '' : 'disabled'} class="${m === 'quiz' ? 'plain' : ''}">${m === 'quiz' ? 'Quiz' : 'Combat'}</button>`).join('')}</div>`}</div>`).join('')}</div>`;
-    bindSeg(v);
+    bindSeg(v); bindPlayers(v);
     v.querySelectorAll('[data-id]').forEach(b => b.onclick = () => send({ t: 'challenge', to: +b.dataset.id, mode: b.dataset.mode }));
     $('#vs-bot').onclick = () => send({ t: 'challenge_bot' });
   },
@@ -618,11 +618,11 @@ const views = {
         <button id="t-go" disabled>Proposer l'échange</button></div>` : '<p class="mut">Aucun autre joueur pour le moment.</p>'}</div>
       ` + (trades.length ? `<h3 class="sec">En attente</h3><div class="list">${trades.map(t => {
         const mine = t.from_id === me.id;
-        return `<div class="item">${avatar(mine ? t.to_name : t.from_name)}<div class="grow"><div class="nm">${mine ? 'Toi' : esc(t.from_name)} → ${mine ? esc(t.to_name) : 'toi'}</div>
+        return `<div class="item tap" data-pl="${mine ? t.to_id : t.from_id}">${avatar(mine ? t.to_name : t.from_name)}<div class="grow"><div class="nm">${mine ? 'Toi' : esc(t.from_name)} → ${mine ? esc(t.to_name) : 'toi'}</div>
           <div class="sub"><span><b style="color:var(--fg)">${esc(t.offer_title)}</b> contre <b style="color:var(--fg)">${esc(t.want_title)}</b></span></div></div>
           <div class="acts">${mine ? `<button class="plain" data-a="cancel" data-id="${t.id}">Annuler</button>` : `<button data-a="accept" data-id="${t.id}">Accepter</button><button class="plain" data-a="decline" data-id="${t.id}">Refuser</button>`}</div></div>`;
       }).join('')}</div>` : '<div class="empty">Aucun échange en attente.</div>');
-    bindSeg(v);
+    bindSeg(v); bindPlayers(v);
     if (others.length) {
       const paint = () => { $('#t-offs').innerHTML = slot(give, 'Tu donnes'); $('#t-wants').innerHTML = slot(want, 'Tu veux'); $('#t-go').disabled = !(give && want); };
       paint();
@@ -1131,6 +1131,47 @@ views.admin = async v => {
   adminBody();   // sans attendre : la vue est déjà dessinée, sinon le squelette (affiché après 140 ms) l'écraserait
 };
 
+views.player = async v => {
+  const { profile: p } = await api('/profile/' + playerId).catch(e => { toast(e.message); return {}; });
+  if (!p) { tab = playerFrom; return render(); }
+  const names = Object.fromEntries(ACH_NAMES.map(x => [x.k, x.t]));
+  const vcard = (c, i) => { cardIndex.set(c.id, { ...c, qty: 1 }); return `<button class="vcard ${c.rarity} ${c.shiny ? 'shiny' : ''}" data-c="${c.id}" data-slot="${i}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="vimg ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div><b>${esc(c.title)}</b><small>ATK ${fmt(c.atk)} · DEF ${fmt(c.def)}</small></button>`; };
+  v.innerHTML = `<button class="plain backbtn" id="pp-back">← Retour</button>
+    <div class="profile big">${avatar(p.name, online.has(p.id))}<div><h1 class="pname">${esc(p.name)}</h1>${p.isMe ? '<span class="mut">C\'est toi</span>' : p.isFriend ? '<span class="newtag">Ami</span>' : ''}
+      <div class="mut">${p.wins} victoire${p.wins > 1 ? 's' : ''} · ${p.losses} défaite${p.losses > 1 ? 's' : ''}</div></div></div>
+    <div class="tiles"><div class="tile"><b>${fmt(p.score)}</b><span>points</span></div><div class="tile"><b>${fmt(p.uniques)}</b><span>cartes uniques</span></div><div class="tile"><b>${fmt(p.packs)}</b><span>paquets ouverts</span></div></div>
+    <h3 class="hist-h">Vitrine</h3>
+    <div class="vitrine">${[0, 1, 2].map(i => p.showcase[i] ? vcard(p.showcase[i], i) : p.isMe ? `<button class="vslot" data-add="${i}"><span>+</span><small>Ajouter</small></button>` : '<div class="vslot empty"></div>').join('')}</div>
+    ${p.isMe ? '<p class="mut" style="margin:8px 0 0;font-size:13px">Expose jusqu\'à 3 cartes de ta collection sur ton profil. Touche une carte pour la voir, la changer ou la retirer.</p>' : !p.showcase.length ? `<p class="mut" style="margin:8px 0 0;font-size:13px">${esc(p.name)} n'expose aucune carte pour l'instant.</p>` : ''}
+    <div class="rarbar" style="margin-top:16px">${cfg.rarities.map(r => `<span style="--c:var(--${r})" title="${RAR[r]}"><b>${p.byRarity[r] || 0}</b>${ABBR[r]}</span>`).join('')}</div>
+    ${p.best.length ? `<h3 class="hist-h">Meilleures cartes</h3><div class="minis">${p.best.map(c => `<div class="mini ${c.shiny ? 'shiny' : ''}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})" title="${esc(c.title)}">
+      <div class="mi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div><span>${esc(c.title)}</span></div>`).join('')}</div>` : ''}
+    <h3 class="hist-h">Succès · ${p.achievements.length} / ${p.total}</h3>
+    ${p.achievements.length ? `<div class="chips wrap">${p.achievements.slice(0, 12).map(x => `<button class="plain" style="pointer-events:none">${esc(names[x.key] || x.key)}</button>`).join('')}</div>` : '<p class="mut">Aucun succès pour l\'instant.</p>'}
+    <div class="row" style="margin-top:16px">${!p.isMe && !p.isFriend ? '<button id="pl-add">Ajouter en ami</button>' : p.isMe ? '<button id="pl-ach">Mes succès</button>' : ''}</div>`;
+  $('#pp-back').onclick = () => { tab = playerFrom; render(); };
+  $('#pl-add')?.addEventListener('click', safe(async () => { await api('/friends/request', { name: p.name }); toast('Demande envoyée'); }));
+  $('#pl-ach')?.addEventListener('click', () => { tab = 'ach'; render(); });
+  const ids = () => p.showcase.map(c => c.id);
+  const save = safe(async list => { await api('/me/showcase', { cards: list }); toast('Vitrine mise à jour'); render(); });
+  const choose = async (slot) => {
+    const c = await cardPicker('Quelle carte exposer dans ta vitrine ?'); if (!c) return;
+    if (ids().includes(c.id) && ids()[slot] !== c.id) return toast('Cette carte est déjà dans ta vitrine');
+    const list = ids(); list[slot] = c.id; save(list.filter(Boolean));
+  };
+  v.querySelectorAll('[data-add]').forEach(b => b.onclick = () => choose(+b.dataset.add));
+  v.querySelectorAll('.vcard').forEach(b => b.onclick = () => {
+    const c = p.showcase[+b.dataset.slot];
+    if (!p.isMe) return showCard(c.id);
+    const m = $('#modal'); m.hidden = false;
+    m.innerHTML = `<div><h2>${esc(c.title)}</h2><p class="mut">Que veux-tu faire de cette carte dans ta vitrine ?</p><div class="col"><button id="vc-see">Voir la carte</button><button class="plain" id="vc-chg">Changer de carte</button><button class="plain" id="vc-rm" style="color:#ff8a80">Retirer de la vitrine</button><button class="plain" id="vc-x">Fermer</button></div></div>`;
+    const close = () => { m.hidden = true; m.innerHTML = ''; };
+    $('#vc-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    $('#vc-see').onclick = () => showCard(c.id);
+    $('#vc-chg').onclick = () => { close(); choose(+b.dataset.slot); };
+    $('#vc-rm').onclick = () => { close(); save(ids().filter(i => i !== c.id)); };
+  });
+};
 const render = safe(async () => {
   clearInterval(tick); markTab();
   if (tab === 'duel' && game) return renderGame();
@@ -1147,26 +1188,14 @@ async function refreshMe() {
 }
 const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.onclick = e => { if (e.target.closest('button')) return; playerSheet(el.dataset.pl); });
 /** Profil d'un joueur : stats, meilleures cartes, succès. */
-async function playerSheet(id) {
-  const m = $('#modal');
-  const { profile: p } = await api('/profile/' + id).catch(e => { toast(e.message); return {}; });
-  if (!p) return;
-  const names = Object.fromEntries(ACH_NAMES.map(a => [a.k, a.t]));
-  m.hidden = false;
-  m.innerHTML = `<div class="detail"><div class="profile">${avatar(p.name, online.has(p.id))}<div><b>${esc(p.name)}</b>${p.isMe ? ' <span class="mut">(toi)</span>' : p.isFriend ? ' <span class="newtag">Ami</span>' : ''}
-      <div class="mut">${p.wins} victoire${p.wins > 1 ? 's' : ''} · ${p.losses} défaite${p.losses > 1 ? 's' : ''}</div></div></div>
-    <div class="tiles"><div class="tile"><b>${fmt(p.score)}</b><span>points</span></div><div class="tile"><b>${fmt(p.uniques)}</b><span>cartes uniques</span></div><div class="tile"><b>${fmt(p.packs)}</b><span>paquets ouverts</span></div></div>
-    <div class="rarbar">${cfg.rarities.map(r => `<span style="--c:var(--${r})" title="${RAR[r]}"><b>${p.byRarity[r] || 0}</b>${ABBR[r]}</span>`).join('')}</div>
-    ${p.best.length ? `<h3 class="hist-h">Meilleures cartes</h3><div class="minis">${p.best.map(c => `<div class="mini ${c.shiny ? 'shiny' : ''}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})" title="${esc(c.title)}">
-      <div class="mi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div><span>${esc(c.title)}</span></div>`).join('')}</div>` : ''}
-    <h3 class="hist-h">Succès · ${p.achievements.length} / ${p.total}</h3>
-    ${p.achievements.length ? `<div class="chips wrap">${p.achievements.slice(0, 12).map(a => `<button class="plain" style="pointer-events:none">${esc(names[a.key] || a.key)}</button>`).join('')}</div>` : '<p class="mut">Aucun succès pour l\'instant.</p>'}
-    <div class="row">${!p.isMe && !p.isFriend ? '<button id="pl-add">Ajouter en ami</button>' : p.isMe ? '<button id="pl-ach">Mes succès</button>' : ''}<button class="plain" id="pl-close">Fermer</button></div></div>`;
-  const close = () => { m.hidden = true; m.innerHTML = ''; };
-  $('#pl-close').onclick = close; m.onclick = e => { if (e.target === m) close(); };
-  $('#pl-add')?.addEventListener('click', safe(async () => { await api('/friends/request', { name: p.name }); toast('Demande envoyée'); close(); }));
-  $('#pl-ach')?.addEventListener('click', () => { close(); tab = 'ach'; render(); });
+/** Ouvre la page d'un joueur (profil, vitrine, meilleures cartes, succès). */
+let playerId = null, playerFrom = 'packs';
+function openPlayer(id) {
+  const m = $('#modal'); m.hidden = true; m.innerHTML = ''; lotOpen = null; clearInterval(lotTick);
+  if (tab !== 'player') playerFrom = tab;                        // pour le bouton Retour
+  playerId = +id; GROUP.player = GROUP[playerFrom] ?? 'friends'; tab = 'player'; render();
 }
+const playerSheet = openPlayer;                                  // anciens appels : même page
 
 // ---------- notifications push ----------
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
