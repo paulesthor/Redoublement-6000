@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '2.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '2.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -457,6 +457,7 @@ const views = {
         await loadProgressive(r);                   // seules les premières cartes sont attendues, les autres arrivent pendant qu'on les regarde
         lastPack = r;
         refreshMe().catch(() => {});
+        r.cards.god = !!r.god;                      // paquet exceptionnel : l'animation d'ouverture le met en scène
         return r.cards;
       })();
       cardsPromise.catch(() => {});
@@ -466,7 +467,7 @@ const views = {
     $('#rates-btn').onclick = () => {
       const m = $('#modal'); m.hidden = false;
       m.innerHTML = `<div><h2>Taux de drop</h2><div class="ratelist">${cfg.rarities.map(r => `<div><span class="rar ${r}">${RAR[r]}</span><b>${pct(d[r])} %</b></div>`).join('')}</div>
-        <p class="mut" style="margin:12px 0 0;font-size:13px">Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. Catalogue : ${fmt(cfg.catalog)} pages. Aucune garantie : tout dépend de la chance.</p>
+        <p class="mut" style="margin:12px 0 0;font-size:13px">Une légendaire a ${+(cfg.shinyChance * 100).toFixed(2)} % de chance d'être shiny. <b style="color:var(--fg)">GODPACK</b> : un paquet sur ${fmt(Math.round(1 / (cfg.godpack || .001)))} ne contient que des ultra rares et des légendaires (au moins une). Catalogue : ${fmt(cfg.catalog)} pages. Aucune garantie : tout dépend de la chance.</p>
         <div class="row"><button class="plain" id="rt-close">Fermer</button></div></div>`;
       const close = () => { m.hidden = true; m.innerHTML = ''; };
       $('#rt-close').onclick = close; m.onclick = e => { if (e.target === m) close(); };

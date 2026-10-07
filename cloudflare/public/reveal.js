@@ -39,6 +39,10 @@
     const seq = [...cards].sort((a, b) => o.rank[a.rarity] - o.rank[b.rarity] || (a.shiny | 0) - (b.shiny | 0)); // moins rare d'abord
     const N = seq.length;
     buzz(30);
+    if (cards.god) {                                                  // GODPACK : écran spécial avant les cartes
+      root.className = 'r-legendary'; root.innerHTML = `<div class="bg"></div><div class="godsplash"><span>Paquet exceptionnel</span><b>GODPACK</b><small>${cards.length} cartes ultra rares et légendaires</small></div>`;
+      buzz([80, 40, 80, 40, 160]); await sleep(2600);
+    }
 
     let i = -1, locked = true, drag = null, dx = 0, finished;
     const done = new Promise(r => { finished = r; });
@@ -166,7 +170,7 @@
       if (!root.isConnected) return;
       locked = true;
       root.className = '';
-      root.innerHTML = `<div class="bg"></div><div class="sum"><h2>Ton tirage</h2>
+      root.innerHTML = `<div class="bg"></div><div class="sum"><h2>Ton tirage${cards.god ? ' <span class="godtag">GODPACK</span>' : ''}</h2>
         <div class="grid">${[...seq].reverse().map(c => o.cardHtml(c, { star: true })).join('')}</div>
         <div class="sticky-bar"><button class="finish">Continuer</button></div></div>`;
       root.querySelector('.finish').onclick = close;

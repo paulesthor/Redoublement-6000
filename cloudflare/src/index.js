@@ -45,9 +45,12 @@ function pickRarity(ranges, min = 0, w = CFG.DROP) {
 function userWeights(u) {
   try { const w = u?.drop_w && JSON.parse(u.drop_w); return w && RARITIES.some(r => w[r] > 0) ? Object.fromEntries(RARITIES.map(r => [r, Math.max(0, +w[r] || 0)])) : CFG.DROP; } catch { return CFG.DROP; }
 }
+/** Raretés d'un GODPACK : uniquement des ultra rares et des légendaires, au moins une légendaire. */
+const godRarities = n => { const r = Array.from({ length: n }, () => Math.random() < CFG.GODPACK_LEGEND ? 'legendary' : 'ultra'); if (!r.includes('legendary')) r[Math.floor(Math.random() * n)] = 'legendary'; return r; };
 async function drawCards(env, origin, n, w = CFG.DROP) {
   const { ranges } = await getMeta(env, origin);
-  const rarities = Array.from({ length: n }, () => pickRarity(ranges, 0, w));
+  const god = n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE;           // très rare : tout le paquet est ultra rare ou légendaire
+  const rarities = god ? godRarities(n) : Array.from({ length: n }, () => pickRarity(ranges, 0, w));
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
   try {
@@ -69,7 +72,7 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
   return picks.map((p, i) => {
     const [page, title, views] = p.ready ? [p.ready.id, p.ready.title, p.ready.views] : entries[i];
     const shiny = p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE;
-    return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...stats(title, p.rarity, shiny) };
+    return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...(god ? { god: 1 } : {}), ...stats(title, p.rarity, shiny) };
   });
 }
 const insertCard = (env, c) => st(env, 'INSERT OR IGNORE INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?)',
@@ -243,12 +246,18 @@ async function finishPack(env, ctx, user, drawn) {
   const seen = new Set();
   const cards = drawn.map(c => { const isNew = !before.has(c.id) && !seen.has(c.id); seen.add(c.id); return { ...rows.get(c.id), isNew, fav: favs.has(c.id) ? 1 : 0 }; })
     .sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || b.shiny - a.shiny);
+  const god = drawn.some(c => c.god);
+  if (god) {                                                                  // annonce à tout le monde
+    await run(env, 'INSERT INTO hits (user, title, shiny, ts) VALUES (?,?,?,?)', user.name, 'un GODPACK', 0, now());
+    notify(env, ctx, { t: 'hit', user: user.name, title: 'un GODPACK', shiny: false, ts: now() });
+    notify(env, ctx, { t: 'notify', msg: `${user.name} vient d'ouvrir un GODPACK !`, except: user.id });
+  }
   const legends = cards.filter(c => c.rarity === 'legendary');
   if (legends.length) {
     await env.DB.batch(legends.map(c => st(env, 'INSERT INTO hits (user, title, shiny, ts) VALUES (?,?,?,?)', user.name, c.title, c.shiny, now())));
     for (const c of legends) notify(env, ctx, { t: 'hit', user: user.name, title: c.title, shiny: !!c.shiny, ts: now() });
   }
-  return { cards };
+  return { cards, god };
 }
 
 
@@ -564,7 +573,7 @@ route('GET', '/api/version', async () => ({ v: CFG.VERSION }), false);
 route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
-    rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: meta.n,
+    rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: meta.n, godpack: CFG.GODPACK_CHANCE,
     vapid: (await getVapid(env)).pub, version: CFG.VERSION, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, ach: ACH.map(a => ({ k: a.k, t: a.t })),
   };
 }, false);
