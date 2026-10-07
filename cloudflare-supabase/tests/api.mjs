@@ -35,4 +35,4 @@ const settle = async () => { while (waits.length) await Promise.allSettled(waits
 let fails = 0; const ok = (n, c, d = '') => { console.log((c ? '  ok  ' : '  ÉCHEC ') + n + (c ? '' : ' ' + String(d).slice(0, 300))); if (!c) fails++; };
 const J = x => JSON.stringify(x);
 export { call, settle, ok, DB, pg, env, lobby, worker, ctx, fails as _f };
-globalThis.__T = { log, trips, tripStats, call, settle, ok, DB, pg, env, lobby, worker, ctx, J, done: () => { console.log(fails ? `\n${fails} ÉCHEC(S)` : '\nTOUT PASSE'); process.exit(fails ? 1 : 0); } };
+globalThis.__T = { log, trips, tripStats, call, settle, ok, DB, pg, env, lobby, worker, ctx, J, done: async () => { console.log(fails ? `\n${fails} ÉCHEC(S)` : '\nTOUT PASSE'); if (globalThis.__wipe) { await globalThis.__wipe(); console.log('(base Supabase vidée après les tests)'); } process.exit(fails ? 1 : 0); } };
