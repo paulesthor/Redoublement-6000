@@ -47,6 +47,13 @@ function userWeights(u) {
 }
 /** Raretés d'un GODPACK : uniquement des ultra rares et des légendaires, au moins une légendaire. */
 const godRarities = n => { const r = Array.from({ length: n }, () => Math.random() < CFG.GODPACK_LEGEND ? 'legendary' : 'ultra'); if (!r.includes('legendary')) r[Math.floor(Math.random() * n)] = 'legendary'; return r; };
+/** Raretés dont les cartes de la réserve sont réutilisées (lecture seule) : elles ne coûtent presque aucune écriture. */
+const REUSE = { common: 1, uncommon: 1, rare: 1 }, REUSE_RENEW = 0.12;
+const reserveCountsCache = { t: 0, v: {} };
+async function reserveCounts(env) {
+  if (now() - reserveCountsCache.t > 60000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n FROM reserve GROUP BY rarity')).map(r => [r.rarity, r.n])); reserveCountsCache.t = now(); }
+  return reserveCountsCache.v;
+}
 async function drawCards(env, origin, n, w = CFG.DROP) {
   const { ranges } = await getMeta(env, origin);
   const god = n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE;           // très rare : tout le paquet est ultra rare ou légendaire
@@ -54,8 +61,13 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
   try {
-    const res = await env.DB.batch(rarities.map(r => st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? LIMIT 1) RETURNING id', r)));
+    // raretés basses : la carte est relue sans être retirée (aucune écriture), et seulement renouvelée une fois sur REUSE_RENEW ; autres raretés : retirée à chaque tirage
+    const counts = await reserveCounts(env);
+    const reads = rarities.map(r => REUSE[r] && counts[r] > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? LIMIT 1 OFFSET ?', r, Math.floor(Math.random() * counts[r])) : null);
+    const res = await env.DB.batch(rarities.map((r, i) => reads[i] ?? st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? LIMIT 1) RETURNING id', r)));
     claimed = res.map(x => x.results?.[0]?.id ?? null);
+    const renew = claimed.filter((id, i) => id && reads[i] && Math.random() < REUSE_RENEW);
+    if (renew.length) { reserveCountsCache.t = 0; env.DB.batch(renew.map(id => st(env, 'DELETE FROM reserve WHERE id = ?', id))).catch(() => {}); }
   } catch { /* table absente ou erreur : tirage direct */ }
   const ready = claimed.filter(Boolean);
   const rows = new Map(ready.length ? (await all(env, `SELECT id, title, views FROM cards WHERE id IN (${placeholders(ready.length)})`, ...ready)).map(r => [r.id, r]) : []);
@@ -264,7 +276,7 @@ async function finishPack(env, ctx, user, drawn) {
 // ---------- réserve de cartes prêtes (texte + photo déjà récupérés) ----------
 // Un tirage prend ses cartes dans cette réserve quand elle en a : plus aucune attente de Wikipédia à l'ouverture.
 // La tâche planifiée la remplit en continu avec des pages tirées au hasard (même loi que le tirage direct).
-const RESERVE_TARGET = { common: 60, uncommon: 30, rare: 30, super: 18, ultra: 12, legendary: 9 };
+const RESERVE_TARGET = { common: 250, uncommon: 120, rare: 80, super: 18, ultra: 12, legendary: 9 };   // raretés basses : grosse réserve relue sans écriture
 const ASSET_ORIGIN = 'https://assets.local';
 async function refillReserve(env, max = 30) {
   const { ranges } = await getMeta(env, ASSET_ORIGIN);
