@@ -5,7 +5,7 @@ import { withDb } from './pg.js';
 import { handleMigrate } from './migrate.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
-import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
+import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
 import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests } from './game.js';
 export { Lobby } from './lobby.js';
@@ -1041,19 +1041,20 @@ route('POST', '/api/quests/claim', async ({ env, user, body }) => {
 const QUIZ_N = 5, QUIZ_SECS = 300;
 async function dailyQuiz(env, origin, day) {
   const have = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
-  if (have) return have;
-  const { ranges } = await getMeta(env, origin), top = ranges.rare[1];
+  if (have && have.model === 'ia2') return have;
+  if (have) await env.DB.batch([st(env, 'DELETE FROM daily_quiz WHERE day = ?', day), st(env, 'DELETE FROM daily_quiz_runs WHERE day = ?', day)]);   // quiz de l'ancienne version (questions hors sujet) : remplacé
+  const { ranges } = await getMeta(env, origin), top = ranges.ultra[1];   // articles de rareté UR ou légendaire seulement
   let h = 2166136261; for (const ch of 'quiz' + day) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
-  for (let k = 0; k < 6; k++) {                              // article choisi au hasard (même pour tous) ; on passe au suivant si l'IA ne donne pas assez de questions
+  for (let k = 0; k < 12; k++) {                             // article choisi au hasard (même pour tous) ; on passe au suivant s'il est peu adapté ou si l'IA ne donne pas assez de questions
     const e = await entryAt(env, origin, (h + k * 7919) % top);
-    const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '2500', redirects: '1', titles: e[1] });
+    if (/^(Liste|Listes|Élections?|Championnat|Saison|Catégorie|Portail)\b|homonymie|^\d{4}\b/i.test(e[1])) continue;   // des pages de listes ou de résultats font de mauvaises questions
+    const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '3500', redirects: '1', titles: e[1] });
     let page = null;
     try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) page = Object.values((await r.json()).query?.pages ?? {})[0]; } catch { /* hors-ligne */ }
-    if (!page?.extract || page.extract.length < 200) continue;
-    const pool = await randomPool(env, 30);
-    const qs = await battleQuestions(env, { id: e[0], title: page.title, extract: page.extract.slice(0, 600), views: e[2] }, page.extract, { cards: pool }, QUIZ_N);
+    if (!page?.extract || page.extract.length < 600) continue;
+    const qs = await dailyQuestions(env, { id: e[0], title: page.title, extract: page.extract.slice(0, 600), views: e[2] }, page.extract, QUIZ_N);   // toutes les questions portent sur cet article
     if (qs.length < QUIZ_N) continue;
-    await run(env, 'INSERT INTO daily_quiz (day, title, extract, questions, model, created) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING', day, page.title, page.extract.slice(0, 600), JSON.stringify(qs.slice(0, QUIZ_N).map(x => ({ text: x.text, options: x.options, answer: x.answer }))), qs.some(x => x.ai) ? 'ia' : 'regles', now());
+    await run(env, 'INSERT INTO daily_quiz (day, title, extract, questions, model, created) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING', day, page.title, page.extract.slice(0, 600), JSON.stringify(qs.slice(0, QUIZ_N).map(x => ({ text: x.text, options: x.options, answer: x.answer }))), 'ia2', now());
     return one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
   }
   bad('Le quiz du jour n’est pas disponible pour le moment, réessaie dans un instant', 503);

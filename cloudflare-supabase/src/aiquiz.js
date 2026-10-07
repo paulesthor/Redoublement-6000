@@ -11,12 +11,12 @@ const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ
 
 export const QUIZ_VERSION = 'v2';            // changer ce numéro force la régénération de toutes les questions gardées en base
 const KINDS = 'annee|lieu|personne|chiffre|cause|relation|calcul|langue';
-export function buildMessages(title, text) {
+export function buildMessages(title, text, count = 4, keep = 3) {
   const body = cleanText(text).slice(0, 3500);
   return [
     { role: 'system', content: 'Tu es un auteur de quiz de culture générale exigeant, de niveau expert. Tu écris en français des questions DIFFICILES à partir d\'un article Wikipédia. Tu réponds UNIQUEMENT par un objet JSON valide, sans texte autour.' },
     { role: 'user', content: `Article : « ${title} »\n\nTexte :\n"""\n${body}\n"""\n\n` +
-      'Écris 4 questions à choix multiples DIFFICILES sur CET article (les 3 meilleures seront gardées).\n' +
+      `Écris ${count} questions à choix multiples DIFFICILES sur CET article, et uniquement sur lui (les ${keep} meilleures seront gardées). Chaque question porte sur un fait précis de CET article, jamais sur un autre sujet ni sur la culture générale.\n` +
       'Niveau : pour quelqu\'un qui connaît déjà le sujet. Ne pose pas de question dont la réponse est dans la première phrase ou évidente. Privilégie les détails précis du texte : dates, chiffres, lieux, noms, causes, conséquences, ordre des événements, liens entre personnes ou éléments.\n' +
       'Au moins 2 questions demandent un raisonnement : relier deux informations du texte, comparer, déduire une conséquence ou calculer (écart entre deux années, ordre de grandeur) à partir du texte.\n' +
       'Règles impératives :\n' +
@@ -73,11 +73,26 @@ export function parseQuestions(raw, title, text) {
   return out;
 }
 /** Garde 3 questions en variant les types autant que possible. */
-export function pickThree(qs) {
+export function pickThree(qs, n = 3) {
   const picked = [];
-  for (const q of qs) if (picked.length < 3 && !picked.some(p => p.type === q.type)) picked.push(q);
-  for (const q of qs) if (picked.length < 3 && !picked.includes(q)) picked.push(q);
-  return picked.slice(0, 3).map(({ type, ...q }) => q);
+  for (const q of qs) if (picked.length < n && !picked.some(p => p.type === q.type)) picked.push(q);
+  for (const q of qs) if (picked.length < n && !picked.includes(q)) picked.push(q);
+  return picked.slice(0, n).map(({ type, ...q }) => q);
+}
+
+/** Quiz du jour : n questions IA uniquement (jamais de questions « hors article » du générateur à règles). Renvoie [] si l'IA n'en donne pas assez. */
+export async function dailyQuestions(env, card, text, n = 5) {
+  if (!env.AI) return [];
+  for (const model of MODELS) for (let essai = 0; essai < 2; essai++) {
+    try {
+      const out = await env.AI.run(model, { messages: buildMessages(card.title, text, n + 4, n), max_tokens: 2400, temperature: .5 });
+      const raw = typeof out === 'string' ? out : (out?.response ?? out?.result?.response ?? out?.choices?.[0]?.message?.content ?? out);
+      const qs = parseQuestions(raw, card.title, text);
+      if (qs.length >= n) return pickThree(qs, n).map(q => { const o = shuffle(q.options.map((t, i) => ({ t, ok: i === q.answer }))); return { text: q.text, options: o.map(x => x.t), answer: o.findIndex(x => x.ok), ai: true }; });
+      lastError.msg = `${model}: ${qs.length} question(s) valide(s)`;
+    } catch (e) { lastError.msg = `${model}: ${e.message}`; }
+  }
+  return [];
 }
 
 /** Essai d'un modèle précis, sans rien enregistrer (comparaison des modèles). */

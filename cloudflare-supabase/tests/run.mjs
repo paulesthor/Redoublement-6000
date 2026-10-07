@@ -278,6 +278,8 @@ console.log('— récompense quotidienne');
   ok('les actions font avancer les quêtes concernées', moved >= cq.filter(x => ['profile_view', 'message', 'open_pack', 'new_cards', 'rare_plus'].includes(QUESTS.find(y => y.id === x.id).event)).length, J(r.quests.map(x => [x.id, x.progress])));
 
   console.log('— quiz du jour');
+  const aiOld = env.AI, asked = []; env.AI = { run: async (m, o) => { asked.push(o.messages[1].content); const ty = ['annee', 'lieu', 'personne', 'chiffre', 'cause', 'relation', 'calcul', 'langue'];
+    return { response: JSON.stringify({ questions: Array.from({ length: 9 }, (_, i) => ({ type: ty[i % 8], question: `Question ${i + 1} : vers quelle date Paris a-t-elle été fondée selon l'article ?`, choices: ['250 av. J.-C.', '150 av. J.-C.', '350 av. J.-C.', '450 av. J.-C.'], answer: 0 })).map((q, i) => ({ ...q, question: q.question.replace('date', ['époque', 'année', 'période', 'date', 'ère', 'datation', 'moment', 'phase', 'siècle'][i]) })) }) }; } };
   [s, r] = await call(A, 'GET', '/api/daily-quiz'); ok('quiz du jour : pas encore commencé', s === 200 && r.status === 'new' && r.n === 5, J([s, r]));
   [s, r] = await call(A, 'POST', '/api/daily-quiz/start', {});
   if (s === 200) {
@@ -308,7 +310,9 @@ console.log('— récompense quotidienne');
     [s, r] = await call(A, 'POST', '/api/daily-quiz/start', {}); const t2 = (await q('SELECT questions FROM daily_quiz WHERE day = ?', dayKey()))[0];
     if (s === 200) { shift += 400000; [s, r] = await call(A, 'GET', '/api/daily-quiz'); ok('temps écoulé : statut « late »', r.status === 'late', J(r)); [s, r] = await call(A, 'POST', '/api/daily-quiz/submit', { answers: JSON.parse(t2.questions).map(t => t.answer) }); ok('réponses hors délai non comptées', r.recap.correct === 0, J(r.recap)); }
   } else ok('quiz du jour créé', false, J([s, r]));
-  Date.now = realNow;
+  ok('les questions sont demandées sur l\'article seul, avec un texte suffisant', asked.length >= 1 && asked.every(c => /CET article/.test(c)));
+  const dq = (await q('SELECT title FROM daily_quiz'))[0]; ok('article du quiz : pas une page de liste', dq && !/^Liste|homonymie/i.test(dq.title), J(dq));
+  env.AI = aiOld; Date.now = realNow;
 }
 
 const top = [...globalThis.__T.tripStats].sort((x, y) => y[1][0] - x[1][0]).slice(0, 14);

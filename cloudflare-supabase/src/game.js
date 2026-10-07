@@ -24,13 +24,13 @@ export function dailyState(u, t = Date.now()) {
 // c = pièces, p = paquets. L'événement (event) est compté par le serveur à chaque action du joueur.
 const E = (id, tier, text, event, goal, reward) => ({ id, tier, text, event, goal, reward });
 export const QUESTS = [
-  E('e1', 1, 'Ouvre 1 paquet', 'open_pack', 1, { c: 25 }), E('e2', 1, 'Découvre 3 nouvelles cartes', 'new_cards', 3, { c: 30 }),
+  E('e1', 1, 'Ouvre 1 paquet', 'open_pack', 1, { c: 25 }), E('e2', 1, 'Ouvre 2 paquets', 'open_pack', 2, { c: 30 }),
   E('e3', 1, 'Mets 1 carte en favori', 'favorite', 1, { c: 20 }), E('e4', 1, 'Fais 1 enchère', 'bid', 1, { c: 25 }),
   E('e5', 1, 'Défausse 3 cartes', 'discard', 3, { c: 25 }), E('e6', 1, 'Envoie 1 message à un joueur', 'message', 1, { c: 20 }),
   E('e7', 1, 'Regarde le profil d\'un autre joueur', 'profile_view', 1, { c: 15 }), E('e8', 1, 'Cherche 2 cartes dans le catalogue', 'search', 2, { c: 20 }),
   E('e9', 1, 'Mets 1 carte en vente aux enchères', 'sell_auction', 1, { c: 30 }), E('e10', 1, 'Fais le quiz du jour', 'quiz_daily', 1, { c: 40 }),
   E('e11', 1, 'Joue 1 duel de quiz', 'duel_play', 1, { c: 30 }), E('e12', 1, 'Expose une carte dans ta vitrine', 'showcase', 1, { c: 20 }),
-  E('m1', 2, 'Ouvre 3 paquets', 'open_pack', 3, { c: 60 }), E('m2', 2, 'Découvre 6 nouvelles cartes', 'new_cards', 6, { c: 60 }),
+  E('m1', 2, 'Ouvre 3 paquets', 'open_pack', 3, { c: 60 }), E('m2', 2, 'Dépense 150 pièces', 'spend', 150, { c: 60 }),
   E('m3', 2, 'Obtiens 3 cartes rares ou mieux', 'rare_plus', 3, { c: 70 }), E('m4', 2, 'Remporte 1 combat de cartes', 'battle_win', 1, { c: 80 }),
   E('m5', 2, 'Joue 2 combats de cartes', 'battle_play', 2, { c: 60 }), E('m6', 2, 'Fais 3 enchères', 'bid', 3, { c: 60 }),
   E('m7', 2, 'Remporte 1 enchère', 'win_auction', 1, { c: 80 }), E('m8', 2, 'Réponds juste à 4 questions de combat', 'battle_correct', 4, { c: 70 }),
@@ -39,7 +39,7 @@ export const QUESTS = [
   E('h1', 3, 'Ouvre 5 paquets', 'open_pack', 5, { p: 1 }), E('h2', 3, 'Obtiens 1 carte légendaire', 'legendary', 1, { p: 2 }),
   E('h3', 3, 'Remporte 2 combats de cartes', 'battle_win', 2, { p: 1 }), E('h4', 3, 'Réponds juste à 10 questions de combat', 'battle_correct', 10, { p: 1 }),
   E('h5', 3, 'Termine 1 échange', 'trade_done', 1, { p: 1 }), E('h6', 3, 'Vends 1 carte aux enchères', 'sale_done', 1, { p: 1 }),
-  E('h7', 3, 'Dépense 300 pièces', 'spend', 300, { p: 1 }), E('h8', 3, 'Débloque 1 succès', 'achievement', 1, { p: 1 }),
+  E('h7', 3, 'Dépense 300 pièces', 'spend', 300, { p: 1 }), E('h8', 3, 'Obtiens 5 cartes rares ou mieux', 'rare_plus', 5, { p: 1 }),
   E('h9', 3, 'Réponds juste à 5 questions du quiz du jour', 'quiz_correct', 5, { p: 1 }), E('h10', 3, 'Gagne 3 duels de quiz', 'duel_win', 3, { p: 1 }),
 ];
 export const QUEST = Object.fromEntries(QUESTS.map(q => [q.id, q]));
