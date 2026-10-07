@@ -48,7 +48,7 @@ function userWeights(u) {
 /** Raretés d'un GODPACK : uniquement des ultra rares et des légendaires, au moins une légendaire. */
 const godRarities = n => { const r = Array.from({ length: n }, () => Math.random() < CFG.GODPACK_LEGEND ? 'legendary' : 'ultra'); if (!r.includes('legendary')) r[Math.floor(Math.random() * n)] = 'legendary'; return r; };
 /** Raretés dont les cartes de la réserve sont réutilisées (lecture seule) : elles ne coûtent presque aucune écriture. */
-const REUSE = { common: 1, uncommon: 1, rare: 1 }, REUSE_RENEW = 0.12;
+const REUSE = { common: 1, uncommon: 1 }, REUSE_RENEW = 0.25;
 const reserveCountsCache = { t: 0, v: {} };
 async function reserveCounts(env) {
   if (now() - reserveCountsCache.t > 60000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n FROM reserve GROUP BY rarity')).map(r => [r.rarity, r.n])); reserveCountsCache.t = now(); }
@@ -72,8 +72,9 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
   const ready = claimed.filter(Boolean);
   const rows = new Map(ready.length ? (await all(env, `SELECT id, title, views FROM cards WHERE id IN (${placeholders(ready.length)})`, ...ready)).map(r => [r.id, r]) : []);
   const taken = new Set();
+  const used = new Set();                                                       // jamais deux fois la même carte dans un paquet
   const picks = rarities.map((rarity, i) => {
-    if (claimed[i] && rows.has(claimed[i])) return { rarity, ready: rows.get(claimed[i]) };
+    if (claimed[i] && rows.has(claimed[i]) && !used.has(claimed[i])) { used.add(claimed[i]); return { rarity, ready: rows.get(claimed[i]) }; }
     const [a, b] = ranges[rarity];
     for (let tries = 0; ; tries++) {
       const rank = a + Math.floor(Math.random() * (b - a));
