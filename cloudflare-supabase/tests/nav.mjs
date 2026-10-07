@@ -47,4 +47,25 @@ p = await mk(1100, 800); v = await vis(p);
 ok('8 onglets en barre latérale, pas de Plus', v.length === 8 && !v.includes('more'), J(v));
 await p.screenshot({ path: 'nav-desktop.png' });
 ok('aucune erreur JavaScript (ordinateur)', p.errs.length === 0, J(p.errs));
+console.log('— joueur ordinaire (non admin)');
+{
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+  await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, B);
+  const q = await c.newPage(); q.errs = []; q.on('pageerror', e => q.errs.push(e.message));
+  await q.goto('http://localhost:8767/'); await q.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(900);
+  await q.click('nav button.more'); await q.waitForSelector('.moresheet'); await q.waitForTimeout(300);
+  ok('pas de tuile Admin dans le menu Plus', await q.$('.mtile[data-go=admin]') === null && !(await q.textContent('.moresheet')).includes('Admin'));
+  await q.click('#mo-x'); await q.click('nav button.more'); await q.click('.mtile[data-go=settings]'); await q.waitForTimeout(400);
+  ok('pas de bouton Administration dans les réglages', await q.$('#pf-admin') === null && await q.$('#pf-test') === null);
+  await q.click('#pf-close');
+  await q.evaluate(() => { tab = 'admin'; render(); }); await q.waitForTimeout(900);
+  ok('écran admin forcé à la main : refusé', await q.$('#adm-tabs') === null);
+  const bad = [];
+  for (const [m, p] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/stats'], ['GET', '/api/admin/logs'], ['POST', '/api/admin/run'], ['POST', '/api/admin/lot'], ['POST', '/api/admin/announce'], ['GET', '/api/admin/fights'], ['GET', '/api/admin/market']]) {
+    const r = await q.evaluate(async ([m, p, tok]) => (await fetch(p, { method: m, headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' }, body: m === 'POST' ? '{}' : undefined })).status, [m, p, B]);
+    if (r !== 403) bad.push(m + ' ' + p + ' -> ' + r);
+  }
+  ok('toutes les routes admin renvoient 403 à un joueur ordinaire', bad.length === 0, J(bad));
+  ok('aucune erreur JavaScript (non admin)', q.errs.length === 0, J(q.errs));
+}
 await browser.close(); srv.close(); await done();
