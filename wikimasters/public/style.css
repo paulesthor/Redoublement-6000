@@ -974,3 +974,9 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .smrow .smt{flex:1;min-width:0}.smrow .smt b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smrow .smt small{color:var(--mut);font-size:11.5px}
 .smrow input{width:96px;text-align:right;font-weight:700}
 .selbar button{flex:none}
+
+/* ---- paquets thématiques ---- */
+.thgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.thcard{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:14px;background:linear-gradient(160deg,#f5c5421a,var(--panel));border:1px solid #f5c54244}
+.thcard .ae{font-size:28px;line-height:1}.thcard b{font-size:14px}.thcard small{color:var(--mut);font-size:11.5px;line-height:1.35;flex:1}
+.thcard button{display:flex;align-items:center;justify-content:center;gap:6px}.thcard button .ic{width:15px;height:15px}

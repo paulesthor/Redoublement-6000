@@ -61,9 +61,10 @@ async function reserveCounts(env) {
   if (now() - reserveCountsCache.t > 300000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n, MIN(id) lo, MAX(id) hi FROM reserve GROUP BY rarity')).map(r => [r.rarity, r])); reserveCountsCache.t = now(); }
   return reserveCountsCache.v;
 }
-async function drawCards(env, origin, n, w = CFG.DROP) {
+async function drawCards(env, origin, n, w = CFG.DROP, theme = null) {
   const { ranges } = await getMeta(env, origin);
-  const god = n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE;           // très rare : tout le paquet est ultra rare ou légendaire
+  if (theme) w = { ...w, legendary: w.legendary * CFG.THEME_LEGEND_MULT };               // paquet thématique : plus de légendaires, toutes de la catégorie
+  const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE;           // très rare : tout le paquet est ultra rare ou légendaire
   const rarities = god ? godRarities(n) : Array.from({ length: n }, () => pickRarity(ranges, 0, w));
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
@@ -71,7 +72,7 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
     // raretés basses : la carte est relue sans être retirée (aucune écriture), et seulement renouvelée une fois sur REUSE_RENEW ; autres raretés : retirée à chaque tirage
     const counts = await reserveCounts(env);
     // carte au hasard sans parcourir la table : on part d'un identifiant tiré entre le plus petit et le plus grand (une seule ligne lue)
-    const reads = rarities.map(r => REUSE[r] && counts[r]?.n > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? AND id >= ? LIMIT 1', r, counts[r].lo + Math.floor(Math.random() * (counts[r].hi - counts[r].lo + 1))) : null);
+    const reads = rarities.map(r => theme && r === 'legendary' ? st(env, 'SELECT id FROM reserve WHERE false') : REUSE[r] && counts[r]?.n > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? AND id >= ? LIMIT 1', r, counts[r].lo + Math.floor(Math.random() * (counts[r].hi - counts[r].lo + 1))) : null);
     const res = await env.DB.batch(rarities.map((r, i) => reads[i] ?? st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? LIMIT 1) RETURNING id', r)));
     claimed = res.map(x => x.results?.[0]?.id ?? null);
     const renew = claimed.filter((id, i) => id && reads[i] && Math.random() < REUSE_RENEW);
@@ -81,7 +82,13 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
   const rows = new Map(ready.length ? (await all(env, `SELECT id, title, views FROM cards WHERE id IN (${placeholders(ready.length)})`, ...ready)).map(r => [r.id, r]) : []);
   const taken = new Set();
   const used = new Set();                                                       // jamais deux fois la même carte dans un paquet
-  const picks = rarities.map((rarity, i) => {
+  const themed = theme ? theme.cards.slice() : null;
+  const picks = rarities.map((rarity0, i) => {
+    let rarity = rarity0;
+    if (themed && rarity === 'legendary') {                                     // carte légendaire de la catégorie, jamais deux fois la même dans le paquet
+      if (themed.length) { const [c] = themed.splice(Math.floor(Math.random() * themed.length), 1); return { rarity, rank: c.r }; }
+      rarity = 'ultra';                                                           // toutes les cartes de la catégorie sont déjà dans ce paquet : la suivante est une ultra rare
+    }
     if (claimed[i] && rows.has(claimed[i]) && !used.has(claimed[i])) { used.add(claimed[i]); return { rarity, ready: rows.get(claimed[i]) }; }
     const [a, b] = ranges[rarity];
     for (let tries = 0; ; tries++) {
@@ -806,7 +813,34 @@ route('GET', '/api/album', async ({ env, user, origin, query }) => {
   return { cards, total, rarityAvg };
 });
 
+// ---------- paquets thématiques : les légendaires du paquet viennent toutes d'une même catégorie ----------
+/** Les deux catégories du jour (les mêmes pour tous, tirées au hasard, renouvelées à minuit). */
+async function todaysThemes(env, origin) {
+  const all_ = (await albumList(env, origin)).filter(a => a.cards.length && a.cards.every(c => Number.isInteger(c.r))).sort((x, y) => (x.id < y.id ? -1 : 1)), n = all_.length, day = dayKey();
+  if (n <= 2) return all_;
+  const i = hash('theme1' + day) % n, j = (i + 1 + hash('theme2' + day) % (n - 1)) % n;
+  return [all_[i], all_[j]];
+}
+route('GET', '/api/themepacks', async ({ env, origin }) => ({
+  price: CFG.THEME_PACK_PRICE, mult: CFG.THEME_LEGEND_MULT, resetIn: msToMidnight(),
+  themes: (await todaysThemes(env, origin)).map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, count: a.cards.length, sample: a.cards.slice(0, 3).map(c => c.t) })),
+}));
+route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) => {
+  const all_ = await albumList(env, origin), asked = all_.find(a => a.id === String(body.theme || ''));
+  if (!asked) bad('Catégorie inconnue', 404);
+  const theme = (await todaysThemes(env, origin)).find(a => a.id === asked.id);
+  if (!theme) bad('Cette catégorie n’est pas disponible aujourd’hui : reviens demain, deux nouvelles catégories sont tirées chaque jour', 400);
+  const price = CFG.THEME_PACK_PRICE;
+  const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', price, user.id, price);
+  if (!paid.meta.changes) bad(`Pas assez de pièces (${price} requises)`);
+  let drawn;
+  try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme); }
+  catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); throw e; }   // tirage impossible : remboursé
+  return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
+});
+
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
+export const __testHooks = { resetAlbums: () => { albumsCache = null; } };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
 const albumReward = a => ({ c: 150 * a.cards.length, p: a.cards.length >= 8 ? 2 : 1 });

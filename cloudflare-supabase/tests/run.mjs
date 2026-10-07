@@ -353,6 +353,46 @@ console.log('— récompense quotidienne');
     ok('fuse-all : doublons consommés, un exemplaire conservé', (await q('SELECT SUM(qty) q FROM inventory WHERE user_id = ?', alice))[0].q == sumBefore - r.used && (await q('SELECT MIN(qty) m FROM inventory WHERE user_id = ?', alice))[0].m >= 1);
     [s, r] = await call(A, 'POST', '/api/fuse-all', {}); ok('fuse-all : rien à refaire ensuite', r.cards === 0 || r.cards >= 0 && s === 200);
   }
+  console.log('— paquets thématiques et albums');
+  {
+    const { default: CFGm } = await import('../src/config.js'); const { __testHooks } = await import('../src/index.js'); __testHooks.resetAlbums(); const { readFileSync } = await import('node:fs');
+    const shard = JSON.parse(readFileSync(new URL('../../cloudflare/public/catalog/0.json', import.meta.url))).slice(0, 8);
+    const fx = { albums: [{ id: 'ta', name: 'Test A', emoji: '🧪', blurb: 'a', cards: shard.slice(0, 4).map((e, i) => ({ id: e[0], t: e[1], r: i })) }, { id: 'tb', name: 'Test B', emoji: '🧫', blurb: 'b', cards: shard.slice(4, 8).map((e, i) => ({ id: e[0], t: e[1], r: 4 + i })) }] };
+    const oldAssets = env.ASSETS; env.ASSETS = { fetch: async rq => new URL(typeof rq === 'string' ? rq : rq.url).pathname === '/catalog/albums.json' ? new Response(JSON.stringify(fx), { headers: { 'content-type': 'application/json' } }) : oldAssets.fetch(rq) };
+    [s, r] = await call(A, 'GET', '/api/themepacks'); ok('paquets du jour : 2 catégories, prix et compte à rebours', s === 200 && r.themes.length === 2 && r.price === CFGm.THEME_PACK_PRICE && r.resetIn > 0, J([s, r]).slice(0, 200));
+    {
+      const many = { albums: [...fx.albums, ...Array.from({ length: 8 }, (_, k) => ({ id: 'x' + k, name: 'X' + k, emoji: '📦', blurb: '', cards: shard.slice(k % 4, (k % 4) + 4).map((e, i) => ({ id: e[0], t: e[1], r: (k % 4) + i })) }))] };
+      __testHooks.resetAlbums(); const keep = env.ASSETS; env.ASSETS = { fetch: async rq => new URL(typeof rq === 'string' ? rq : rq.url).pathname === '/catalog/albums.json' ? new Response(JSON.stringify(many), { headers: { 'content-type': 'application/json' } }) : keep.fetch(rq) };
+      const { dayKey } = await import('../src/game.js'); const saved = Date.now; let sets = new Set(), todayIds = null;
+      // le module garde la liste en mémoire : on vide son cache en rechargeant la route via un autre utilisateur n'est pas possible, on teste donc la rotation avec la fonction d'état de la journée
+      for (let d = 0; d < 6; d++) { Date.now = () => saved() + d * 86400000; [s, r] = await call(A, 'GET', '/api/themepacks'); if (d === 0) todayIds = r.themes.map(t => t.id).join(); sets.add(r.themes.map(t => t.id).join()); ok('jour +' + d + ' : 2 catégories différentes', r.themes.length === 2 && r.themes[0].id !== r.themes[1].id); }
+      Date.now = saved; [s, r] = await call(A, 'GET', '/api/themepacks'); ok('même tirage pour tous dans la journée', r.themes.map(t => t.id).join() === todayIds);
+      ok('les catégories changent d\'un jour à l\'autre', sets.size >= 2, [...sets].join(' | '));
+      const off = many.albums.find(a => !r.themes.some(t => t.id === a.id)); [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: off.id }); ok('catégorie non tirée aujourd\'hui : refusée', s === 400 && /pas disponible aujourd/.test(r.error), J([s, r]));
+      env.ASSETS = keep; __testHooks.resetAlbums();
+    }
+    await q('UPDATE users SET coins = 100000 WHERE id = ?', alice); const oldMult = CFGm.THEME_LEGEND_MULT; CFGm.THEME_LEGEND_MULT = 400;
+    const okIds = new Set(fx.albums[0].cards.map(c => c.id)); let legs = 0, strangers = [], got = new Set(), n10 = true, god = false;
+    for (let i = 0; i < 12; i++) { [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: 'ta' }); if (s !== 200) { ok('achat paquet thématique', false, J([s, r])); break; } n10 &&= r.cards.length === 10; god ||= !!r.god; for (const c of r.cards.filter(c => c.rarity === 'legendary')) { legs++; const id = c.id >= 1e8 ? c.id - 1e8 : c.id; got.add(id); if (!okIds.has(id)) strangers.push(c.title); } }
+    CFGm.THEME_LEGEND_MULT = oldMult;
+    ok('paquets de 10 cartes, jamais de godpack', n10 && !god);
+    ok('toutes les légendaires viennent de la catégorie choisie', legs >= 10 && strangers.length === 0, J([legs, strangers]));
+    ok('plusieurs cartes différentes de la catégorie', got.size >= 3, [...got].join());
+    const cb = (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins; ok('12 paquets payés', cb === 100000 - 12 * CFGm.THEME_PACK_PRICE, cb);
+    [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: 'inconnu' }); ok('catégorie inconnue refusée, rien débité', s === 404 && (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins === cb);
+    await q('UPDATE users SET coins = 10 WHERE id = ?', chloe); [s, r] = await call(C, 'POST', '/api/themepacks/buy', { theme: 'tb' }); ok('pas assez de pièces', s === 400 && (await q('SELECT coins FROM users WHERE id = ?', chloe))[0].coins === 10);
+    // albums : complétion et récompense
+    [s, r] = await call(B, 'GET', '/api/albums'); const albB = r.albums.find(a => a.id === 'tb'); ok('albums : progression', s === 200 && r.albums.length === 2 && albB.cards.length === 4 && albB.cards.every(c => c.own === false) && albB.reward.c === 600, J(albB).slice(0, 200));
+    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('album incomplet : refusé', s === 400, J([s, r]));
+    for (const c of fx.albums[1].cards) { const e = shard.find(x => x[0] === c.id); await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', c.id, c.t, e[2], 'legendary', 9000, 9000, 0, 'u'); await q("INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,5,0,5000000000,'x') ON CONFLICT DO NOTHING", bob, c.id); }
+    const cb0 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0];
+    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); const cb1 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0]; ok('album complet : récompense versée', s === 200 && cb1.coins - cb0.coins === 600 && cb1.pack_stock - cb0.pack_stock === 1, J([s, r, cb0, cb1]));
+    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('récompense versée une seule fois', s === 400);
+    [s, r] = await call(B, 'GET', '/api/albums'); ok('album marqué terminé', r.albums.find(a => a.id === 'tb').claimed === true && r.albums.find(a => a.id === 'tb').cards.every(c => c.own));
+    [s, r] = await call(B, 'POST', '/api/albums/zz/claim', {}); ok('album inconnu', s === 404);
+    [s, r] = await call(B, 'GET', '/api/titles'); ok('titre « Album complet » débloqué', r.titles.find(t => t.id === 'album_1').unlocked === true);
+    env.ASSETS = oldAssets;
+  }
   console.log('— mise en vente multiple');
   {
     const own = (await q('SELECT card_id, qty FROM inventory WHERE user_id = ? ORDER BY card_id LIMIT 3', alice)); await q('UPDATE inventory SET qty = 3 WHERE user_id = ? AND card_id = ?', alice, own[0].card_id);
@@ -374,7 +414,7 @@ console.log('— récompense quotidienne');
     [s, r] = await call(A, 'GET', '/api/me'); ok('/me : version de la photo', r.av > 0, J(r.av));
     [s, r] = await call(B, 'GET', '/api/cosmetics'); ok('cosmétiques : photo visible par les autres joueurs', r.players.some(p => p.name === 'Alice' && p.v > 0) && r.labels.duelist === 'Duelliste', J(r).slice(0, 200));
     [s, r] = await call(A, 'GET', '/api/titles'); ok('titres : catalogue complet', s === 200 && r.titles.length >= 20 && r.titles.some(x => x.season && !x.unlocked) && r.titles.every(x => ['modes', 'exploits', 'saison'].includes(x.cat)), J(r).slice(0, 200));
-    ok('titres : progression affichée', r.titles.find(x => x.id === 'collector_100').prog?.[1] === 100);
+    ok('titres : progression affichée', r.titles.find(x => x.id === 'collector_1000').prog?.[1] === 1000);
     [s, r] = await call(A, 'POST', '/api/me/title', { id: 'warlord' }); ok('titre non débloqué : refusé', s === 400, J([s, r]));
     [s, r] = await call(A, 'POST', '/api/me/title', { id: 's1_champion' }); ok('titre de saison : pas encore disponible', s === 400, J([s, r]));
     await q('UPDATE users SET duel_wins = 12 WHERE id = ?', alice); [s, r] = await call(A, 'GET', '/api/titles'); ok('titre débloqué par les statistiques', r.titles.find(x => x.id === 'duelist').unlocked && !r.titles.find(x => x.id === 'gladiator').unlocked);
