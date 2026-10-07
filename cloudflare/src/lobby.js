@@ -1,7 +1,7 @@
 // Durable Object unique : WebSocket de tous les joueurs (présence, défis, duels de quiz, combats de cartes, notifications).
 // L'état des parties en cours vit en mémoire ; seuls les résultats (pièces, victoires) sont écrits dans D1.
 import CFG from './config.js';
-import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
+import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool, meter, takeMeter, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
 
@@ -21,7 +21,7 @@ const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).
 
 export class Lobby {
   constructor(state, env) {
-    this.env = env; this.state = state;
+    this.env = meter(env, 'R:combats (WebSocket)'); this.state = state;
     this.clients = new Map(); // userId -> Set<WebSocket>
     this.duels = new Map();
     this.battles = new Map();
@@ -32,6 +32,12 @@ export class Lobby {
   }
 
   // ---------- durabilité : l'état des combats est copié dans le stockage du Durable Object ----------
+  async addMeter(items) {
+    if (!items.length) return;
+    const key = 'meter:' + new Date().toISOString().slice(0, 10), cur = new Map((await this.state.storage.get(key)) ?? []);
+    for (const [k, v] of items) { const o = cur.get(k) ?? { n: 0, r: 0, w: 0 }; cur.set(k, { n: o.n + v.n, r: o.r + v.r, w: o.w + v.w }); }
+    await this.state.storage.put(key, [...cur]);
+  }
   /** Garde une trace des évènements d'un combat (consultable dans l'admin) : sert à comprendre pourquoi un combat s'arrête. */
   trace(bt, kind, detail = '') {
     this.env.DB.prepare('INSERT INTO fight_events (ts, battle, players, kind, detail) VALUES (?,?,?,?,?)').bind(now(), bt?.id?.slice(0, 8) ?? '', bt ? bt.players.map(p => bt.names[p]).join(' vs ') : '', kind, String(detail).slice(0, 300)).run().catch(() => {});
@@ -94,6 +100,12 @@ export class Lobby {
       if (to) { this.push(to, msg); if (!this.clients.has(to) || this.hidden.get(to)) await pushFor(this.env, to, msg); }
       else this.broadcast(msg, msg.except ?? null);
       return new Response('ok');
+    }
+    if (url.pathname === '/meter') {                      // compteur d'écritures D1 : cumul du jour, stocké ici (hors quota D1)
+      if (req.method === 'POST') { await this.addMeter(await req.json()); return new Response('ok'); }
+      await this.addMeter(takeMeter());
+      const day = new Date().toISOString().slice(0, 10);
+      return Response.json({ day, items: (await this.state.storage.get('meter:' + day)) ?? [] });
     }
     if (url.pathname === '/online') return Response.json({ ids: [...this.clients.keys()] });
     if (req.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket attendu', { status: 426 });

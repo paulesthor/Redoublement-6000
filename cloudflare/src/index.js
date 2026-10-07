@@ -1,6 +1,6 @@
 import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
-  userFromToken, hash, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
+  userFromToken, hash, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG, meter, takeMeter } from './util.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -496,7 +496,7 @@ async function settleAuctions(env, ctx) {
 // ---------- routes ----------
 const routes = [];
 const route = (method, pattern, fn, auth = true) =>
-  routes.push({ method, re: new RegExp('^' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), fn, auth });
+  routes.push({ method, label: method + ' ' + pattern, re: new RegExp('^' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), fn, auth });
 
 const newSession = async (env, uid) => {
   const token = randomHex(24);
@@ -1106,6 +1106,12 @@ route('GET', '/api/admin/usage', admin(async ({ env }) => {
   const rows = await all(env, 'SELECT sig, n, rows FROM usage WHERE day = ? ORDER BY rows DESC LIMIT 30', day);
   return { day, total: rows.reduce((t, r) => t + r.rows, 0), rows };
 }));
+route('GET', '/api/admin/meter', admin(async ({ env }) => {
+  const r = await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/meter').then(x => x.json()).catch(() => ({ day: '', items: [] }));
+  const by = p => r.items.filter(([k]) => k.startsWith(p)).map(([k, x]) => ({ k: k.slice(2), ...x })).sort((a, b) => b.w - a.w).slice(0, 12);
+  const total = r.items.filter(([k]) => k.startsWith('R:')).reduce((t, [, x]) => t + x.w, 0);
+  return { day: r.day, total, users: by('U:'), routes: by('R:'), queries: by('Q:') };
+}));
 route('GET', '/api/admin/fights', admin(async ({ env }) => ({ events: await all(env, 'SELECT ts, battle, players, kind, detail FROM fight_events ORDER BY id DESC LIMIT 80') })));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
   const text = String(body.text || '').trim().slice(0, 180); if (!text) bad('Message vide');
@@ -1125,15 +1131,25 @@ route('POST', '/api/admin/run', admin(async ({ env, ctx, body }) => {
 }));
 
 // ---------- point d'entrée ----------
-async function api(req, env, ctx, url) {
-  ctx.waitUntil(flushUsage(env));
+let lastMeter = 0;
+/** Envoie le compteur d'écritures au Durable Object (une seule écriture de stockage, hors quota D1), au plus une fois par minute. */
+function sendMeter(env, ctx) {
+  if (now() - lastMeter < 60000) return;
+  lastMeter = now();
+  const items = takeMeter(); if (!items.length) return;
+  ctx.waitUntil(env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/meter', { method: 'POST', body: JSON.stringify(items) }).catch(() => {}));
+}
+async function api(req, env0, ctx, url) {
+  ctx.waitUntil(flushUsage(env0)); sendMeter(env0, ctx);
   const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
   if (!r) bad('Route inconnue', 404);
+  let env = meter(env0, 'R:' + r.label);
   const params = url.pathname.match(r.re).groups || {};
   let user = null;
   if (r.auth) {
     user = await userFromToken(env, (req.headers.get('authorization') || '').replace('Bearer ', ''));
     if (!user) bad('Non connecté', 401);
+    env = meter(env0, 'R:' + r.label, 'U:' + user.name);
   }
   let body = {};
   if (req.method === 'POST') { try { body = await req.json(); } catch { body = {}; } }
@@ -1141,7 +1157,8 @@ async function api(req, env, ctx, url) {
 }
 
 export default {
-  async scheduled(event, env, ctx) {
+  async scheduled(event, env0, ctx) {
+    const env = meter(env0, 'R:tâche planifiée');
     ctx.waitUntil((async () => {
       await botTick(env, ctx, true).catch(e => console.error('botTick', e));
       await refillReserve(env).catch(e => console.error('refillReserve', e));

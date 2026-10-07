@@ -69,3 +69,27 @@ export function notify(env, ctx, msg, to = null) {
 
 /** Seau de l'index de recherche (public/catalog/s/N.json) d'un titre : même fonction que scripts/build-search-index.mjs. */
 export const searchBucket = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619) >>> 0; return h & 4095; };
+
+// ---- compteur d'écritures D1 : qui écrit, par quelle route, avec quelle requête (limite gratuite : 100 000 lignes écrites par jour) ----
+const meterAcc = new Map();                                       // 'R:route' | 'U:joueur' | 'Q:requête' -> { n, r, w }
+const sigOf = sql => sql.replace(/\s+/g, ' ').trim().slice(0, 90);
+function rec(tags, sql, meta) {
+  const r = meta?.rows_read || 0, w = meta?.rows_written || 0;
+  for (const k of [...tags.filter(Boolean), 'Q:' + sigOf(sql)]) { const x = meterAcc.get(k) ?? { n: 0, r: 0, w: 0 }; x.n++; x.r += r; x.w += w; meterAcc.set(k, x); }
+}
+/** Copie de `env` dont la base compte les lignes lues et écrites de chaque requête, rattachées aux étiquettes données (route, joueur). */
+export function meter(env, ...tags) {
+  if (!env.DB || env.DB.__metered) return env;
+  const wrap = (s, sql) => ({
+    _s: s, _sql: sql,
+    bind: (...a) => wrap(s.bind(...a), sql),
+    run: async () => { const r = await s.run(); rec(tags, sql, r.meta); return r; },
+    all: async () => { const r = await s.all(); rec(tags, sql, r.meta); return r; },
+    first: (...a) => s.first(...a), raw: (...a) => s.raw(...a),
+  });
+  const DB = { __metered: true, prepare: sql => wrap(env.DB.prepare(sql), sql), exec: (...a) => env.DB.exec(...a),
+    batch: async list => { const res = await env.DB.batch(list.map(x => x._s ?? x)); res.forEach((r, i) => rec(tags, list[i]._sql ?? '?', r.meta)); return res; } };
+  return { ...env, DB };
+}
+/** Vide le compteur local et renvoie son contenu. */
+export function takeMeter() { const o = [...meterAcc]; meterAcc.clear(); return o; }
