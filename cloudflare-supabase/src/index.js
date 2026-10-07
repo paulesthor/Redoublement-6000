@@ -7,7 +7,7 @@ import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
-import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests, FUSE, boosted, fuseInfo } from './game.js';
+import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests, FUSE, boosted, fuseInfo, tPayouts } from './game.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -747,6 +747,24 @@ route('POST', '/api/fuse', async ({ env, ctx, user, body }) => {
   const qty = row.qty - f.cost, lvl = row.lvl + 1;
   return { ok: true, title: row.title, lvl, qty, bonus: FUSE.bonus[row.rar] * lvl, fuse: fuseInfo(row.rar, row.sh, lvl, qty) };
 });
+// fusionne d'un coup toutes les cartes qui ont assez de doublons (autant de niveaux que possible) ; body.dry = simple aperçu
+route('POST', '/api/fuse-all', async ({ env, ctx, user, body }) => {
+  await ensureGameSchema(env);
+  const max = RANK[body.max_rarity] ?? 4;
+  const rows = await all(env, 'SELECT card_id, qty, lvl, rar FROM inventory WHERE user_id = ? AND sh = 0 AND rar <= ? AND rar < 5 AND lvl < ? AND qty > 1', user.id, Math.min(max, 4), FUSE.max);
+  const plan = [];
+  for (const r of rows) {
+    let qty = r.qty, lvl = r.lvl;
+    while (lvl < FUSE.max && qty >= FUSE.cost[r.rar][lvl] + 1) { qty -= FUSE.cost[r.rar][lvl]; lvl++; }
+    if (lvl > r.lvl) plan.push({ ...r, to: lvl, left: qty });
+  }
+  const sum = { cards: plan.length, levels: plan.reduce((t, p) => t + p.to - p.lvl, 0), used: plan.reduce((t, p) => t + p.qty - p.left, 0) };
+  if (body.dry || !plan.length) return sum;
+  await env.DB.batch(plan.map(p => st(env, 'UPDATE inventory SET qty = ?, lvl = ? WHERE user_id = ? AND card_id = ? AND qty = ? AND lvl = ?', p.left, p.to, user.id, p.card_id, p.qty, p.lvl)));
+  statsCache.delete(user.id); profileCache.delete(user.id);
+  bq(env, ctx, user.id, { fuse: plan.length });
+  return sum;
+});
 route('POST', '/api/discard', async ({ env, ctx, user, body }) => {
   const cid = +body.card_id, want = Math.max(1, Math.floor(+body.qty || 1));
   const c = await one(env, 'SELECT c.rarity, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.card_id = ?', user.id, cid);
@@ -1059,12 +1077,10 @@ route('POST', '/api/quests/claim', async ({ env, user, body }) => {
 });
 
 const QUIZ_N = 5, QUIZ_SECS = 300;
-async function dailyQuiz(env, origin, day) {
-  const have = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
-  if (have && have.model === 'ia2') return have;
-  if (have) await env.DB.batch([st(env, 'DELETE FROM daily_quiz WHERE day = ?', day), st(env, 'DELETE FROM daily_quiz_runs WHERE day = ?', day)]);   // quiz de l'ancienne version (questions hors sujet) : remplacé
+/** Choisit un article UR+ à partir d'une graine et fabrique 5 questions IA sur lui. Renvoie null si rien de convenable n'a été trouvé. */
+async function buildQuiz(env, origin, seed) {
   const { ranges } = await getMeta(env, origin), top = ranges.ultra[1];   // articles de rareté UR ou légendaire seulement
-  let h = 2166136261; for (const ch of 'quiz' + day) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
   for (let k = 0; k < 12; k++) {                             // article choisi au hasard (même pour tous) ; on passe au suivant s'il est peu adapté ou si l'IA ne donne pas assez de questions
     const e = await entryAt(env, origin, (h + k * 7919) % top);
     if (/^(Liste|Listes|Élections?|Championnat|Saison|Catégorie|Portail)\b|homonymie|^\d{4}\b/i.test(e[1])) continue;   // des pages de listes ou de résultats font de mauvaises questions
@@ -1074,10 +1090,18 @@ async function dailyQuiz(env, origin, day) {
     if (!page?.extract || page.extract.length < 600) continue;
     const qs = await dailyQuestions(env, { id: e[0], title: page.title, extract: page.extract.slice(0, 600), views: e[2] }, page.extract, QUIZ_N);   // toutes les questions portent sur cet article
     if (qs.length < QUIZ_N) continue;
-    await run(env, 'INSERT INTO daily_quiz (day, title, extract, questions, model, created) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING', day, page.title, page.extract.slice(0, 600), JSON.stringify(qs.slice(0, QUIZ_N).map(x => ({ text: x.text, options: x.options, answer: x.answer }))), 'ia2', now());
-    return one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
+    return { title: page.title, extract: page.extract.slice(0, 600), questions: JSON.stringify(qs.slice(0, QUIZ_N).map(x => ({ text: x.text, options: x.options, answer: x.answer }))) };
   }
-  bad('Le quiz du jour n’est pas disponible pour le moment, réessaie dans un instant', 503);
+  return null;
+}
+async function dailyQuiz(env, origin, day) {
+  const have = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
+  if (have && have.model === 'ia2') return have;
+  if (have) await env.DB.batch([st(env, 'DELETE FROM daily_quiz WHERE day = ?', day), st(env, 'DELETE FROM daily_quiz_runs WHERE day = ?', day)]);   // quiz de l'ancienne version (questions hors sujet) : remplacé
+  const q = await buildQuiz(env, origin, 'quiz' + day);
+  if (!q) bad('Le quiz du jour n’est pas disponible pour le moment, réessaie dans un instant', 503);
+  await run(env, 'INSERT INTO daily_quiz (day, title, extract, questions, model, created) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING', day, q.title, q.extract, q.questions, 'ia2', now());
+  return one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
 }
 const recap = (quiz, run_) => {
   const qs = JSON.parse(quiz.questions), ans = JSON.parse(run_.answers || '[]');
@@ -1153,6 +1177,81 @@ route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
   }
   bq(env, ctx, user.id, { quiz_daily: 1, quiz_correct: correct });
   return { ok: true, status: 'done', recap: recap(quiz, { ...r, answers: JSON.stringify(given), correct, delta }) };
+});
+
+// ---------- tournois : 4 joueurs, mise en pièces ; les combats se jouent dans le Durable Object (demi-finales, puis finale et match pour la 3e place) ----------
+const T_MAX_AGE = 48 * 3600000, T_STAKE = [10, 5000], T_SIZE = 4;
+const tName = id => `Tournoi n°${id}`;
+const lobbyCall = (env, path, body) => env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby' + path, { method: 'POST', body: JSON.stringify(body) });
+async function cancelTournament(env, ctx, id, msg) {
+  const claim = await run(env, "UPDATE tournaments SET status = 'cancelled', ended = ? WHERE id = ? AND status = 'open'", now(), id);
+  if (!claim.meta.changes) return false;
+  const ps = await all(env, 'SELECT user_id FROM tournament_players WHERE tid = ?', id), t = await one(env, 'SELECT stake FROM tournaments WHERE id = ?', id);
+  if (ps.length) await env.DB.batch([...ps.map(p => st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', t.stake, p.user_id)), st(env, 'DELETE FROM tournament_players WHERE tid = ?', id)]);
+  ps.forEach(p => notify(env, ctx, { t: 'notify', msg: `${tName(id)} : ${msg}` }, p.user_id));
+  return true;
+}
+async function cleanTournaments(env, ctx) {
+  await ensureGameSchema(env);
+  for (const { id } of await all(env, "SELECT id FROM tournaments WHERE status = 'open' AND created <= ? LIMIT 5", now() - T_MAX_AGE)) await cancelTournament(env, ctx, id, 'pas assez de joueurs après 48 h : tournoi annulé, mises remboursées.');
+}
+route('GET', '/api/tournaments', async ({ env, ctx, user }) => {
+  await cleanTournaments(env, ctx);
+  const rows = await all(env, `SELECT t.id, t.creator, t.stake, t.status, t.stage, t.created, u.name cname, (SELECT COUNT(*) FROM tournament_players p WHERE p.tid = t.id) n FROM tournaments t JOIN users u ON u.id = t.creator
+    WHERE t.status IN ('open', 'running') OR (t.status = 'done' AND t.ended >= ?) ORDER BY t.id DESC LIMIT 40`, now() - 3 * 86400000);
+  const mine = new Set((await all(env, 'SELECT tid FROM tournament_players WHERE user_id = ?', user.id)).map(r => r.tid));
+  return { tournaments: rows.map(t => ({ ...t, joined: mine.has(t.id), size: T_SIZE })), min: T_STAKE[0], max: T_STAKE[1] };
+});
+route('POST', '/api/tournaments', async ({ env, ctx, user, body }) => {
+  await ensureGameSchema(env);
+  const stake = Math.floor(+body.stake);
+  if (!(stake >= T_STAKE[0] && stake <= T_STAKE[1])) bad(`Mise entre ${T_STAKE[0]} et ${T_STAKE[1]} pièces`);
+  const active = (await one(env, "SELECT COUNT(*) n FROM tournament_players p JOIN tournaments t ON t.id = p.tid WHERE p.user_id = ? AND t.status IN ('open', 'running')", user.id)).n;
+  if (active >= 2) bad('Tu participes déjà à 2 tournois en cours');
+  const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', stake, user.id, stake);
+  if (!paid.meta.changes) bad('Pas assez de pièces pour miser');
+  const ins = await run(env, 'INSERT INTO tournaments (creator, stake, maxp, created) VALUES (?,?,?,?)', user.id, stake, T_SIZE, now());
+  await run(env, 'INSERT INTO tournament_players (tid, user_id, joined) VALUES (?,?,?)', ins.meta.last_row_id, user.id, now());
+  notify(env, ctx, { t: 'notify', msg: `${user.name} ouvre un tournoi : mise ${stake} pièces, 4 joueurs.`, except: user.id });
+  notify(env, ctx, { t: 'refresh', what: 'tournaments' });
+  return { ok: true, id: ins.meta.last_row_id };
+});
+const getT = async (env, id) => { const t = await one(env, 'SELECT t.*, u.name cname FROM tournaments t JOIN users u ON u.id = t.creator WHERE t.id = ?', id); if (!t) bad('Tournoi introuvable', 404); return t; };
+route('POST', '/api/tournaments/:id/join', async ({ env, ctx, user, params }) => {
+  await ensureGameSchema(env);
+  const t = await getT(env, +params.id);
+  if (t.status !== 'open') bad('Les inscriptions sont fermées');
+  if (await one(env, 'SELECT 1 x FROM tournament_players WHERE tid = ? AND user_id = ?', t.id, user.id)) bad('Tu es déjà inscrit');
+  const active = (await one(env, "SELECT COUNT(*) n FROM tournament_players p JOIN tournaments x ON x.id = p.tid WHERE p.user_id = ? AND x.status IN ('open', 'running')", user.id)).n;
+  if (active >= 2) bad('Tu participes déjà à 2 tournois en cours');
+  const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', t.stake, user.id, t.stake);
+  if (!paid.meta.changes) bad('Pas assez de pièces pour miser');
+  const ins = await run(env, "INSERT INTO tournament_players (tid, user_id, joined) SELECT ?1, ?2, ?3 WHERE (SELECT COUNT(*) FROM tournament_players WHERE tid = ?1) < ?4 AND (SELECT status FROM tournaments WHERE id = ?1) = 'open' ON CONFLICT DO NOTHING", t.id, user.id, now(), T_SIZE);
+  if (!ins.meta.changes) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', t.stake, user.id); bad('Le tournoi est complet'); }
+  const n = (await one(env, 'SELECT COUNT(*) n FROM tournament_players WHERE tid = ?', t.id)).n;
+  notify(env, ctx, { t: 'notify', msg: `${user.name} rejoint ${tName(t.id)} (${n}/${T_SIZE}).` }, t.creator);
+  if (n >= T_SIZE) { const go = await run(env, "UPDATE tournaments SET status = 'running', started = ? WHERE id = ? AND status = 'open'", now(), t.id); if (go.meta.changes) await lobbyCall(env, '/tour/start', { id: t.id }); }   // complet : les demi-finales démarrent
+  notify(env, ctx, { t: 'refresh', what: 'tournaments' });
+  return { ok: true, started: n >= T_SIZE };
+});
+route('POST', '/api/tournaments/:id/leave', async ({ env, ctx, user, params }) => {
+  await ensureGameSchema(env);
+  const t = await getT(env, +params.id);
+  if (t.status !== 'open') bad('Impossible de quitter un tournoi lancé');
+  if (t.creator === user.id) { await cancelTournament(env, ctx, t.id, 'annulé par son créateur, mises remboursées.'); notify(env, ctx, { t: 'refresh', what: 'tournaments' }); return { ok: true, cancelled: true }; }
+  const out = await run(env, 'DELETE FROM tournament_players WHERE tid = ? AND user_id = ?', t.id, user.id);
+  if (!out.meta.changes) bad('Tu n’es pas inscrit');
+  await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', t.stake, user.id);
+  notify(env, ctx, { t: 'refresh', what: 'tournaments' });
+  return { ok: true };
+});
+route('GET', '/api/tournaments/:id', async ({ env, ctx, user, params }) => {
+  await ensureGameSchema(env);
+  const t = await getT(env, +params.id);
+  const players = await all(env, 'SELECT p.user_id id, u.name, p.payout FROM tournament_players p JOIN users u ON u.id = p.user_id WHERE p.tid = ? ORDER BY p.joined', t.id);
+  let br = null; try { br = t.bracket ? JSON.parse(t.bracket) : null; } catch { /* tableau illisible */ }
+  return { id: t.id, stake: t.stake, status: t.status, creator: t.creator, creatorName: t.cname, size: T_SIZE, stage: t.stage, bracket: br, preview: tPayouts(T_SIZE, t.stake),
+    players: players.map(p => ({ ...p, me: p.id === user.id, net: t.status === 'done' ? (p.payout || 0) - t.stake : null })), joined: players.some(p => p.id === user.id) };
 });
 
 // ---------- amis ----------

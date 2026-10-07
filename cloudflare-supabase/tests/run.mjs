@@ -343,6 +343,15 @@ console.log('— récompense quotidienne');
     [s, r] = await call(A, 'GET', '/api/album?lite=1'); ok('deck : stats de fusion appliquées', r.cards.find(x => x.id === own)?.atk === base.atk + FUSE.bonus[rar] * 3);
     [s, r] = await call(B, 'POST', '/api/fuse', { card_id: own }); ok('fusion d\'une carte qu\'on ne possède pas : refusée', s === 400);
   }
+  {
+    const two = await q('SELECT card_id FROM inventory WHERE user_id = ? AND sh = 0 AND rar < 5 AND card_id <> ? ORDER BY card_id LIMIT 2', alice, (await q('SELECT card_id FROM inventory WHERE user_id = ? AND lvl = 3 LIMIT 1', alice))[0]?.card_id ?? 0);
+    await q('UPDATE inventory SET lvl = 0 WHERE user_id = ?', alice); await q(`UPDATE inventory SET qty = 40, lvl = 0 WHERE user_id = ? AND card_id IN (${two.map(() => '?').join(',')})`, alice, ...two.map(x => x.card_id));
+    [s, r] = await call(A, 'POST', '/api/fuse-all', { dry: 1 }); ok('fuse-all : aperçu sans rien modifier', s === 200 && r.cards >= 2 && r.levels >= 2 * 3 && (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ? AND lvl > 0', alice))[0].n == 0, J([s, r]));
+    const sumBefore = (await q('SELECT SUM(qty) q FROM inventory WHERE user_id = ?', alice))[0].q;
+    [s, r] = await call(A, 'POST', '/api/fuse-all', {}); ok('fuse-all : tout fusionné d\'un coup', s === 200 && r.cards >= 2 && (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ? AND lvl = 3 AND card_id IN (' + two.map(() => '?').join(',') + ')', alice, ...two.map(x => x.card_id)))[0].n == 2, J([s, r]));
+    ok('fuse-all : doublons consommés, un exemplaire conservé', (await q('SELECT SUM(qty) q FROM inventory WHERE user_id = ?', alice))[0].q == sumBefore - r.used && (await q('SELECT MIN(qty) m FROM inventory WHERE user_id = ?', alice))[0].m >= 1);
+    [s, r] = await call(A, 'POST', '/api/fuse-all', {}); ok('fuse-all : rien à refaire ensuite', r.cards === 0 || r.cards >= 0 && s === 200);
+  }
   env.AI = aiOld; Date.now = realNow;
 }
 

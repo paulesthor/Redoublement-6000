@@ -6,7 +6,7 @@
 
 const isRead = sql => /^\s*(select|with|values)\b/i.test(sql);
 /** Tables dont la clé « id » est auto-incrémentée : on renvoie l'identifiant créé (meta.last_row_id, comme D1). */
-const ID_TABLES = new Set(['users', 'auctions', 'sales', 'trades', 'hits', 'friend_requests', 'bids', 'prepared', 'dms', 'push_msgs', 'fight_events']);
+const ID_TABLES = new Set(['users', 'auctions', 'sales', 'trades', 'hits', 'friend_requests', 'bids', 'prepared', 'dms', 'push_msgs', 'fight_events', 'tournaments']);
 
 /** Valeur JavaScript -> littéral SQL. Les textes sont placés entre guillemets « dollar » dont l'étiquette n'apparaît pas dans le texte. */
 export function literal(v) {

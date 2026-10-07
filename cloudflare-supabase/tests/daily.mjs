@@ -60,5 +60,10 @@ await p.evaluate(() => { tab = 'album'; render(); }); await p.waitForSelector('.
 await p.click('.card[data-id="' + own + '"] .body'); await p.waitForSelector('#fuse-go'); await p.waitForTimeout(300); await shot(p, 'fuse-1');
 await p.click('#fuse-go'); await p.waitForSelector('.detail.fused'); await p.waitForTimeout(900); await shot(p, 'fuse-2');
 ok('fusion depuis la fiche : niveau 1 affiché', (await p.textContent('.fusebox')).includes('Bonus actuel'));
+console.log('— tournois (interface)');
+await DB.prepare('UPDATE users SET coins = 1000').run();
+await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'tournaments'; render(); }); await p.waitForSelector('#t-new'); await p.waitForTimeout(400); await shot(p, 'tour-list');
+await p.fill('#t-stake', '120'); await p.click('#t-new'); await p.waitForSelector('.tpay'); await p.waitForTimeout(500); await shot(p, 'tour-detail');
+ok('tournoi créé, cagnotte et gains affichés', (await p.$$('.tpay div')).length === 4 && (await p.textContent('.tpot')).includes('480'));
 ok('aucune erreur JavaScript', p.errs.length === 0, J(p.errs));
 await browser.close(); srv.close(); await done();

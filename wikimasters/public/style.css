@@ -861,3 +861,23 @@ nav button.more{display:none}
 #modal>div.detail{position:relative}.detail.fused .fusebox{animation:rc-in .6s var(--ease) both}.detail .sparks{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .detail .sparks span{position:absolute;left:50%;top:30%;width:var(--s);height:var(--s);border-radius:50%;background:var(--c);box-shadow:0 0 10px 2px var(--c);opacity:0;animation:spark 1.8s ease-out var(--d) both}
 .dqrank{margin:16px 0 4px;text-align:left}.dqrank .item.me{border-color:var(--gold)}
+
+/* ---- contour des cartes fusionnées : bronze, argent, or irisé ---- */
+.card.lv1,.bcard.lv1{--fc:#d98a4e}.card.lv2,.bcard.lv2{--fc:#dfe6f2}.card.lv3,.bcard.lv3{--fc:#ffd45e}
+.card.lv1,.card.lv2,.card.lv3{border-color:var(--fc);box-shadow:0 0 0 2px var(--fc),0 10px 26px #0006,0 0 14px -2px var(--fc)}
+.bcard.lv1,.bcard.lv2,.bcard.lv3{border-color:var(--fc);box-shadow:0 0 0 1.5px var(--fc),0 0 10px -2px var(--fc)}
+.card.lv2,.bcard.lv2{box-shadow:0 0 0 2px var(--fc),0 0 18px 0 #dfe6f288,0 10px 26px #0006}
+.card.lv3,.bcard.lv3{animation:lv3 3.2s linear infinite}
+@keyframes lv3{0%,100%{box-shadow:0 0 0 2.5px #ffd45e,0 0 22px 2px #ffd45e99,0 10px 26px #0006}33%{box-shadow:0 0 0 2.5px #ff9ae6,0 0 22px 2px #ff9ae699,0 10px 26px #0006}66%{box-shadow:0 0 0 2.5px #7fe8ff,0 0 22px 2px #7fe8ff99,0 10px 26px #0006}}
+.card.lv1 .tag.lvl{background:#d98a4e}.card.lv2 .tag.lvl{background:#dfe6f2}
+
+/* ---- tournois ---- */
+.tnew .row{gap:8px}.tnew input{flex:0 0 110px;text-align:center;font-weight:700}.tnew .primary{flex:1}
+.trow .tstake{display:inline-flex;align-items:center;gap:4px;color:var(--gold-fav)}.trow .tstake .ic{width:15px;height:15px}
+.tstate{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px;margin-left:6px;background:#ffffff14;color:var(--mut)}.tstate.open{background:#7be0a022;color:#7be0a0}.tstate.running{background:#f5c54222;color:#f5c542}
+.tpot{display:flex;align-items:center;justify-content:space-between;font-size:15px}.tpot .ic{width:16px;height:16px;vertical-align:-3px}.tpot b{font-size:24px;color:var(--gold-fav)}
+.tpay{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}.tpay div{text-align:center;padding:8px 4px;border-radius:12px;background:#ffffff08;border:1px solid var(--line2)}.tpay small{display:block;color:var(--mut);font-size:11px}.tpay b{font-size:14px}.tpay .up b{color:#7be0a0}.tpay .down b{color:#ee91bc}
+.tbracket{display:grid;gap:10px}.tmatch{padding:12px 14px;border-radius:14px;background:var(--panel);border:1px solid var(--line2)}.tmatch small{color:var(--mut);text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;font-weight:700}
+.tmatch .tvs{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}.tmatch .tvs span{color:var(--mut);font-size:12px}.tmatch .tvs b{flex:1;font-size:15px}.tmatch .tvs b:last-child{text-align:right}.tmatch .tvs b.w{color:#7be0a0}.tmatch .tvs b.l{color:var(--mut);text-decoration:line-through}
+.tmatch em{font-style:normal;font-size:12.5px;color:var(--mut)}.tmatch.live{border-color:#f5c542;box-shadow:0 0 16px #f5c54233}.tmatch.live em{color:#f5c542}
+.trank{display:flex;gap:12px;padding:8px 4px;border-bottom:1px solid var(--line)}.trank span{width:34px;color:var(--mut);font-weight:700}.trank.win b{color:#7be0a0}

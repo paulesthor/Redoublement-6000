@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '4.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '4.8';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -151,7 +151,7 @@ function onWs(m) {
   else if (m.t === 'friend') onFriend(m);
   else if (m.t === 'dm') onDm(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
-  else if (m.t === 'refresh') { gcache.clear(); if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
+  else if (m.t === 'refresh') { gcache.clear(); if ((tab === (m.what === 'auctions' ? 'market' : m.what) || (m.what === 'tournaments' && tab === 'tournament')) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
     $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : 'duel de quiz'}.</p>
@@ -252,7 +252,7 @@ const TOPICS = [
 const topic = c => { const t = (c.extract || '').slice(0, 240); for (const [k, re] of TOPICS) if (re.test(t)) return k; return 'spark'; };
 const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" data-id="${c.id}">
   <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
   <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/><path class="st" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/></svg></button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}${c.lvl ? `<span class="tag lvl">★${c.lvl}</span>` : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
@@ -299,7 +299,7 @@ function showCard(id) {
   const c = cardIndex.get(+id); if (!c) return;
   const m = $('#modal');
   m.hidden = false;
-  m.innerHTML = `<div class="detail"><div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''}" style="margin-bottom:12px">
+  m.innerHTML = `<div class="detail"><div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${c.lvl ? 'lv' + c.lvl : ''}" style="margin-bottom:12px">
       <div class="img big ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
       <div class="body"><div class="t">${esc(c.title)}</div>
         <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}${c.shiny ? ' · Shiny' : ''}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div></div></div>
@@ -379,7 +379,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', admin: 'more' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -526,7 +526,7 @@ const views = {
       </div>
       <div class="bulk">
         <select id="bulk-r" aria-label="Rareté maximale">${tiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>${RAR[t.r]} et moins · ${t.n} carte${t.n > 1 ? 's' : ''} · +${fmt(t.price)}</option>`).join('')}</select>
-        <button class="plain" id="bulk-go">Vendre</button><button class="plain" id="selmode">Sélectionner</button></div>
+        <button class="plain" id="bulk-go">Vendre</button><button class="plain" id="fuse-all">Tout fusionner</button><button class="plain" id="selmode">Sélectionner</button></div>
       <div class="grid" id="g"></div>
       <div class="selbar" id="selbar" hidden><span id="selinfo2"></span><button class="plain" id="sel-cancel">Annuler</button><button id="sel-go">Défausser</button></div>`;
     // sélection multiple : un appui sur chaque carte, puis une seule défausse
@@ -599,6 +599,12 @@ const views = {
       const t = bulkSync(); if (!t.n) return;
       if (!(await ask('Vendre les doublons ?', [], { text: `${t.n} carte${t.n > 1 ? 's' : ''} jusqu'à « ${RAR[t.r]} » pour ${fmt(t.price)} pièces. Un exemplaire de chaque carte est conservé.`, ok: 'Vendre' }))) return;
       const r = await api('/discard-dupes', { max_rarity: t.r }); toast(`${r.count} cartes vendues, +${r.price} pièces`); await refreshMe(); render();
+    });
+    $('#fuse-all').onclick = safe(async () => {
+      const p = await api('/fuse-all', { dry: 1 });
+      if (!p.cards) return toast('Aucune carte n\'a assez de doublons à fusionner');
+      if (!(await ask('Tout fusionner ?', [], { text: `${p.cards} carte${p.cards > 1 ? 's' : ''} gagnent ${p.levels} niveau${p.levels > 1 ? 'x' : ''} en consommant ${p.used} doublons. Un exemplaire de chaque carte est conservé.`, ok: 'Fusionner' }))) return;
+      const r = await api('/fuse-all', {}); toast(`${r.cards} carte${r.cards > 1 ? 's' : ''} fusionnée${r.cards > 1 ? 's' : ''} (+${r.levels} niveau${r.levels > 1 ? 'x' : ''})`); render();
     });
     load();
   },
@@ -777,7 +783,7 @@ function gameEvent(m) {
   else if (m.t === 'question') game = { ...game, view: 'q', q: { ...m, time: m.full ?? t }, picked: m.picked ?? null, reveal: null, end: Date.now() + t };
   else if (m.t === 'reveal') { game.reveal = m; game.score = m.score; }
   else if (m.t === 'duel_end') { game = { ...game, view: 'end', result: m }; refreshMe(); }
-  else if (m.t === 'battle_start') { if (!(game && game.id === m.id && game.view === 'pick')) game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [] }; }
+  else if (m.t === 'battle_start') { if (!(game && game.id === m.id && game.view === 'pick')) game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [], tour: m.tour }; }
   else if (m.t === 'battle_wait') game = { ...game, kind: 'battle', id: m.id, view: 'wait', waitMsg: m.msg };
   else if (m.t === 'battle_prep') game = { ...game, view: 'wait', waitMsg: 'Préparation des questions…' };
   else if (m.t === 'bf_start') {
@@ -864,7 +870,7 @@ async function renderGame() {
   } else if (game.kind === 'fight' && game.view === 'fight') {
     const f = game.f, nm = id => esc(game.names[id]), iAtt = f.attacker === me.id, iDef = f.defender === me.id;
     const bar = id => { const pct = Math.max(0, Math.round((f.hp[id] ?? 0) / (f.max[id] || 1) * 100)); return `<div class="hpb ${id === me.id ? 'me' : ''}" data-id="${id}"><div class="hpt"><span>${nm(id)}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(f.hp[id] ?? 0)} PV</b></div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`; };
-    const mini = (c, cls = '', attrs = '') => `<div class="bcard ${cls}" ${attrs} style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
+    const mini = (c, cls = '', attrs = '') => `<div class="bcard ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" ${attrs} style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
       <b>${esc(c.title)}${c.lvl ? ` <span class="lvlst">★${c.lvl}</span>` : ''}</b><span class="st"><em>ATK <i>${fmt(c.atk)}</i></em><em>DEF <i>${fmt(c.def)}</i></em></span></div>`;
     const back = `<div class="bcard back"><div class="bi noimg">?</div><b>Carte cachée</b></div>`;
     const deckRow = id => `<div class="deckrow"><small>${nm(id)}</small><div>${f.deck[id].map(c => { const used = f.left?.[id] && !f.left[id].includes(c.id); return id === me.id || used ? mini(c, used ? 'used' : '') : back; }).join('')}</div></div>`;   // les cartes de l'adversaire restent cachées tant qu'il ne les a pas jouées
@@ -924,7 +930,7 @@ async function renderGame() {
   } else if (game.kind === 'battle' && game.view === 'pick') {
     const known = new Map();                       // cartes vues (pour afficher le nom des cartes choisies même après un changement de filtre)
     let q = '', rf = '', t;
-    v.innerHTML = `${pageHead(`Combat — choisis ${game.rounds} cartes`)}
+    v.innerHTML = `${pageHead(`${game.tour || 'Combat'} — choisis ${game.rounds} cartes`)}
       <p class="mut" id="selinfo" style="margin:0 0 8px"></p>
       <div class="sticky-bar"><button id="go" disabled>Valider le deck</button></div>
       <div class="search wide">${ico('search')}<input id="pq" placeholder="Chercher parmi tes cartes" autocomplete="off"></div>
@@ -962,7 +968,7 @@ async function renderGame() {
       v.innerHTML = `<div class="endwrap ${r.winner === null ? '' : r.winner === me.id ? 'won' : 'lost'}">${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire 👑' : 'Défaite 🤡')}</div><div class="hpwrap">${bar(r.a)}${bar(r.b)}</div>
         <p class="mut" style="text-align:center">${r.winner === null ? 'Autant de PV de chaque côté.' : (r.forfeit ? `${esc(r.names[r.forfeit])} a quitté la partie : ${esc(r.names[r.winner])} gagne par forfait.` : `${esc(r.names[r.winner])} termine avec le plus de PV.`)}</p><p><button id="back" style="margin-top:12px">Retour</button></p>`;
     }
-    $('#back').onclick = () => { game = null; render(); };
+    $('#back').onclick = () => { const tr = game.result?.tour; game = null; if (tr) tab = 'tournaments'; render(); };
   }
 }
 
@@ -1602,6 +1608,39 @@ views.dquiz = async v => {
     dqRun = { day: s.day, qs: s.questions, i: 0, answers: [], total: 300, endAt: Date.now() + s.secs * 1000 }; refreshMe().catch(() => {}); dqQuestion(v);
   });
 };
+
+// ---------- tournois : 4 joueurs, mise en pièces, demi-finales puis finale et match pour la 3ᵉ place ----------
+let tourId = null;
+const TLAB = { r1: 'Demi-finale', final: 'Finale', cons: 'Match pour la 3ᵉ place' }, ordn = i => i === 0 ? '1er' : `${i + 1}ᵉ`;
+views.tournaments = async v => {
+  const d = await api('/tournaments');
+  const row = t => `<div class="item tap trow" data-t="${t.id}"><div class="grow"><div class="nm">Tournoi n°${t.id} <span class="tstate ${t.status}">${{ open: 'Ouvert', running: 'En cours', done: 'Terminé' }[t.status]}</span></div><div class="sub">Créé par ${esc(t.cname)} · ${t.n} / ${t.size} joueurs${t.joined ? ' · inscrit' : ''}</div></div><b class="tstake">${ico('coin')}${fmt(t.stake)}</b></div>`;
+  const live = d.tournaments.filter(t => t.status !== 'done'), done = d.tournaments.filter(t => t.status === 'done');
+  v.innerHTML = `${pageHead('Tournois', 'Mise des pièces, 4 joueurs, combats de cartes')}
+    <div class="panel tnew"><h3>Créer un tournoi</h3><p class="mut" style="margin:0 0 10px">Chacun mise la même somme. Demi-finales en même temps, puis finale et match pour la 3ᵉ place : les <b>2 premiers gagnent</b> (la mise des 2 derniers se partage), les <b>2 derniers perdent</b> leur mise.</p>
+      <div class="row"><input id="t-stake" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" value="100" aria-label="Mise"><button class="primary" id="t-new">Ouvrir (mise ${'<span id="t-s">100</span>'})</button></div></div>
+    <h3 class="sec">En cours</h3><div class="list">${live.map(row).join('') || '<p class="mut">Aucun tournoi ouvert pour l\'instant.</p>'}</div>
+    ${done.length ? `<h3 class="sec">Terminés récemment</h3><div class="list">${done.map(row).join('')}</div>` : ''}`;
+  $('#t-stake').oninput = e => { $('#t-s').textContent = e.target.value || '0'; };
+  $('#t-new').onclick = safe(async () => { const r = await api('/tournaments', { stake: +$('#t-stake').value }); toast('Tournoi ouvert, mise payée'); await refreshMe(); tourId = r.id; tab = 'tournament'; render(); });
+  v.querySelectorAll('[data-t]').forEach(el => el.onclick = () => { tourId = +el.dataset.t; tab = 'tournament'; render(); });
+};
+views.tournament = async v => {
+  const t = await api('/tournaments/' + tourId), nm = id => t.bracket?.names?.[id] ?? t.players.find(p => p.id === id)?.name ?? '?';
+  const match = m => `<div class="tmatch ${m.s}"><small>${TLAB[m.k]}</small><div class="tvs"><b class="${m.w === m.a ? 'w' : m.w ? 'l' : ''}">${esc(nm(m.a))}</b><span>vs</span><b class="${m.w === m.b ? 'w' : m.w ? 'l' : ''}">${esc(nm(m.b))}</b></div><em>${{ wait: 'En attente des joueurs…', live: 'Combat en cours', done: `Vainqueur : ${esc(nm(m.w))}` }[m.s]}</em></div>`;
+  const pay = t.preview;
+  v.innerHTML = `${pageHead(`Tournoi n°${t.id}`, `Mise ${fmt(t.stake)} pièces par joueur`)}<p><button class="plain" id="t-back">← Tous les tournois</button></p>
+    <div class="panel"><div class="tpot"><span>${ico('coin')} Cagnotte</span><b>${fmt(t.stake * t.size)}</b></div>
+      <div class="tpay">${pay.map((p, i) => `<div class="${p > t.stake ? 'up' : 'down'}"><small>${ordn(i)}</small><b>${p > t.stake ? '+' + fmt(p - t.stake) : '−' + fmt(t.stake)}</b></div>`).join('')}</div></div>
+    <h3 class="sec">Joueurs (${t.players.length} / ${t.size})</h3><div class="list">${t.players.map(p => `<div class="item row1 ${p.me ? 'me' : ''}">${avatar(p.name)}<div class="grow"><div class="nm">${esc(p.name)}${p.me ? ' (toi)' : ''}</div><div class="sub">${t.status === 'done' ? `${p.net >= 0 ? '+' : '−'}${fmt(Math.abs(p.net))} pièces` : ''}</div></div></div>`).join('')}</div>
+    ${t.bracket ? `<h3 class="sec">${t.status === 'done' ? 'Résultat' : t.bracket.stage === 'r1' ? 'Demi-finales' : 'Finale et 3ᵉ place'}</h3><div class="tbracket">${t.bracket.matches.map(match).join('')}</div>` : ''}
+    ${t.bracket?.rank ? `<div class="panel"><h3>Classement final</h3>${t.bracket.rank.map((u, i) => `<div class="trank ${i < 2 ? 'win' : ''}"><span>${ordn(i)}</span><b>${esc(nm(u))}</b></div>`).join('')}</div>` : ''}
+    ${t.status === 'open' ? `<div class="row">${t.joined ? `<button class="plain" id="t-leave">${t.creator === me.id ? 'Annuler le tournoi' : 'Me retirer'}</button>` : `<button class="primary" id="t-join">Rejoindre (mise ${fmt(t.stake)})</button>`}</div><p class="mut dsmall">Le tournoi démarre dès que 4 joueurs sont inscrits, et reste ouvert 48 h au maximum.</p>` : ''}
+    ${t.status === 'running' ? '<p class="mut dsmall">Reste connecté : ton match démarre dès que ton adversaire est là (10 minutes maximum d\'attente, sinon forfait). Les combats sont les mêmes que d\'habitude.</p>' : ''}`;
+  $('#t-back').onclick = () => { tab = 'tournaments'; render(); };
+  if ($('#t-join')) $('#t-join').onclick = safe(async () => { const r = await api(`/tournaments/${t.id}/join`, {}); toast(r.started ? 'Tournoi lancé ! Les demi-finales commencent.' : 'Inscrit, mise payée'); await refreshMe(); render(); });
+  if ($('#t-leave')) $('#t-leave').onclick = safe(async () => { if (!(await ask(t.creator === me.id ? 'Annuler le tournoi ?' : 'Te retirer ?', [], { text: 'Les mises sont remboursées.', ok: 'Confirmer' }))) return; await api(`/tournaments/${t.id}/leave`, {}); await refreshMe(); tab = 'tournaments'; render(); });
+};
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -1610,7 +1649,7 @@ function moreSheet() {
   m.hidden = false;
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-    <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
+    <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
     <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('settings', 'gear', 'Réglages', 'Sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;

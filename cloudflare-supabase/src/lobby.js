@@ -5,13 +5,15 @@ import { withDb } from './pg.js';
 import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool, meter, takeMeter, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
-import { bumpQuests, ensureGameSchema, boosted } from './game.js';
+import { bumpQuests, ensureGameSchema, boosted, tPayouts } from './game.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
 const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met le combat en pause et on l'attend jusqu'à 3 minutes, puis forfait
 // pauses entre les étapes du combat (ms)
 const T = { intro: 1800, card: 1300, closeAfterAnswer: 600, nextQ: 2000, nextTurn: 2200 };
 const now = () => Date.now();
+const TOUR_WAIT = 10 * 60000;   // un joueur de tournoi absent plus de 10 minutes perd son match
+const TOUR_LABEL = { r1: 'Demi-finale', final: 'Finale', cons: 'Match pour la 3ᵉ place' };
 
 function mask(extract, title) {
   const words = title.split(/\s+/).filter(w => w.length > 2).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -29,7 +31,8 @@ export class Lobby {
     this.battles = new Map();
     this.hidden = new Map();  // userId -> true quand l'appli est en arrière-plan (écran verrouillé, autre appli) : on le notifie alors par push
     this.away = new Map();   // userId -> heure de la dernière déconnexion complète
-    setInterval(() => this.broadcast({ t: 'ping' }), 30000); // garde les connexions ouvertes
+    this.tours = new Set(); this.tlock = new Map();       // tournois en cours (ids) ; verrou par tournoi pendant une mise à jour
+    setInterval(() => { this.broadcast({ t: 'ping' }); if (this.tours.size) this.tourTick().catch(e => console.error('tourTick', e)); }, 30000); // garde les connexions ouvertes
     state.blockConcurrencyWhile(() => this.restore().catch(e => console.error('restore', e)));   // les combats en cours survivent à un redémarrage du serveur (mise à jour du jeu…)
   }
 
@@ -51,7 +54,7 @@ export class Lobby {
   }
   snap(bt) {
     const f = bt.fight;
-    return { id: bt.id, players: bt.players, names: bt.names, bot: bt.bot, picks: bt.picks, startMsg: bt.startMsg ?? null, phase: bt.phase ?? 'deck',
+    return { id: bt.id, players: bt.players, names: bt.names, bot: bt.bot, tour: bt.tour ?? null, picks: bt.picks, startMsg: bt.startMsg ?? null, phase: bt.phase ?? 'deck',
       fight: f && { turn: f.turn, total: f.total, order: f.order, hp: f.hp, max: f.max, deck: f.deck, attacker: f.attacker, defender: f.defender, log: f.log,
         left: Object.fromEntries(Object.entries(f.left).map(([u, set]) => [u, [...set]])), qs: [...f.qs.entries()],
         cur: f.cur && { card: f.cur.card, qkey: f.cur.qkey, k: f.cur.k, wrong: f.cur.wrong, lost: f.cur.lost, closed: !!f.cur.closed } } };
@@ -59,6 +62,7 @@ export class Lobby {
   persist(bt) { if (!bt.over) this.state.storage.put('bt:' + bt.id, this.snap(bt)).catch(e => console.error('persist', e)); }
   forget(bt) { this.state.storage.delete('bt:' + bt.id).catch(() => {}); }
   async restore() {
+    try { for (const x of await all(this.env, "SELECT id FROM tournaments WHERE status = 'running'")) this.tours.add(x.id); } catch { /* table pas encore créée */ }
     const saved = await this.state.storage.list({ prefix: 'bt:' });
     for (const [key, v] of saved) {
       try {
@@ -91,6 +95,7 @@ export class Lobby {
     if (bt.over) return;
     bt.over = true; bt.gen++; this.battles.delete(bt.id); this.forget(bt);
     for (const p of bt.players) this.push(p, { t: 'bf_error', id: bt.id, quota: isQuotaError(e) });
+    if (bt.tour) this.tourRequeue(bt.tour).catch(() => {});                                          // le match de tournoi sera relancé
   }
 
   push(uid, msg) {
@@ -115,6 +120,7 @@ export class Lobby {
       const all = await this.state.storage.list({ prefix: 'meter:' });
       return Response.json({ days: [...all].sort(([a], [b]) => a.localeCompare(b)).slice(-n).map(([k, items]) => ({ day: k.slice(6), items })) });
     }
+    if (url.pathname === '/tour/start') { const { id } = await req.json(); await this.tourStart(+id); return new Response('ok'); }
     if (url.pathname === '/online') return Response.json({ ids: [...this.clients.keys()] });
     if (req.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket attendu', { status: 426 });
 
@@ -126,6 +132,7 @@ export class Lobby {
     this.clients.get(user.id).add(server);
     this.away.delete(user.id); this.hidden.delete(user.id);
     this.presence();
+    if (this.tours.size) this.tourKickAll().catch(() => {});   // un match de tournoi l'attendait peut-être
     this.sync(user.id);                                  // reprise d'une partie en cours après coupure ou retour sur l'appli
     server.addEventListener('message', ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } this.onMessage(user, m).catch(e => { console.error(e); this.push(user.id, isQuotaError(e) ? { t: 'error', msg: QUOTA_MSG, quota: true, until: nextResetMs() } : { t: 'error', msg: 'Erreur du serveur, réessaie.' }); }); });
     server.addEventListener('close', () => {
@@ -181,7 +188,7 @@ export class Lobby {
       for (const { m, dl } of g.fight.log) this.push(uid, dl ? { ...m, time: Math.max(0, dl - now()), full: m.time } : m);
       if (g.paused) { const gone = this.absent(g); if (gone.length) this.push(uid, { t: 'bf_wait', id: g.id, names: gone.map(x => g.names[x]), until: Math.min(...gone.map(p => (this.away.get(p) ?? now()) + AWAY_PAUSE)) }); }
     } else if (g.picks[uid]) this.push(uid, { t: 'battle_wait', id: g.id, msg: 'Deck validé, en attente de l\'adversaire…' });
-    else this.push(uid, { t: 'battle_start', id: g.id, names: g.names, rounds: CFG.BATTLE_ROUNDS, resume: true });
+    else this.push(uid, { t: 'battle_start', id: g.id, names: g.names, rounds: CFG.BATTLE_ROUNDS, resume: true, tour: g.tour?.label });
   }
 
   // ---------- quiz ----------
@@ -250,14 +257,19 @@ export class Lobby {
   }
 
   // ---------- combats de cartes ----------
-  async startBattle(a, b, vsBot = false) {
-    const bt = { id: crypto.randomUUID(), players: [a.id, b.id], names: { [a.id]: a.name, [b.id]: b.name }, picks: {}, bot: vsBot ? b.id : null };
+  async startBattle(a, b, vsBot = false, tour = null) {
+    const bt = { id: crypto.randomUUID(), players: [a.id, b.id], names: { [a.id]: a.name, [b.id]: b.name }, picks: {}, bot: vsBot ? b.id : null, tour };
     this.battles.set(bt.id, bt);
-    for (const p of bt.players) this.push(p, { t: 'battle_start', id: bt.id, names: bt.names, rounds: CFG.BATTLE_ROUNDS });
+    for (const p of bt.players) this.push(p, { t: 'battle_start', id: bt.id, names: bt.names, rounds: CFG.BATTLE_ROUNDS, tour: tour?.label });
     this.trace(bt, 'début', vsBot ? 'contre un joueur simulé' : '');
     bt.timer = setTimeout(() => { // un joueur n'a pas choisi : combat annulé
       if (!this.battles.delete(bt.id)) return;
       this.trace(bt, 'annulé', 'deck non choisi à temps');
+      if (bt.tour) {                                                       // tournoi : celui qui n'a pas choisi d'équipe perd le match
+        const ok = bt.players.filter(p => bt.picks[p]);
+        for (const p of bt.players) { this.push(p, { t: 'info', msg: 'Match de tournoi : équipe non choisie à temps.' }); this.push(p, { t: 'battle_cancel' }); }
+        return void this.tourResult(bt.tour.tid, bt.tour.mi, ok.length === 1 ? ok[0] : null).catch(e => console.error('tourResult', e));
+      }
       for (const p of bt.players) { this.push(p, { t: 'info', msg: 'Combat annulé : équipe non choisie à temps.' }); this.push(p, { t: 'battle_cancel' }); }
     }, 90000);
   }
@@ -444,11 +456,118 @@ export class Lobby {
     bt.over = true; bt.gen++; this.battles.delete(bt.id); this.forget(bt);
     const f = bt.fight, [a, b] = bt.players;
     this.trace(bt, 'fin', quitters.length ? `forfait de ${quitters.map(p => bt.names[p]).join(', ')}` : `normale, tour ${Math.min(f.turn, f.total)}/${f.total}, PV ${a}:${f.hp[a]} ${b}:${f.hp[b]}`);
-    if (quitters.length === 2) return;                                // plus personne : rien à récompenser
+    if (quitters.length === 2) { if (bt.tour) await this.tourResult(bt.tour.tid, bt.tour.mi, null); return; }   // plus personne : rien à récompenser
     const win = quitters.length ? bt.players.find(p => !quitters.includes(p)) : f.hp[a] === f.hp[b] ? null : f.hp[a] > f.hp[b] ? a : b;
     const k = bt.bot ? .5 : 1;                                        // contre un joueur simulé, gains réduits de moitié
     await this.reward(bt.players.filter(p => p !== bt.bot), win, Math.round(CFG.BATTLE_WIN * k), Math.round(CFG.BATTLE_LOSE * k), Math.round(CFG.BATTLE_DRAW * k));
     for (const p of bt.players) if (p !== bt.bot) bumpQuests(this.env, p, { battle_play: 1, battle_win: p === win ? 1 : 0 });
-    for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null });
+    for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null, tour: bt.tour ? (win === null ? 'Égalité : tirage au sort pour le tournoi.' : TOUR_LABEL[bt.tour.k]) : undefined });
+    if (bt.tour) await this.tourResult(bt.tour.tid, bt.tour.mi, win);
   }
+  // ---------- tournois : 4 joueurs, 2 demi-finales en même temps, puis finale et match pour la 3e place ----------
+  async tourLoad(id) {
+    const t = await one(this.env, 'SELECT * FROM tournaments WHERE id = ?', id);
+    if (!t) return null;
+    try { t.br = t.bracket ? JSON.parse(t.bracket) : null; } catch { t.br = null; }
+    return t;
+  }
+  tourSave(t) { return run(this.env, 'UPDATE tournaments SET bracket = ?, stage = ? WHERE id = ?', JSON.stringify(t.br), t.br.stage, t.id); }
+  /** Exclusion : une seule mise à jour à la fois par tournoi. */
+  tourLocked(id, fn) {
+    const p = (this.tlock.get(id) ?? Promise.resolve()).catch(() => {}).then(fn);
+    this.tlock.set(id, p.catch(() => {}));
+    return p;
+  }
+  async tourStart(id) {
+    await this.tourLocked(id, async () => {
+      const t = await this.tourLoad(id);
+      if (!t || t.br) return;
+      const ps = shuffle(await all(this.env, 'SELECT p.user_id id, u.name FROM tournament_players p JOIN users u ON u.id = p.user_id WHERE p.tid = ?', id));
+      if (ps.length !== 4) return;
+      t.br = { stage: 'r1', names: Object.fromEntries(ps.map(p => [p.id, p.name])), matches: [
+        { k: 'r1', a: ps[0].id, b: ps[1].id, s: 'wait', since: now() }, { k: 'r1', a: ps[2].id, b: ps[3].id, s: 'wait', since: now() }] };
+      await this.tourSave(t);
+      this.tours.add(id);
+      for (const p of ps) this.tourNote(p.id, `Tournoi n°${id} : les demi-finales commencent ! Reste en ligne et choisis ton équipe.`);
+      await this.tourKick(t);
+    });
+  }
+  tourNote(uid, msg) { this.push(uid, { t: 'notify', msg }); if (!this.clients.has(uid) || this.hidden.get(uid)) pushFor(this.env, uid, { t: 'notify', msg }).catch(() => {}); }
+  /** Lance les matchs de l'étape dont les deux joueurs sont connectés et libres ; prévient les absents. */
+  async tourKick(t) {
+    let dirty = false;
+    t.br.matches.forEach((m, mi) => { if (m.s === 'live' && !this.liveFor(t.id, mi)) { m.s = 'wait'; m.since = now(); dirty = true; } });   // combat perdu (redémarrage) : à relancer
+    for (const [mi, m] of t.br.matches.entries()) {
+      if (m.s !== 'wait') continue;
+      const free = u => this.clients.has(u) && !this.gameOf(u);
+      if (free(m.a) && free(m.b)) {
+        m.s = 'live'; dirty = true;
+        await this.startBattle({ id: m.a, name: t.br.names[m.a] }, { id: m.b, name: t.br.names[m.b] }, false, { tid: t.id, mi, k: m.k, label: `Tournoi n°${t.id} · ${TOUR_LABEL[m.k]}` });
+      } else if (!m.notified) {
+        m.notified = true; dirty = true;
+        for (const u of [m.a, m.b]) if (!free(u)) this.tourNote(u, `Tournoi n°${t.id} : ton match (${TOUR_LABEL[m.k]}) t'attend ! Tu as 10 minutes pour te connecter.`);
+      }
+    }
+    if (dirty) await this.tourSave(t);
+  }
+  liveFor(tid, mi) { for (const b of this.battles.values()) if (!b.over && b.tour?.tid === tid && b.tour.mi === mi) return true; return false; }
+  async tourKickAll() { for (const id of [...this.tours]) await this.tourLocked(id, async () => { const t = await this.tourLoad(id); if (t?.br) await this.tourKick(t); }); }
+  async tourRequeue({ tid, mi }) {
+    await this.tourLocked(tid, async () => { const t = await this.tourLoad(tid); const m = t?.br?.matches[mi]; if (m && m.s === 'live') { m.s = 'wait'; m.since = now(); m.notified = false; await this.tourSave(t); setTimeout(() => this.tourKickAll().catch(() => {}), 3000); } });
+  }
+  /** Toutes les 30 s : relance les matchs en attente et donne perdant celui qui ne se présente pas à temps. */
+  async tourTick() {
+    for (const id of [...this.tours]) {
+      const late = []; let start = false;
+      await this.tourLocked(id, async () => {
+        const t = await this.tourLoad(id);
+        if (!t || t.status !== 'running') { this.tours.delete(id); return; }
+        if (!t.br) { start = true; return; }
+        await this.tourKick(t);
+        for (const [mi, m] of t.br.matches.entries()) if (m.s === 'wait' && now() - m.since >= TOUR_WAIT) late.push([mi, m]);
+      });
+      if (start) await this.tourStart(id);
+      for (const [mi, m] of late) {
+        const here = [m.a, m.b].filter(u => this.clients.has(u) && !this.gameOf(u));
+        for (const u of [m.a, m.b]) this.tourNote(u, here.includes(u) && here.length === 1 ? `Tournoi n°${id} : ton adversaire est absent, tu gagnes le match par forfait.` : `Tournoi n°${id} : match perdu par forfait (absent plus de 10 minutes).`);
+        await this.tourResult(id, mi, here.length === 1 ? here[0] : null);
+      }
+    }
+  }
+  /** Fin d'un match (winner = null : égalité ou double forfait, tirage au sort). Passe à l'étape suivante ou clôt le tournoi et verse les gains. */
+  tourResult(tid, mi, winner) {
+    return this.tourLocked(tid, async () => {
+      const t = await this.tourLoad(tid);
+      if (!t?.br || t.status !== 'running') return;
+      const m = t.br.matches[mi];
+      if (!m || m.s === 'done') return;
+      if (winner !== m.a && winner !== m.b) winner = Math.random() < .5 ? m.a : m.b;
+      m.s = 'done'; m.w = winner; m.l = winner === m.a ? m.b : m.a;
+      const br = t.br, stage = br.stage, cur = br.matches.filter(x => (stage === 'r1' ? x.k === 'r1' : x.k !== 'r1'));
+      if (cur.every(x => x.s === 'done')) {
+        if (stage === 'r1') {
+          const [x, y] = cur;
+          br.stage = 'r2';
+          br.matches.push({ k: 'final', a: x.w, b: y.w, s: 'wait', since: now() }, { k: 'cons', a: x.l, b: y.l, s: 'wait', since: now() });
+          for (const u of [x.w, y.w]) this.tourNote(u, `Tournoi n°${tid} : tu es en finale !`);
+          for (const u of [x.l, y.l]) this.tourNote(u, `Tournoi n°${tid} : match pour la 3ᵉ place.`);
+        } else {
+          const fin = cur.find(x => x.k === 'final'), con = cur.find(x => x.k === 'cons');
+          br.stage = 'done'; br.rank = [fin.w, fin.l, con.w, con.l];
+          const pay = tPayouts(4, t.stake), claim = await run(this.env, "UPDATE tournaments SET status = 'done', ended = ?, stage = 'done', bracket = ? WHERE id = ? AND status = 'running'", now(), JSON.stringify(br), tid);
+          if (claim.meta.changes) {
+            await this.env.DB.batch(br.rank.flatMap((u, i) => [st(this.env, 'UPDATE tournament_players SET payout = ? WHERE tid = ? AND user_id = ?', pay[i], tid, u), ...(pay[i] ? [st(this.env, 'UPDATE users SET coins = coins + ? WHERE id = ?', pay[i], u)] : [])]));
+            br.rank.forEach((u, i) => this.tourNote(u, pay[i] ? `Tournoi n°${tid} : tu finis ${i + 1}ᵉ et gagnes ${pay[i] - t.stake} pièces !` : `Tournoi n°${tid} : tu finis ${i + 1}ᵉ et perds ta mise de ${t.stake} pièces.`));
+          }
+          this.tours.delete(tid);
+          this.broadcast({ t: 'refresh', what: 'tournaments' });
+          return;
+        }
+      }
+      await this.tourSave(t);
+      this.broadcast({ t: 'refresh', what: 'tournaments' });
+      await this.tourKick(t);
+    });
+  }
+
 }
