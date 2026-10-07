@@ -5,6 +5,7 @@ import { withDb } from './pg.js';
 import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool, meter, takeMeter, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
+import { bumpQuests } from './game.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
 const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met le combat en pause et on l'attend jusqu'à 3 minutes, puis forfait
@@ -239,6 +240,7 @@ export class Lobby {
     const [a, b] = d.players, sa = d.score[a], sb = d.score[b];
     const win = sa === sb ? null : sa > sb ? a : b;
     await this.reward(d.players, win, CFG.QUIZ_WIN, CFG.QUIZ_LOSE, CFG.QUIZ_DRAW);
+    for (const p of d.players) bumpQuests(this.env, p, { duel_play: 1, duel_win: p === win ? 1 : 0 });
     for (const p of d.players) this.push(p, { t: 'duel_end', id: d.id, score: d.score, names: d.names, winner: win });
   }
   reward(players, win, W, L, D) {
@@ -421,6 +423,7 @@ export class Lobby {
     const q = c.qs[c.k], ok = c.choice === q.answer, dmg = ok ? 0 : Math.round(c.card.atk / 3);
     f.hp[f.defender] = Math.max(0, f.hp[f.defender] - dmg);
     if (!ok) c.wrong++; c.lost += dmg;
+    if (ok && f.defender !== bt.bot) bumpQuests(this.env, f.defender, { battle_correct: 1 });
     this.emit(bt, { t: 'bf_a', id: bt.id, turn: f.turn, k: c.k + 1, choice: c.choice ?? null, right: q.answer, ok, dmg, hp: { ...f.hp }, defender: f.defender });
     this.step(bt, T.nextQ, () => this.fightQuestion(bt));
   }
@@ -439,6 +442,7 @@ export class Lobby {
     const win = quitters.length ? bt.players.find(p => !quitters.includes(p)) : f.hp[a] === f.hp[b] ? null : f.hp[a] > f.hp[b] ? a : b;
     const k = bt.bot ? .5 : 1;                                        // contre un joueur simulé, gains réduits de moitié
     await this.reward(bt.players.filter(p => p !== bt.bot), win, Math.round(CFG.BATTLE_WIN * k), Math.round(CFG.BATTLE_LOSE * k), Math.round(CFG.BATTLE_DRAW * k));
+    for (const p of bt.players) if (p !== bt.bot) bumpQuests(this.env, p, { battle_play: 1, battle_win: p === win ? 1 : 0 });
     for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null });
   }
 }

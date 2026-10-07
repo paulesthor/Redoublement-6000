@@ -7,9 +7,12 @@ import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
+import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests } from './game.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
+/** Fait avancer les quêtes du joueur, en tâche de fond (ne ralentit jamais la réponse). */
+const bq = (env, ctx, uid, ev) => ctx?.waitUntil(bumpQuests(env, uid, ev));
 const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
 const now = () => Date.now();
 
@@ -204,12 +207,15 @@ async function userStats(env, uid) {
 async function checkAchievements(env, ctx, user) {
   const stats = await userStats(env, user.id);
   const have = new Set((await all(env, 'SELECT key FROM achievements WHERE user_id = ?', user.id)).map(r => r.key));
+  let unlocked = 0;
   for (const a of achievements(stats).filter(a => a.done && !have.has(a.k))) {
     const ins = await run(env, 'INSERT OR IGNORE INTO achievements (user_id, key, ts) VALUES (?,?,?)', user.id, a.k, now());
     if (!ins.meta.changes) continue;
     await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.r, user.id);
     notify(env, ctx, { t: 'notify', msg: `Succès débloqué : ${a.t} (+${a.r} pièces)` }, user.id);
+    unlocked++;
   }
+  if (unlocked) bq(env, ctx, user.id, { achievement: unlocked });
   return stats;
 }
 const lastCheck = new Map();
@@ -230,7 +236,7 @@ async function rankOf(env, origin, title) {
 // ---------- paquets du joueur ----------
 async function refreshPacks(env, u) {
   const elapsed = Math.floor((now() - u.pack_ts) / PACK_EVERY);
-  if (elapsed > 0) {
+  if (elapsed > 0 && u.pack_stock < PACK_MAX) {   // au-delà du plafond (paquets offerts), rien à recharger
     const stock = Math.min(PACK_MAX, u.pack_stock + elapsed);
     const ts = stock >= PACK_MAX ? now() : u.pack_ts + elapsed * PACK_EVERY;
     await run(env, 'UPDATE users SET pack_stock = ?, pack_ts = ? WHERE id = ?', stock, ts, u.id);
@@ -245,7 +251,7 @@ const publicUser = u => ({
   test: testOn(u), admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
 });
 
-async function finishPack(env, ctx, user, drawn) {
+async function finishPack(env, ctx, user, drawn, spent = 0) {
   // TOUT part en un seul aller-retour vers la base (une transaction) : lecture « déjà possédées », écritures, relecture des cartes et des favoris
   const ids = [...new Set(drawn.map(c => c.id))], ph = placeholders(ids.length);
   const god = drawn.some(c => c.god), hitsOf = drawn.filter(c => c.rarity === 'legendary');
@@ -270,6 +276,7 @@ async function finishPack(env, ctx, user, drawn) {
     notify(env, ctx, { t: 'notify', msg: `${user.name} vient d'ouvrir un GODPACK !`, except: user.id });
   }
   for (const c of cards.filter(c => c.rarity === 'legendary')) notify(env, ctx, { t: 'hit', user: user.name, title: c.title, shiny: !!c.shiny, ts: now() });
+  bq(env, ctx, user.id, { open_pack: 1, new_cards: cards.filter(c => c.isNew).length, rare_plus: cards.filter(c => RANK[c.rarity] >= 2).length, legendary: cards.filter(c => c.rarity === 'legendary').length, spend: spent });
   return { cards, god };
 }
 
@@ -486,6 +493,8 @@ async function settleAuctions(env, ctx) {
         ...(bidderBot ? [] : [addCard(env, a.bidder_id, a.card_id)]),
         st(env, 'INSERT INTO sales (card_id, price, ts) VALUES (?,?,?)', a.card_id, a.bid, now()),
       ]);
+      if (!bidderBot) bq(env, ctx, a.bidder_id, { win_auction: 1 });
+      if (!sellerBot) bq(env, ctx, a.seller_id, { sale_done: 1 });
       if (!bidderBot) notify(env, ctx, { t: 'notify', msg: `Tu as remporté « ${card.title} » pour ${a.bid} pièces` }, a.bidder_id);
       if (!sellerBot) notify(env, ctx, { t: 'notify', msg: `« ${card.title} » vendu ${a.bid} pièces` }, a.seller_id);
     } else if (!sellerBot) {
@@ -522,13 +531,26 @@ route('POST', '/api/login', async ({ env, body }) => {
   if (!u || (await hashPw(String(body.password || ''), u.salt)) !== u.hash) bad('Pseudo ou mot de passe incorrect', 401);
   return newSession(env, u.id);
 }, false);
+/** Pastilles du jeu : récompense quotidienne dispo, quêtes à récupérer, quiz du jour pas encore fait. */
+async function gameBadges(env, uid) {
+  await ensureGameSchema(env);
+  const day = dayKey();
+  const [d, q, z] = await Promise.all([
+    one(env, 'SELECT daily_day, daily_streak FROM users WHERE id = ?', uid),
+    all(env, 'SELECT qid, progress, claimed FROM quests WHERE user_id = ? AND day = ?', uid, day),
+    one(env, 'SELECT finished FROM daily_quiz_runs WHERE user_id = ? AND day = ?', uid, day),
+  ]);
+  const ds = dailyState(d ?? {}), ids = questsFor(uid, day);
+  const qc = q.filter(r => ids.includes(r.qid) && !r.claimed && r.progress >= QUEST[r.qid].goal).length;
+  return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new' };
+}
 route('GET', '/api/me', async ({ env, ctx, user }) => {
   // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
   if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
-  const [badge, dm] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null)]);   // deux lectures en parallèle
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0 };
+  const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
+  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -552,8 +574,9 @@ async function showcaseOf(env, uid, raw) {
   const by = new Map(rows.map(c => [c.id, c]));
   return ids.map(id => by.get(id)).filter(Boolean);
 }
-route('GET', '/api/profile/:id', async ({ env, user, params }) => {
+route('GET', '/api/profile/:id', async ({ env, ctx, user, params }) => {
   const id = +params.id;
+  if (id !== user.id) bq(env, ctx, user.id, { profile_view: 1 });
   let hit = profileCache.get(id);
   if (!hit || now() - hit.t > 60000) {
     const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs, showcase FROM users WHERE id = ? AND is_bot = 0', id);
@@ -573,7 +596,7 @@ route('GET', '/api/profile/:id', async ({ env, user, params }) => {
   return { profile: { ...hit.v, isMe: id === user.id, isFriend: !!fr } };
 });
 // vitrine : jusqu'à trois cartes de sa collection, exposées sur son profil
-route('POST', '/api/me/showcase', async ({ env, user, body }) => {
+route('POST', '/api/me/showcase', async ({ env, ctx, user, body }) => {
   const ids = [...new Set((Array.isArray(body.cards) ? body.cards : []).map(Number).filter(Number.isInteger))];
   if (ids.length > 3) bad('Trois cartes au maximum dans la vitrine');
   if (ids.length) {
@@ -582,6 +605,7 @@ route('POST', '/api/me/showcase', async ({ env, user, body }) => {
   }
   await run(env, 'UPDATE users SET showcase = ? WHERE id = ?', JSON.stringify(ids), user.id);
   profileCache.delete(user.id);
+  if (ids.length) bq(env, ctx, user.id, { showcase: 1 });
   return { ok: true, showcase: await showcaseOf(env, user.id, JSON.stringify(ids)) };
 });
 
@@ -618,7 +642,7 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
   const drawn = (await takePrepared(env, user.id, user.drop_w ?? '')) ?? await drawCards(env, origin, PACK_SIZE, userWeights(user));
   ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
-  return finishPack(env, ctx, user, drawn);
+  return finishPack(env, ctx, user, drawn, CFG.PACK_PRICE);
 });
 route('POST', '/api/cards/enrich', async ({ env, body }) => {
   const ids = (body.ids || []).map(Number).filter(Number.isFinite).slice(0, 40);
@@ -630,13 +654,14 @@ route('GET', '/api/hits', async ({ env }) => ({
 }));
 
 const AVG = '(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))';
-route('POST', '/api/favorites', async ({ env, user, body }) => {
+route('POST', '/api/favorites', async ({ env, ctx, user, body }) => {
   const id = +body.card_id;
   if (body.on) {
     if (!(await one(env, 'SELECT 1 x FROM inventory WHERE user_id = ? AND card_id = ?', user.id, id))) bad('Tu ne possèdes pas cette carte');
     await run(env, 'INSERT OR IGNORE INTO favorites (user_id, card_id, ts) VALUES (?,?,?)', user.id, id, now());
   } else await run(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ?', user.id, id);
   await run(env, 'UPDATE inventory SET fav = ? WHERE user_id = ? AND card_id = ?', body.on ? 1 : 0, user.id, id);
+  if (body.on) bq(env, ctx, user.id, { favorite: 1 });
   return { ok: true };
 });
 // ---- collection paginée : 40 cartes par page, tri et filtres faits par la base grâce aux colonnes de tri de l'inventaire ----
@@ -702,7 +727,7 @@ route('GET', '/api/album', async ({ env, user, origin, query }) => {
   return { cards, total, rarityAvg };
 });
 
-route('POST', '/api/discard', async ({ env, user, body }) => {
+route('POST', '/api/discard', async ({ env, ctx, user, body }) => {
   const cid = +body.card_id, want = Math.max(1, Math.floor(+body.qty || 1));
   const c = await one(env, 'SELECT c.rarity, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.card_id = ?', user.id, cid);
   if (!c) bad('Tu ne possèdes pas cette carte');
@@ -714,10 +739,11 @@ route('POST', '/api/discard', async ({ env, user, body }) => {
     st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id),
   ]);
   statsCache.delete(user.id);
+  bq(env, ctx, user.id, { discard: qty });
   return { price };
 });
 // défausse un exemplaire de chacune des cartes choisies (sélection multiple dans la collection)
-route('POST', '/api/discard-many', async ({ env, user, body }) => {
+route('POST', '/api/discard-many', async ({ env, ctx, user, body }) => {
   const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(Number).filter(Number.isInteger))].slice(0, 100);
   if (!ids.length) bad('Aucune carte choisie');
   const rows = await all(env, `SELECT card_id, qty, rar FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(ids.length)}) AND qty >= 1`, user.id, ...ids);
@@ -729,10 +755,11 @@ route('POST', '/api/discard-many', async ({ env, user, body }) => {
     st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id),
   ]);
   statsCache.delete(user.id);
+  bq(env, ctx, user.id, { discard: rows.length });
   return { price, count: rows.length };
 });
 // vend tous les exemplaires en trop (on garde 1 exemplaire) des cartes de rareté <= max_rarity
-route('POST', '/api/discard-dupes', async ({ env, user, body }) => {
+route('POST', '/api/discard-dupes', async ({ env, ctx, user, body }) => {
   const max = RANK[body.max_rarity] ?? 0;
   const agg = await one(env, `SELECT COALESCE(SUM((qty - 1) * ${byRar(SELL, 'rar')}), 0) price, COALESCE(SUM(qty - 1), 0) count FROM inventory WHERE user_id = ? AND qty > 1 AND rar <= ?`, user.id, max);
   if (!agg.count) return { price: 0, count: 0 };
@@ -741,6 +768,7 @@ route('POST', '/api/discard-dupes', async ({ env, user, body }) => {
     st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', agg.price, user.id),
   ]);
   statsCache.delete(user.id);
+  bq(env, ctx, user.id, { discard: agg.count });
   return { price: agg.price, count: agg.count };
 });
 
@@ -785,6 +813,7 @@ route('POST', '/api/dm/:peer', async ({ env, ctx, user, params, body }) => {
     st(env, `INSERT INTO convs (user_id, peer_id, last_ts, last_body, last_mine, unread) VALUES (?,?,?,?,0,1)
       ON CONFLICT(user_id, peer_id) DO UPDATE SET last_ts = excluded.last_ts, last_body = excluded.last_body, last_mine = 0, unread = convs.unread + 1`, peer.id, user.id, ts, preview),
   ]);
+  bq(env, ctx, user.id, { message: 1 });
   notify(env, ctx, { t: 'dm', from: user.id, name: user.name, body: preview, ts }, peer.id);
   return { ok: true, message: { id: res[0].meta.last_row_id, mine: true, body: text, ts } };
 });
@@ -815,6 +844,7 @@ route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) =>
     const e = await entryAt(env, origin, rank);
     return { id: e[0], title: p.title, rarity, rank, views: e[2], image: p.thumbnail?.source ?? null, extract: (p.extract || '').trim(), ...stats(p.title, rarity, false), enriched: 2 };
   }))).filter(Boolean);
+  if (q.length >= 3) bq(env, ctx, user.id, { search: 1 });
   if (cards[0] && q.length >= 3 && !(user.is_admin && query.get('admin'))) if (wishRoll(user.id, cards[0])) ctx.waitUntil(wishListing(env, cards[0]).catch(() => {}));   // la carte cherchée sera peut-être bientôt en vente (pas garanti)
   const own = cards.length ? await all(env, `SELECT card_id, SUM(qty) qty FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(cards.length)}) GROUP BY card_id`, user.id, ...cards.map(c => c.id)) : [];
   const owned = new Map(own.map(r => [r.card_id, r.qty]));
@@ -876,6 +906,7 @@ route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
   const card = await one(env, 'SELECT title FROM cards WHERE id = ?', +body.card_id);
   notify(env, ctx, { t: 'notify', msg: `${user.name} met « ${card.title} » aux enchères (${price} pièces)`, except: user.id });
   (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
+  bq(env, ctx, user.id, { sell_auction: 1 });
   return { ok: true };
 });
 route('GET', '/api/auctions/:id/bids', async ({ env, params }) => ({
@@ -907,6 +938,7 @@ route('POST', '/api/auctions/:id/bid', async ({ env, ctx, user, params, body }) 
     notify(env, ctx, { t: 'notify', msg }, uid);
   }
   (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
+  bq(env, ctx, user.id, { bid: 1, spend: amount });
   return { ok: true };
 });
 
@@ -935,6 +967,7 @@ route('POST', '/api/trades', async ({ env, ctx, user, body }) => {
   if (!(await one(env, 'SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?', user.id, +body.offer_card))) bad('Tu ne possèdes pas la carte proposée');
   if (!(await one(env, 'SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?', to, +body.want_card))) bad('Ce joueur ne possède pas la carte demandée');
   await run(env, 'INSERT INTO trades (from_id, to_id, offer_card, want_card, created) VALUES (?,?,?,?,?)', user.id, to, +body.offer_card, +body.want_card, now());
+  bq(env, ctx, user.id, { trade_propose: 1 });
   notify(env, ctx, { t: 'notify', msg: `${user.name} te propose un échange !` }, to);
   notify(env, ctx, { t: 'refresh', what: 'trades' }, to);
   return { ok: true };
@@ -958,11 +991,120 @@ route('POST', '/api/trades/:id/:action', async ({ env, ctx, user, params }) => {
       st(env, 'DELETE FROM inventory WHERE qty <= 0'),
       addCard(env, t.to_id, t.offer_card), addCard(env, t.from_id, t.want_card),
     ]);
+    bq(env, ctx, t.to_id, { trade_done: 1 }); bq(env, ctx, t.from_id, { trade_done: 1 });
   } else bad('Action inconnue', 404);
   const other = t.from_id === user.id ? t.to_id : t.from_id;
   notify(env, ctx, { t: 'refresh', what: 'trades' }, other);
   notify(env, ctx, { t: 'notify', msg: `Échange mis à jour (${params.action}).` }, other);
   return { ok: true };
+});
+
+// ---------- récompense quotidienne, quêtes, quiz du jour ----------
+const dailyOf = async (env, uid) => { await ensureGameSchema(env); return (await one(env, 'SELECT daily_day, daily_streak FROM users WHERE id = ?', uid)) ?? {}; };
+route('GET', '/api/daily', async ({ env, user }) => ({ ...dailyState(await dailyOf(env, user.id)), resetIn: msToMidnight() }));
+route('POST', '/api/daily/claim', async ({ env, user }) => {
+  const st0 = dailyState(await dailyOf(env, user.id));
+  if (!st0.available) bad('Récompense déjà récupérée aujourd’hui');
+  const rw = DAILY[st0.index], c = rw.c || 0, p = rw.p || 0;
+  const got = await run(env, 'UPDATE users SET daily_day = ?, daily_streak = ?, coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ? AND daily_day IS DISTINCT FROM ?', st0.today, st0.next, c, p, user.id, st0.today);
+  if (!got.meta.changes) bad('Récompense déjà récupérée aujourd’hui');
+  return { ok: true, reward: rw, streak: st0.next, ...dailyState({ daily_day: st0.today, daily_streak: st0.next }), resetIn: msToMidnight() };
+});
+
+const questView = (q, row) => ({ id: q.id, tier: q.tier, text: q.text, goal: q.goal, reward: q.reward, progress: row?.progress ?? 0, claimed: !!row?.claimed });
+async function questsOf(env, uid) {
+  await ensureGameSchema(env);
+  const day = dayKey(), ids = questsFor(uid, day);
+  await env.DB.batch([...ids, BONUS.id].map(id => st(env, 'INSERT INTO quests (user_id, day, qid) VALUES (?,?,?) ON CONFLICT DO NOTHING', uid, day, id)));
+  const rows = new Map((await all(env, 'SELECT qid, progress, claimed FROM quests WHERE user_id = ? AND day = ?', uid, day)).map(r => [r.qid, r]));
+  const list = ids.map(id => questView(QUEST[id], rows.get(id)));
+  const claimedN = list.filter(q => q.claimed).length, b = rows.get(BONUS.id);
+  return { day, resetIn: msToMidnight(), quests: list, bonus: { text: BONUS.text, goal: BONUS.goal, reward: BONUS.reward, progress: claimedN, claimed: !!b?.claimed } };
+}
+route('GET', '/api/quests', async ({ env, user }) => questsOf(env, user.id));
+route('POST', '/api/quests/claim', async ({ env, user, body }) => {
+  await ensureGameSchema(env);
+  const day = dayKey(), id = String(body.id || ''), q = id === BONUS.id ? BONUS : QUEST[id];
+  if (!q || (id !== BONUS.id && !questsFor(user.id, day).includes(id))) bad('Quête inconnue', 404);
+  if (id === BONUS.id) {
+    const n = (await one(env, "SELECT COUNT(*) n FROM quests WHERE user_id = ? AND day = ? AND qid <> 'bonus' AND claimed = 1", user.id, day)).n;
+    if (n < BONUS.goal) bad('Récupère d’abord les 3 quêtes');
+  }
+  const goal = q.goal;
+  const ok = await run(env, 'UPDATE quests SET claimed = 1 WHERE user_id = ? AND day = ? AND qid = ? AND claimed = 0 AND (progress >= ? OR qid = ?)', user.id, day, id, goal, 'bonus');
+  if (!ok.meta.changes) bad('Quête non terminée ou déjà récupérée');
+  const rw = q.reward;
+  await run(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c || 0, rw.p || 0, user.id);
+  return { ok: true, reward: rw, ...(await questsOf(env, user.id)) };
+});
+
+const QUIZ_N = 5, QUIZ_SECS = 300;
+async function dailyQuiz(env, origin, day) {
+  const have = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
+  if (have) return have;
+  const { ranges } = await getMeta(env, origin), top = ranges.rare[1];
+  let h = 2166136261; for (const ch of 'quiz' + day) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  for (let k = 0; k < 6; k++) {                              // article choisi au hasard (même pour tous) ; on passe au suivant si l'IA ne donne pas assez de questions
+    const e = await entryAt(env, origin, (h + k * 7919) % top);
+    const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '2500', redirects: '1', titles: e[1] });
+    let page = null;
+    try { const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA }); if (r.ok) page = Object.values((await r.json()).query?.pages ?? {})[0]; } catch { /* hors-ligne */ }
+    if (!page?.extract || page.extract.length < 200) continue;
+    const pool = await randomPool(env, 30);
+    const qs = await battleQuestions(env, { id: e[0], title: page.title, extract: page.extract.slice(0, 600), views: e[2] }, page.extract, { cards: pool }, QUIZ_N);
+    if (qs.length < QUIZ_N) continue;
+    await run(env, 'INSERT INTO daily_quiz (day, title, extract, questions, model, created) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING', day, page.title, page.extract.slice(0, 600), JSON.stringify(qs.slice(0, QUIZ_N).map(x => ({ text: x.text, options: x.options, answer: x.answer }))), qs.some(x => x.ai) ? 'ia' : 'regles', now());
+    return one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
+  }
+  bad('Le quiz du jour n’est pas disponible pour le moment, réessaie dans un instant', 503);
+}
+const recap = (quiz, run_) => {
+  const qs = JSON.parse(quiz.questions), ans = JSON.parse(run_.answers || '[]');
+  return { title: quiz.title, correct: run_.correct, total: qs.length, delta: run_.delta, penalty: run_.correct === 0 ? (run_.delta < 0 ? 'pack' : 'timer') : null,
+    questions: qs.map((q, i) => ({ text: q.text, options: q.options, answer: q.answer, given: ans[i] ?? -1, ok: ans[i] === q.answer })) };
+};
+route('GET', '/api/daily-quiz', async ({ env, user }) => {
+  await ensureGameSchema(env);
+  const day = dayKey(), quiz = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day), r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
+  if (r?.finished && quiz) return { status: 'done', day, resetIn: msToMidnight(), recap: recap(quiz, r) };
+  if (r && quiz) {
+    const left = r.started + QUIZ_SECS * 1000 - now();
+    if (left > 0) return { status: 'run', day, resetIn: msToMidnight(), secs: Math.ceil(left / 1000), questions: JSON.parse(quiz.questions).map(q => ({ text: q.text, options: q.options })) };
+  }
+  return { status: r ? 'late' : 'new', day, resetIn: msToMidnight(), n: QUIZ_N, secs: QUIZ_SECS };
+});
+route('POST', '/api/daily-quiz/start', async ({ env, origin, user }) => {
+  await ensureGameSchema(env);
+  const day = dayKey(), quiz = await dailyQuiz(env, origin, day);
+  const mine = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
+  if (mine?.finished) bad('Tu as déjà fait le quiz du jour');
+  if (!mine) await run(env, 'INSERT INTO daily_quiz_runs (user_id, day, started) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, day, now());
+  const r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
+  const left = Math.max(0, r.started + QUIZ_SECS * 1000 - now());
+  return { status: 'run', day, secs: Math.ceil(left / 1000), questions: JSON.parse(quiz.questions).map(q => ({ text: q.text, options: q.options })) };
+});
+route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
+  await ensureGameSchema(env);
+  const day = dayKey(), quiz = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day), r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
+  if (!quiz || !r) bad('Commence d’abord le quiz', 400);
+  if (r.finished) return { ok: true, status: 'done', recap: recap(quiz, r) };
+  const qs = JSON.parse(quiz.questions), late = now() > r.started + QUIZ_SECS * 1000 + 15000;
+  const given = qs.map((_, i) => { const v = Array.isArray(body.answers) ? body.answers[i] : null; return Number.isInteger(v) ? v : -1; });
+  const correct = late ? 0 : given.reduce((t, v, i) => t + (v === qs[i].answer ? 1 : 0), 0);
+  let delta = correct;
+  const claim = await run(env, 'UPDATE daily_quiz_runs SET answers = ?, correct = ?, delta = ?, finished = ? WHERE user_id = ? AND day = ? AND finished IS NULL', JSON.stringify(given), correct, correct, now(), user.id, day);
+  if (!claim.meta.changes) { const r2 = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day); return { ok: true, status: 'done', recap: recap(quiz, r2) }; }
+  let u = await one(env, 'SELECT * FROM users WHERE id = ?', user.id);
+  if (correct > 0) await run(env, 'UPDATE users SET pack_stock = pack_stock + ? WHERE id = ?', correct, user.id);
+  else {                                                     // aucune bonne réponse : un paquet en moins, ou à défaut le minuteur repart à 10 minutes
+    u = await refreshPacks(env, u);
+    const lost = u.pack_stock >= 1 ? await run(env, 'UPDATE users SET pack_stock = pack_stock - 1 WHERE id = ? AND pack_stock >= 1', user.id) : null;
+    if (lost?.meta.changes) delta = -1;
+    else { delta = 0; await run(env, 'UPDATE users SET pack_ts = ? WHERE id = ?', now(), user.id); }
+    await run(env, 'UPDATE daily_quiz_runs SET delta = ? WHERE user_id = ? AND day = ?', delta, user.id, day);
+  }
+  bq(env, ctx, user.id, { quiz_daily: 1, quiz_correct: correct });
+  return { ok: true, status: 'done', recap: recap(quiz, { ...r, answers: JSON.stringify(given), correct, delta }) };
 });
 
 // ---------- amis ----------
@@ -994,6 +1136,7 @@ route('POST', '/api/friends/request', async ({ env, ctx, user, body }) => {
   if (await one(env, "SELECT 1 FROM friend_requests WHERE from_id = ? AND to_id = ? AND status = 'pending'", user.id, target.id)) bad('Demande déjà envoyée');
   if (await one(env, "SELECT 1 FROM friend_requests WHERE from_id = ? AND to_id = ? AND status = 'pending'", target.id, user.id)) { // il t'avait déjà invité : on accepte
     await makeFriends(env, user.id, target.id, target.id);
+    bq(env, ctx, user.id, { friend: 1 }); bq(env, ctx, target.id, { friend: 1 });
     notify(env, ctx, { t: 'friend', kind: 'accepted', name: user.name }, target.id);
     return { status: 'friends', name: target.name };
   }
@@ -1006,6 +1149,7 @@ route('POST', '/api/friends/respond/:id', async ({ env, ctx, user, params, body 
   if (!r) bad('Demande introuvable', 404);
   if (body.accept) {
     await makeFriends(env, user.id, r.from_id, r.from_id);
+    bq(env, ctx, user.id, { friend: 1 }); bq(env, ctx, r.from_id, { friend: 1 });
     notify(env, ctx, { t: 'friend', kind: 'accepted', name: user.name }, r.from_id);
   } else await run(env, "UPDATE friend_requests SET status = 'declined' WHERE id = ?", r.id);
   return { ok: true };
@@ -1016,6 +1160,7 @@ route('POST', '/api/friends/add-code', async ({ env, ctx, user, body }) => {
   if (owner.id === user.id) bad('C’est ton propre QR code');
   if (await areFriends(env, user.id, owner.id)) return { status: 'already', name: owner.name };
   await makeFriends(env, user.id, owner.id, owner.id);
+  bq(env, ctx, user.id, { friend: 1 }); bq(env, ctx, owner.id, { friend: 1 });
   notify(env, ctx, { t: 'friend', kind: 'added', name: user.name }, owner.id);
   return { status: 'friends', name: owner.name };
 });

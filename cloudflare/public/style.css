@@ -813,3 +813,42 @@ nav button.more{display:none}
 .mtile:active{transform:scale(.97)}
 .mtile .mb{position:absolute;top:8px;right:8px;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:#ff4d5e;color:#fff;font-style:normal;font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #14141c}
 @media(min-width:821px){.mgrid{grid-template-columns:repeat(3,1fr)}}
+
+/* ---- récompense quotidienne, quêtes, quiz du jour ---- */
+.rw{display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:center}.rw em{display:inline-flex;align-items:center;gap:3px;font-style:normal;font-weight:700;font-size:12px;padding:2px 8px;border-radius:99px;background:#f5c5421f;color:#f5c542}
+.rw em.pk{background:#86c4f524;color:#86c4f5}.rw .ic{width:13px;height:13px}.rw.big em{font-size:22px;padding:6px 16px;gap:6px}.rw.big .ic{width:22px;height:22px}
+.halo{position:absolute;left:50%;top:-40px;width:340px;height:340px;margin-left:-170px;background:radial-gradient(circle,#f5c54233,transparent 65%);pointer-events:none;animation:breathe 4s ease-in-out infinite}
+.dk{margin:0;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);font-weight:700;text-align:center}
+#modal>div.daily{position:relative;text-align:center;overflow:hidden;max-width:430px}.daily h2{font-size:24px;margin:6px 0 4px}
+.dgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0}
+.dslot{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:74px;padding:8px 4px;border-radius:14px;background:#ffffff08;border:1px solid var(--line2)}
+.dslot small{font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em}.dslot.last{grid-column:span 2;background:linear-gradient(135deg,#f2a34f26,#ffffff08);border-color:#f2a34f66}
+.dslot.past{opacity:.55}.dslot .ck{position:absolute;top:4px;right:6px;font-style:normal;color:#7be0a0;font-size:13px;font-weight:800}
+.dslot.now{border-color:#f5c542;background:linear-gradient(135deg,#f5c54233,#ffffff0a);box-shadow:0 0 22px #f5c54255;animation:glow 2.2s ease-in-out infinite;transform:scale(1.06)}
+.dslot.now.got{animation:none;border-color:#7be0a0;box-shadow:0 0 26px #7be0a066}
+.dgift{display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0 16px}.dgift>span{color:#f5c542;animation:float 3s ease-in-out infinite}.dgift>span .ic{width:34px;height:34px}
+.daily.claimed .dgift{animation:rc-in .6s var(--ease) both}.daily .sparks,.dqend .sparks{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.daily .sparks span,.dqend .sparks span{position:absolute;left:50%;top:48%;width:var(--s);height:var(--s);border-radius:50%;background:var(--c);box-shadow:0 0 10px 2px var(--c);opacity:0;animation:spark 1.8s ease-out var(--d) both}
+.primary.big{width:100%;min-height:52px;font-size:16px}.dsmall{font-size:12px;margin:10px 0 0;text-align:center}
+.qreset{display:flex;align-items:center;gap:6px;margin:-8px 0 14px}.qreset .ic{width:16px;height:16px}
+.quests{display:grid;gap:12px}
+.quest{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:16px;background:var(--panel);border:1px solid var(--line2)}
+.quest .qt{display:flex;align-items:center;justify-content:space-between;gap:8px}.quest>b{font-size:15px;line-height:1.3}
+.tier{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:99px}
+.tier.easy{background:#7be0a022;color:#7be0a0}.tier.mid{background:#86c4f522;color:#86c4f5}.tier.hard{background:#ee91bc22;color:#ee91bc}.tier.gold{background:#f5c54222;color:#f5c542}
+.quest .qp{display:flex;align-items:center;gap:10px}.quest .qp .qbar{flex:1;margin:0}.quest .qp small{color:var(--mut);font-size:12px;min-width:38px;text-align:right}
+.quest.ready{border-color:#f5c542;box-shadow:0 0 18px #f5c54233}.quest.done{opacity:.6}.quest .qok{color:#7be0a0;font-weight:700;font-size:13px}
+.quest.bonus{background:linear-gradient(135deg,#f5c5421a,var(--panel))}
+.dqintro,.dqend{position:relative;text-align:center;overflow:hidden;padding-bottom:12px}.dqintro h1{font-size:30px;margin:6px 0}
+.dqrules{list-style:none;margin:18px 0;padding:0;display:grid;gap:8px;text-align:left}.dqrules li{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:13px;background:#ffffff08;border:1px solid var(--line2);font-size:14px}
+.dqrules li .ic{width:20px;height:20px;flex:none;color:#86c4f5}.dqrules li.bad .ic{color:#ee91bc}
+.dqdots{display:flex;gap:6px;margin:-8px 0 8px}.dqdots i{flex:1;height:4px;border-radius:4px;background:var(--line2)}.dqdots i.done{background:#7be0a0}.dqdots i.cur{background:var(--gold)}
+.dqtime{display:flex;align-items:center;gap:6px;font-size:13px;margin:0 0 10px}.dqtime .ic{width:15px;height:15px}.dqtext{font-size:17px;line-height:1.4;font-weight:600;margin:6px 0 14px}
+.opt.sel{border-color:var(--gold);background:#ffffff14}
+.dqscore{display:flex;align-items:baseline;justify-content:center;gap:8px;margin:10px 0 0;animation:wt-slam .7s var(--ease) both}.dqscore b{font-size:84px;line-height:1;font-family:var(--f-disp);background:var(--grad-gold);-webkit-background-clip:text;background-clip:text;color:transparent}.dqscore span{font-size:26px;color:var(--mut)}
+.dqend h2{margin:4px 0 10px;font-size:24px}
+.dqgain{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;margin:6px 0 16px;color:#86c4f5}.dqgain .ic{width:34px;height:34px;animation:rc-in .6s var(--ease) both;animation-delay:calc(var(--i) * .15s + .3s)}.dqgain b{font-size:20px;color:var(--fg);width:100%}
+.dqgain.bad{flex-direction:column;color:#ee91bc}.dqgain.bad b{color:#ee91bc;width:auto}.dqgain small{color:var(--mut);max-width:300px}
+.dqlist{display:grid;gap:8px;text-align:left;margin:10px 0}.dqrow{display:flex;gap:10px;padding:10px 12px;border-radius:13px;background:#ffffff08;border:1px solid var(--line2)}
+.dqrow.ok{border-color:#7be0a055}.dqrow.ko{border-color:#ee91bc55}.dqn{flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.dqrow.ok .dqn{background:#7be0a028;color:#7be0a0}.dqrow.ko .dqn{background:#ee91bc28;color:#ee91bc}.dqrow b{font-size:13.5px;font-weight:600;line-height:1.35;display:block}.dqrow small{color:var(--mut);font-size:12.5px;line-height:1.4}.dqrow em{color:#7be0a0;font-style:normal}

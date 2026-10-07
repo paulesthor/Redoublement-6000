@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '4.3';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '4.4';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -141,7 +141,7 @@ document.addEventListener('visibilitychange', () => {
   const away = Date.now() - hiddenAt;
   if (!ws || ws.readyState > 1) connect();                  // la connexion a été coupée en arrière-plan (le serveur renvoie alors l'état de la partie)
   else send({ t: 'sync' });                                   // connexion encore ouverte mais peut-être sourde : on redemande l'état de la partie
-  refreshMe().then(() => { if (!game && away > 30000) render(); }).catch(() => {});   // pas de reconstruction de l'écran pour un simple aller-retour rapide
+  refreshMe().then(() => { if (me.daily && dailyShown !== new Date().toDateString() && $('#modal').hidden && !game) dailyModal(); if (!game && away > 30000) render(); }).catch(() => {});   // nouveau jour : la récompense réapparaît   // pas de reconstruction de l'écran pour un simple aller-retour rapide
 });
 const send = o => ws?.readyState === 1 && ws.send(JSON.stringify(o));
 function onWs(m) {
@@ -360,7 +360,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', admin: 'more' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -1338,7 +1338,7 @@ async function refreshMe() {
   me = await api('/me');
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
-  document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0);
+  document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily);
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar" id="profile" aria-label="Profil">${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
@@ -1472,6 +1472,109 @@ function profileSheet() {
   if (me.admin) $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
 }
+// ---------- récompense quotidienne, quêtes, quiz du jour ----------
+const rewardChips = (rw, big = false) => `<span class="rw ${big ? 'big' : ''}">${rw.c ? `<em>${ico('coin')}+${rw.c}</em>` : ''}${rw.p ? `<em class="pk">${ico('packs')}+${rw.p}</em>` : ''}</span>`;
+const hmLeft = ms => { const m = Math.max(0, Math.round(ms / 60000)); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; };
+function sparks(host, n = 26) {
+  const c = ['#f5c542', '#ffffff', '#86c4f5', '#ee91bc', '#c09aec'], d = document.createElement('div'); d.className = 'sparks';
+  d.innerHTML = Array.from({ length: n }, () => { const a = Math.random() * 6.28, r = 90 + Math.random() * 170; return `<span style="--x:${Math.round(Math.cos(a) * r)}px;--y:${Math.round(Math.sin(a) * r)}px;--s:${4 + Math.round(Math.random() * 6)}px;--c:${c[Math.floor(Math.random() * c.length)]};--d:${Math.round(Math.random() * 250)}ms"></span>`; }).join('');
+  host.append(d); setTimeout(() => d.remove(), 2600);
+}
+let dailyShown = '';
+/** Fenêtre de bienvenue : la récompense du jour, avec les 7 jours de la série. */
+function dailyModal(d = me.daily) {
+  if (!d) return;
+  dailyShown = new Date().toDateString();
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+  const slot = (rw, i) => `<div class="dslot ${i < d.index ? 'past' : i === d.index ? 'now' : ''} ${i === 6 ? 'last' : ''}"><small>Jour ${i + 1}</small>${rewardChips(rw)}${i < d.index ? '<i class="ck">✓</i>' : ''}</div>`;
+  m.hidden = false;
+  m.innerHTML = `<div class="daily" role="dialog" aria-label="Récompense quotidienne"><span class="halo" aria-hidden="true"></span>
+    <p class="dk">Récompense quotidienne</p><h2>Bon retour, ${esc(me.name)} !</h2>
+    <p class="mut">${d.streak > 0 ? `Série en cours : <b>${d.streak} jour${d.streak > 1 ? 's' : ''}</b>. Reviens chaque jour pour la garder !` : 'Reviens chaque jour pour allonger ta série et gagner de plus gros cadeaux.'}</p>
+    <div class="dgrid">${d.rewards.map(slot).join('')}</div>
+    <div class="dgift" id="dgift"><span>${ico('spark')}</span>${rewardChips(d.rewards[d.index], true)}</div>
+    <button id="d-claim" class="primary big">Récupérer</button><p class="mut dsmall">Nouvelle récompense à minuit.</p></div>`;
+  m.onclick = e => { if (e.target === m && $('#d-claim')) close(); };
+  $('#d-claim').onclick = safe(async () => {
+    $('#d-claim').disabled = true;
+    const r = await api('/daily/claim', {});
+    const box = $('.daily'); box.classList.add('claimed'); sparks(box, 34); try { navigator.vibrate?.([30, 40, 30]); } catch { /* non supporté */ }
+    $('.dslot.now')?.classList.add('got');
+    const b = $('#d-claim'); b.textContent = 'Super !'; b.disabled = false; b.onclick = () => { close(); refreshMe().catch(() => {}); if (tab === 'packs') render(); };
+    await refreshMe();
+  });
+}
+
+const TIERS = { 1: ['Facile', 'easy'], 2: ['Moyen', 'mid'], 3: ['Difficile', 'hard'] };
+views.quests = async v => {
+  const d = await api('/quests'), end = Date.now() + d.resetIn;
+  const card = q => `<div class="quest ${q.claimed ? 'done' : q.progress >= q.goal ? 'ready' : ''} t${q.tier}"><div class="qt"><span class="tier ${TIERS[q.tier][1]}">${TIERS[q.tier][0]}</span>${rewardChips(q.reward)}</div>
+    <b>${esc(q.text)}</b><div class="qp"><div class="qbar"><i style="width:${Math.min(100, Math.round(q.progress / q.goal * 100))}%"></i></div><small>${Math.min(q.progress, q.goal)} / ${q.goal}</small></div>
+    ${q.claimed ? '<span class="qok">✓ Récupérée</span>' : q.progress >= q.goal ? `<button class="primary" data-claim="${q.id}">Récupérer</button>` : ''}</div>`;
+  const b = d.bonus, bReady = !b.claimed && b.progress >= b.goal;
+  v.innerHTML = `${pageHead('Quêtes du jour', 'Trois défis par jour, de nouveaux à minuit.')}<p class="mut qreset">${ico('clock')} Nouvelles quêtes dans <b id="q-left">${hmLeft(d.resetIn)}</b></p>
+    <div class="quests">${d.quests.map(card).join('')}
+    <div class="quest bonus ${b.claimed ? 'done' : bReady ? 'ready' : ''}"><div class="qt"><span class="tier gold">Bonus</span>${rewardChips(b.reward)}</div><b>${esc(b.text)}</b>
+      <div class="qp"><div class="qbar"><i style="width:${Math.round(Math.min(b.progress, b.goal) / b.goal * 100)}%"></i></div><small>${Math.min(b.progress, b.goal)} / ${b.goal}</small></div>
+      ${b.claimed ? '<span class="qok">✓ Récupéré</span>' : bReady ? '<button class="primary" data-claim="bonus">Récupérer le bonus</button>' : ''}</div></div>`;
+  tick = setInterval(() => { const e = $('#q-left'); if (e) e.textContent = hmLeft(end - Date.now()); if (end < Date.now()) { clearInterval(tick); render(); } }, 20000);
+  v.querySelectorAll('[data-claim]').forEach(btn => btn.onclick = safe(async () => {
+    btn.disabled = true; const el = btn.closest('.quest');
+    const r = await api('/quests/claim', { id: btn.dataset.claim }); sparks(el, 18); try { navigator.vibrate?.(30); } catch { /* non supporté */ }
+    toast(`Récompense : ${[r.reward.c ? `${r.reward.c} pièces` : '', r.reward.p ? `${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + ')}`);
+    await refreshMe(); setTimeout(() => tab === 'quests' && render(), 650);
+  }));
+};
+
+let dqRun = null;   // quiz en cours : { day, qs, i, answers, endAt }
+const dqRecap = (v, rc, d) => {
+  const verdict = rc.correct === rc.total ? 'Sans faute !' : rc.correct >= 3 ? 'Bien joué !' : rc.correct > 0 ? 'Pas mal !' : 'Aïe…';
+  const gain = rc.delta > 0 ? `<div class="dqgain">${Array.from({ length: rc.delta }, (_, i) => `<span style="--i:${i}">${ico('packs')}</span>`).join('')}<b>+${rc.delta} paquet${rc.delta > 1 ? 's' : ''}</b></div>`
+    : rc.penalty === 'pack' ? `<div class="dqgain bad"><b>−1 paquet</b><small>Aucune bonne réponse : un paquet t'est retiré.</small></div>`
+    : rc.penalty === 'timer' ? `<div class="dqgain bad"><b>Minuteur remis à 10 min</b><small>Aucune bonne réponse et plus de paquet à perdre : le prochain arrive dans 10 minutes.</small></div>` : '';
+  v.innerHTML = `<div class="dqend"><span class="halo" aria-hidden="true"></span><p class="dk">Quiz du jour · ${esc(rc.title)}</p><div class="dqscore"><b>${rc.correct}</b><span>/ ${rc.total}</span></div><h2>${verdict}</h2>${gain}
+    <div class="dqlist">${rc.questions.map((q, i) => `<div class="dqrow ${q.ok ? 'ok' : 'ko'}"><span class="dqn">${q.ok ? '✓' : '✗'}</span><div><b>${esc(q.text)}</b>
+      <small>${q.ok ? '' : q.given >= 0 ? `Ta réponse : ${esc(q.options[q.given])}<br>` : 'Pas de réponse<br>'}Bonne réponse : <em>${esc(q.options[q.answer])}</em></small></div></div>`).join('')}</div>
+    <p class="mut dsmall">Prochain quiz à minuit${d?.resetIn ? ` (dans ${hmLeft(d.resetIn)})` : ''}.</p>
+    <div class="row"><button class="primary" id="dq-packs">Ouvrir mes paquets</button><button class="plain" id="dq-quests">Mes quêtes</button></div></div>`;
+  $('#dq-packs').onclick = () => { tab = 'packs'; render(); }; $('#dq-quests').onclick = () => { tab = 'quests'; render(); };
+  if (rc.delta > 0) sparks($('.dqend'), 30);
+  refreshMe().catch(() => {});
+};
+async function dqFinish(v) {
+  clearInterval(tick); const run = dqRun; dqRun = null;
+  v.innerHTML = '<div class="dqend"><p class="mut" style="text-align:center">Correction en cours…</p></div>';
+  const r = await api('/daily-quiz/submit', { answers: run ? run.answers : [] });
+  dqRecap(v, r.recap, null);
+}
+function dqQuestion(v) {
+  const run = dqRun, q = run.qs[run.i];
+  v.innerHTML = `${pageHead(`Question ${run.i + 1} / ${run.qs.length}`, 'Quiz du jour')}<div class="dqdots">${run.qs.map((_, i) => `<i class="${i < run.i ? 'done' : i === run.i ? 'cur' : ''}"></i>`).join('')}</div>
+    <div class="qbar"><i id="dq-bar" style="width:100%"></i></div><p class="mut dqtime">${ico('clock')} <span id="dq-t"></span></p>
+    <p class="dqtext">${esc(q.text)}</p>${q.options.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join('')}`;
+  const paint = () => { const left = Math.max(0, Math.round((run.endAt - Date.now()) / 1000)); const t = $('#dq-t'); if (t) t.textContent = `Temps restant : ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; const bar = $('#dq-bar'); if (bar) bar.style.width = Math.min(100, left / run.total * 100) + '%'; if (left <= 0) dqFinish(v).catch(e => toast(e.message)); };
+  paint(); clearInterval(tick); tick = setInterval(paint, 1000);
+  v.querySelectorAll('.opt').forEach(b => b.onclick = () => {
+    v.querySelectorAll('.opt').forEach(x => x.disabled = true); b.classList.add('sel'); run.answers[run.i] = +b.dataset.i;
+    setTimeout(() => { if (dqRun !== run) return; run.i++; run.i >= run.qs.length ? dqFinish(v).catch(e => toast(e.message)) : dqQuestion(v); }, 420);
+  });
+}
+views.dquiz = async v => {
+  let d = await api('/daily-quiz');
+  if (d.status === 'late') { dqRun = null; const r = await api('/daily-quiz/submit', { answers: [] }); return dqRecap(v, r.recap, d); }
+  if (d.status === 'done') { dqRun = null; return dqRecap(v, d.recap, d); }
+  if (d.status === 'run') {
+    if (!dqRun || dqRun.day !== d.day) dqRun = { day: d.day, qs: d.questions, i: 0, answers: [], total: 300 };
+    dqRun.endAt = Date.now() + d.secs * 1000; return dqQuestion(v);
+  }
+  v.innerHTML = `<div class="dqintro"><span class="halo" aria-hidden="true"></span><p class="dk">Défi du jour</p><h1>Quiz du jour</h1><p class="mut">Le même quiz pour tous les joueurs, sur un article tiré au hasard.</p>
+    <ul class="dqrules"><li><b>${d.n} questions</b> à choix multiples, ${d.secs / 60} minutes en tout</li><li>${ico('packs')}<span><b>+1 paquet</b> par bonne réponse</span></li><li class="bad">${ico('shield')}<span>Aucune bonne réponse : <b>−1 paquet</b> (ou minuteur remis à 10 min si tu n'en as plus)</span></li><li>Un seul essai par jour</li></ul>
+    <button id="dq-go" class="primary big">Commencer</button><p class="mut dsmall">Nouveau quiz à minuit (dans ${hmLeft(d.resetIn)}).</p></div>`;
+  $('#dq-go').onclick = safe(async () => {
+    $('#dq-go').disabled = true; const s = await api('/daily-quiz/start', {});
+    dqRun = { day: s.day, qs: s.questions, i: 0, answers: [], total: 300, endAt: Date.now() + s.secs * 1000 }; refreshMe().catch(() => {}); dqQuestion(v);
+  });
+};
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -1480,6 +1583,7 @@ function moreSheet() {
   m.hidden = false;
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
+    <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
     <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('settings', 'gear', 'Réglages', 'Sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
@@ -1488,6 +1592,7 @@ function moreSheet() {
     const k = b.dataset.go; close();
     if (k === 'profile') return playerSheet(me.id);
     if (k === 'settings') return profileSheet();
+    if (k === 'daily') return me.daily ? dailyModal() : toast('Tu as déjà récupéré ta récompense du jour, reviens demain !');
     lastPack = null; tab = k; if (game?.view === 'end') game = null; render();
   });
 }
@@ -1515,6 +1620,7 @@ async function start() {
   let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
   if (pending) addByCode(pending);
   setTimeout(pushStartup, 2500);
+  setTimeout(() => { if (me.daily && $('#modal').hidden && !game) dailyModal(); }, 900);   // première connexion du jour : la récompense s'affiche
 }
 const urlCode = new URLSearchParams(location.search).get('friend');
 if (urlCode) { try { localStorage.setItem('wm_friend_code', urlCode); } catch { /* stockage indisponible */ } history.replaceState(null, '', location.pathname); }
