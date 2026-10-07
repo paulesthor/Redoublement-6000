@@ -51,7 +51,7 @@ const godRarities = n => { const r = Array.from({ length: n }, () => Math.random
 const REUSE = { common: 1, uncommon: 1 }, REUSE_RENEW = 0.25;
 const reserveCountsCache = { t: 0, v: {} };
 async function reserveCounts(env) {
-  if (now() - reserveCountsCache.t > 60000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n FROM reserve GROUP BY rarity')).map(r => [r.rarity, r.n])); reserveCountsCache.t = now(); }
+  if (now() - reserveCountsCache.t > 300000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n, MIN(id) lo, MAX(id) hi FROM reserve GROUP BY rarity')).map(r => [r.rarity, r])); reserveCountsCache.t = now(); }
   return reserveCountsCache.v;
 }
 async function drawCards(env, origin, n, w = CFG.DROP) {
@@ -63,7 +63,8 @@ async function drawCards(env, origin, n, w = CFG.DROP) {
   try {
     // raretés basses : la carte est relue sans être retirée (aucune écriture), et seulement renouvelée une fois sur REUSE_RENEW ; autres raretés : retirée à chaque tirage
     const counts = await reserveCounts(env);
-    const reads = rarities.map(r => REUSE[r] && counts[r] > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? LIMIT 1 OFFSET ?', r, Math.floor(Math.random() * counts[r])) : null);
+    // carte au hasard sans parcourir la table : on part d'un identifiant tiré entre le plus petit et le plus grand (une seule ligne lue)
+    const reads = rarities.map(r => REUSE[r] && counts[r]?.n > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? AND id >= ? LIMIT 1', r, counts[r].lo + Math.floor(Math.random() * (counts[r].hi - counts[r].lo + 1))) : null);
     const res = await env.DB.batch(rarities.map((r, i) => reads[i] ?? st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? LIMIT 1) RETURNING id', r)));
     claimed = res.map(x => x.results?.[0]?.id ?? null);
     const renew = claimed.filter((id, i) => id && reads[i] && Math.random() < REUSE_RENEW);
@@ -93,10 +94,10 @@ const insertCard = (env, c) => st(env, 'INSERT OR IGNORE INTO cards (id, title, 
 /** Rang de rareté (0..5) d'une colonne de rareté. */
 const rarIdx = col => caseSql(col, RANK);
 /** Ajoute des exemplaires à la collection. L'inventaire garde une copie des champs de tri (rareté, nom, popularité) : la collection se pagine ainsi sans relire la table des cartes. */
-const addCard = (env, uid, cid, n = 1) => (statsCache.delete(uid), st(env,
+const addCard = (env, uid, cid, n = 1) => st(env,
   `INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav)
    SELECT ?1, c.id, ?2, ?3, ${rarIdx('c.rarity')}, c.shiny, ${rarIdx('c.rarity')} * 1000000000 + MIN(c.views, 999999999), lower(c.title), 0 FROM cards c WHERE c.id = ?4
-   ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty`, uid, n, now(), cid));   // acquired = première obtention : un doublon ne réécrit plus l'index de date (économie d'écritures D1)
+   ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty`, uid, n, now(), cid);   // acquired = première obtention : un doublon ne réécrit plus l'index de date (économie d'écritures D1)
 
 // ---------- description + image via l'API MediaWiki, conservées en base ----------
 // enriched : 0 = rien, 1 = Wikipédia lu (image éventuellement manquante), 2 = terminé (Wikidata consulté pour les pages sans photo)
@@ -251,8 +252,7 @@ async function finishPack(env, ctx, user, drawn) {
     ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', c.id - SHINY_OFFSET, c.id)),
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
   ]);
-  statsCache.delete(user.id);
-  if (now() - (lastCheck.get(user.id) || 0) > 180000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }   // la vérification relit toute la collection : au plus toutes les 3 min
+  if (now() - (lastCheck.get(user.id) || 0) > 900000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }   // la vérification relit toute la collection : au plus toutes les 15 min
   // description + image : le client les demande par vagues (/api/cards/enrich), dans l'ordre de révélation
   const rows = new Map((await cardRows(env, ids)).map(c => [c.id, c]));
   const favs = new Set((await all(env, `SELECT card_id FROM favorites WHERE user_id = ? AND card_id IN (${placeholders(ids.length)})`, user.id, ...ids)).map(r => r.card_id));
@@ -313,7 +313,7 @@ function maybeRefill(env, ctx) {
 // ---------- paquets préparés d'avance ----------
 // Dès que le joueur arrive (ou après chaque ouverture), on tire et on complète (texte + photos) ses prochains paquets :
 // ils s'ouvrent ensuite instantanément, les uns après les autres. Rien n'est ajouté à la collection avant l'ouverture.
-const PREPARE_MAX = 2;
+const PREPARE_MAX = 1;
 const preparing = new Set();
 async function prepareFor(env, ctx, user, stock) {
   if (user.is_bot || preparing.has(user.id)) return;
@@ -522,7 +522,7 @@ route('POST', '/api/login', async ({ env, body }) => {
 }, false);
 route('GET', '/api/me', async ({ env, ctx, user }) => {
   // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
-  if (now() - (lastCheck.get(user.id) || 0) > 600000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
+  if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
   return { ...publicUser(u), badge: await friendBadge(env, user.id), dm: (await one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null))?.n ?? 0 };
@@ -668,7 +668,7 @@ const statsCache = new Map();         // userId -> { t, v } : relire toute la co
 let rarityAvgCache = { t: 0, v: null };
 route('GET', '/api/album/stats', async ({ env, user, origin }) => {
   const hit = statsCache.get(user.id);
-  if (hit && now() - hit.t < 60000) return hit.v;
+  if (hit && now() - hit.t < 120000) return hit.v;
   const [agg, meta] = await Promise.all([
     all(env, 'SELECT rar, sh, COUNT(*) u, SUM(qty) q, SUM(CASE WHEN qty > 1 THEN qty - 1 ELSE 0 END) d FROM inventory WHERE user_id = ? GROUP BY rar, sh', user.id),
     getMeta(env, origin),
