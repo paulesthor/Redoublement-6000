@@ -11,7 +11,7 @@ async function remoteDb() {
     for (let i = 0; ; i++) {
       const r = await realFetch(`https://api.supabase.com/v1/projects/${SB_REF}/database/query`, { method: 'POST', headers: { Authorization: 'Bearer ' + SB_PAT, 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) });
       const t = await r.text();
-      if (r.status === 429 && i < 8) { await new Promise(x => setTimeout(x, 1500 * (i + 1))); continue; }
+      if ((r.status === 429 || r.status >= 500) && i < 8) { await new Promise(x => setTimeout(x, 1500 * (i + 1))); continue; }   // limite de débit ou incident passager de l'API de gestion
       if (!r.ok) throw Object.assign(new Error('Supabase ' + r.status + ' ' + t.slice(0, 300)), { status: r.status });
       return JSON.parse(t);
     }

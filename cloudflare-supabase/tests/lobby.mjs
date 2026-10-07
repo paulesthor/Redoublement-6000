@@ -32,6 +32,7 @@ while (lobby.battles.has(id) && Date.now() < end) {
   await sleep(150);
 }
 await settle();
+for (let i = 0; i < 400 && !last(socks[a], 'bf_end'); i++) await sleep(100);   // le résultat part après le versement des récompenses (base lente : on attend)
 const e = last(socks[a], 'bf_end');
 ok('combat terminé normalement', e && e.forfeit === null && !lobby.battles.has(id), J(e)?.slice(0, 200));
 ok('6 tours et 18 questions', types(socks[a]).filter(t => t === 'bf_turn').length === 6 && types(socks[a]).filter(t => t === 'bf_q').length === 18, J(types(socks[a]).filter(t => t.startsWith('bf_')).slice(-8)));
