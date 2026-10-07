@@ -1,0 +1,28 @@
+// PRÊT POUR LA BASCULE (non utilisé tant qu'il n'est pas copié sur le wrangler.jsonc de la racine du dépôt : `cp cloudflare-supabase/wrangler.bascule.jsonc wrangler.jsonc`).
+{
+  // Configuration Cloudflare lue quand le déploiement automatique (Workers Builds) s'exécute à la racine du dépôt.
+  // BASCULÉ SUR SUPABASE : le jeu tourne avec le code de cloudflare-supabase/ (base PostgreSQL Supabase au lieu de D1).
+  // L'ancienne base D1 « wikimasters » n'est plus liée mais reste intacte (retour en arrière : voir cloudflare-supabase/MIGRATION-SUPABASE.md).
+  // Secret à ranger dans le Worker (Settings > Variables and Secrets) : SUPABASE_KEY (clé secrète du projet Supabase).
+  "name": "wikimasters",
+  "main": "cloudflare-supabase/src/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./cloudflare/public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/ws"]
+  },
+  "vars": {
+    "SUPABASE_URL": "https://dosgnqfhcgckzxibumdc.supabase.co"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "LOBBY", "class_name": "Lobby" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }],
+  // Tâche planifiée toutes les 15 minutes : remplit la réserve de cartes prêtes et anime le marché (joueurs simulés). Elle garde aussi le projet Supabase gratuit « éveillé ».
+  "triggers": { "crons": ["*/15 * * * *"] },
+  // Le Worker s'exécute près de la base : beaucoup moins de latence pour les requêtes qui enchaînent plusieurs lectures
+  "placement": { "mode": "smart" },
+  // Workers AI (plan gratuit : 10 000 neurons/jour) : écrit les questions de la bataille à partir de l'article. AI_QUIZ="0" dans "vars" pour le couper.
+  "ai": { "binding": "AI" }
+}
