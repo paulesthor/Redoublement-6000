@@ -23,6 +23,7 @@ const srv = http.createServer(async (q, res) => {
 }).listen(8768);
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const mk = async (w, h) => { const c = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, A); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8768/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(900); return p; };
+env.AI = { run: async () => ({ response: JSON.stringify({ questions: Array.from({ length: 9 }, (_, i) => ({ type: ['annee', 'lieu', 'personne', 'chiffre', 'cause', 'relation', 'calcul', 'langue'][i % 8], question: `Question ${i + 1} : vers quelle ${['époque', 'année', 'période', 'date', 'ère', 'datation', 'moment', 'phase', 'siècle'][i]} Paris a-t-elle été fondée selon l'article ?`, choices: ['250 av. J.-C.', '150 av. J.-C.', '350 av. J.-C.', '450 av. J.-C.'], answer: 0 })) }) }) };
 const shot = async (p, n) => p.screenshot({ path: n + '.png' });
 console.log('— première connexion du jour (téléphone)');
 let p = await mk(390, 844);
@@ -50,5 +51,14 @@ await p.click('#dq-go'); await p.waitForSelector('.dqtext'); await p.waitForTime
 for (let i = 0; i < 5; i++) { await p.waitForSelector('.dqtext'); await p.click('.opt'); await p.waitForTimeout(700); }
 await p.waitForSelector('.dqscore', { timeout: 8000 }); await p.waitForTimeout(1400); await shot(p, 'dquiz-end');
 ok('écran de fin : score et corrections', (await p.$$('.dqrow')).length === 5 && (await p.textContent('.dqscore')).includes('/ 5'));
+ok('classement du jour sous le récapitulatif', (await p.$$('.dqrank .item')).length >= 1);
+await p.evaluate(() => window.scrollTo(0, 99999)); await p.waitForTimeout(300); await shot(p, 'dquiz-rank');
+console.log('— fusion');
+const own = (await DB.prepare('SELECT card_id FROM inventory WHERE user_id = 1 AND sh = 0 AND rar < 5 ORDER BY rar LIMIT 1').all()).results[0].card_id;
+await DB.prepare('UPDATE inventory SET qty = 6, lvl = 0 WHERE user_id = 1 AND card_id = ?').bind(own).run();
+await p.evaluate(() => { tab = 'album'; render(); }); await p.waitForSelector('.card[data-id="' + own + '"]'); await p.waitForTimeout(500);
+await p.click('.card[data-id="' + own + '"] .body'); await p.waitForSelector('#fuse-go'); await p.waitForTimeout(300); await shot(p, 'fuse-1');
+await p.click('#fuse-go'); await p.waitForSelector('.detail.fused'); await p.waitForTimeout(900); await shot(p, 'fuse-2');
+ok('fusion depuis la fiche : niveau 1 affiché', (await p.textContent('.fusebox')).includes('Bonus actuel'));
 ok('aucune erreur JavaScript', p.errs.length === 0, J(p.errs));
 await browser.close(); srv.close(); await done();

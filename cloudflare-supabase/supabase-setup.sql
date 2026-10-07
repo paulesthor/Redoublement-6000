@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   skey BIGINT NOT NULL DEFAULT 0,    -- rang de rareté * 1e9 + popularité
   nk TEXT NOT NULL DEFAULT '',        -- titre en minuscules
   fav BIGINT NOT NULL DEFAULT 0,
+  lvl BIGINT NOT NULL DEFAULT 0,      -- niveau de fusion
   PRIMARY KEY (user_id, card_id)
 );
 CREATE TABLE IF NOT EXISTS auctions (
@@ -202,7 +203,7 @@ CREATE INDEX IF NOT EXISTS logs_ts ON logs(ts DESC);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_day TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_streak INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS quests (user_id BIGINT NOT NULL, day TEXT NOT NULL, qid TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, claimed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day, qid));
-CREATE TABLE IF NOT EXISTS daily_quiz (day TEXT PRIMARY KEY, title TEXT NOT NULL, extract TEXT NOT NULL DEFAULT '', questions TEXT NOT NULL, model TEXT, created BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS daily_quiz (day TEXT PRIMARY KEY, title TEXT NOT NULL, extract TEXT NOT NULL DEFAULT '', questions TEXT NOT NULL, model TEXT, created BIGINT NOT NULL, winner BIGINT, awarded BIGINT);
 CREATE TABLE IF NOT EXISTS daily_quiz_runs (user_id BIGINT NOT NULL, day TEXT NOT NULL, started BIGINT NOT NULL, answers TEXT, correct INTEGER, delta INTEGER, finished BIGINT, PRIMARY KEY (user_id, day));
 
 DO $$ DECLARE t record; BEGIN

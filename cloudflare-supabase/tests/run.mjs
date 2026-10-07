@@ -304,14 +304,45 @@ console.log('— récompense quotidienne');
     const cu = (await q('SELECT pack_stock, pack_ts FROM users WHERE id = ?', chloe))[0];
     ok('0 bonne réponse sans paquet : prochain paquet dans 10 min', r.recap.penalty === 'timer' && cu.pack_stock === 0 && Math.abs(cu.pack_ts - Date.now()) < 5000, J([r.recap.penalty, cu]));
     [s, r] = await call(C, 'GET', '/api/me'); ok('/me : compte à rebours ≈ 10 min', r.nextPackIn > 590000 && r.nextPackIn <= 600000, J(r.nextPackIn));
+    [s, r] = await call(A, 'GET', '/api/daily-quiz/ranking'); ok('classement visible après le quiz', s === 200 && r.list.length === 3 && r.list[0].name === 'Alice' && r.list[0].correct === 3 && r.list[0].rank === 1 && r.list.some(x => x.me), J(r).slice(0, 300));
+    await q('UPDATE users SET daily_day = NULL WHERE id = ?', chloe);
+    [s, r] = await call(A, 'GET', '/api/daily-quiz/ranking'); ok('à égalité de bonnes réponses : le plus rapide devant', r.list[1].correct === r.list[2].correct && r.list[1].ms <= r.list[2].ms, J(r.list));
+    await q('DELETE FROM daily_quiz_runs WHERE user_id = ? AND day = ?', alice, day); [s, r] = await call(A, 'GET', '/api/daily-quiz/ranking'); ok('classement caché tant que le quiz n\'est pas fini', s === 403, J([s, r]));
+    await q('INSERT INTO daily_quiz_runs (user_id, day, started, answers, correct, delta, finished) VALUES (?,?,?,?,?,?,?)', alice, day, Date.now() - 60000, '[]', 3, 3, Date.now() - 30000);
+    const packsA = (await q('SELECT pack_stock FROM users WHERE id = ?', alice))[0].pack_stock;
     // lendemain : un nouveau quiz
-    shift += 86400000; [s, r] = await call(A, 'GET', '/api/daily-quiz'); ok('le lendemain : nouveau quiz', r.status === 'new');
+    shift += 86400000; await call(A, 'GET', '/api/me'); await settle(); await settle();
+    const wd = (await q('SELECT winner, awarded FROM daily_quiz WHERE day = ?', day))[0];
+    ok('le lendemain : le 1er du classement gagne un paquet bonus', wd.winner === alice && wd.awarded && (await q('SELECT pack_stock FROM users WHERE id = ?', alice))[0].pack_stock >= packsA + 1, J(wd));
+    await call(B, 'GET', '/api/me'); await settle(); ok('le bonus n\'est versé qu\'une fois', (await q('SELECT winner FROM daily_quiz WHERE day = ?', day))[0].winner === alice);
+    [s, r] = await call(A, 'GET', '/api/daily-quiz'); ok('le lendemain : nouveau quiz', r.status === 'new');
     // dépassement du temps
     [s, r] = await call(A, 'POST', '/api/daily-quiz/start', {}); const t2 = (await q('SELECT questions FROM daily_quiz WHERE day = ?', dayKey()))[0];
     if (s === 200) { shift += 400000; [s, r] = await call(A, 'GET', '/api/daily-quiz'); ok('temps écoulé : statut « late »', r.status === 'late', J(r)); [s, r] = await call(A, 'POST', '/api/daily-quiz/submit', { answers: JSON.parse(t2.questions).map(t => t.answer) }); ok('réponses hors délai non comptées', r.recap.correct === 0, J(r.recap)); }
   } else ok('quiz du jour créé', false, J([s, r]));
   ok('les questions sont demandées sur l\'article seul, avec un texte suffisant', asked.length >= 1 && asked.every(c => /CET article/.test(c)));
   const dq = (await q('SELECT title FROM daily_quiz'))[0]; ok('article du quiz : pas une page de liste', dq && !/^Liste|homonymie/i.test(dq.title), J(dq));
+  console.log('— fusion de cartes');
+  {
+    const { FUSE, boosted, fuseInfo } = await import('../src/game.js');
+    ok('fusion : légendaires et shiny exclus', fuseInfo(5, 0, 0, 9) === null && fuseInfo(0, 1, 0, 9) === null && fuseInfo(0, 0, 3, 99).cost === null);
+    ok('fusion : équilibrage (commune niv.3 sous une rare moyenne, ultra niv.3 sous une légendaire moyenne)', 2000 + FUSE.bonus[0] * 3 < 4250 && 9000 + FUSE.bonus[4] * 3 < 10000 && FUSE.bonus.every((b, i) => i === 0 || b <= FUSE.bonus[i - 1]));
+    ok('boosted : stats ajoutées', boosted({ atk: 100, def: 200 }, 0, 2).atk === 1000 && boosted({ atk: 100, def: 200 }, 5, 3).atk === 100);
+    const own = (await q('SELECT card_id FROM inventory WHERE user_id = ? AND rar = 0 AND sh = 0 ORDER BY card_id LIMIT 1', alice))[0]?.card_id ?? (await q('SELECT card_id FROM inventory WHERE user_id = ? AND rar < 5 AND sh = 0 LIMIT 1', alice))[0].card_id;
+    const rar = (await q('SELECT rar FROM inventory WHERE user_id = ? AND card_id = ?', alice, own))[0].rar, base = (await q('SELECT atk, def FROM cards WHERE id = ?', own))[0], cost = FUSE.cost[rar];
+    await q('UPDATE inventory SET qty = 1, lvl = 0 WHERE user_id = ? AND card_id = ?', alice, own);
+    [s, r] = await call(A, 'POST', '/api/fuse', { card_id: own }); ok('fusion sans doublons : refusée', s === 400, J([s, r]));
+    await q('UPDATE inventory SET qty = ? WHERE user_id = ? AND card_id = ?', cost[0] + 1, alice, own);
+    [s, r] = await call(A, 'POST', '/api/fuse', { card_id: own }); ok('fusion niveau 1', s === 200 && r.lvl === 1 && r.qty === 1 && r.bonus === FUSE.bonus[rar], J([s, r]));
+    [s, r] = await call(A, 'GET', '/api/album/page?sort=rar&q=' + encodeURIComponent((await q('SELECT nk FROM inventory WHERE user_id = ? AND card_id = ?', alice, own))[0].nk));
+    const cc = r.cards.find(x => x.id === own); ok('collection : stats boostées et niveau', cc && cc.lvl === 1 && cc.atk === base.atk + FUSE.bonus[rar] && cc.def === base.def + FUSE.bonus[rar] && cc.fuse?.cost === cost[1], J(cc));
+    await q('UPDATE inventory SET qty = ? WHERE user_id = ? AND card_id = ?', cost[1] + 1, alice, own); [s, r] = await call(A, 'POST', '/api/fuse', { card_id: own }); ok('fusion niveau 2', s === 200 && r.lvl === 2, J([s, r]));
+    await q('UPDATE inventory SET qty = ? WHERE user_id = ? AND card_id = ?', cost[2], alice, own); [s, r] = await call(A, 'POST', '/api/fuse', { card_id: own }); ok('un exemplaire doit toujours rester', s === 400, J([s, r]));
+    await q('UPDATE inventory SET qty = ? WHERE user_id = ? AND card_id = ?', cost[2] + 1, alice, own); [s, r] = await call(A, 'POST', '/api/fuse', { card_id: own }); ok('fusion niveau 3', s === 200 && r.lvl === 3 && r.fuse.cost === null, J([s, r]));
+    [s, r] = await call(A, 'POST', '/api/fuse', { card_id: own }); ok('niveau maximum', s === 400, J([s, r]));
+    [s, r] = await call(A, 'GET', '/api/album?lite=1'); ok('deck : stats de fusion appliquées', r.cards.find(x => x.id === own)?.atk === base.atk + FUSE.bonus[rar] * 3);
+    [s, r] = await call(B, 'POST', '/api/fuse', { card_id: own }); ok('fusion d\'une carte qu\'on ne possède pas : refusée', s === 400);
+  }
   env.AI = aiOld; Date.now = realNow;
 }
 

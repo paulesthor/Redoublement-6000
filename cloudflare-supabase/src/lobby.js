@@ -5,7 +5,7 @@ import { withDb } from './pg.js';
 import { one, all, run, st, placeholders, cardRows, userFromToken, randomPool, meter, takeMeter, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
-import { bumpQuests } from './game.js';
+import { bumpQuests, ensureGameSchema, boosted } from './game.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
 const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met le combat en pause et on l'attend jusqu'à 3 minutes, puis forfait
@@ -318,8 +318,14 @@ export class Lobby {
   async resolveBattle(bt) {                                          // appelé quand les deux équipes sont validées
     clearTimeout(bt.timer);
     for (const p of bt.players) this.push(p, { t: 'battle_prep', id: bt.id });
-    const [a, b] = bt.players, pub = c => ({ id: c.id, title: c.title, rarity: c.rarity, shiny: c.shiny, atk: c.atk, def: c.def, image: c.image });
-    const rows = {}; for (const uid of bt.players) rows[uid] = await cardRows(this.env, bt.picks[uid]);
+    const [a, b] = bt.players, pub = c => ({ id: c.id, title: c.title, rarity: c.rarity, shiny: c.shiny, atk: c.atk, def: c.def, lvl: c.lvl || 0, image: c.image });
+    await ensureGameSchema(this.env);
+    const rows = {}; for (const uid of bt.players) {
+      const base = await cardRows(this.env, bt.picks[uid]);
+      if (uid === bt.bot || !base.length) { rows[uid] = base; continue; }
+      const lv = new Map((await all(this.env, `SELECT card_id, lvl FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(base.length)})`, uid, ...base.map(c => c.id))).map(x => [x.card_id, x.lvl]));
+      rows[uid] = base.map(c => boosted(c, CFG.RARITIES.indexOf(c.rarity), lv.get(c.id) || 0));   // les stats de fusion comptent en combat
+    }
     const first = Math.random() < .5 ? a : b;
     const f = bt.fight = { turn: 0, total: CFG.BATTLE_ROUNDS * 2, order: [first, first === a ? b : a], hp: {}, max: {}, deck: {}, left: {}, qs: new Map(), cur: null, log: [] };
     for (const uid of bt.players) { f.deck[uid] = rows[uid].map(pub); f.max[uid] = f.hp[uid] = f.deck[uid].reduce((t, c) => t + c.def, 0); f.left[uid] = new Set(f.deck[uid].map(c => c.id)); }

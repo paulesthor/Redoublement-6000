@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '4.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '4.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -254,7 +254,7 @@ const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
 const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${cls}" data-id="${c.id}">
   <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
-  <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/><path class="st" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/></svg></button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}</div>
+  <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/><path class="st" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/></svg></button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}${c.lvl ? `<span class="tag lvl">★${c.lvl}</span>` : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
   ${acts ? `<div class="acts">${acts}</div>` : ''}</div>`);
@@ -303,11 +303,30 @@ function showCard(id) {
       <div class="img big ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
       <div class="body"><div class="t">${esc(c.title)}</div>
         <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}${c.shiny ? ' · Shiny' : ''}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div></div></div>
-    <p class="extract">${c.extract ? esc(c.extract) : '<span class="mut">Description en cours de chargement…</span>'}</p>
+    ${fuseBox(c)}<p class="extract">${c.extract ? esc(c.extract) : '<span class="mut">Description en cours de chargement…</span>'}</p>
     <p class="mut">Défausse : ${sellValue(c)} pièces${c.avg_price != null ? ` · prix moyen au marché : ${c.avg_price}` : ''}</p>
     <div class="row"><a class="btn" href="https://fr.wikipedia.org/wiki/${encodeURIComponent(c.title.replace(/ /g, '_'))}" target="_blank" rel="noopener">Lire sur Wikipédia</a><button class="plain" id="det-close">Fermer</button></div></div>`;
   $('#det-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
+  const fb = $('#fuse-go');
+  if (fb) fb.onclick = safe(async () => {
+    fb.disabled = true;
+    const r = await api('/fuse', { card_id: c.id });
+    c.atk = c.atk - (c.bonus || 0) + r.bonus; c.def = c.def - (c.bonus || 0) + r.bonus; c.bonus = r.bonus; c.lvl = r.lvl; c.qty = r.qty; c.fuse = r.fuse;
+    try { navigator.vibrate?.([20, 30, 40]); } catch { /* non supporté */ }
+    showCard(c.id); const box = $('.detail'); box.classList.add('fused'); sparks(box, 30);
+    toast(`${c.title} passe au niveau ${r.lvl} : +${r.bonus} ATK et DEF`);
+    if (tab === 'album') render();
+  });
+}
+/** Encadré de fusion de la fiche d'une carte (uniquement dans sa propre collection). */
+function fuseBox(c) {
+  const f = c.fuse; if (!f) return '';
+  const stars = Array.from({ length: f.max }, (_, i) => `<i class="${i < f.lvl ? 'on' : ''}">★</i>`).join('');
+  const body = f.cost === null ? '<p class="mut">Niveau maximum atteint.</p>'
+    : `<p class="mut">Fusionne <b>${f.cost} doublons</b> pour passer au niveau ${f.lvl + 1} : <b>+${f.gain} ATK et DEF</b>.</p>
+      <button class="primary" id="fuse-go" ${f.can ? '' : 'disabled'}>Fusionner (${f.cost} doublons)</button>${f.can ? '' : `<p class="mut dsmall">Il te faut ${f.cost + 1} exemplaires (tu en as ${c.qty}) : un reste toujours dans ta collection.</p>`}`;
+  return `<div class="fusebox"><div class="fh"><b>Fusion</b><span class="fstars">${stars}</span></div>${c.bonus ? `<p class="mut" style="margin:0 0 4px">Bonus actuel : +${c.bonus} ATK et DEF</p>` : ''}${body}</div>`;
 }
 /** Étoile des favoris : mise à jour immédiate, enregistrée en arrière-plan. */
 let albumFilter = '';
@@ -846,7 +865,7 @@ async function renderGame() {
     const f = game.f, nm = id => esc(game.names[id]), iAtt = f.attacker === me.id, iDef = f.defender === me.id;
     const bar = id => { const pct = Math.max(0, Math.round((f.hp[id] ?? 0) / (f.max[id] || 1) * 100)); return `<div class="hpb ${id === me.id ? 'me' : ''}" data-id="${id}"><div class="hpt"><span>${nm(id)}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(f.hp[id] ?? 0)} PV</b></div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`; };
     const mini = (c, cls = '', attrs = '') => `<div class="bcard ${cls}" ${attrs} style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
-      <b>${esc(c.title)}</b><span class="st"><em>ATK <i>${fmt(c.atk)}</i></em><em>DEF <i>${fmt(c.def)}</i></em></span></div>`;
+      <b>${esc(c.title)}${c.lvl ? ` <span class="lvlst">★${c.lvl}</span>` : ''}</b><span class="st"><em>ATK <i>${fmt(c.atk)}</i></em><em>DEF <i>${fmt(c.def)}</i></em></span></div>`;
     const back = `<div class="bcard back"><div class="bi noimg">?</div><b>Carte cachée</b></div>`;
     const deckRow = id => `<div class="deckrow"><small>${nm(id)}</small><div>${f.deck[id].map(c => { const used = f.left?.[id] && !f.left[id].includes(c.id); return id === me.id || used ? mini(c, used ? 'used' : '') : back; }).join('')}</div></div>`;   // les cartes de l'adversaire restent cachées tant qu'il ne les a pas jouées
     let body = '';
@@ -1538,6 +1557,14 @@ const dqRecap = (v, rc, d) => {
     <p class="mut dsmall">Prochain quiz à minuit${d?.resetIn ? ` (dans ${hmLeft(d.resetIn)})` : ''}.</p>
     <div class="row"><button class="primary" id="dq-packs">Ouvrir mes paquets</button><button class="plain" id="dq-quests">Mes quêtes</button></div></div>`;
   $('#dq-packs').onclick = () => { tab = 'packs'; render(); }; $('#dq-quests').onclick = () => { tab = 'quests'; render(); };
+  api('/daily-quiz/ranking').then(rk => {
+    const t = ms => ms >= 60000 ? `${Math.floor(ms / 60000)} min ${String(Math.round(ms % 60000 / 1000)).padStart(2, '0')} s` : `${(ms / 1000).toFixed(1)} s`;
+    const box = document.createElement('div'); box.className = 'dqrank';
+    box.innerHTML = `<h3 class="sec">Classement du jour</h3><p class="mut dsmall" style="text-align:left;margin:0 0 8px">Le 1er gagne <b>+1 paquet bonus</b> à minuit (meilleur score, puis temps le plus court).</p>
+      <div class="list">${rk.list.map(x => `<div class="item r${x.rank} ${x.me ? 'me' : ''}"><span class="rank-n">${x.rank}</span>${avatar(x.name)}<div class="grow"><div class="nm">${esc(x.name)}${x.me ? ' (toi)' : ''}</div><div class="sub">${x.correct} / 5 · ${t(x.ms)}</div></div></div>`).join('')}</div>
+      ${rk.yesterday ? `<p class="mut dsmall">Vainqueur d'hier : <b>${esc(rk.yesterday.name)}</b> (${rk.yesterday.correct} / 5 en ${t(rk.yesterday.ms)})</p>` : ''}`;
+    $('.dqend')?.querySelector('.row')?.before(box);
+  }).catch(() => {});
   if (rc.delta > 0) sparks($('.dqend'), 30);
   refreshMe().catch(() => {});
 };

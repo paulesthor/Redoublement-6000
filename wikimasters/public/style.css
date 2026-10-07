@@ -852,3 +852,12 @@ nav button.more{display:none}
 .dqlist{display:grid;gap:8px;text-align:left;margin:10px 0}.dqrow{display:flex;gap:10px;padding:10px 12px;border-radius:13px;background:#ffffff08;border:1px solid var(--line2)}
 .dqrow.ok{border-color:#7be0a055}.dqrow.ko{border-color:#ee91bc55}.dqn{flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
 .dqrow.ok .dqn{background:#7be0a028;color:#7be0a0}.dqrow.ko .dqn{background:#ee91bc28;color:#ee91bc}.dqrow b{font-size:13.5px;font-weight:600;line-height:1.35;display:block}.dqrow small{color:var(--mut);font-size:12.5px;line-height:1.4}.dqrow em{color:#7be0a0;font-style:normal}
+
+/* ---- fusion de cartes, classement du quiz ---- */
+.tag.lvl{background:linear-gradient(135deg,#f5c542,#f2a34f);color:#1a1205;font-weight:800}.lvlst{color:#f5c542;font-size:.85em;white-space:nowrap}
+.fusebox{margin:0 0 12px;padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,#f5c5421a,#ffffff06);border:1px solid #f5c54255;text-align:left}
+.fusebox .fh{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}.fusebox p{margin:4px 0 10px;font-size:13.5px}.fusebox .dsmall{margin:6px 0 0;text-align:left}
+.fstars{display:flex;gap:3px}.fstars i{font-style:normal;color:#ffffff30;font-size:19px}.fstars i.on{color:#f5c542;text-shadow:0 0 10px #f5c54299}
+#modal>div.detail{position:relative}.detail.fused .fusebox{animation:rc-in .6s var(--ease) both}.detail .sparks{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.detail .sparks span{position:absolute;left:50%;top:30%;width:var(--s);height:var(--s);border-radius:50%;background:var(--c);box-shadow:0 0 10px 2px var(--c);opacity:0;animation:spark 1.8s ease-out var(--d) both}
+.dqrank{margin:16px 0 4px;text-align:left}.dqrank .item.me{border-color:var(--gold)}

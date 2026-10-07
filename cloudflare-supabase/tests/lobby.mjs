@@ -21,8 +21,10 @@ const c0 = [await coins(a), await coins(b)];
 console.log('— combat de cartes (temps réel, ≈ 1 à 2 minutes)');
 await say(a, { t: 'challenge', to: b, mode: 'battle' }); await say(b, { t: 'accept', from: a, mode: 'battle' });
 const bid = () => [...lobby.battles.keys()][0];
-await say(a, { t: 'pick', id: bid(), cards: await deck(a) }); await say(b, { t: 'pick', id: bid(), cards: await deck(b) });
+const dA = await deck(a); const base0 = (await q('SELECT atk, def, rarity FROM cards WHERE id = ?', dA[0]))[0]; await q('UPDATE inventory SET lvl = 2 WHERE user_id = ? AND card_id = ?', a, dA[0]);
+await say(a, { t: 'pick', id: bid(), cards: dA }); await say(b, { t: 'pick', id: bid(), cards: await deck(b) });
 const id = bid(); ok('combat créé', !!id);
+await sleep(800); { const { FUSE } = await import('../src/game.js'); const fc = lobby.battles.get(id)?.fight?.deck[a]?.find(c => c.id === dA[0]); const rr = ['common','uncommon','rare','super','ultra','legendary'].indexOf(base0.rarity); ok('combat : le niveau de fusion s\'applique aux stats', fc && fc.lvl === 2 && fc.atk === base0.atk + FUSE.bonus[rr] * 2, J([fc, base0])); }
 const end = Date.now() + 240000;
 let f;
 while (lobby.battles.has(id) && Date.now() < end) {

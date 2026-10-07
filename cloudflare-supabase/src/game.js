@@ -20,6 +20,24 @@ export function dailyState(u, t = Date.now()) {
   return { today, available: !claimed, streak: claimed ? streak : Math.max(0, next - 1), next, index: (next - 1) % 7, rewards: DAILY };
 }
 
+// ---------- fusion de cartes ----------
+// Fusionner des doublons d'une carte la fait monter de niveau (3 au maximum) : +ATK et +DEF fixes, plus importants pour les petites raretés.
+// Une commune au niveau 3 (+1350) rattrape une peu commune moyenne mais reste sous une rare moyenne ; les légendaires et les shiny ne fusionnent pas.
+export const FUSE = {
+  max: 3,
+  bonus: [450, 400, 300, 200, 100, 0],                                                  // par niveau, indexé par rang de rareté (commune … légendaire)
+  cost: [[2, 3, 5], [2, 3, 5], [2, 3, 4], [2, 2, 3], [2, 2, 2]],                          // doublons consommés pour passer au niveau 1, 2, 3
+};
+export const fusionBonus = (rar, lvl) => (FUSE.bonus[rar] || 0) * (lvl || 0);
+/** Carte avec ses stats de fusion appliquées (rar = rang de rareté). */
+export const boosted = (c, rar, lvl) => { const b = fusionBonus(rar, lvl); return b ? { ...c, atk: c.atk + b, def: c.def + b, lvl, bonus: b } : { ...c, lvl: lvl || 0, bonus: 0 }; };
+/** Offre de fusion d'une carte de son propriétaire (null si elle ne peut pas fusionner). */
+export const fuseInfo = (rar, shiny, lvl, qty) => {
+  if (shiny || rar >= 5) return null;
+  const cost = lvl < FUSE.max ? FUSE.cost[rar][lvl] : null;
+  return { lvl, max: FUSE.max, cost, gain: FUSE.bonus[rar], can: cost !== null && qty >= cost + 1 };
+};
+
 // ---------- catalogue de quêtes (3 par jour et par joueur : une facile, une moyenne, une difficile) ----------
 // c = pièces, p = paquets. L'événement (event) est compté par le serveur à chaque action du joueur.
 const E = (id, tier, text, event, goal, reward) => ({ id, tier, text, event, goal, reward });
@@ -35,7 +53,7 @@ export const QUESTS = [
   E('m5', 2, 'Joue 2 combats de cartes', 'battle_play', 2, { c: 60 }), E('m6', 2, 'Fais 3 enchères', 'bid', 3, { c: 60 }),
   E('m7', 2, 'Remporte 1 enchère', 'win_auction', 1, { c: 80 }), E('m8', 2, 'Réponds juste à 4 questions de combat', 'battle_correct', 4, { c: 70 }),
   E('m9', 2, 'Gagne 1 duel de quiz', 'duel_win', 1, { c: 80 }), E('m10', 2, 'Propose un échange à un joueur', 'trade_propose', 1, { c: 60 }),
-  E('m11', 2, 'Envoie 1 demande d\'ami', 'friend', 1, { c: 50 }),
+  E('m11', 2, 'Envoie 1 demande d\'ami', 'friend', 1, { c: 50 }), E('m12', 2, 'Fusionne 1 carte', 'fuse', 1, { c: 70 }),
   E('h1', 3, 'Ouvre 5 paquets', 'open_pack', 5, { p: 1 }), E('h2', 3, 'Obtiens 1 carte légendaire', 'legendary', 1, { p: 2 }),
   E('h3', 3, 'Remporte 2 combats de cartes', 'battle_win', 2, { p: 1 }), E('h4', 3, 'Réponds juste à 10 questions de combat', 'battle_correct', 10, { p: 1 }),
   E('h5', 3, 'Termine 1 échange', 'trade_done', 1, { p: 1 }), E('h6', 3, 'Vends 1 carte aux enchères', 'sale_done', 1, { p: 1 }),
@@ -67,6 +85,9 @@ export async function ensureGameSchema(env) {
     'CREATE TABLE IF NOT EXISTS quests (user_id BIGINT NOT NULL, day TEXT NOT NULL, qid TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, claimed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day, qid))',
     'CREATE TABLE IF NOT EXISTS daily_quiz (day TEXT PRIMARY KEY, title TEXT NOT NULL, extract TEXT NOT NULL DEFAULT \'\', questions TEXT NOT NULL, model TEXT, created BIGINT NOT NULL)',
     'CREATE TABLE IF NOT EXISTS daily_quiz_runs (user_id BIGINT NOT NULL, day TEXT NOT NULL, started BIGINT NOT NULL, answers TEXT, correct INTEGER, delta INTEGER, finished BIGINT, PRIMARY KEY (user_id, day))',
+    'ALTER TABLE inventory ADD COLUMN IF NOT EXISTS lvl BIGINT NOT NULL DEFAULT 0',
+    'ALTER TABLE daily_quiz ADD COLUMN IF NOT EXISTS winner BIGINT',
+    'ALTER TABLE daily_quiz ADD COLUMN IF NOT EXISTS awarded BIGINT',
     'ALTER TABLE quests ENABLE ROW LEVEL SECURITY', 'ALTER TABLE daily_quiz ENABLE ROW LEVEL SECURITY', 'ALTER TABLE daily_quiz_runs ENABLE ROW LEVEL SECURITY',
   ].map(s => env.DB.prepare(s));
   try { await env.DB.batch(stmts); } catch (e) { await new Promise(r => setTimeout(r, 200)); await env.DB.batch(stmts); }   // deux Workers qui créent en même temps : le second réessaie

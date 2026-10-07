@@ -7,7 +7,7 @@ import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
-import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests } from './game.js';
+import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests, FUSE, boosted, fuseInfo } from './game.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -549,6 +549,7 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
+  ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {}));
   const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
   return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra };
 });
@@ -614,7 +615,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
   return {
     rarities: RARITIES, labels: CFG.LABELS, drop: CFG.DROP, sell: CFG.SELL, shinyChance: CFG.SHINY_CHANCE, catalog: meta.n, godpack: CFG.GODPACK_CHANCE,
-    vapid: (await getVapid(env)).pub, version: CFG.VERSION, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, ach: ACH.map(a => ({ k: a.k, t: a.t })),
+    vapid: (await getVapid(env)).pub, version: CFG.VERSION, packSize: PACK_SIZE, packPrice: CFG.PACK_PRICE, packEveryMin: PACK_EVERY / 60000, packMax: PACK_MAX, fuse: FUSE, ach: ACH.map(a => ({ k: a.k, t: a.t })),
   };
 }, false);
 
@@ -671,6 +672,7 @@ const SORTS = {                     // colonnes de l'ordre (index inventory_*) e
   name: { cols: ['nk', 'card_id'], dir: 'ASC' }, qty: { cols: ['qty', 'card_id'], dir: 'DESC' }, fav: { cols: ['fav', 'skey', 'card_id'], dir: 'DESC' },
 };
 route('GET', '/api/album/page', async ({ env, user, query }) => {
+  await ensureGameSchema(env);
   const uid = query.get('user') ? +query.get('user') : user.id;
   if (uid !== user.id && !(await one(env, 'SELECT 1 x FROM users WHERE id = ? AND is_bot = 0', uid))) bad('Joueur introuvable', 404);
   const sort = SORTS[query.get('sort')] ?? SORTS.rar, { cols, dir } = sort;
@@ -686,10 +688,10 @@ route('GET', '/api/album/page', async ({ env, user, query }) => {
     where.push(`(${cols.map(c => 'i.' + c).join(', ')}) ${dir === 'DESC' ? '<' : '>'} (${cols.map(() => '?').join(', ')})`); args.push(...cur);
   }
   const order = cols.map(c => `i.${c} ${dir}`).join(', ');
-  const rows = await all(env, `SELECT i.card_id, i.qty, i.acquired, i.fav, i.skey, i.nk FROM inventory i WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ${PAGE + 1}`, ...args);
+  const rows = await all(env, `SELECT i.card_id, i.qty, i.acquired, i.fav, i.skey, i.nk, i.lvl FROM inventory i WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ${PAGE + 1}`, ...args);
   const more = rows.length > PAGE, page = rows.slice(0, PAGE);
   const det = page.length ? new Map((await all(env, `SELECT c.*, ${AVG} AS avg_price FROM cards c WHERE c.id IN (${placeholders(page.length)})`, ...page.map(x => x.card_id))).map(c => [c.id, c])) : new Map();
-  const cards = page.map(x => ({ ...det.get(x.card_id), qty: x.qty, acquired: x.acquired, fav: x.fav }));
+  const cards = page.map(x => { const c = det.get(x.card_id), rar = RANK[c.rarity]; return { ...boosted(c, rar, x.lvl), qty: x.qty, acquired: x.acquired, fav: x.fav, ...(uid === user.id ? { fuse: fuseInfo(rar, c.shiny, x.lvl, x.qty) } : {}) }; });
   return { cards, next: more ? cols.map(c => page.at(-1)[c === 'card_id' ? 'card_id' : c]) : null };
 });
 const statsCache = new Map();         // userId -> { t, v } : relire toute la collection coûte cher, on garde le résultat 60 s (vidé par les ventes)
@@ -716,7 +718,8 @@ route('GET', '/api/album/stats', async ({ env, user, origin }) => {
 });
 route('GET', '/api/album', async ({ env, user, origin, query }) => {
   if (query.get('lite')) {                                          // version allégée (choix du deck) : pas de description, pas de prix moyen
-    return { cards: await all(env, `SELECT c.id, c.title, c.rarity, c.atk, c.def, c.image, c.shiny, c.views, i.qty, i.acquired, i.card_id ord FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?`, user.id) };
+    await ensureGameSchema(env);
+    return { cards: (await all(env, `SELECT c.id, c.title, c.rarity, c.atk, c.def, c.image, c.shiny, c.views, i.qty, i.acquired, i.card_id ord, i.lvl FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?`, user.id)).map(c => boosted(c, RANK[c.rarity], c.lvl)) };
   }
   const meta = await getMeta(env, origin);
   const cards = await all(env, `SELECT c.*, i.qty, i.acquired, i.card_id AS ord, ${AVG} AS avg_price, (SELECT 1 FROM favorites f WHERE f.user_id = i.user_id AND f.card_id = i.card_id) AS fav FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ?
@@ -727,6 +730,23 @@ route('GET', '/api/album', async ({ env, user, origin, query }) => {
   return { cards, total, rarityAvg };
 });
 
+// ---------- fusion de doublons : la carte monte de niveau (+ATK/+DEF) ----------
+route('POST', '/api/fuse', async ({ env, ctx, user, body }) => {
+  await ensureGameSchema(env);
+  const id = +body.card_id;
+  const row = await one(env, 'SELECT i.qty, i.lvl, i.rar, i.sh, c.title FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.card_id = ?', user.id, id);
+  if (!row) bad('Tu ne possèdes pas cette carte');
+  const f = fuseInfo(row.rar, row.sh, row.lvl, row.qty);
+  if (!f) bad(row.sh ? 'Les cartes shiny ne peuvent pas être fusionnées' : 'Les cartes légendaires sont déjà au sommet');
+  if (f.cost === null) bad('Cette carte est déjà au niveau maximum');
+  if (!f.can) bad(`Il faut ${f.cost + 1} exemplaires (tu en as ${row.qty}) : ${f.cost} sont consommés, un est conservé`);
+  const done = await run(env, 'UPDATE inventory SET qty = qty - ?, lvl = lvl + 1 WHERE user_id = ? AND card_id = ? AND lvl = ? AND qty >= ?', f.cost, user.id, id, row.lvl, f.cost + 1);
+  if (!done.meta.changes) bad('Fusion impossible, réessaie');
+  statsCache.delete(user.id); profileCache.delete(user.id);
+  bq(env, ctx, user.id, { fuse: 1 });
+  const qty = row.qty - f.cost, lvl = row.lvl + 1;
+  return { ok: true, title: row.title, lvl, qty, bonus: FUSE.bonus[row.rar] * lvl, fuse: fuseInfo(row.rar, row.sh, lvl, qty) };
+});
 route('POST', '/api/discard', async ({ env, ctx, user, body }) => {
   const cid = +body.card_id, want = Math.max(1, Math.floor(+body.qty || 1));
   const c = await one(env, 'SELECT c.rarity, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.card_id = ?', user.id, cid);
@@ -1064,6 +1084,33 @@ const recap = (quiz, run_) => {
   return { title: quiz.title, correct: run_.correct, total: qs.length, delta: run_.delta, penalty: run_.correct === 0 ? (run_.delta < 0 ? 'pack' : 'timer') : null,
     questions: qs.map((q, i) => ({ text: q.text, options: q.options, answer: q.answer, given: ans[i] ?? -1, ok: ans[i] === q.answer })) };
 };
+/** Vainqueur de la veille : le meilleur score (puis le temps total le plus court) gagne un paquet en plus. Réglé au premier passage de la nouvelle journée. */
+let lastSettle = 0;
+async function settleDailyWinners(env, ctx, force = false) {
+  if (!force && now() - lastSettle < 300000) return;
+  lastSettle = now();
+  await ensureGameSchema(env);
+  const days = await all(env, 'SELECT day FROM daily_quiz WHERE day < ? AND awarded IS NULL AND NOT EXISTS (SELECT 1 FROM daily_quiz_runs r WHERE r.day = daily_quiz.day AND r.finished IS NULL AND r.started > ?) ORDER BY day LIMIT 3', dayKey(), now() - QUIZ_SECS * 1000 - 30000);
+  for (const { day } of days) {
+    const claim = await run(env, 'UPDATE daily_quiz SET awarded = ? WHERE day = ? AND awarded IS NULL', now(), day);
+    if (!claim.meta.changes) continue;
+    const w = await one(env, 'SELECT user_id FROM daily_quiz_runs WHERE day = ? AND finished IS NOT NULL AND correct > 0 ORDER BY correct DESC, finished - started ASC, user_id LIMIT 1', day);
+    if (!w) continue;
+    await env.DB.batch([st(env, 'UPDATE users SET pack_stock = pack_stock + 1 WHERE id = ?', w.user_id), st(env, 'UPDATE daily_quiz SET winner = ? WHERE day = ?', w.user_id, day)]);
+    notify(env, ctx, { t: 'notify', msg: `Tu as remporté le quiz du jour (${day}) : +1 paquet bonus !` }, w.user_id);
+  }
+}
+route('GET', '/api/daily-quiz/ranking', async ({ env, ctx, user }) => {
+  await ensureGameSchema(env);
+  const day = dayKey();
+  if (!(await one(env, 'SELECT 1 x FROM daily_quiz_runs WHERE user_id = ? AND day = ? AND finished IS NOT NULL', user.id, day))) bad('Termine d’abord le quiz pour voir le classement', 403);
+  await settleDailyWinners(env, ctx, true);
+  const [list, prev] = await Promise.all([
+    all(env, 'SELECT r.user_id id, u.name, r.correct, r.finished - r.started ms FROM daily_quiz_runs r JOIN users u ON u.id = r.user_id WHERE r.day = ? AND r.finished IS NOT NULL ORDER BY r.correct DESC, r.finished - r.started ASC, r.user_id LIMIT 50', day),
+    one(env, 'SELECT u.name, r.correct, r.finished - r.started ms FROM daily_quiz d JOIN users u ON u.id = d.winner JOIN daily_quiz_runs r ON r.user_id = d.winner AND r.day = d.day WHERE d.day = ?', dayKey(now() - 86400000)),
+  ]);
+  return { day, resetIn: msToMidnight(), list: list.map((x, i) => ({ ...x, rank: i + 1, me: x.id === user.id })), yesterday: prev ?? null };
+});
 route('GET', '/api/daily-quiz', async ({ env, user }) => {
   await ensureGameSchema(env);
   const day = dayKey(), quiz = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day), r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
