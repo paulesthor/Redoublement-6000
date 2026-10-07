@@ -479,9 +479,8 @@ async function botTick(env, ctx, force = false) {
     const others = new Set((await all(env, 'SELECT DISTINCT user_id FROM bids WHERE auction_id = ?', a.id)).map(r => r.user_id));
     others.add(a.seller_id);
     for (const uid of others) {
-      if (botName.has(uid) || uid === bot.id) continue;
-      const msg = uid === a.seller_id ? `${bot.name} enchérit ${amount} pièces sur ta « ${a.title} »`
-        : uid === a.bidder_id ? `Tu as été surenchéri sur « ${a.title} » : ${amount} pièces par ${bot.name}`
+      if (botName.has(uid) || uid === bot.id || uid === a.seller_id) continue;   // pas de notification au vendeur pour l'offre d'un joueur simulé (trop nombreuses)
+      const msg = uid === a.bidder_id ? `Tu as été surenchéri sur « ${a.title} » : ${amount} pièces par ${bot.name}`
         : `${bot.name} a enchéri ${amount} pièces sur « ${a.title} »`;
       notify(env, ctx, { t: 'notify', msg }, uid);
     }
