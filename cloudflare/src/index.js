@@ -1,6 +1,6 @@
 import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
-  userFromToken, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
+  userFromToken, hash, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -336,7 +336,11 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const demand = views => Math.min(1, Math.max(.2, Math.log10(Math.max(1, views)) / 5));
 let lastBot = 0;
 
-/** Une carte cherchée par un joueur sera mise en vente par un joueur simulé à un moment aléatoire dans l'heure. */
+/** Chance qu'une carte cherchée soit mise en vente par un joueur simulé : plus la carte est rare, moins c'est probable (la recherche ne garantit plus rien). */
+const WISH_CHANCE = { common: .40, uncommon: .30, rare: .22, super: .14, ultra: .08, legendary: .04 };
+/** Tirage décidé une fois par heure pour un même joueur et une même carte : chercher 20 fois la même carte ne change pas le résultat. */
+const wishRoll = (uid, c) => hash(`${uid}:${c.id}:${Math.floor(now() / 3600e3)}`) / 4294967296 < (WISH_CHANCE[c.rarity] ?? .1);
+/** Une carte cherchée par un joueur peut (parfois) être mise en vente par un joueur simulé, à un moment aléatoire dans l'heure. */
 async function wishListing(env, c) {
   const busy = await one(env, "SELECT 1 x FROM auctions WHERE card_id = ? AND (status = 'open' OR ends_at > ?)", c.id, now() - 6 * 3600e3);
   if (busy) return;
@@ -735,7 +739,7 @@ route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) =>
     const e = await entryAt(env, origin, rank);
     return { id: e[0], title: p.title, rarity, rank, views: e[2], image: p.thumbnail?.source ?? null, extract: (p.extract || '').trim(), ...stats(p.title, rarity, false), enriched: 2 };
   }))).filter(Boolean);
-  if (cards[0] && q.length >= 3 && !(user.is_admin && query.get('admin'))) ctx.waitUntil(wishListing(env, cards[0]).catch(() => {}));   // la carte cherchée sera bientôt en vente
+  if (cards[0] && q.length >= 3 && !(user.is_admin && query.get('admin'))) if (wishRoll(user.id, cards[0])) ctx.waitUntil(wishListing(env, cards[0]).catch(() => {}));   // la carte cherchée sera peut-être bientôt en vente (pas garanti)
   const own = cards.length ? await all(env, `SELECT card_id, SUM(qty) qty FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(cards.length)}) GROUP BY card_id`, user.id, ...cards.map(c => c.id)) : [];
   const owned = new Map(own.map(r => [r.card_id, r.qty]));
   return { cards: cards.map(c => ({ ...c, owned: owned.get(c.id) || 0 })) };
@@ -1134,4 +1138,4 @@ export default {
     }
   },
 };
-export { pickRarity, userWeights };   // exportés pour les tests
+export { pickRarity, userWeights, wishRoll, WISH_CHANCE };   // exportés pour les tests
