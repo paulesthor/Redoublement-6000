@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '3.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '3.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1285,7 +1285,10 @@ const render = safe(async () => {
   const v = $('#view'), sk = setTimeout(() => { v.innerHTML = SKELETON; }, 140);   // squelette si les données tardent
   try { await views[tab](v); } finally { clearTimeout(sk); }
   labelTables($('#view'));
-  window.scrollTo(0, keepY); fitLock(); setTimeout(fitLock, 250); setTimeout(fitLock, 1000);
+  const down = () => window.scrollTo(0, document.documentElement.scrollHeight);
+  if (tab === 'chat') { down(); requestAnimationFrame(down); setTimeout(down, 120); setTimeout(down, 400); }   // une conversation s'ouvre sur le dernier message
+  else window.scrollTo(0, keepY);
+  fitLock(); setTimeout(fitLock, 250); setTimeout(fitLock, 1000);
 });
 async function refreshMe() {
   me = await api('/me');
