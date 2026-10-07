@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '4.2';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '4.3';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -360,7 +360,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -1056,7 +1056,8 @@ function showHits(list) {
 const recentHits = [];
 
 // ---------- squelette ----------
-function markTab() { document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === GROUP[tab])); }
+const EXTRA = new Set(['search', 'rank', 'msg', 'friends', 'more']);   // onglets rangés sous « Plus » sur téléphone
+function markTab() { const g = GROUP[tab]; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === g || (b.dataset.tab === 'more' && EXTRA.has(g)))); }
 /** Copie l'en-tête de chaque colonne dans les cellules (data-label) : le CSS mobile affiche les lignes comme des fiches. */
 function labelTables(root) {
   root.querySelectorAll('table').forEach(t => {
@@ -1337,6 +1338,7 @@ async function refreshMe() {
   me = await api('/me');
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
+  document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0);
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar" id="profile" aria-label="Profil">${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
@@ -1470,7 +1472,26 @@ function profileSheet() {
   if (me.admin) $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (tab !== b.dataset.tab) lastPack = null; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
+/** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
+function moreSheet() {
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+  const g = GROUP[tab];
+  const T = (key, icon, label, sub, badge = 0) => `<button class="mtile ${g === GROUP[key] && !['profile', 'settings'].includes(key) ? 'on' : ''}" data-go="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small>${badge ? `<i class="mb">${badge > 9 ? '9+' : badge}</i>` : ''}</button>`;
+  m.hidden = false;
+  m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
+    <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
+    <h3>Explorer</h3><div class="mgrid">${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
+    <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
+    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('settings', 'gear', 'Réglages', 'Sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
+  $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
+    const k = b.dataset.go; close();
+    if (k === 'profile') return playerSheet(me.id);
+    if (k === 'settings') return profileSheet();
+    lastPack = null; tab = k; if (game?.view === 'end') game = null; render();
+  });
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (b.dataset.tab === 'more') return moreSheet(); if (tab !== b.dataset.tab) lastPack = null; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
 async function start() {
   $('#auth').hidden = true;                       // pas de formulaire de connexion qui clignote quand on est déjà connecté
   $('#boot').hidden = false;

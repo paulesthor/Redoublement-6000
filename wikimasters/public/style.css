@@ -791,3 +791,25 @@ body.fx-win #view{animation:fxglow 4.5s both}@keyframes fxglow{0%,100%{filter:no
 .logbox .lv{font-size:10px;font-weight:800;letter-spacing:.04em;padding:1px 6px;border-radius:99px;background:#ffffff14;color:var(--mut)}
 .logbox .lv.error{background:#ff5d5d33;color:#ff8a80}.logbox .lv.warn{background:#f2a34f2e;color:#f2a34f}
 .logbox .lg-error{background:#ff5d5d0f}
+
+/* ---- menu du bas : 4 onglets + « Plus » (téléphone) ---- */
+nav button.more{display:none}
+@media(max-width:820px){
+  aside nav button.x{display:none}
+  aside nav button.more{display:flex}
+}
+.moresheet{padding-top:10px!important}
+.moresheet .grab{display:block;width:42px;height:4px;border-radius:99px;background:#ffffff2e;margin:0 auto 12px}
+.moresheet .mhead{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.moresheet .mhead>div{flex:1;min-width:0;display:flex;flex-direction:column}.moresheet .mhead b{font-size:16px}.moresheet .mhead small{color:var(--mut);font-size:12.5px}
+.moresheet .mx{min-height:36px;width:36px;padding:0;border-radius:50%;font-size:14px}
+.moresheet h3{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:700;margin:16px 0 8px}
+.mgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.mtile{position:relative;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;text-align:left;padding:12px 12px;min-height:64px;border-radius:16px;background:#ffffff0a;border:1px solid var(--line2);color:var(--fg);box-shadow:none}
+.mtile .mi{grid-row:1/3;width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f2a34f33,#f2a34f0d);color:var(--gold)}
+.mtile .mi .ic{width:22px;height:22px}
+.mtile b{font-size:14.5px;align-self:end}.mtile small{font-size:11.5px;color:var(--mut);font-weight:400;align-self:start;line-height:1.25}
+.mtile.on{border-color:var(--gold);background:linear-gradient(135deg,#f2a34f1f,#ffffff08)}
+.mtile:active{transform:scale(.97)}
+.mtile .mb{position:absolute;top:8px;right:8px;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:#ff4d5e;color:#fff;font-style:normal;font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #14141c}
+@media(min-width:821px){.mgrid{grid-template-columns:repeat(3,1fr)}}
