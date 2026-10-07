@@ -889,12 +889,13 @@ html[data-theme=midnight]{--bg:#000;--bg2:#050507;--panel:#0a0a0d;--panel2:#1010
 html[data-theme=ocean]{--bg:#050b14;--bg2:#08111d;--panel:#0d1726;--panel2:#13203a;--line:#17263d;--line2:#223653;--gold:#8fd0ff;--gold2:#5b94c4;--grad-gold:linear-gradient(180deg,#b9e3ff,#7fbff0)}html[data-theme=ocean],html[data-theme=ocean] body{background:#050b14}
 html[data-theme=forest]{--bg:#050d09;--bg2:#08130d;--panel:#0d1a13;--panel2:#13261b;--line:#183024;--line2:#244434;--gold:#9be3b0;--gold2:#5fa077;--grad-gold:linear-gradient(180deg,#c3f1cf,#86d29c)}html[data-theme=forest],html[data-theme=forest] body{background:#050d09}
 html[data-theme=violet]{--bg:#0b0714;--bg2:#110b1d;--panel:#171027;--panel2:#20173a;--line:#2a1e45;--line2:#3a2b5e;--gold:#d2b4ff;--gold2:#9b7fd0;--grad-gold:linear-gradient(180deg,#e6d4ff,#c1a0f5)}html[data-theme=violet],html[data-theme=violet] body{background:#0b0714}
-/* clair et beige : l'interface sombre est inversée, les photos sont remises à l'endroit */
-html[data-theme=light],html[data-theme=beige]{filter:invert(.93) hue-rotate(180deg)}html[data-theme=light],html[data-theme=light] body{background:#07070b}
-html[data-theme=beige]{filter:invert(.9) hue-rotate(180deg) sepia(.42) saturate(.85) brightness(1.02)}html[data-theme=beige],html[data-theme=beige] body{background:#0f1a2e}
-html[data-theme=light] img,html[data-theme=light] .img,html[data-theme=light] .ph,html[data-theme=light] .thumb,html[data-theme=light] .bi,html[data-theme=light] [style*=background-image],html[data-theme=light] canvas,html[data-theme=light] .halo,html[data-theme=light] .sparks,
-html[data-theme=beige] img,html[data-theme=beige] .img,html[data-theme=beige] .ph,html[data-theme=beige] .thumb,html[data-theme=beige] .bi,html[data-theme=beige] [style*=background-image],html[data-theme=beige] canvas,html[data-theme=beige] .sparks{filter:invert(1) hue-rotate(180deg)}
+/* clair et beige : l'interface sombre est inversée (inversion exacte), les photos sont inversées une 2e fois donc remises à l'endroit */
+html[data-theme=light],html[data-theme=beige]{filter:invert(1) hue-rotate(180deg)}html[data-theme=light],html[data-theme=light] body,html[data-theme=beige],html[data-theme=beige] body{background:#07070b}
+html[data-theme=light] img,html[data-theme=light] .img,html[data-theme=light] .ph,html[data-theme=light] .thumb,html[data-theme=light] .bi,html[data-theme=light] .vimg,html[data-theme=light] .mi,html[data-theme=light] [style*=background-image],html[data-theme=light] canvas,html[data-theme=light] .sparks,
+html[data-theme=beige] img,html[data-theme=beige] .img,html[data-theme=beige] .ph,html[data-theme=beige] .thumb,html[data-theme=beige] .bi,html[data-theme=beige] .vimg,html[data-theme=beige] .mi,html[data-theme=beige] [style*=background-image],html[data-theme=beige] canvas,html[data-theme=beige] .sparks{filter:invert(1) hue-rotate(180deg)}
 html[data-theme=light] #reveal,html[data-theme=beige] #reveal{filter:invert(1) hue-rotate(180deg)}
+/* beige : voile chaud posé par-dessus (écran bleu foncé avant inversion = teinte papier après) */
+html[data-theme=beige]::after{content:"";position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:#4a3300;mix-blend-mode:screen;opacity:.42}
 html[data-text=s]{font-size:14px}html[data-text=l]{font-size:17px}html[data-text=xl]{font-size:19px}
 html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 /* page Réglages */
@@ -938,8 +939,8 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .bulk button{font-size:13.5px}
 
 /* ---- photo de profil et titres ---- */
-.av.ph{overflow:visible}.av.ph img,.avatar.ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}.avatar.ph{position:relative;overflow:hidden;color:transparent}
-.av.ph.on::after{z-index:2}
+.av.hasph{overflow:visible}.av.hasph img,.avatar.hasph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}.avatar.hasph{position:relative;overflow:hidden;color:transparent}
+.av.hasph.on::after{z-index:2}
 .ttl{display:inline-block;margin-left:7px;padding:1px 8px;border-radius:99px;font-size:10.5px;font-weight:700;letter-spacing:.03em;vertical-align:middle;background:linear-gradient(135deg,#f5c54233,#f2a34f22);color:#f5c542;border:1px solid #f5c54255;white-space:nowrap}
 .avpanel{display:flex;gap:16px;align-items:center}.avpanel .avbig .av{width:84px;height:84px;font-size:34px}.avpanel .row{gap:8px;flex-wrap:wrap}.avpanel .row button{flex:none}
 .titles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}

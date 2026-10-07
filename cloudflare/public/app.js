@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.3';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.4';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -393,7 +393,7 @@ async function loadCosmetics(force = false) {
   cosAt = Date.now();
   try { const d = await api('/cosmetics'); COS = new Map(d.players.map(p => [p.name, p])); TLABELS = d.labels; } catch { /* sans photos pour cette fois */ }
 }
-const avatar = (name, on = false) => { const c = COS.get(name); return `<span class="av ${on ? 'on' : ''} ${c?.v ? 'ph' : ''}" style="--avc:${avColor(name)}">${c?.v ? `<img src="/api/avatar/${c.id}?v=${c.v}" alt="" loading="lazy" onerror="this.remove()">` : ''}${esc(String(name)[0]?.toUpperCase() || '?')}</span>`; };
+const avatar = (name, on = false) => { const c = COS.get(name); return `<span class="av ${on ? 'on' : ''} ${c?.v ? 'hasph' : ''}" style="--avc:${avColor(name)}">${c?.v ? `<img src="/api/avatar/${c.id}?v=${c.v}" alt="" loading="lazy" onerror="this.remove()">` : ''}${esc(String(name)[0]?.toUpperCase() || '?')}</span>`; };
 const ttl = name => { const t = COS.get(name)?.ti; return t && TLABELS[t] ? `<span class="ttl">${esc(TLABELS[t])}</span>` : ''; };
 const timeLeft = ms => { const r = Math.max(0, Math.round(ms / 1000)); return r >= 3600 ? `${Math.floor(r / 3600)} h ${Math.floor(r % 3600 / 60)} min` : r >= 60 ? `${Math.floor(r / 60)} min ${r % 60} s` : `${r} s`; };
 const RANK_SEG = [['rank', 'Classement'], ['ach', 'Succès']];
@@ -1385,7 +1385,7 @@ async function refreshMe() {
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
   document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily);
-  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'ph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
+  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'hasph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
 const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.onclick = e => { if (e.target.closest('button')) return; playerSheet(el.dataset.pl); });

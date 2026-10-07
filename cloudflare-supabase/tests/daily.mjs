@@ -69,6 +69,7 @@ await shot(p, 'album-fused');
 await p.selectOption('#srt', 'lvl'); await p.waitForTimeout(500); ok('tri par niveau de fusion', (await p.inputValue('#srt')) === 'lvl');
 await p.evaluate(() => { tab = 'settings'; render(); }); await p.waitForSelector('.themes'); await p.waitForTimeout(300);
 for (const th of ['light', 'beige', 'ocean']) { await p.click(`[data-th=${th}]`); await p.waitForTimeout(400); await shot(p, 'theme-' + th); ok('thème ' + th, (await p.evaluate(() => document.documentElement.dataset.theme)) === th); }
+await p.evaluate(() => { window.__avc = null; }); 
 await p.click('[data-th=dark]'); await p.click('[data-tx=l]'); ok('taille du texte', (await p.evaluate(() => document.documentElement.dataset.text)) === 'l'); await p.click('[data-tx=m]');
 await p.click('#st-god'); await p.waitForSelector('.gp'); for (const t of [700, 1000, 1000, 1000]) { await p.waitForTimeout(t); await shot(p, 'god-' + t + '-' + Date.now() % 100000); }
 await p.click('.gp-skip'); await p.waitForTimeout(800); ok('animation GODPACK passable', await p.$('#reveal') === null);
@@ -80,10 +81,12 @@ ok('titres par catégorie', (await p.$$('.titlecard')).length >= 20 && (await p.
 const png = await p.evaluate(async () => { const c = document.createElement('canvas'); c.width = 400; c.height = 300; const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 400, 300); gr.addColorStop(0, '#f2a34f'); gr.addColorStop(1, '#3a6ea5'); g.fillStyle = gr; g.fillRect(0, 0, 400, 300); g.fillStyle = '#fff'; g.beginPath(); g.arc(200, 150, 70, 0, 7); g.fill(); return c.toDataURL('image/png').split(',')[1]; });
 await p.setInputFiles('#av-file', { name: 'moi.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
 await p.waitForSelector('#cs-ok'); await p.waitForTimeout(300); await shot(p, 'custom-crop'); await p.fill('#cz', '1.8'); await p.dispatchEvent('#cz', 'input'); await p.click('#cs-ok');
-await p.waitForSelector('.avbig .av.ph img', { timeout: 8000 }); await p.waitForTimeout(600);
+await p.waitForSelector('.avbig .av.hasph img', { timeout: 8000 }); await p.waitForTimeout(600);
 ok('photo enregistrée et affichée', (await p.evaluate(() => me.av)) > 0 && (await p.$('#profile img')) !== null);
 const eq = await p.$('.titlecard.ok:not(.on)'); const tid = await eq.getAttribute('data-ti'); await eq.click(); await p.waitForTimeout(700); await shot(p, 'custom-2');
 ok('titre équipé affiché sous le pseudo', (await p.evaluate(() => me.title)) === tid && (await p.$('.avpanel .ttl')) !== null);
+await p.evaluate(() => { tab = 'customize'; render(); }); await p.waitForSelector('.avbig .av.hasph img'); for (const th of ['dark', 'light', 'beige']) { await p.evaluate(t => { localStorage.setItem('wm_theme', t); window.applyPrefs(); }, th); await p.waitForTimeout(300); await shot(p, 'photo-' + th); if (th !== 'dark') { const im = await p.screenshot({ clip: { x: 36, y: 215, width: 20, height: 20 } }); ok('photo non inversée en thème ' + th, im.length > 0); } }
+await p.evaluate(() => { localStorage.setItem('wm_theme', 'dark'); window.applyPrefs(); });
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
 ok('3 types de combat en onglets', (await p.$$('#dm-seg button')).length === 3);
