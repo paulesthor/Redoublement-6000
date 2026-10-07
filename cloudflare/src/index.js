@@ -1144,6 +1144,7 @@ async function api(req, env0, ctx, url) {
   const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
   if (!r) bad('Route inconnue', 404);
   let env = meter(env0, 'R:' + r.label);
+  if (/^\/api\/admin\/(users|give|password|drop|cards|take-card)$/.test(url.pathname)) bad('Fonction retirée : plus aucun réglage des joueurs (pièces, paquets, cartes, taux) depuis l\'administration', 403);
   const params = url.pathname.match(r.re).groups || {};
   let user = null;
   if (r.auth) {

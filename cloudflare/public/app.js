@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '3.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '3.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1048,11 +1048,11 @@ document.fonts?.ready.then(() => fitLock());
 window.addEventListener('resize', fitLock); document.addEventListener('toggle', fitLock, true);
 const Q_PER_CARD_UI = 3;
 const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
-let adminTab = 'overview';
+let adminTab = 'overview';   // l'onglet « Joueurs » (pièces, paquets, cartes, taux) a été retiré
 views.admin = async v => {
   jlog('ouverture de l\'administration');
   if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
-  const seg = [['overview', 'Aperçu'], ['users', 'Joueurs'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
+  const seg = [['overview', 'Aperçu'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
   v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips wrap" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
   const adminBody = async () => {
