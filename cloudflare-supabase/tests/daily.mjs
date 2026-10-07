@@ -60,6 +60,17 @@ await p.evaluate(() => { tab = 'album'; render(); }); await p.waitForSelector('.
 await p.click('.card[data-id="' + own + '"] .body'); await p.waitForSelector('#fuse-go'); await p.waitForTimeout(300); await shot(p, 'fuse-1');
 await p.click('#fuse-go'); await p.waitForSelector('.detail.fused'); await p.waitForTimeout(900); await shot(p, 'fuse-2');
 ok('fusion depuis la fiche : niveau 1 affiché', (await p.textContent('.fusebox')).includes('Bonus actuel'));
+console.log('— collection, réglages, godpack');
+await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'album'; render(); }); await p.waitForSelector('.bulk'); await p.waitForTimeout(600); await shot(p, 'album-bulk');
+const bb = await p.$$eval('.bulk button', bs => bs.map(b => Math.round(b.getBoundingClientRect().right))); ok('boutons de la collection : aucun débordement', bb.every(x => x <= 390), J(bb));
+await p.click('#chips [data-r=fused]'); await p.waitForTimeout(700); ok('catégorie Fusionnées', (await p.$$('.card.lv1,.card.lv2,.card.lv3')).length >= 1 && (await p.$$('#g .card:not(.lv1):not(.lv2):not(.lv3)')).length === 0, (await p.$$('#g .card')).length);
+await shot(p, 'album-fused');
+await p.selectOption('#srt', 'lvl'); await p.waitForTimeout(500); ok('tri par niveau de fusion', (await p.inputValue('#srt')) === 'lvl');
+await p.evaluate(() => { tab = 'settings'; render(); }); await p.waitForSelector('.themes'); await p.waitForTimeout(300);
+for (const th of ['light', 'beige', 'ocean']) { await p.click(`[data-th=${th}]`); await p.waitForTimeout(400); await shot(p, 'theme-' + th); ok('thème ' + th, (await p.evaluate(() => document.documentElement.dataset.theme)) === th); }
+await p.click('[data-th=dark]'); await p.click('[data-tx=l]'); ok('taille du texte', (await p.evaluate(() => document.documentElement.dataset.text)) === 'l'); await p.click('[data-tx=m]');
+await p.click('#st-god'); await p.waitForSelector('.gp'); for (const t of [700, 1000, 1000, 1000]) { await p.waitForTimeout(t); await shot(p, 'god-' + t + '-' + Date.now() % 100000); }
+await p.click('.gp-skip'); await p.waitForTimeout(800); ok('animation GODPACK passable', await p.$('#reveal') === null);
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
 ok('3 types de combat en onglets', (await p.$$('#dm-seg button')).length === 3);

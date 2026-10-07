@@ -669,7 +669,7 @@ route('POST', '/api/favorites', async ({ env, ctx, user, body }) => {
 const PAGE = 40;
 const SORTS = {                     // colonnes de l'ordre (index inventory_*) et sens ; la dernière colonne départage toujours (card_id)
   rar: { cols: ['skey', 'card_id'], dir: 'DESC' }, new: { cols: ['acquired', 'card_id'], dir: 'DESC' }, old: { cols: ['acquired', 'card_id'], dir: 'ASC' },
-  name: { cols: ['nk', 'card_id'], dir: 'ASC' }, qty: { cols: ['qty', 'card_id'], dir: 'DESC' }, fav: { cols: ['fav', 'skey', 'card_id'], dir: 'DESC' },
+  name: { cols: ['nk', 'card_id'], dir: 'ASC' }, qty: { cols: ['qty', 'card_id'], dir: 'DESC' }, fav: { cols: ['fav', 'skey', 'card_id'], dir: 'DESC' }, lvl: { cols: ['lvl', 'skey', 'card_id'], dir: 'DESC' },
 };
 route('GET', '/api/album/page', async ({ env, user, query }) => {
   await ensureGameSchema(env);
@@ -680,6 +680,7 @@ route('GET', '/api/album/page', async ({ env, user, query }) => {
   const r = RANK[query.get('rar')];
   if (r !== undefined) { where.push('i.skey >= ? AND i.skey < ?'); args.push(r * 1e9, (r + 1) * 1e9); }
   if (query.get('fav')) where.push('i.fav = 1');
+  if (query.get('fused')) where.push('i.lvl > 0');
   if (query.get('dup')) where.push('i.qty > 1');
   const q = String(query.get('q') || '').toLowerCase().replace(/[%_\\]/g, '').trim().slice(0, 60);
   if (q) { where.push('i.nk ILIKE ?'); args.push(`%${q}%`); }

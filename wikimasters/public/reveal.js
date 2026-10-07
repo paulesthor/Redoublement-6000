@@ -3,7 +3,7 @@
 // gauche (ou bouton « Encore N cartes », flèches, clavier). Les légendaires ont une mise en scène façon « walkout » de FUT.
 (function () {
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceNow = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches || localStorage.getItem('wm_fast') === '1'; } catch { return false; } };   // « ouverture rapide » dans les réglages
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const rand = (a, b) => a + Math.random() * (b - a);
   const preload = urls => Promise.race([
@@ -14,6 +14,28 @@
   const ABBR = { common: 'C', uncommon: 'PC', rare: 'R', super: 'SR', ultra: 'UR', legendary: 'L' };
   const SWORDS = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#c0392b" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>';
   const SHIELD = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#2f66c9" stroke-width="2.4" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>';
+
+
+  /** GODPACK : fissure de lumière, onde de choc, éventail de cartes dorées, titre qui claque lettre par lettre, pluie d'or. Un toucher passe la scène. */
+  async function godIntro(root, n) {
+    buzz([60, 30, 60, 30, 120, 60, 240]);
+    if (reduceNow()) { root.className = 'r-legendary'; root.innerHTML = `<div class="bg"></div><div class="godsplash"><span>Paquet exceptionnel</span><b>GODPACK</b><small>${n} cartes ultra rares et légendaires</small></div>`; await sleep(1500); return; }
+    const fan = Array.from({ length: n }, (_, k) => { const t = n === 1 ? .5 : k / (n - 1), a = -70 + t * 140; return `<i style="--a:${a.toFixed(1)}deg;--x:${((t - .5) * 150).toFixed(0)}%;--d:${(1.5 + k * .07).toFixed(2)}s"></i>`; }).join('');
+    const rain = Array.from({ length: 46 }, () => `<i style="left:${rand(0, 100).toFixed(1)}%;--s:${rand(3, 8).toFixed(1)}px;--t:${rand(1.6, 3.4).toFixed(2)}s;--dl:${rand(2.2, 4.4).toFixed(2)}s;--dx:${rand(-30, 30).toFixed(0)}px"></i>`).join('');
+    const word = [...'GODPACK'].map((ch, k) => `<span style="--k:${k}">${ch}</span>`).join('');
+    root.className = 'r-god'; root.innerHTML = `<div class="gp"><div class="gp-bg"></div><div class="gp-rays"></div><div class="gp-seam"></div><div class="gp-rings"><i></i><i></i><i></i></div>
+      <div class="gp-fan">${fan}</div><div class="gp-rain">${rain}</div><div class="gp-flash"></div>
+      <div class="gp-title"><small>Paquet exceptionnel</small><h1>${word}</h1><p>${n} cartes ultra rares et légendaires</p></div><button class="plain gp-skip">Passer</button></div>`;
+    for (const [ms, p] of [[1100, 40], [1500, [120, 40, 200]], [2300, 30], [2700, 30], [3100, 30]]) setTimeout(() => buzz(p), ms);
+    await new Promise(res => { const t = setTimeout(res, 5200); root.querySelector('.gp-skip').onclick = () => { clearTimeout(t); res(); }; });
+    const gp = root.querySelector('.gp'); gp.classList.add('out'); await sleep(450);
+  }
+
+  /** Aperçu de l'animation (page Réglages). */
+  window.previewGod = async () => {
+    const root = document.createElement('div'); root.id = 'reveal'; root.className = 'r-god'; document.body.append(root); document.body.classList.add('noscroll');
+    try { await godIntro(root, 10); } finally { root.remove(); document.body.classList.remove('noscroll'); }
+  };
 
   /**
    * @param source  cartes du tirage, ou promesse de ces cartes (le paquet se déchire pendant le chargement)
@@ -30,7 +52,7 @@
     const dataP = Promise.resolve(source);
     let cards;
     try {
-      if (reduce) { cards = await dataP; }
+      if (reduceNow()) { cards = await dataP; }
       else cards = await window.packStage(root, { dataP, rank: o.rank, buzz, preload });
     } catch (e) {                                                    // erreur serveur : on referme proprement
       root.remove(); document.body.classList.remove('noscroll');
@@ -39,10 +61,7 @@
     const seq = [...cards].sort((a, b) => o.rank[a.rarity] - o.rank[b.rarity] || (a.shiny | 0) - (b.shiny | 0)); // moins rare d'abord
     const N = seq.length;
     buzz(30);
-    if (cards.god) {                                                  // GODPACK : écran spécial avant les cartes
-      root.className = 'r-legendary'; root.innerHTML = `<div class="bg"></div><div class="godsplash"><span>Paquet exceptionnel</span><b>GODPACK</b><small>${cards.length} cartes ultra rares et légendaires</small></div>`;
-      buzz([80, 40, 80, 40, 160]); await sleep(2600);
-    }
+    if (cards.god) await godIntro(root, cards.length);                 // GODPACK : mise en scène complète avant les cartes
 
     let i = -1, locked = true, drag = null, dx = 0, finished;
     const done = new Promise(r => { finished = r; });
@@ -59,7 +78,7 @@
       i = n; locked = true; dx = 0;
       const c = seq[n], legend = c.rarity === 'legendary', ultra = c.rarity === 'ultra', last = n === N - 1;
       if (c._ready) await Promise.race([c._ready, sleep(1800)]);          // photo de cette carte : on l'attend un instant, sans bloquer
-      root.className = `r-${c.rarity} ${c.shiny ? 'shiny' : ''}`;
+      root.className = `r-${c.rarity} ${c.shiny ? 'shiny' : ''} ${cards.god ? 'god' : ''}`;
       if (c._ready) c._ready.then(() => {                                  // la photo arrive pendant qu'on regarde la carte : on la glisse en place
         if (i !== n) return;
         const ph = root.querySelector('.ph.noimg'), ds = root.querySelector('.ds');
@@ -86,13 +105,13 @@
       root.querySelector('.prev').onclick = prev;
       const wrap = wrapEl();
       wrap.style.visibility = 'hidden';
-      if (legend && !reduce) await walkout(c);
+      if (legend && !reduceNow()) await walkout(c);
       wrap.style.visibility = '';
       wrap.classList.add(legend || n === 0 ? 'pop' : 'slide');
       if (ultra || legend) { const ring = document.createElement('div'); ring.className = 'ring'; root.append(ring); setTimeout(() => ring.remove(), 1200); }
       if (legend) sparks(34, true);
       buzz(legend ? [60, 40, 140] : ultra ? [40, 30, 60] : 12);
-      await sleep(reduce ? 0 : legend ? 520 : 360);
+      await sleep(reduceNow() ? 0 : legend ? 520 : 360);
       locked = false;
     }
 
@@ -125,7 +144,7 @@
       const w = wrapEl();
       w.classList.remove('pop', 'slide'); w.classList.add('out');
       setDx(-Math.round(innerWidth * 1.2));
-      await sleep(reduce ? 0 : 260);
+      await sleep(reduceNow() ? 0 : 260);
       await show(i + 1);
     }
     async function prev() {
@@ -134,7 +153,7 @@
       const w = wrapEl();
       w.classList.remove('pop', 'slide'); w.classList.add('out');
       setDx(Math.round(innerWidth * 1.2));
-      await sleep(reduce ? 0 : 260);
+      await sleep(reduceNow() ? 0 : 260);
       await show(i - 1);
     }
     function onKey(e) {

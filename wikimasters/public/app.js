@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '4.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -379,7 +379,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', settings: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -520,9 +520,9 @@ const views = {
         <span class="mut" style="font-size:11.5px">vente moy. ${rarityAvg[r] ? fmt(rarityAvg[r].avg) : '—'}</span></div>`).join('')}</div></details>
       <div class="toolbar">
         <div class="search">${ico('search')}<input id="flt" placeholder="Rechercher une carte" autocomplete="off"></div>
-        <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="new">Tri : plus récentes</option><option value="old">Tri : plus anciennes</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option></select>
+        <select id="srt"><option value="fav">Tri : favoris d'abord</option><option value="new">Tri : plus récentes</option><option value="old">Tri : plus anciennes</option><option value="rar" selected>Tri : rareté</option><option value="name">Tri : nom</option><option value="qty">Tri : quantité</option><option value="lvl">Tri : niveau de fusion</option></select>
         <label class="row" style="gap:8px;color:var(--mut);font-size:13px"><input type="checkbox" id="dup"> doublons</label>
-        <div class="chips" id="chips"><button class="${rar === '' ? 'on' : ''}" data-r="">Toutes</button><button class="${rar === 'fav' ? 'on' : ''}" data-r="fav" style="--cc:var(--gold-fav)">★ Favoris</button>${cfg.rarities.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+        <div class="chips" id="chips"><button class="${rar === '' ? 'on' : ''}" data-r="">Toutes</button><button class="${rar === 'fav' ? 'on' : ''}" data-r="fav" style="--cc:var(--gold-fav)">★ Favoris</button><button class="${rar === 'fused' ? 'on' : ''}" data-r="fused" style="--cc:#ffd45e">✦ Fusionnées</button>${cfg.rarities.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
       <div class="bulk">
         <select id="bulk-r" aria-label="Rareté maximale">${tiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>${RAR[t.r]} et moins · ${t.n} carte${t.n > 1 ? 's' : ''} · +${fmt(t.price)}</option>`).join('')}</select>
@@ -576,7 +576,7 @@ const views = {
         }).catch(() => {});
       },
     });
-    const load = () => P.reset({ sort, ...(rar === 'fav' ? { fav: 1 } : rar ? { rar } : {}), q, dup: dup ? 1 : '' });
+    const load = () => P.reset({ sort, ...(rar === 'fav' ? { fav: 1 } : rar === 'fused' ? { fused: 1 } : rar ? { rar } : {}), q, dup: dup ? 1 : '' });
     // un seul gestionnaire pour tous les boutons (les cartes arrivent par pages)
     $('#g').onclick = safe(async e => {
       const bd = e.target.closest('[data-d]'), ba = e.target.closest('[data-a]');
@@ -1652,23 +1652,57 @@ views.tournament = async v => {
   if ($('#t-join')) $('#t-join').onclick = safe(async () => { const r = await api(`/tournaments/${t.id}/join`, {}); toast(r.started ? 'Tournoi lancé ! Les demi-finales commencent.' : 'Inscrit, mise payée'); await refreshMe(); render(); });
   if ($('#t-leave')) $('#t-leave').onclick = safe(async () => { if (!(await ask(t.creator === me.id ? 'Annuler le tournoi ?' : 'Te retirer ?', [], { text: 'Les mises sont remboursées.', ok: 'Confirmer' }))) return; await api(`/tournaments/${t.id}/leave`, {}); await refreshMe(); tab = 'tournaments'; render(); });
 };
+
+// ---------- réglages : thèmes, texte, animations, vibrations, notifications ----------
+const THEME_LIST = [['dark', 'Sombre', '#07070b', '#ecebe6', 'Le thème d\'origine'], ['midnight', 'Minuit', '#000', '#ecebe6', 'Noir total, économise la batterie'], ['ocean', 'Océan', '#0d1726', '#8fd0ff', 'Bleu nuit'], ['forest', 'Forêt', '#0d1a13', '#9be3b0', 'Vert profond'],
+  ['violet', 'Violet', '#171027', '#d2b4ff', 'Mauve nocturne'], ['light', 'Clair', '#f2f1ee', '#222', 'Fond blanc'], ['beige', 'Beige', '#efe6d3', '#6b5a3a', 'Papier chaleureux'], ['auto', 'Automatique', 'linear-gradient(135deg,#07070b 50%,#f2f1ee 50%)', '#888', 'Suit ton téléphone']];
+const pref = (k, d = '') => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } window.applyPrefs?.(); };
+views.settings = async v => {
+  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm');
+  const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
+  v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
+    <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
+    <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="setgrp"><h3>Jeu</h3><div class="panel">
+      ${sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
+      ${sw('st-vib', 'Vibrations', 'Combats, ouvertures, récompenses', pref('wm_vibe', '1') !== '0')}
+      ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
+      ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
+    <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
+    <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
+      <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
+  v.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
+  $('#tx-seg').onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); $('#tx-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+  $('#st-snd').onchange = e => setPref('wm_sound', e.target.checked ? '1' : '0');
+  $('#st-vib').onchange = e => { setPref('wm_vibe', e.target.checked ? '1' : '0'); if (e.target.checked) { toast('Vibrations activées (rechargement conseillé)'); try { navigator.vibrate?.(40); } catch { /* non supporté */ } } };
+  $('#st-mot').onchange = e => setPref('wm_motion', e.target.checked ? '1' : '0');
+  $('#st-fast').onchange = e => setPref('wm_fast', e.target.checked ? '1' : '0');
+  $('#st-god').onclick = () => window.previewGod?.();
+  $('#st-me').onclick = () => playerSheet(me.id); $('#st-out').onclick = logout;
+  pushState().then(st => {
+    const t = $('#st-pushtxt'), c = $('#st-push'); if (!t) return;
+    t.textContent = { ok: 'Activées sur cet appareil', off: 'Enchères, défis, amis… même écran verrouillé', denied: 'Bloquées : autorise-les dans les réglages du téléphone', install: 'Ajoute d\'abord l\'appli à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil)', none: 'Non disponibles sur ce navigateur' }[st] || '';
+    c.checked = st === 'ok'; c.disabled = !(st === 'ok' || st === 'off');
+    c.onchange = async () => { c.disabled = true; try { if (c.checked) { await enablePush(); toast('Notifications activées'); api('/push/test', {}).catch(() => {}); } else { await disablePush(); toast('Notifications désactivées'); } } catch (e) { c.checked = !c.checked; toast(e.message); } c.disabled = false; };
+  });
+};
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
   const g = GROUP[tab];
-  const T = (key, icon, label, sub, badge = 0) => `<button class="mtile ${g === GROUP[key] && !['profile', 'settings'].includes(key) ? 'on' : ''}" data-go="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small>${badge ? `<i class="mb">${badge > 9 ? '9+' : badge}</i>` : ''}</button>`;
+  const T = (key, icon, label, sub, badge = 0) => `<button class="mtile ${tab === key ? 'on' : ''}" data-go="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small>${badge ? `<i class="mb">${badge > 9 ? '9+' : badge}</i>` : ''}</button>`;
   m.hidden = false;
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
     <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
-    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('settings', 'gear', 'Réglages', 'Sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
+    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const k = b.dataset.go; close();
     if (k === 'profile') return playerSheet(me.id);
-    if (k === 'settings') return profileSheet();
     if (k === 'daily') return me.daily ? dailyModal() : toast('Tu as déjà récupéré ta récompense du jour, reviens demain !');
     lastPack = null; tab = k; if (game?.view === 'end') game = null; render();
   });

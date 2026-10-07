@@ -12,6 +12,19 @@
 <link rel="icon" href="favicon-48.png" type="image/png" sizes="48x48">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#07070b">
+<script>
+/* préférences d'affichage appliquées avant le premier affichage (pas de flash) : thème, taille du texte, animations, vibrations */
+window.THEME_BG = { dark: '#07070b', midnight: '#000000', ocean: '#050b14', forest: '#050d09', violet: '#0b0714', light: '#f2f1ee', beige: '#efe6d3' };
+window.applyPrefs = function () {
+  var g = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, r = document.documentElement;
+  var th = g('wm_theme') || 'dark'; if (th === 'auto') th = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  if (!window.THEME_BG[th]) th = 'dark';
+  r.dataset.theme = th; r.dataset.text = g('wm_text') || 'm'; r.dataset.motion = g('wm_motion') === '0' ? 'off' : 'on';
+  var m = document.querySelector('meta[name=theme-color]'); if (m) m.content = window.THEME_BG[th];
+  if (g('wm_vibe') === '0') navigator.vibrate = function () { return false; };
+};
+window.applyPrefs();
+</script>
 <title>Clodo Wiki</title>
 <link rel="preload" href="fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/sora-latin.woff2" as="font" type="font/woff2" crossorigin>
