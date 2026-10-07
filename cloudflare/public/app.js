@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '4.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '4.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -154,7 +154,7 @@ function onWs(m) {
   else if (m.t === 'refresh') { gcache.clear(); if ((tab === (m.what === 'auctions' ? 'market' : m.what) || (m.what === 'tournaments' && tab === 'tournament')) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
-    $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : 'duel de quiz'}.</p>
+    $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : m.mode === 'stake' ? 'duel à la mise : vous misez chacun une carte et le gagnant garde les deux' : 'duel de quiz'}.</p>
       <div class="row"><button id="ok">Accepter</button><button id="no" class="plain">Refuser</button></div></div>`;
     $('#ok').onclick = () => { send({ t: 'accept', from: m.from, mode: m.mode }); $('#modal').hidden = true; };
     $('#no').onclick = () => { send({ t: 'decline', from: m.from }); $('#modal').hidden = true; };
@@ -631,15 +631,24 @@ const views = {
 
   async duel(v) {
     const { users } = await api('/users');
+    const MODES = [['quiz', 'Quiz'], ['battle', 'Combat'], ['stake', 'Duel à la mise']];
+    const INFO = {
+      quiz: '<b>Duel de quiz</b> : 5 questions identiques pour les deux joueurs, les réponses rapides rapportent plus. Le gagnant empoche des pièces.',
+      battle: '<b>Combat de cartes</b> : chacun choisit 3 cartes (PV de départ = somme de leurs DEF). À tour de rôle, un joueur attaque avec une carte et l\'autre répond à 3 questions sur son article : chaque mauvaise réponse coûte le tiers de l\'ATK. Le plus de PV à la fin gagne : +50 pièces (moitié moins contre un joueur simulé).',
+      stake: '<b>Duel à la mise</b> : chacun mise <b>une carte</b>. Chaque carte attaque une fois, avec <b>6 questions</b> sur son article (chaque erreur coûte 1/6 de l\'ATK). Celui qui garde le plus de PV <b>remporte les deux cartes</b>, le perdant perd la sienne. Égalité : chacun reprend la sienne. Les cartes misées sont mises de côté pendant le duel.',
+    };
+    const label = { quiz: 'Défier', battle: 'Défier', stake: 'Miser une carte' };
     v.innerHTML = `${pageHead('Combats', 'Défie un joueur connecté')}
-      <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Combat</b> : chacun choisit 3 cartes (PV de départ = somme de leurs DEF). À tour de rôle, un joueur attaque avec une carte et l'autre répond à 3 questions sur son article : chaque mauvaise réponse coûte le tiers de l'ATK de la carte. Le plus de PV à la fin gagne : +50 pièces (moitié moins contre un joueur simulé).</p></details></div>
-      <button id="vs-bot" class="botbtn">${ico('sword')} Combat contre un joueur simulé</button>
+      <div class="seg" id="dm-seg">${MODES.map(([k, l]) => `<button data-dm="${k}" class="${k === duelMode ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="panel rulesd" style="margin-bottom:12px"><p class="mut" style="margin:0">${INFO[duelMode]}</p></div>
+      ${duelMode === 'battle' ? `<button id="vs-bot" class="botbtn">${ico('sword')} Combat contre un joueur simulé</button>` : ''}
       <div class="list">${users.map(u => `<div class="item row1 tap ${u.me ? 'me' : ''}" data-pl="${u.id}">${avatar(u.name, online.has(u.id))}
         <div class="grow"><div class="nm">${esc(u.name)}${u.me ? ' (toi)' : ''}</div><div class="sub">${online.has(u.id) ? 'En ligne' : 'Hors ligne'}</div></div>
-        ${u.me ? '' : `<div class="acts">${['quiz', 'battle'].map(m => `<button data-id="${u.id}" data-mode="${m}" ${online.has(u.id) ? '' : 'disabled'} class="${m === 'quiz' ? 'plain' : ''}">${m === 'quiz' ? 'Quiz' : 'Combat'}</button>`).join('')}</div>`}</div>`).join('')}</div>`;
-    bindSeg(v); bindPlayers(v);
+        ${u.me ? '' : `<div class="acts"><button data-id="${u.id}" data-mode="${duelMode}" ${online.has(u.id) ? '' : 'disabled'}>${label[duelMode]}</button></div>`}</div>`).join('')}</div>`;
+    bindPlayers(v);
+    $('#dm-seg').onclick = e => { const b = e.target.closest('[data-dm]'); if (!b) return; duelMode = b.dataset.dm; render(); };
     v.querySelectorAll('[data-id]').forEach(b => b.onclick = () => send({ t: 'challenge', to: +b.dataset.id, mode: b.dataset.mode }));
-    $('#vs-bot').onclick = () => send({ t: 'challenge_bot' });
+    $('#vs-bot')?.addEventListener('click', () => send({ t: 'challenge_bot' }));
   },
 
   async market(v) {
@@ -783,7 +792,7 @@ function gameEvent(m) {
   else if (m.t === 'question') game = { ...game, view: 'q', q: { ...m, time: m.full ?? t }, picked: m.picked ?? null, reveal: null, end: Date.now() + t };
   else if (m.t === 'reveal') { game.reveal = m; game.score = m.score; }
   else if (m.t === 'duel_end') { game = { ...game, view: 'end', result: m }; refreshMe(); }
-  else if (m.t === 'battle_start') { if (!(game && game.id === m.id && game.view === 'pick')) game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [], tour: m.tour }; }
+  else if (m.t === 'battle_start') { if (!(game && game.id === m.id && game.view === 'pick')) game = { kind: 'battle', id: m.id, names: m.names, rounds: m.rounds, view: 'pick', sel: [], tour: m.tour, stake: m.stake }; }
   else if (m.t === 'battle_wait') game = { ...game, kind: 'battle', id: m.id, view: 'wait', waitMsg: m.msg };
   else if (m.t === 'battle_prep') game = { ...game, view: 'wait', waitMsg: 'Préparation des questions…' };
   else if (m.t === 'bf_start') {
@@ -930,7 +939,7 @@ async function renderGame() {
   } else if (game.kind === 'battle' && game.view === 'pick') {
     const known = new Map();                       // cartes vues (pour afficher le nom des cartes choisies même après un changement de filtre)
     let q = '', rf = '', t;
-    v.innerHTML = `${pageHead(`${game.tour || 'Combat'} — choisis ${game.rounds} cartes`)}
+    v.innerHTML = `${pageHead(game.stake ? 'Duel à la mise — choisis la carte que tu mises' : `${game.tour || 'Combat'} — choisis ${game.rounds} cartes`)}${game.stake ? '<p class="mut" style="margin:-10px 0 10px">Si tu perds, tu perds cette carte. Si tu gagnes, tu gardes la tienne et prends celle de ton adversaire.</p>' : ''}
       <p class="mut" id="selinfo" style="margin:0 0 8px"></p>
       <div class="sticky-bar"><button id="go" disabled>Valider le deck</button></div>
       <div class="search wide">${ico('search')}<input id="pq" placeholder="Chercher parmi tes cartes" autocomplete="off"></div>
@@ -965,7 +974,8 @@ async function renderGame() {
     } else {
       if (!r.fxDone) { r.fxDone = true; endFx(r); }
       const bar = id => `<div class="hpb ${id === me.id ? 'me' : ''}"><div class="hpt"><span>${esc(r.names[id])}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(r.hp[id])} / ${fmt(r.max[id])} PV</b></div><div class="hpbar"><i style="width:${Math.round(r.hp[id] / (r.max[id] || 1) * 100)}%"></i></div></div>`;
-      v.innerHTML = `<div class="endwrap ${r.winner === null ? '' : r.winner === me.id ? 'won' : 'lost'}">${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire 👑' : 'Défaite 🤡')}</div><div class="hpwrap">${bar(r.a)}${bar(r.b)}</div>
+      const sk = r.stake?.cards ? `<div class="panel stakeres"><h3>${r.winner === null ? 'Chacun reprend sa carte' : r.winner === me.id ? 'Tu remportes la carte de ' + esc(r.names[r.winner === r.a ? r.b : r.a]) : 'Tu perds ta carte'}</h3><p class="mut" style="margin:0">${[r.a, r.b].map(u => `${esc(r.names[u])} : <b>${esc(r.stake.cards[u].title)}</b>`).join(' · ')}</p></div>` : '';
+      v.innerHTML = `<div class="endwrap ${r.winner === null ? '' : r.winner === me.id ? 'won' : 'lost'}">${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire 👑' : 'Défaite 🤡')}</div><div class="hpwrap">${bar(r.a)}${bar(r.b)}</div>${sk}
         <p class="mut" style="text-align:center">${r.winner === null ? 'Autant de PV de chaque côté.' : (r.forfeit ? `${esc(r.names[r.forfeit])} a quitté la partie : ${esc(r.names[r.winner])} gagne par forfait.` : `${esc(r.names[r.winner])} termine avec le plus de PV.`)}</p><p><button id="back" style="margin-top:12px">Retour</button></p>`;
     }
     $('#back').onclick = () => { const tr = game.result?.tour; game = null; if (tr) tab = 'tournaments'; render(); };
@@ -1611,6 +1621,7 @@ views.dquiz = async v => {
 
 // ---------- tournois : 4 joueurs, mise en pièces, demi-finales puis finale et match pour la 3ᵉ place ----------
 let tourId = null;
+let duelMode = 'quiz';
 const TLAB = { r1: 'Demi-finale', final: 'Finale', cons: 'Match pour la 3ᵉ place' }, ordn = i => i === 0 ? '1er' : `${i + 1}ᵉ`;
 views.tournaments = async v => {
   const d = await api('/tournaments');

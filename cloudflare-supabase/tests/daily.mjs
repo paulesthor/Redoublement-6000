@@ -60,6 +60,12 @@ await p.evaluate(() => { tab = 'album'; render(); }); await p.waitForSelector('.
 await p.click('.card[data-id="' + own + '"] .body'); await p.waitForSelector('#fuse-go'); await p.waitForTimeout(300); await shot(p, 'fuse-1');
 await p.click('#fuse-go'); await p.waitForSelector('.detail.fused'); await p.waitForTimeout(900); await shot(p, 'fuse-2');
 ok('fusion depuis la fiche : niveau 1 affiché', (await p.textContent('.fusebox')).includes('Bonus actuel'));
+console.log('— onglets de combat');
+await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
+ok('3 types de combat en onglets', (await p.$$('#dm-seg button')).length === 3);
+await p.click('[data-dm=stake]'); await p.waitForTimeout(500); await shot(p, 'duel-stake');
+ok('onglet « Duel à la mise » : règles et bouton Miser', (await p.textContent('.rulesd')).includes('6 questions') && !(await p.$('#vs-bot')));
+await p.click('[data-dm=battle]'); await p.waitForTimeout(400); ok('onglet Combat : joueur simulé', !!(await p.$('#vs-bot')));
 console.log('— tournois (interface)');
 await DB.prepare('UPDATE users SET coins = 1000').run();
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'tournaments'; render(); }); await p.waitForSelector('#t-new'); await p.waitForTimeout(400); await shot(p, 'tour-list');

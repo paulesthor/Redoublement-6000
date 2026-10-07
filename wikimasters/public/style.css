@@ -881,3 +881,5 @@ nav button.more{display:none}
 .tmatch .tvs{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}.tmatch .tvs span{color:var(--mut);font-size:12px}.tmatch .tvs b{flex:1;font-size:15px}.tmatch .tvs b:last-child{text-align:right}.tmatch .tvs b.w{color:#7be0a0}.tmatch .tvs b.l{color:var(--mut);text-decoration:line-through}
 .tmatch em{font-style:normal;font-size:12.5px;color:var(--mut)}.tmatch.live{border-color:#f5c542;box-shadow:0 0 16px #f5c54233}.tmatch.live em{color:#f5c542}
 .trank{display:flex;gap:12px;padding:8px 4px;border-bottom:1px solid var(--line)}.trank span{width:34px;color:var(--mut);font-weight:700}.trank.win b{color:#7be0a0}
+.stakeres{text-align:center;margin:12px 0;border-color:#f5c54255}.stakeres h3{margin:0 0 6px}
+#dm-seg{margin-bottom:12px}

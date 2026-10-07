@@ -114,14 +114,14 @@ async function modelOrder(env) {
   }
   return mistralCount.n < MISTRAL_PER_DAY ? MODELS : [...MODELS].reverse();
 }
-async function generate(env, card, text) {
+async function generate(env, card, text, want = 3) {
   if (!env.AI || Date.now() < backoffUntil || env.AI_QUIZ === '0') return null;
   for (const model of await modelOrder(env)) {
     try {
-      const out = await env.AI.run(model, { messages: buildMessages(card.title, text), max_tokens: 1200, temperature: .5 });
+      const out = await env.AI.run(model, { messages: buildMessages(card.title, text, want > 3 ? want + 3 : 4, want), max_tokens: want > 3 ? 2800 : 1200, temperature: .5 });
       const raw = typeof out === 'string' ? out : (out?.response ?? out?.result?.response ?? out?.choices?.[0]?.message?.content ?? out);
       const qs = parseQuestions(raw, card.title, text);
-      if (qs.length >= 3) return { qs: pickThree(qs), model: model + '|' + QUIZ_VERSION };
+      if (qs.length >= want) return { qs: pickThree(qs, want), model: model + '|' + QUIZ_VERSION };
       lastError.msg = `${model}: ${qs.length} question(s) valide(s)`;
     } catch (e) {
       lastError.msg = `${model}: ${e.message}`;
@@ -132,13 +132,14 @@ async function generate(env, card, text) {
 }
 
 /** Questions IA d'un article : lues en base, sinon générées puis gardées. Renvoie [] si l'IA n'est pas disponible. */
-export async function aiQuestions(env, card, text) {
+export async function aiQuestions(env, card, text, want = 3) {
+  let cached = null;
   try {
     const row = await env.DB.prepare('SELECT questions, model FROM quizzes WHERE card_id = ?').bind(card.id).first();
-    if (row && String(row.model).endsWith('|' + QUIZ_VERSION)) return JSON.parse(row.questions);      // questions d'une ancienne version : on les régénère
+    if (row && String(row.model).endsWith('|' + QUIZ_VERSION)) { cached = JSON.parse(row.questions); if (cached.length >= want) return cached; }      // questions d'une ancienne version (ou trop peu pour ce mode) : on les régénère
   } catch { /* table absente : on génère quand même */ }
-  const g = await generate(env, card, text);
-  if (!g) return [];
+  const g = await generate(env, card, text, want);
+  if (!g) return cached ?? [];
   try { await env.DB.prepare('INSERT INTO quizzes (card_id, questions, model, ts) VALUES (?,?,?,?) ON CONFLICT (card_id) DO UPDATE SET questions = excluded.questions, model = excluded.model, ts = excluded.ts').bind(card.id, JSON.stringify(g.qs), g.model, Date.now()).run(); if (/mistral/.test(g.model)) mistralCount.n++; } catch { /* pas grave */ }
   return g.qs;
 }
@@ -146,7 +147,7 @@ export const lastAiError = () => lastError.msg;
 
 /** n questions pour un article : celles du modèle (tirées au hasard à chaque partie, choix mélangés), complétées par les règles si besoin. */
 export async function battleQuestions(env, card, text, pool, n = 3) {
-  const ai = shuffle(await aiQuestions(env, card, text)).slice(0, n).map(q => { const o = shuffle(q.options.map((t, i) => ({ t, ok: i === q.answer }))); return { text: q.text, options: o.map(x => x.t), answer: o.findIndex(x => x.ok), ai: true }; });   // choix mélangés à chaque partie
+  const ai = shuffle(await aiQuestions(env, card, text, Math.max(3, n))).slice(0, n).map(q => { const o = shuffle(q.options.map((t, i) => ({ t, ok: i === q.answer }))); return { text: q.text, options: o.map(x => x.t), answer: o.findIndex(x => x.ok), ai: true }; });   // choix mélangés à chaque partie
   if (ai.length >= n) return ai;
   const rules = makeArticleQuestions(card, text, pool, n - ai.length);
   return shuffle([...ai, ...rules]);
