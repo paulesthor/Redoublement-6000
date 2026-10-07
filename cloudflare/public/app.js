@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '3.0';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '3.1';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -604,18 +604,18 @@ const views = {
             <div class="sub"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span><span>par ${esc(a.seller)}</span><span>prix moyen ${a.avg_price ?? '—'}</span><span>${a.bids || 0} offre${a.bids > 1 ? 's' : ''}</span></div>
             <div class="price">${ico('coin')}${cur(a)}<span class="mut" style="font-size:12px;font-weight:400;font-family:var(--f-body)">${a.bid ? `${esc(a.bidder)}${a.leading ? ' (toi)' : ''}` : 'mise de départ'}</span></div>
             <div class="time" data-end="${a.ends_at}">${ico('clock')}<span></span></div></div>
-          <div class="acts" style="align-self:center">${a.mine ? '<span class="mut">Ta vente</span>' : ''}<button class="${a.mine ? 'plain' : ''}" data-lot="${a.id}">${a.mine ? 'Voir' : 'Enchérir'}</button></div></div>`;
+          <div class="acts" style="align-self:center">${a.mine ? '<span class="mut">Ta vente</span>' : a.leading ? '<span class="mut" style="color:var(--ok,#4ade80)">En tête</span>' : a.bidded ? '<span class="mut" style="color:#f87171">Dépassé</span>' : ''}<button class="${a.mine ? 'plain' : ''}" data-lot="${a.id}">${a.mine ? 'Voir' : 'Enchérir'}</button></div></div>`;
     v.innerHTML = `${pageHead('Marché', `${auctions.length} enchère${auctions.length > 1 ? 's' : ''} entre joueurs`)}${seg(MARKET_SEG, 'market')}
       <div class="toolbar mk">
         <div class="search">${ico('search')}<input id="mk-q" placeholder="Chercher une carte ou un vendeur" autocomplete="off" value="${esc(mk.q)}"></div>
         <select id="mk-s" aria-label="Tri">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${k === mk.sort ? 'selected' : ''}>Tri : ${l}</option>`).join('')}</select>
-        <div class="chips" id="mk-c"><button data-f="" class="on">Toutes</button><button data-f="mine">Mes ventes</button><button data-f="lead">Je suis en tête</button>${cfg.rarities.map(r => `<button data-f="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+        <div class="chips" id="mk-c"><button data-f="" class="on">Toutes</button><button data-f="bid">Mes enchères (${auctions.filter(a => a.bidded || a.leading).length})</button><button data-f="lead">Je suis en tête</button><button data-f="mine">Mes ventes</button>${cfg.rarities.map(r => `<button data-f="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
       <div class="list" id="lots"></div>`;
     const draw = () => {
       const q = mk.q.trim().toLowerCase();
       const list = auctions.filter(a => (!q || a.title.toLowerCase().includes(q) || a.seller.toLowerCase().includes(q))
-        && (!mk.f || (mk.f === 'mine' ? a.mine : mk.f === 'lead' ? a.leading : a.rarity === mk.f))).sort(SORTS[mk.sort][1]);
+        && (!mk.f || (mk.f === 'mine' ? a.mine : mk.f === 'lead' ? a.leading : mk.f === 'bid' ? (a.bidded || a.leading) : a.rarity === mk.f))).sort(SORTS[mk.sort][1]);
       $('#lots').innerHTML = list.length ? list.map(row).join('') : `<div class="empty">${auctions.length ? 'Aucune enchère ne correspond.' : 'Aucune enchère en cours.<br>Mets une carte en vente depuis ta collection.'}</div>`;
       $('#mk-c').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.f === mk.f));
       $('#lots').querySelectorAll('[data-lot]').forEach(b => b.onclick = safe(() => lotSheet(b.dataset.lot)));

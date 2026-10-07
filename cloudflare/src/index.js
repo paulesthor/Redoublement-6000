@@ -794,7 +794,8 @@ route('GET', '/api/auctions', async ({ env, ctx, user }) => {
     (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) bids FROM auctions a JOIN cards c ON c.id = a.card_id
     JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id WHERE a.status = 'open' ORDER BY a.ends_at`) };
   }
-  return { auctions: auctionsCache.rows.map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id })) };
+  const mineBids = new Set((await all(env, 'SELECT DISTINCT auction_id id FROM bids WHERE user_id = ?', user.id)).map(r => r.id));   // enchères où j'ai déjà misé (index bids_user)
+  return { auctions: auctionsCache.rows.map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id, bidded: mineBids.has(a.id) })) };
 });
 route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
   const price = Math.floor(+body.price), minutes = Math.min(1440, Math.max(1, Math.floor(+body.minutes || 10)));

@@ -187,3 +187,5 @@ CREATE TABLE IF NOT EXISTS usage (            -- lignes lues par type de requêt
   rows INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, sig)
 );
+
+CREATE INDEX IF NOT EXISTS bids_user ON bids(user_id, auction_id);
