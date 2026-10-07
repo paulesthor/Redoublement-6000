@@ -524,7 +524,7 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   if (now() - (lastCheck.get(user.id) || 0) > 600000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
-  return { ...publicUser(u), badge: await friendBadge(env, user.id) };
+  return { ...publicUser(u), badge: await friendBadge(env, user.id), dm: (await one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null))?.n ?? 0 };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -732,6 +732,42 @@ route('GET', '/api/users', async ({ env, user }) => {
   ]);
   const online = new Set(onlineRes.ids);
   return { users: rows.map(u => ({ ...u, online: online.has(u.id), me: u.id === user.id })) };
+});
+// ---------- messagerie privée ----------
+const dmLast = new Map();                                          // anti-spam : un message toutes les 1,2 s au plus, 20 par minute
+async function dmPeer(env, id) {
+  const p = await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', +id);
+  if (!p) bad('Joueur introuvable', 404);
+  return p;
+}
+route('GET', '/api/dm', async ({ env, user }) => ({
+  convs: await all(env, `SELECT c.peer_id, u.name, c.last_ts, c.last_body, c.last_mine, c.unread FROM convs c JOIN users u ON u.id = c.peer_id WHERE c.user_id = ? ORDER BY c.last_ts DESC LIMIT 60`, user.id),
+}));
+route('GET', '/api/dm/:peer', async ({ env, user, params, query }) => {
+  const peer = await dmPeer(env, params.peer), a = Math.min(user.id, peer.id), b = Math.max(user.id, peer.id), before = +query.get('before') || 0;
+  const rows = await all(env, `SELECT id, from_id, body, ts FROM dms WHERE a = ? AND b = ? ${before ? 'AND id < ?' : ''} ORDER BY id DESC LIMIT 60`, ...(before ? [a, b, before] : [a, b]));
+  await run(env, 'UPDATE convs SET unread = 0 WHERE user_id = ? AND peer_id = ? AND unread > 0', user.id, peer.id);   // ne coûte une écriture que s'il y avait des messages non lus
+  return { peer, messages: rows.reverse().map(m => ({ id: m.id, mine: m.from_id === user.id, body: m.body, ts: m.ts })), more: rows.length === 60 };
+});
+route('POST', '/api/dm/:peer', async ({ env, ctx, user, params, body }) => {
+  const peer = await dmPeer(env, params.peer);
+  if (peer.id === user.id) bad('Tu ne peux pas t’écrire à toi-même');
+  const text = String(body.body ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim().slice(0, 500);
+  if (!text) bad('Message vide');
+  const h = (dmLast.get(user.id) ?? []).filter(t => now() - t < 60000);
+  if (h.length && now() - h.at(-1) < 1200) bad('Doucement : un message à la fois');
+  if (h.length >= 20) bad('Trop de messages : attends une minute');
+  dmLast.set(user.id, [...h, now()]);
+  const a = Math.min(user.id, peer.id), b = Math.max(user.id, peer.id), ts = now(), preview = text.slice(0, 120);
+  const res = await env.DB.batch([
+    st(env, 'INSERT INTO dms (a, b, from_id, body, ts) VALUES (?,?,?,?,?)', a, b, user.id, text, ts),
+    st(env, `INSERT INTO convs (user_id, peer_id, last_ts, last_body, last_mine, unread) VALUES (?,?,?,?,1,0)
+      ON CONFLICT(user_id, peer_id) DO UPDATE SET last_ts = excluded.last_ts, last_body = excluded.last_body, last_mine = 1, unread = 0`, user.id, peer.id, ts, preview),
+    st(env, `INSERT INTO convs (user_id, peer_id, last_ts, last_body, last_mine, unread) VALUES (?,?,?,?,0,1)
+      ON CONFLICT(user_id, peer_id) DO UPDATE SET last_ts = excluded.last_ts, last_body = excluded.last_body, last_mine = 0, unread = unread + 1`, peer.id, user.id, ts, preview),
+  ]);
+  notify(env, ctx, { t: 'dm', from: user.id, name: user.name, body: preview, ts }, peer.id);
+  return { ok: true, message: { id: res[0].meta.last_row_id, mine: true, body: text, ts } };
 });
 route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) => {
   const q = (query.get('q') || '').trim().slice(0, 80);

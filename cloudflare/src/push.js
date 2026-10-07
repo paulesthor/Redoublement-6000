@@ -57,6 +57,7 @@ export function textOf(msg) {
     const n = msg.name;
     return { title: 'Clodo Wiki', tag: 'friend', body: msg.kind === 'request' ? `${n} t'a envoyé une demande d'ami` : msg.kind === 'accepted' ? `${n} a accepté ta demande d'ami` : `${n} t'a ajouté en ami` };
   }
+  if (msg.t === 'dm') return { title: msg.name, body: msg.body, tag: 'dm-' + msg.from };
   if (msg.t === 'challenge') return { title: 'Défi !', body: `${msg.name} te défie`, tag: 'challenge' };
   return null;
 }

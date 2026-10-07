@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '3.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '3.7';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -149,6 +149,7 @@ function onWs(m) {
   else if (m.t === 'notify' || m.t === 'info') { toast(m.msg); refreshMe(); }
   else if (m.t === 'error') { if (m.quota) showQuota(m.until); toast(m.msg); }
   else if (m.t === 'friend') onFriend(m);
+  else if (m.t === 'dm') onDm(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
   else if (m.t === 'refresh') { gcache.clear(); if (tab === (m.what === 'auctions' ? 'market' : m.what) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
@@ -359,7 +360,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -1263,6 +1264,7 @@ const render = safe(async () => {
 async function refreshMe() {
   me = await api('/me');
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
+  document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar" id="profile" aria-label="Profil">${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
@@ -1270,6 +1272,54 @@ const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.
 /** Profil d'un joueur : stats, meilleures cartes, succès. */
 /** Ouvre la page d'un joueur (profil, vitrine, meilleures cartes, succès). */
 let playerId = null, playerFrom = 'packs';
+// ---------- messagerie privée ----------
+let chatPeer = null, chatName = '';
+const openChat = (id, name) => { chatPeer = +id; chatName = name || ''; game = null; tab = 'chat'; render(); };
+function onDm(m) {
+  try { navigator.vibrate?.(25); } catch { /* non supporté */ }
+  if (tab === 'chat' && chatPeer === m.from && !game) { render(); return; }               // la conversation est ouverte : le message s'affiche (et est lu)
+  banner(m.name, m.body, () => openChat(m.from, m.name));
+  refreshMe().catch(() => {});
+  if (tab === 'msg' && !game) render();
+}
+const msgTime = ts => { const d = new Date(ts), t = new Date(), hm = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); return d.toDateString() === t.toDateString() ? hm : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' ' + hm; };
+views.msg = async v => {
+  const { convs } = await api('/dm');
+  v.innerHTML = `${pageHead('Messages', 'Messages privés entre joueurs')}<button id="dm-new">${ico('chat')} Nouveau message</button>
+    <div class="list" style="margin-top:12px">${convs.length ? convs.map(c => `<div class="item tap ${c.unread ? 'unread' : ''}" data-peer="${c.peer_id}" data-name="${esc(c.name)}">${avatar(c.name, online.has(c.peer_id))}
+      <div class="grow"><div class="nm">${esc(c.name)}${c.unread ? `<span class="newtag">${c.unread}</span>` : ''}</div><div class="sub dmprev">${c.last_mine ? 'Toi : ' : ''}${esc(c.last_body)}</div></div><small class="mut">${msgTime(c.last_ts)}</small></div>`).join('') : '<div class="empty">Aucune conversation pour l\'instant.<br>Écris à un joueur avec « Nouveau message ».</div>'}</div>`;
+  v.querySelectorAll('[data-peer]').forEach(el => el.onclick = () => openChat(el.dataset.peer, el.dataset.name));
+  $('#dm-new').onclick = safe(async () => {
+    const { users } = await api('/users'), list = users.filter(u => !u.me);
+    $('#modal').hidden = false;
+    $('#modal').innerHTML = `<div><h2>Nouveau message</h2><div class="list" style="max-height:55vh;overflow:auto">${list.map(u => `<div class="item tap" data-u="${u.id}" data-name="${esc(u.name)}">${avatar(u.name, u.online)}<div class="grow"><div class="nm">${esc(u.name)}</div><div class="sub">${u.online ? 'En ligne' : 'Hors ligne'}</div></div></div>`).join('') || '<p class="mut">Aucun autre joueur.</p>'}</div><div class="row"><button class="plain" id="dm-x">Fermer</button></div></div>`;
+    $('#dm-x').onclick = () => { $('#modal').hidden = true; };
+    $('#modal').querySelectorAll('[data-u]').forEach(el => el.onclick = () => { $('#modal').hidden = true; openChat(el.dataset.u, el.dataset.name); });
+  });
+};
+views.chat = async v => {
+  if (!chatPeer) { tab = 'msg'; return render(); }
+  const r = await api('/dm/' + chatPeer).catch(e => { toast(e.message); return null; });
+  if (!r) { tab = 'msg'; return render(); }
+  chatName = r.peer.name; refreshMe().catch(() => {});
+  const bubble = m => `<div class="bub ${m.mine ? 'me' : ''}"><span>${esc(m.body)}</span><small>${msgTime(m.ts)}</small></div>`;
+  v.innerHTML = `<button class="plain backbtn" id="ch-back">← Messages</button>
+    <div class="chathead">${avatar(chatName, online.has(chatPeer))}<b>${esc(chatName)}</b></div>
+    <div class="chatlog" id="ch-log">${r.messages.length ? r.messages.map(bubble).join('') : '<p class="mut" style="text-align:center;margin:30px 0">Aucun message. Dis bonjour !</p>'}</div>
+    <form class="composer" id="ch-form"><input id="ch-in" maxlength="500" placeholder="Ton message…" autocomplete="off" enterkeyhint="send"><button type="submit">Envoyer</button></form>`;
+  $('#ch-back').onclick = () => { tab = 'msg'; render(); };
+  const log = $('#ch-log'); window.scrollTo(0, document.body.scrollHeight);
+  $('#ch-form').onsubmit = safe(async e => {
+    e.preventDefault();
+    const inp = $('#ch-in'), body = inp.value.trim(); if (!body) return;
+    inp.value = ''; inp.focus();
+    const tmp = { mine: true, body, ts: Date.now() };
+    log.querySelector('p.mut')?.remove(); log.insertAdjacentHTML('beforeend', bubble(tmp)); const el = log.lastElementChild; el.classList.add('sending');
+    window.scrollTo(0, document.body.scrollHeight);
+    try { await api('/dm/' + chatPeer, { body }); el.classList.remove('sending'); }
+    catch (err) { el.remove(); inp.value = body; toast(err.message); }
+  });
+};
 const mk = { q: '', sort: 'end', f: '' };                       // recherche, tri et filtre du marché (gardés quand la liste se rafraîchit)
 function openPlayer(id) {
   const m = $('#modal'); m.hidden = true; m.innerHTML = ''; lotOpen = null; clearInterval(lotTick);
