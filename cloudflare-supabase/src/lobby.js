@@ -5,7 +5,7 @@ import { withDb } from './pg.js';
 import { one, all, run, st, placeholders, cardRows, caseSql, RANK, userFromToken, randomPool, meter, takeMeter, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { pushFor } from './push.js';
-import { bumpQuests, ensureGameSchema, boosted, tPayouts } from './game.js';
+import { bumpQuests, ensureGameSchema, boosted, tPayouts, grantTitle, TITLE } from './game.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
 const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met le combat en pause et on l'attend jusqu'à 3 minutes, puis forfait
@@ -494,6 +494,8 @@ export class Lobby {
       await this.tourKick(t);
     });
   }
+  /** Accorde un titre et prévient le joueur s'il vient de le débloquer. */
+  titleNote(uid, id) { grantTitle(this.env, uid, id).then(n => n && this.tourNote(uid, `Nouveau titre débloqué : « ${TITLE[id].label} » !`)).catch(() => {}); }
   tourNote(uid, msg) { this.push(uid, { t: 'notify', msg }); if (!this.clients.has(uid) || this.hidden.get(uid)) pushFor(this.env, uid, { t: 'notify', msg }).catch(() => {}); }
   /** Lance les matchs de l'étape dont les deux joueurs sont connectés et libres ; prévient les absents. */
   async tourKick(t) {
@@ -559,6 +561,8 @@ export class Lobby {
           const pay = tPayouts(4, t.stake), claim = await run(this.env, "UPDATE tournaments SET status = 'done', ended = ?, stage = 'done', bracket = ? WHERE id = ? AND status = 'running'", now(), JSON.stringify(br), tid);
           if (claim.meta.changes) {
             await this.env.DB.batch(br.rank.flatMap((u, i) => [st(this.env, 'UPDATE tournament_players SET payout = ? WHERE tid = ? AND user_id = ?', pay[i], tid, u), ...(pay[i] ? [st(this.env, 'UPDATE users SET coins = coins + ? WHERE id = ?', pay[i], u)] : [])]));
+            for (const u of br.rank) this.titleNote(u, 'tour_play');
+            this.titleNote(br.rank[0], 'tour_champ');
             br.rank.forEach((u, i) => this.tourNote(u, pay[i] ? `Tournoi n°${tid} : tu finis ${i + 1}ᵉ et gagnes ${pay[i] - t.stake} pièces !` : `Tournoi n°${tid} : tu finis ${i + 1}ᵉ et perds ta mise de ${t.stake} pièces.`));
           }
           this.tours.delete(tid);
@@ -605,7 +609,7 @@ export class Lobby {
     e.done = true;
     const [a, b] = bt.players;
     if (win === null || win === undefined) { await this.giveCard(a, e.cid[a], e.lvl[a]); await this.giveCard(b, e.cid[b], e.lvl[b]); }
-    else { const lose = win === a ? b : a; await this.giveCard(win, e.cid[win], e.lvl[win]); await this.giveCard(win, e.cid[lose], 0); }
+    else { const lose = win === a ? b : a; await this.giveCard(win, e.cid[win], e.lvl[win]); await this.giveCard(win, e.cid[lose], 0); this.titleNote(win, 'stake_win'); }
   }
 
 }

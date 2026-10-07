@@ -1,5 +1,6 @@
 import './api.mjs';
-const { call, settle, ok, DB, pg, J, done, lobby, env } = globalThis.__T;
+const { call, settle, ok, DB, pg, J, done, lobby, env, worker, ctx } = globalThis.__T;
+let res3;
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 const NOT500 = (s, r) => s < 500;
 
@@ -351,6 +352,27 @@ console.log('— récompense quotidienne');
     [s, r] = await call(A, 'POST', '/api/fuse-all', {}); ok('fuse-all : tout fusionné d\'un coup', s === 200 && r.cards >= 2 && (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ? AND lvl = 3 AND card_id IN (' + two.map(() => '?').join(',') + ')', alice, ...two.map(x => x.card_id)))[0].n == 2, J([s, r]));
     ok('fuse-all : doublons consommés, un exemplaire conservé', (await q('SELECT SUM(qty) q FROM inventory WHERE user_id = ?', alice))[0].q == sumBefore - r.used && (await q('SELECT MIN(qty) m FROM inventory WHERE user_id = ?', alice))[0].m >= 1);
     [s, r] = await call(A, 'POST', '/api/fuse-all', {}); ok('fuse-all : rien à refaire ensuite', r.cards === 0 || r.cards >= 0 && s === 200);
+  }
+  console.log('— personnalisation du profil');
+  {
+    const tiny = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+    [s, r] = await call(A, 'POST', '/api/me/avatar', { data: 'data:text/html;base64,AAAA' }); ok('avatar : format refusé', s === 400, J([s, r]));
+    [s, r] = await call(A, 'POST', '/api/me/avatar', { data: tiny }); ok('avatar : envoi', s === 200 && r.v > 0, J([s, r]));
+    const res = await worker.fetch(new Request('http://x/api/avatar/' + alice), env, ctx); ok('avatar : servi en JPEG, public et mis en cache longtemps', res.status === 200 && res.headers.get('content-type') === 'image/jpeg' && /immutable/.test(res.headers.get('cache-control')) && (await res.arrayBuffer()).byteLength > 50);
+    const res2 = await worker.fetch(new Request('http://x/api/avatar/' + chloe), env, ctx); ok('avatar : 404 si aucune photo', res2.status === 404);
+    [s, r] = await call(A, 'GET', '/api/me'); ok('/me : version de la photo', r.av > 0, J(r.av));
+    [s, r] = await call(B, 'GET', '/api/cosmetics'); ok('cosmétiques : photo visible par les autres joueurs', r.players.some(p => p.name === 'Alice' && p.v > 0) && r.labels.duelist === 'Duelliste', J(r).slice(0, 200));
+    [s, r] = await call(A, 'GET', '/api/titles'); ok('titres : catalogue complet', s === 200 && r.titles.length >= 20 && r.titles.some(x => x.season && !x.unlocked) && r.titles.every(x => ['modes', 'exploits', 'saison'].includes(x.cat)), J(r).slice(0, 200));
+    ok('titres : progression affichée', r.titles.find(x => x.id === 'collector_100').prog?.[1] === 100);
+    [s, r] = await call(A, 'POST', '/api/me/title', { id: 'warlord' }); ok('titre non débloqué : refusé', s === 400, J([s, r]));
+    [s, r] = await call(A, 'POST', '/api/me/title', { id: 's1_champion' }); ok('titre de saison : pas encore disponible', s === 400, J([s, r]));
+    await q('UPDATE users SET duel_wins = 12 WHERE id = ?', alice); [s, r] = await call(A, 'GET', '/api/titles'); ok('titre débloqué par les statistiques', r.titles.find(x => x.id === 'duelist').unlocked && !r.titles.find(x => x.id === 'gladiator').unlocked);
+    const { grantTitle } = await import('../src/game.js'); ok('titre accordé par un événement (une seule fois)', (await grantTitle(env, alice, 'godpack')) === true && (await grantTitle(env, alice, 'godpack')) === false);
+    [s, r] = await call(A, 'POST', '/api/me/title', { id: 'godpack' }); ok('équiper un titre', s === 200 && r.title === 'godpack', J([s, r]));
+    [s, r] = await call(B, 'GET', '/api/cosmetics'); ok('titre visible par les autres', r.players.find(p => p.name === 'Alice').ti === 'godpack');
+    [s, r] = await call(A, 'GET', `/api/profile/${alice}`); ok('profil : titre et photo', r.profile.title === 'godpack' && r.profile.av > 0, J(r.profile).slice(0, 200));
+    [s, r] = await call(A, 'POST', '/api/me/title', { id: null }); ok('retirer le titre', s === 200 && r.title === null);
+    [s, r] = await call(A, 'POST', '/api/me/avatar', { data: null }); res3 = await worker.fetch(new Request('http://x/api/avatar/' + alice), env, ctx); ok('retirer la photo', s === 200 && res3.status === 404);
   }
   env.AI = aiOld; Date.now = realNow;
 }

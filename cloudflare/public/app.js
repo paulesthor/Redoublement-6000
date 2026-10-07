@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.0';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.1';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -379,14 +379,22 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', settings: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
 const seg = (items, current) => `<div class="seg">${items.map(([k, label]) => `<button class="${k === current ? 'on' : ''}" data-seg="${k}">${esc(label)}</button>`).join('')}</div>`;
 const bindSeg = v => v.querySelectorAll('[data-seg]').forEach(b => b.onclick = () => { tab = b.dataset.seg; render(); });
 const avColor = name => `hsl(${[...String(name)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)} 62% 68%)`;
-const avatar = (name, on = false) => `<span class="av ${on ? 'on' : ''}" style="--avc:${avColor(name)}">${esc(String(name)[0]?.toUpperCase() || '?')}</span>`;
+// photos et titres des joueurs : { nom -> { id, v: version de la photo, ti: titre équipé } }, rechargés régulièrement
+let COS = new Map(), TLABELS = {}, cosAt = 0;
+async function loadCosmetics(force = false) {
+  if (!force && Date.now() - cosAt < 60000) return;
+  cosAt = Date.now();
+  try { const d = await api('/cosmetics'); COS = new Map(d.players.map(p => [p.name, p])); TLABELS = d.labels; } catch { /* sans photos pour cette fois */ }
+}
+const avatar = (name, on = false) => { const c = COS.get(name); return `<span class="av ${on ? 'on' : ''} ${c?.v ? 'ph' : ''}" style="--avc:${avColor(name)}">${c?.v ? `<img src="/api/avatar/${c.id}?v=${c.v}" alt="" loading="lazy" onerror="this.remove()">` : ''}${esc(String(name)[0]?.toUpperCase() || '?')}</span>`; };
+const ttl = name => { const t = COS.get(name)?.ti; return t && TLABELS[t] ? `<span class="ttl">${esc(TLABELS[t])}</span>` : ''; };
 const timeLeft = ms => { const r = Math.max(0, Math.round(ms / 1000)); return r >= 3600 ? `${Math.floor(r / 3600)} h ${Math.floor(r % 3600 / 60)} min` : r >= 60 ? `${Math.floor(r / 60)} min ${r % 60} s` : `${r} s`; };
 const RANK_SEG = [['rank', 'Classement'], ['ach', 'Succès']];
 const MARKET_SEG = [['market', 'Enchères'], ['trades', 'Échanges']];
@@ -643,7 +651,7 @@ const views = {
       <div class="panel rulesd" style="margin-bottom:12px"><p class="mut" style="margin:0">${INFO[duelMode]}</p></div>
       ${duelMode === 'battle' ? `<button id="vs-bot" class="botbtn">${ico('sword')} Combat contre un joueur simulé</button>` : ''}
       <div class="list">${users.map(u => `<div class="item row1 tap ${u.me ? 'me' : ''}" data-pl="${u.id}">${avatar(u.name, online.has(u.id))}
-        <div class="grow"><div class="nm">${esc(u.name)}${u.me ? ' (toi)' : ''}</div><div class="sub">${online.has(u.id) ? 'En ligne' : 'Hors ligne'}</div></div>
+        <div class="grow"><div class="nm">${esc(u.name)}${u.me ? ' (toi)' : ''}${ttl(u.name)}</div><div class="sub">${online.has(u.id) ? 'En ligne' : 'Hors ligne'}</div></div>
         ${u.me ? '' : `<div class="acts"><button data-id="${u.id}" data-mode="${duelMode}" ${online.has(u.id) ? '' : 'disabled'}>${label[duelMode]}</button></div>`}</div>`).join('')}</div>`;
     bindPlayers(v);
     $('#dm-seg').onclick = e => { const b = e.target.closest('[data-dm]'); if (!b) return; duelMode = b.dataset.dm; render(); };
@@ -736,7 +744,7 @@ const views = {
           <div class="qrside"><p class="mut">Ton QR code : un ami qui le scanne devient ton ami tout de suite.</p>
             <button id="fr-scan">${ico('qr')} Scanner</button><button class="plain" id="fr-copy">Copier mon lien</button></div></div></div>
       <h3 class="sec">Mes amis</h3>
-      ${f.friends.length ? `<div class="list">${f.friends.map(a => `<div class="item tap" data-pl="${a.id}">${avatar(a.name, a.online)}<div class="grow"><div class="nm">${esc(a.name)}${a.isNew ? '<span class="newtag">Nouveau</span>' : ''}</div><div class="sub">${a.online ? 'En ligne' : 'Hors ligne'}</div></div>
+      ${f.friends.length ? `<div class="list">${f.friends.map(a => `<div class="item tap" data-pl="${a.id}">${avatar(a.name, a.online)}<div class="grow"><div class="nm">${esc(a.name)}${ttl(a.name)}${a.isNew ? '<span class="newtag">Nouveau</span>' : ''}</div><div class="sub">${a.online ? 'En ligne' : 'Hors ligne'}</div></div>
         <div class="acts"><button class="plain" data-rm="${a.id}">Retirer</button></div></div>`).join('')}</div>` : '<div class="empty">Aucun ami pour l\'instant.<br>Partage ton QR code ou envoie une demande par pseudo.</div>'}`;
     try { const qr = qrcode(0, 'M'); qr.addData(link); qr.make(); $('#qr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); } catch { $('#qr').textContent = link; }
     $('#fr-send').onclick = safe(async () => {
@@ -771,7 +779,7 @@ const views = {
     const { players } = await api('/leaderboard');
     v.innerHTML = `${pageHead('Classement', 'Score = valeur des cartes uniques (selon la rareté) + 10 par victoire')}${seg(RANK_SEG, 'rank')}
       <div class="list">${players.map((p, i) => `<div class="item tap r${i + 1} ${p.id === me.id ? 'me' : ''}" data-pl="${p.id}"><span class="rank-n">${i + 1}</span>${avatar(p.name, online.has(p.id))}
-        <div class="grow"><div class="nm">${esc(p.name)}</div><div class="sub"><span>${p.uniques} cartes</span><span>${p.wins} V / ${p.losses} D</span><span>${fmt(p.coins)} pièces</span></div></div>
+        <div class="grow"><div class="nm">${esc(p.name)}${ttl(p.name)}</div><div class="sub"><span>${p.uniques} cartes</span><span>${p.wins} V / ${p.losses} D</span><span>${fmt(p.coins)} pièces</span></div></div>
         <div class="score">${fmt(p.score)}<small>points</small></div></div>`).join('')}</div>`;
     bindSeg(v); bindPlayers(v);
   },
@@ -1320,7 +1328,7 @@ views.player = async v => {
   const names = Object.fromEntries(ACH_NAMES.map(x => [x.k, x.t]));
   const vcard = (c, i) => { cardIndex.set(c.id, { ...c, qty: 1 }); return `<button class="vcard ${c.rarity} ${c.shiny ? 'shiny' : ''}" data-c="${c.id}" data-slot="${i}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="vimg ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div><b>${esc(c.title)}</b><small>ATK ${fmt(c.atk)} · DEF ${fmt(c.def)}</small></button>`; };
   v.innerHTML = `<button class="plain backbtn" id="pp-back">← Retour</button>
-    <div class="profile big">${avatar(p.name, online.has(p.id))}<div><h1 class="pname">${esc(p.name)}</h1>${p.isMe ? '<span class="mut">C\'est toi</span>' : p.isFriend ? '<span class="newtag">Ami</span>' : ''}
+    <div class="profile big">${avatar(p.name, online.has(p.id))}<div><h1 class="pname">${esc(p.name)}</h1>${ttl(p.name) ? `<div>${ttl(p.name)}</div>` : ''}${p.isMe ? '<span class="mut">C\'est toi</span>' : p.isFriend ? '<span class="newtag">Ami</span>' : ''}
       <div class="mut">${p.wins} victoire${p.wins > 1 ? 's' : ''} · ${p.losses} défaite${p.losses > 1 ? 's' : ''}</div></div></div>
     <div class="tiles"><div class="tile"><b>${fmt(p.score)}</b><span>points</span></div><div class="tile"><b>${fmt(p.uniques)}</b><span>cartes uniques</span></div><div class="tile"><b>${fmt(p.packs)}</b><span>paquets ouverts</span></div></div>
     <h3 class="hist-h">Vitrine</h3>
@@ -1331,10 +1339,11 @@ views.player = async v => {
       <div class="mi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div><span>${esc(c.title)}</span></div>`).join('')}</div>` : ''}
     <h3 class="hist-h">Succès · ${p.achievements.length} / ${p.total}</h3>
     ${p.achievements.length ? `<div class="chips wrap">${p.achievements.slice(0, 12).map(x => `<button class="plain" style="pointer-events:none">${esc(names[x.key] || x.key)}</button>`).join('')}</div>` : '<p class="mut">Aucun succès pour l\'instant.</p>'}
-    <div class="row" style="margin-top:16px">${!p.isMe && !p.isFriend ? '<button id="pl-add">Ajouter en ami</button>' : p.isMe ? '<button id="pl-ach">Mes succès</button>' : ''}</div>`;
+    <div class="row" style="margin-top:16px">${!p.isMe && !p.isFriend ? '<button id="pl-add">Ajouter en ami</button>' : p.isMe ? '<button id="pl-ach">Mes succès</button><button class="plain" id="pl-cus">Personnaliser</button>' : ''}</div>`;
   $('#pp-back').onclick = () => { tab = playerFrom; render(); };
   $('#pl-add')?.addEventListener('click', safe(async () => { await api('/friends/request', { name: p.name }); toast('Demande envoyée'); }));
   $('#pl-ach')?.addEventListener('click', () => { tab = 'ach'; render(); });
+  $('#pl-cus')?.addEventListener('click', () => { tab = 'customize'; render(); });
   const ids = () => p.showcase.map(c => c.id);
   const save = safe(async list => { await api('/me/showcase', { cards: list }); toast('Vitrine mise à jour'); render(); });
   const choose = async (slot) => {
@@ -1371,10 +1380,12 @@ const render = safe(async () => {
 });
 async function refreshMe() {
   me = await api('/me');
+  { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }
+  loadCosmetics();
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
   document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily);
-  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar" id="profile" aria-label="Profil">${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
+  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'ph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
 const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.onclick = e => { if (e.target.closest('button')) return; playerSheet(el.dataset.pl); });
@@ -1396,7 +1407,7 @@ views.msg = async v => {
   const { convs } = await api('/dm');
   v.innerHTML = `${pageHead('Messages', 'Messages privés entre joueurs')}<button id="dm-new">${ico('chat')} Nouveau message</button>
     <div class="list" style="margin-top:12px">${convs.length ? convs.map(c => `<div class="item tap ${c.unread ? 'unread' : ''}" data-peer="${c.peer_id}" data-name="${esc(c.name)}">${avatar(c.name, online.has(c.peer_id))}
-      <div class="grow"><div class="nm">${esc(c.name)}${c.unread ? `<span class="newtag">${c.unread}</span>` : ''}</div><div class="sub dmprev">${c.last_mine ? 'Toi : ' : ''}${esc(c.last_body)}</div></div><small class="mut">${msgTime(c.last_ts)}</small></div>`).join('') : '<div class="empty">Aucune conversation pour l\'instant.<br>Écris à un joueur avec « Nouveau message ».</div>'}</div>`;
+      <div class="grow"><div class="nm">${esc(c.name)}${ttl(c.name)}${c.unread ? `<span class="newtag">${c.unread}</span>` : ''}</div><div class="sub dmprev">${c.last_mine ? 'Toi : ' : ''}${esc(c.last_body)}</div></div><small class="mut">${msgTime(c.last_ts)}</small></div>`).join('') : '<div class="empty">Aucune conversation pour l\'instant.<br>Écris à un joueur avec « Nouveau message ».</div>'}</div>`;
   v.querySelectorAll('[data-peer]').forEach(el => el.onclick = () => openChat(el.dataset.peer, el.dataset.name));
   $('#dm-new').onclick = safe(async () => {
     const { users } = await api('/users'), list = users.filter(u => !u.me);
@@ -1413,7 +1424,7 @@ views.chat = async v => {
   chatName = r.peer.name; refreshMe().catch(() => {});
   const bubble = m => `<div class="bub ${m.mine ? 'me' : ''}"><span>${esc(m.body)}</span><small>${msgTime(m.ts)}</small></div>`;
   v.innerHTML = `<button class="plain backbtn" id="ch-back">← Messages</button>
-    <div class="chathead">${avatar(chatName, online.has(chatPeer))}<b>${esc(chatName)}</b></div>
+    <div class="chathead">${avatar(chatName, online.has(chatPeer))}<b>${esc(chatName)}</b>${ttl(chatName)}</div>
     <div class="chatlog" id="ch-log">${r.messages.length ? r.messages.map(bubble).join('') : '<p class="mut" style="text-align:center;margin:30px 0">Aucun message. Dis bonjour !</p>'}</div>
     <form class="composer" id="ch-form"><input id="ch-in" maxlength="500" placeholder="Ton message…" autocomplete="off" enterkeyhint="send"><button type="submit">Envoyer</button></form>`;
   $('#ch-back').onclick = () => { tab = 'msg'; render(); };
@@ -1577,7 +1588,7 @@ const dqRecap = (v, rc, d) => {
     const t = ms => ms >= 60000 ? `${Math.floor(ms / 60000)} min ${String(Math.round(ms % 60000 / 1000)).padStart(2, '0')} s` : `${(ms / 1000).toFixed(1)} s`;
     const box = document.createElement('div'); box.className = 'dqrank';
     box.innerHTML = `<h3 class="sec">Classement du jour</h3><p class="mut dsmall" style="text-align:left;margin:0 0 8px">Le 1er gagne <b>+1 paquet bonus</b> à minuit (meilleur score, puis temps le plus court).</p>
-      <div class="list">${rk.list.map(x => `<div class="item r${x.rank} ${x.me ? 'me' : ''}"><span class="rank-n">${x.rank}</span>${avatar(x.name)}<div class="grow"><div class="nm">${esc(x.name)}${x.me ? ' (toi)' : ''}</div><div class="sub">${x.correct} / 5 · ${t(x.ms)}</div></div></div>`).join('')}</div>
+      <div class="list">${rk.list.map(x => `<div class="item r${x.rank} ${x.me ? 'me' : ''}"><span class="rank-n">${x.rank}</span>${avatar(x.name)}<div class="grow"><div class="nm">${esc(x.name)}${x.me ? ' (toi)' : ''}${ttl(x.name)}</div><div class="sub">${x.correct} / 5 · ${t(x.ms)}</div></div></div>`).join('')}</div>
       ${rk.yesterday ? `<p class="mut dsmall">Vainqueur d'hier : <b>${esc(rk.yesterday.name)}</b> (${rk.yesterday.correct} / 5 en ${t(rk.yesterday.ms)})</p>` : ''}`;
     $('.dqend')?.querySelector('.row')?.before(box);
   }).catch(() => {});
@@ -1643,7 +1654,7 @@ views.tournament = async v => {
   v.innerHTML = `${pageHead(`Tournoi n°${t.id}`, `Mise ${fmt(t.stake)} pièces par joueur`)}<p><button class="plain" id="t-back">← Tous les tournois</button></p>
     <div class="panel"><div class="tpot"><span>${ico('coin')} Cagnotte</span><b>${fmt(t.stake * t.size)}</b></div>
       <div class="tpay">${pay.map((p, i) => `<div class="${p > t.stake ? 'up' : 'down'}"><small>${ordn(i)}</small><b>${p > t.stake ? '+' + fmt(p - t.stake) : '−' + fmt(t.stake)}</b></div>`).join('')}</div></div>
-    <h3 class="sec">Joueurs (${t.players.length} / ${t.size})</h3><div class="list">${t.players.map(p => `<div class="item row1 ${p.me ? 'me' : ''}">${avatar(p.name)}<div class="grow"><div class="nm">${esc(p.name)}${p.me ? ' (toi)' : ''}</div><div class="sub">${t.status === 'done' ? `${p.net >= 0 ? '+' : '−'}${fmt(Math.abs(p.net))} pièces` : ''}</div></div></div>`).join('')}</div>
+    <h3 class="sec">Joueurs (${t.players.length} / ${t.size})</h3><div class="list">${t.players.map(p => `<div class="item row1 ${p.me ? 'me' : ''}">${avatar(p.name)}<div class="grow"><div class="nm">${esc(p.name)}${p.me ? ' (toi)' : ''}${ttl(p.name)}</div><div class="sub">${t.status === 'done' ? `${p.net >= 0 ? '+' : '−'}${fmt(Math.abs(p.net))} pièces` : ''}</div></div></div>`).join('')}</div>
     ${t.bracket ? `<h3 class="sec">${t.status === 'done' ? 'Résultat' : t.bracket.stage === 'r1' ? 'Demi-finales' : 'Finale et 3ᵉ place'}</h3><div class="tbracket">${t.bracket.matches.map(match).join('')}</div>` : ''}
     ${t.bracket?.rank ? `<div class="panel"><h3>Classement final</h3>${t.bracket.rank.map((u, i) => `<div class="trank ${i < 2 ? 'win' : ''}"><span>${ordn(i)}</span><b>${esc(nm(u))}</b></div>`).join('')}</div>` : ''}
     ${t.status === 'open' ? `<div class="row">${t.joined ? `<button class="plain" id="t-leave">${t.creator === me.id ? 'Annuler le tournoi' : 'Me retirer'}</button>` : `<button class="primary" id="t-join">Rejoindre (mise ${fmt(t.stake)})</button>`}</div><p class="mut dsmall">Le tournoi démarre dès que 4 joueurs sont inscrits, et reste ouvert 48 h au maximum.</p>` : ''}
@@ -1687,6 +1698,59 @@ views.settings = async v => {
     c.onchange = async () => { c.disabled = true; try { if (c.checked) { await enablePush(); toast('Notifications activées'); api('/push/test', {}).catch(() => {}); } else { await disablePush(); toast('Notifications désactivées'); } } catch (e) { c.checked = !c.checked; toast(e.message); } c.disabled = false; };
   });
 };
+
+// ---------- personnalisation du profil : photo et titre ----------
+views.customize = async v => {
+  const d = await api('/titles'); await loadCosmetics(true);
+  const cur = d.current;
+  const card = t => `<button class="titlecard ${t.unlocked ? 'ok' : ''} ${t.season ? 'season' : ''} ${cur === t.id ? 'on' : ''}" data-ti="${t.id}" ${t.unlocked ? '' : 'disabled'}>
+    <b>${esc(t.label)}</b><small>${t.season ? 'Saison 1 · bientôt' : esc(t.desc)}</small>
+    ${t.unlocked ? (cur === t.id ? '<em>Équipé</em>' : '<em>Débloqué</em>') : t.prog ? `<div class="qbar"><i style="width:${Math.min(100, Math.round(t.prog[0] / t.prog[1] * 100))}%"></i></div><small>${fmt(Math.min(t.prog[0], t.prog[1]))} / ${fmt(t.prog[1])}</small>` : `<em class="lock">Verrouillé</em>`}</button>`;
+  const n = d.titles.filter(t => t.unlocked).length;
+  v.innerHTML = `${pageHead('Mon profil', 'Photo et titre affichés partout dans le jeu')}
+    <div class="panel avpanel"><div class="avbig">${avatar(me.name)}</div><div class="grow"><b>${esc(me.name)}</b>${cur ? `<div>${ttl(me.name)}</div>` : '<div class="mut">Aucun titre équipé</div>'}
+      <div class="row" style="margin-top:10px"><button id="av-pick">${me.av ? 'Changer la photo' : 'Ajouter une photo'}</button>${me.av ? '<button class="plain" id="av-del">Retirer</button>' : ''}<button class="plain" id="pf-view">Voir ma page</button></div></div>
+      <input type="file" id="av-file" accept="image/*" hidden></div>
+    <h3 class="sec">Titres · ${n} / ${d.titles.length} débloqués</h3>
+    ${cur ? '<p><button class="plain" id="ti-none">Ne plus afficher de titre</button></p>' : ''}
+    ${Object.entries(d.cats).map(([k, l]) => `<h3 class="sec" style="margin-top:14px">${esc(l)}</h3><div class="titles">${d.titles.filter(t => t.cat === k).map(card).join('')}</div>`).join('')}`;
+  $('#pf-view').onclick = () => playerSheet(me.id);
+  $('#av-pick').onclick = () => $('#av-file').click();
+  $('#av-file').onchange = e => { const f = e.target.files[0]; if (f) cropSheet(f); e.target.value = ''; };
+  $('#av-del')?.addEventListener('click', safe(async () => { await api('/me/avatar', { data: null }); await refreshMe(); await loadCosmetics(true); toast('Photo retirée'); render(); }));
+  $('#ti-none')?.addEventListener('click', safe(async () => { await api('/me/title', { id: null }); await refreshMe(); await loadCosmetics(true); render(); }));
+  v.querySelectorAll('[data-ti]').forEach(b => b.onclick = safe(async () => { await api('/me/title', { id: b.dataset.ti }); await refreshMe(); await loadCosmetics(true); toast('Titre équipé'); render(); }));
+};
+/** Recadrage de la photo : on déplace l'image au doigt, on zoome avec le curseur ; le résultat est un carré JPEG de 192 px. */
+async function cropSheet(file) {
+  let bmp; try { bmp = await createImageBitmap(file); } catch { return toast('Image illisible'); }
+  const m = $('#modal'), S = 240, OUT = 192;
+  m.hidden = false;
+  m.innerHTML = `<div class="cropsheet"><h2>Ta photo</h2><p class="mut" style="margin:0 0 10px">Glisse pour cadrer, zoome avec le curseur.</p>
+    <div class="cropbox" id="cb" style="width:${S}px;height:${S}px"><canvas id="cv" width="${S}" height="${S}"></canvas><span class="cropring"></span></div>
+    <input type="range" id="cz" min="1" max="4" step="0.01" value="1" style="width:100%;margin:12px 0">
+    <div class="row"><button id="cs-ok" style="flex:1">Enregistrer</button><button class="plain" id="cs-no" style="flex:1">Annuler</button></div></div>`;
+  const cv = $('#cv'), cx = cv.getContext('2d'), base = Math.max(S / bmp.width, S / bmp.height);
+  let z = 1, ox = 0, oy = 0;
+  const clamp = () => { const w = bmp.width * base * z, h = bmp.height * base * z; ox = Math.min(0, Math.max(S - w, ox)); oy = Math.min(0, Math.max(S - h, oy)); };
+  const draw = () => { clamp(); cx.fillStyle = '#000'; cx.fillRect(0, 0, S, S); cx.drawImage(bmp, ox, oy, bmp.width * base * z, bmp.height * base * z); };
+  const center = () => { ox = (S - bmp.width * base * z) / 2; oy = (S - bmp.height * base * z) / 2; };
+  center(); draw();
+  $('#cz').oninput = e => { const nz = +e.target.value, cxm = (S / 2 - ox) / (bmp.width * base * z), cym = (S / 2 - oy) / (bmp.height * base * z); z = nz; ox = S / 2 - cxm * bmp.width * base * z; oy = S / 2 - cym * bmp.height * base * z; draw(); };
+  let drag = null;
+  $('#cb').onpointerdown = e => { drag = { x: e.clientX - ox, y: e.clientY - oy }; $('#cb').setPointerCapture(e.pointerId); };
+  $('#cb').onpointermove = e => { if (!drag) return; ox = e.clientX - drag.x; oy = e.clientY - drag.y; draw(); };
+  $('#cb').onpointerup = $('#cb').onpointercancel = () => { drag = null; };
+  const close = () => { m.hidden = true; m.innerHTML = ''; bmp.close?.(); };
+  $('#cs-no').onclick = close;
+  $('#cs-ok').onclick = safe(async () => {
+    $('#cs-ok').disabled = true;
+    const out = document.createElement('canvas'); out.width = out.height = OUT;
+    out.getContext('2d').drawImage(cv, 0, 0, S, S, 0, 0, OUT, OUT);
+    await api('/me/avatar', { data: out.toDataURL('image/jpeg', 0.82) });
+    close(); await refreshMe(); await loadCosmetics(true); toast('Photo enregistrée'); render();
+  });
+}
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -1698,7 +1762,7 @@ function moreSheet() {
     <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
-    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
+    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const k = b.dataset.go; close();
@@ -1714,7 +1778,7 @@ async function start() {
   let ok = false;
   for (let essai = 0; essai < 8 && !ok; essai++) {  // réseau absent ou serveur qui démarre : on réessaie sans déconnecter
     try {
-      const [c, , h] = await Promise.all([api('/config'), refreshMe(), api('/hits')]);   // trois appels en parallèle au démarrage
+      const [c, , h] = await Promise.all([api('/config'), refreshMe(), api('/hits'), loadCosmetics(true)]);   // trois appels en parallèle au démarrage
       if (c.version && c.version !== BUILD) { if (await applyUpdate(c.version)) return; setTimeout(() => checkVersion(c.version), 2500); }   // appli ouverte depuis un cache plus ancien que le serveur : on se met à jour avant d'afficher quoi que ce soit
       cfg = c; RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
       showHits(h.hits); ACH_NAMES = cfg.ach || [];

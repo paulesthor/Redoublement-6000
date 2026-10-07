@@ -936,3 +936,16 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
 #reveal.god .rc{box-shadow:0 0 0 2px #ffd45e,0 0 36px 4px #ffb53a99}
 html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:invert(1) hue-rotate(180deg)}
 .bulk button{font-size:13.5px}
+
+/* ---- photo de profil et titres ---- */
+.av.ph{overflow:visible}.av.ph img,.avatar.ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}.avatar.ph{position:relative;overflow:hidden;color:transparent}
+.av.ph.on::after{z-index:2}
+.ttl{display:inline-block;margin-left:7px;padding:1px 8px;border-radius:99px;font-size:10.5px;font-weight:700;letter-spacing:.03em;vertical-align:middle;background:linear-gradient(135deg,#f5c54233,#f2a34f22);color:#f5c542;border:1px solid #f5c54255;white-space:nowrap}
+.avpanel{display:flex;gap:16px;align-items:center}.avpanel .avbig .av{width:84px;height:84px;font-size:34px}.avpanel .row{gap:8px;flex-wrap:wrap}.avpanel .row button{flex:none}
+.titles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.titlecard{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:12px;border-radius:14px;background:var(--panel);border:1px solid var(--line2);color:var(--fg);box-shadow:none;min-height:96px}
+.titlecard b{font-size:14px}.titlecard small{color:var(--mut);font-size:11.5px;font-weight:400;line-height:1.3}.titlecard em{font-style:normal;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#7be0a0;margin-top:auto}
+.titlecard em.lock{color:var(--dim)}.titlecard:disabled{opacity:.65}.titlecard .qbar{width:100%;margin:4px 0 0}
+.titlecard.ok{border-color:#f5c54255}.titlecard.on{border-color:var(--gold);background:linear-gradient(135deg,#f5c5421f,var(--panel))}.titlecard.season{border-style:dashed}
+.cropsheet{text-align:center}.cropbox{position:relative;margin:0 auto;border-radius:16px;overflow:hidden;touch-action:none;cursor:grab;background:#000}.cropbox canvas{display:block}
+.cropring{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px #000a;pointer-events:none;border:2px solid #fff8}

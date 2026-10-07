@@ -211,6 +211,11 @@ CREATE TABLE IF NOT EXISTS tournament_players (tid BIGINT NOT NULL, user_id BIGI
 
 CREATE INDEX IF NOT EXISTS inventory_lvl ON inventory(user_id, lvl DESC, skey DESC, card_id DESC);
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_v BIGINT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS title TEXT;
+CREATE TABLE IF NOT EXISTS avatars (user_id BIGINT PRIMARY KEY, data TEXT NOT NULL, ts BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS user_titles (user_id BIGINT NOT NULL, tid TEXT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, tid));
+
 DO $$ DECLARE t record; BEGIN
   FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);

@@ -7,7 +7,7 @@ import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
-import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests, FUSE, boosted, fuseInfo, tPayouts } from './game.js';
+import { dayKey, msToMidnight, DAILY, dailyState, QUESTS, QUEST, BONUS, questsFor, ensureGameSchema, bumpQuests, FUSE, boosted, fuseInfo, tPayouts, TITLES, TITLE, TITLE_CATS, grantTitle, syncTitles } from './game.js';
 export { Lobby } from './lobby.js';
 
 const { PACK_EVERY, PACK_MAX, PACK_SIZE, SELL, POINTS, RARITIES } = CFG;
@@ -216,6 +216,8 @@ async function checkAchievements(env, ctx, user) {
     unlocked++;
   }
   if (unlocked) bq(env, ctx, user.id, { achievement: unlocked });
+  const ti = await syncTitles(env, user.id).catch(() => null);
+  ti?.added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
   return stats;
 }
 const lastCheck = new Map();
@@ -248,7 +250,7 @@ async function refreshPacks(env, u) {
 const testOn = u => !!(u.test_mode && u.is_admin);
 const publicUser = u => ({
   id: u.id, name: u.name, coins: u.coins, packs: u.pack_stock, wins: u.duel_wins, losses: u.duel_losses,
-  test: testOn(u), admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
+  av: u.avatar_v ?? null, title: u.title ?? null, test: testOn(u), admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
 });
 
 async function finishPack(env, ctx, user, drawn, spent = 0) {
@@ -276,6 +278,7 @@ async function finishPack(env, ctx, user, drawn, spent = 0) {
     notify(env, ctx, { t: 'notify', msg: `${user.name} vient d'ouvrir un GODPACK !`, except: user.id });
   }
   for (const c of cards.filter(c => c.rarity === 'legendary')) notify(env, ctx, { t: 'hit', user: user.name, title: c.title, shiny: !!c.shiny, ts: now() });
+  if (god) ctx.waitUntil(grantTitle(env, user.id, 'godpack').then(n => n && notify(env, ctx, { t: 'notify', msg: 'Nouveau titre débloqué : « Touché par les dieux » !' }, user.id)));
   bq(env, ctx, user.id, { open_pack: 1, new_cards: cards.filter(c => c.isNew).length, rare_plus: cards.filter(c => RANK[c.rarity] >= 2).length, legendary: cards.filter(c => c.rarity === 'legendary').length, spend: spent });
   return { cards, god };
 }
@@ -580,7 +583,7 @@ route('GET', '/api/profile/:id', async ({ env, ctx, user, params }) => {
   if (id !== user.id) bq(env, ctx, user.id, { profile_view: 1 });
   let hit = profileCache.get(id);
   if (!hit || now() - hit.t > 60000) {
-    const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs, showcase FROM users WHERE id = ? AND is_bot = 0', id);
+    const u = await one(env, 'SELECT id, name, duel_wins wins, duel_losses losses, packs_opened packs, showcase, title, avatar_v av FROM users WHERE id = ? AND is_bot = 0', id);
     if (!u) bad('Joueur introuvable', 404);
     const inv = (await all(env, 'SELECT rar, sh shiny, COUNT(*) n FROM inventory WHERE user_id = ? GROUP BY rar, sh', id)).map(r => ({ rarity: RARITIES[r.rar], shiny: r.shiny, n: r.n }));
     const score = inv.reduce((t, r) => t + (POINTS[r.rarity] || 0) * r.n, 0) + u.wins * 10;
@@ -608,6 +611,51 @@ route('POST', '/api/me/showcase', async ({ env, ctx, user, body }) => {
   profileCache.delete(user.id);
   if (ids.length) bq(env, ctx, user.id, { showcase: 1 });
   return { ok: true, showcase: await showcaseOf(env, user.id, JSON.stringify(ids)) };
+});
+
+// ---------- personnalisation du profil : photo et titre ----------
+// La photo (carré de 192 px, JPEG) est gardée dans une table à part pour ne pas alourdir la ligne du joueur ; l'adresse contient la version, donc le navigateur la garde un an.
+route('GET', '/api/avatar/:id', async ({ env, params }) => {
+  await ensureGameSchema(env);
+  const row = await one(env, 'SELECT data FROM avatars WHERE user_id = ?', +params.id);
+  if (!row) return new Response('', { status: 404, headers: { 'cache-control': 'public, max-age=300' } });
+  const bin = Uint8Array.from(atob(row.data), c => c.charCodeAt(0));
+  return new Response(bin, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
+}, false);
+route('POST', '/api/me/avatar', async ({ env, user, body }) => {
+  await ensureGameSchema(env);
+  if (body.data === null) {
+    await env.DB.batch([st(env, 'DELETE FROM avatars WHERE user_id = ?', user.id), st(env, 'UPDATE users SET avatar_v = NULL WHERE id = ?', user.id)]);
+    return { ok: true, v: null };
+  }
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(body.data || ''));
+  if (!m) bad('Image invalide (JPEG attendu)');
+  if (m[1].length > 90000) bad('Image trop lourde');
+  const v = now();
+  await env.DB.batch([st(env, 'INSERT INTO avatars (user_id, data, ts) VALUES (?,?,?) ON CONFLICT (user_id) DO UPDATE SET data = excluded.data, ts = excluded.ts', user.id, m[1], v), st(env, 'UPDATE users SET avatar_v = ? WHERE id = ?', v, user.id)]);
+  return { ok: true, v };
+});
+route('GET', '/api/cosmetics', async ({ env }) => {
+  await ensureGameSchema(env);
+  const rows = await all(env, 'SELECT id, name, avatar_v v, title ti FROM users WHERE is_bot = 0 AND (avatar_v IS NOT NULL OR title IS NOT NULL)');
+  return { players: rows, labels: Object.fromEntries(TITLES.map(x => [x.id, x.label])) };
+});
+route('GET', '/api/titles', async ({ env, ctx, user }) => {
+  const { owned, added, ctx: c } = await syncTitles(env, user.id);
+  added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
+  const cur = (await one(env, 'SELECT title FROM users WHERE id = ?', user.id))?.title ?? null;
+  return { current: cur, cats: TITLE_CATS, titles: TITLES.map(x => ({ id: x.id, cat: x.cat, label: x.label, desc: x.desc, season: !!x.season, unlocked: owned.has(x.id), prog: !owned.has(x.id) && x.prog ? x.prog(c) : null })) };
+});
+route('POST', '/api/me/title', async ({ env, user, body }) => {
+  await ensureGameSchema(env);
+  const id = body.id === null ? null : String(body.id);
+  if (id !== null) {
+    if (!TITLE[id]) bad('Titre inconnu', 404);
+    if (!(await one(env, 'SELECT 1 x FROM user_titles WHERE user_id = ? AND tid = ?', user.id, id))) { const { owned } = await syncTitles(env, user.id); if (!owned.has(id)) bad('Titre pas encore débloqué'); }
+  }
+  await run(env, 'UPDATE users SET title = ? WHERE id = ?', id, user.id);
+  profileCache.delete(user.id);
+  return { ok: true, title: id };
 });
 
 route('GET', '/api/version', async () => ({ v: CFG.VERSION, db: 'supabase' }), false);
@@ -1123,6 +1171,7 @@ async function settleDailyWinners(env, ctx, force = false) {
     if (!w) continue;
     await env.DB.batch([st(env, 'UPDATE users SET pack_stock = pack_stock + 1 WHERE id = ?', w.user_id), st(env, 'UPDATE daily_quiz SET winner = ? WHERE day = ?', w.user_id, day)]);
     notify(env, ctx, { t: 'notify', msg: `Tu as remporté le quiz du jour (${day}) : +1 paquet bonus !` }, w.user_id);
+    if (await grantTitle(env, w.user_id, 'quiz_champ')) notify(env, ctx, { t: 'notify', msg: 'Nouveau titre débloqué : « Roi du quiz » !' }, w.user_id);
   }
 }
 route('GET', '/api/daily-quiz/ranking', async ({ env, ctx, user }) => {
@@ -1177,6 +1226,7 @@ route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
     await run(env, 'UPDATE daily_quiz_runs SET delta = ? WHERE user_id = ? AND day = ?', delta, user.id, day);
   }
   bq(env, ctx, user.id, { quiz_daily: 1, quiz_correct: correct });
+  if (correct === QUIZ_N) ctx.waitUntil(grantTitle(env, user.id, 'quiz_perfect').then(n => n && notify(env, ctx, { t: 'notify', msg: 'Nouveau titre débloqué : « Sans faute » !' }, user.id)));
   return { ok: true, status: 'done', recap: recap(quiz, { ...r, answers: JSON.stringify(given), correct, delta }) };
 });
 
@@ -1529,7 +1579,7 @@ async function api(req, env0, ctx, url) {
     }
     if (req.method === 'POST') { try { body = await req.json(); } catch { body = {}; } }
     out = await r.fn({ env, ctx, user, params, body, query: url.searchParams, origin: url.origin });
-    return json(out);
+    return out instanceof Response ? out : json(out);
   } catch (e) { err = e; status = e instanceof HttpError ? e.code : 500; throw e; }
   finally {
     const ms = Date.now() - t0, who = user?.name ?? (label.includes('/login') || label.includes('/register') ? String(body?.name ?? '').slice(0, 40) : null);
