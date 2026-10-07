@@ -6,7 +6,7 @@ import { one, all, run, st, placeholders, cardRows, caseSql, RANK, userFromToken
 import { battleQuestions, aiQuestions } from './aiquiz.js';
 import { makeArticleQuestions } from './quiz.js';
 import { pushFor } from './push.js';
-import { bumpQuests, ensureGameSchema, boosted, tPayouts, grantTitle, TITLE } from './game.js';
+import { bumpQuests, ensureGameSchema, boosted, tPayouts, grantTitle, TITLE, tourLabel } from './game.js';
 
 const Q_COUNT = 5, Q_TIME = 15000, B_TIME = 18000, FIGHT_PICK = 30000, Q_PER_CARD = 3, SHINY = 100000000;
 const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met le combat en pause et on l'attend jusqu'à 3 minutes, puis forfait
@@ -14,7 +14,6 @@ const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met l
 const T = { intro: 1800, card: 1300, closeAfterAnswer: 600, nextQ: 2000, nextTurn: 2200 };
 const now = () => Date.now();
 const TOUR_WAIT = 10 * 60000;   // un joueur de tournoi absent plus de 10 minutes perd son match
-const TOUR_LABEL = { r1: 'Demi-finale', final: 'Finale', cons: 'Match pour la 3ᵉ place' };
 
 function mask(extract, title) {
   const words = title.split(/\s+/).filter(w => w.length > 2).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -489,7 +488,7 @@ export class Lobby {
     const k = bt.bot ? .5 : 1;                                        // contre un joueur simulé, gains réduits de moitié
     await this.reward(bt.players.filter(p => p !== bt.bot), win, Math.round(CFG.BATTLE_WIN * k), Math.round(CFG.BATTLE_LOSE * k), Math.round(CFG.BATTLE_DRAW * k));
     for (const p of bt.players) if (p !== bt.bot) bumpQuests(this.env, p, { battle_play: 1, battle_win: p === win ? 1 : 0 });
-    for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null, stake: bt.stake ? { cards: Object.fromEntries(bt.players.map(p => [p, { title: f.deck[p][0].title, rarity: f.deck[p][0].rarity, image: f.deck[p][0].image }])) } : undefined, tour: bt.tour ? (win === null ? 'Égalité : tirage au sort pour le tournoi.' : TOUR_LABEL[bt.tour.k]) : undefined });
+    for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null, stake: bt.stake ? { cards: Object.fromEntries(bt.players.map(p => [p, { title: f.deck[p][0].title, rarity: f.deck[p][0].rarity, image: f.deck[p][0].image }])) } : undefined, tour: bt.tour ? (win === null ? 'Égalité : tirage au sort pour le tournoi.' : bt.tour.lb) : undefined });
     if (bt.tour) await this.tourResult(bt.tour.tid, bt.tour.mi, win);
   }
   // ---------- tournois : 4 joueurs, 2 demi-finales en même temps, puis finale et match pour la 3e place ----------
@@ -511,12 +510,14 @@ export class Lobby {
       const t = await this.tourLoad(id);
       if (!t || t.br) return;
       const ps = shuffle(await all(this.env, 'SELECT p.user_id id, u.name FROM tournament_players p JOIN users u ON u.id = p.user_id WHERE p.tid = ?', id));
-      if (ps.length !== 4) return;
-      t.br = { stage: 'r1', names: Object.fromEntries(ps.map(p => [p.id, p.name])), matches: [
-        { k: 'r1', a: ps[0].id, b: ps[1].id, s: 'wait', since: now() }, { k: 'r1', a: ps[2].id, b: ps[3].id, s: 'wait', since: now() }] };
+      const n = t.maxp;
+      if (ps.length !== n || ![4, 8].includes(n)) return;
+      const matches = [];
+      for (let i = 0; i < n; i += 2) matches.push({ r: 1, g: '', lb: tourLabel(n, 1, ''), a: ps[i].id, b: ps[i + 1].id, s: 'wait', since: now() });
+      t.br = { stage: 1, rounds: Math.log2(n), n, names: Object.fromEntries(ps.map(p => [p.id, p.name])), matches };
       await this.tourSave(t);
       this.tours.add(id);
-      for (const p of ps) this.tourNote(p.id, `Tournoi n°${id} : les demi-finales commencent ! Reste en ligne et choisis ton équipe.`);
+      for (const p of ps) this.tourNote(p.id, `Tournoi n°${id} : c'est parti (${t.br.matches[0].lb}) ! Reste en ligne et choisis ton équipe.`);
       await this.tourKick(t);
     });
   }
@@ -532,10 +533,10 @@ export class Lobby {
       const free = u => this.clients.has(u) && !this.gameOf(u);
       if (free(m.a) && free(m.b)) {
         m.s = 'live'; dirty = true;
-        await this.startBattle({ id: m.a, name: t.br.names[m.a] }, { id: m.b, name: t.br.names[m.b] }, false, { tid: t.id, mi, k: m.k, label: `Tournoi n°${t.id} · ${TOUR_LABEL[m.k]}` });
+        await this.startBattle({ id: m.a, name: t.br.names[m.a] }, { id: m.b, name: t.br.names[m.b] }, false, { tid: t.id, mi, lb: m.lb, label: `Tournoi n°${t.id} · ${m.lb}` });
       } else if (!m.notified) {
         m.notified = true; dirty = true;
-        for (const u of [m.a, m.b]) if (!free(u)) this.tourNote(u, `Tournoi n°${t.id} : ton match (${TOUR_LABEL[m.k]}) t'attend ! Tu as 10 minutes pour te connecter.`);
+        for (const u of [m.a, m.b]) if (!free(u)) this.tourNote(u, `Tournoi n°${t.id} : ton match (${m.lb}) t'attend ! Tu as 10 minutes pour te connecter.`);
       }
     }
     if (dirty) await this.tourSave(t);
@@ -573,18 +574,26 @@ export class Lobby {
       if (!m || m.s === 'done') return;
       if (winner !== m.a && winner !== m.b) winner = Math.random() < .5 ? m.a : m.b;
       m.s = 'done'; m.w = winner; m.l = winner === m.a ? m.b : m.a;
-      const br = t.br, stage = br.stage, cur = br.matches.filter(x => (stage === 'r1' ? x.k === 'r1' : x.k !== 'r1'));
+      const br = t.br, stage = br.stage, cur = br.matches.filter(x => x.r === stage);
       if (cur.every(x => x.s === 'done')) {
-        if (stage === 'r1') {
-          const [x, y] = cur;
-          br.stage = 'r2';
-          br.matches.push({ k: 'final', a: x.w, b: y.w, s: 'wait', since: now() }, { k: 'cons', a: x.l, b: y.l, s: 'wait', since: now() });
-          for (const u of [x.w, y.w]) this.tourNote(u, `Tournoi n°${tid} : tu es en finale !`);
-          for (const u of [x.l, y.l]) this.tourNote(u, `Tournoi n°${tid} : match pour la 3ᵉ place.`);
+        if (stage < br.rounds) {
+          br.stage = stage + 1;
+          for (const g of [...new Set(cur.map(x => x.g))]) {
+            const gm = cur.filter(x => x.g === g);
+            for (const [sfx, key] of [['W', 'w'], ['L', 'l']]) {
+              const ps = gm.map(x => x[key]);
+              for (let i = 0; i < ps.length; i += 2) {
+                const lb = tourLabel(br.n, stage + 1, g + sfx);
+                br.matches.push({ r: stage + 1, g: g + sfx, lb, a: ps[i], b: ps[i + 1], s: 'wait', since: now() });
+                for (const u of [ps[i], ps[i + 1]]) this.tourNote(u, `Tournoi n°${tid} : prochain match — ${lb}.`);
+              }
+            }
+          }
         } else {
-          const fin = cur.find(x => x.k === 'final'), con = cur.find(x => x.k === 'cons');
-          br.stage = 'done'; br.rank = [fin.w, fin.l, con.w, con.l];
-          const pay = tPayouts(4, t.stake), claim = await run(this.env, "UPDATE tournaments SET status = 'done', ended = ?, stage = 'done', bracket = ? WHERE id = ? AND status = 'running'", now(), JSON.stringify(br), tid);
+          const pos = x => [...x.g].reduce((s, c) => s * 2 + (c === 'L' ? 1 : 0), 0);
+          const term = cur.slice().sort((x, y) => pos(x) - pos(y));
+          br.stage = 'done'; br.rank = term.flatMap(x => [x.w, x.l]);
+          const pay = tPayouts(br.n, t.stake), claim = await run(this.env, "UPDATE tournaments SET status = 'done', ended = ?, stage = 'done', bracket = ? WHERE id = ? AND status = 'running'", now(), JSON.stringify(br), tid);
           if (claim.meta.changes) {
             await this.env.DB.batch(br.rank.flatMap((u, i) => [st(this.env, 'UPDATE tournament_players SET payout = ? WHERE tid = ? AND user_id = ?', pay[i], tid, u), ...(pay[i] ? [st(this.env, 'UPDATE users SET coins = coins + ? WHERE id = ?', pay[i], u)] : [])]));
             for (const u of br.rank) this.titleNote(u, 'tour_play');

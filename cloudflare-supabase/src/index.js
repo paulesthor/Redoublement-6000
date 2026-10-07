@@ -1259,7 +1259,7 @@ route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
 });
 
 // ---------- tournois : 4 joueurs, mise en pièces ; les combats se jouent dans le Durable Object (demi-finales, puis finale et match pour la 3e place) ----------
-const T_MAX_AGE = 48 * 3600000, T_STAKE = [10, 5000], T_SIZE = 4;
+const T_MAX_AGE = 48 * 3600000, T_STAKE = [10, 5000];
 const tName = id => `Tournoi n°${id}`;
 const lobbyCall = (env, path, body) => env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby' + path, { method: 'POST', body: JSON.stringify(body) });
 async function cancelTournament(env, ctx, id, msg) {
@@ -1276,22 +1276,22 @@ async function cleanTournaments(env, ctx) {
 }
 route('GET', '/api/tournaments', async ({ env, ctx, user }) => {
   await cleanTournaments(env, ctx);
-  const rows = await all(env, `SELECT t.id, t.creator, t.stake, t.status, t.stage, t.created, u.name cname, (SELECT COUNT(*) FROM tournament_players p WHERE p.tid = t.id) n FROM tournaments t JOIN users u ON u.id = t.creator
+  const rows = await all(env, `SELECT t.id, t.creator, t.stake, t.maxp, t.status, t.stage, t.created, u.name cname, (SELECT COUNT(*) FROM tournament_players p WHERE p.tid = t.id) n FROM tournaments t JOIN users u ON u.id = t.creator
     WHERE t.status IN ('open', 'running') OR (t.status = 'done' AND t.ended >= ?) ORDER BY t.id DESC LIMIT 40`, now() - 3 * 86400000);
   const mine = new Set((await all(env, 'SELECT tid FROM tournament_players WHERE user_id = ?', user.id)).map(r => r.tid));
-  return { tournaments: rows.map(t => ({ ...t, joined: mine.has(t.id), size: T_SIZE })), min: T_STAKE[0], max: T_STAKE[1] };
+  return { tournaments: rows.map(t => ({ ...t, joined: mine.has(t.id), size: t.maxp })), min: T_STAKE[0], max: T_STAKE[1] };
 });
 route('POST', '/api/tournaments', async ({ env, ctx, user, body }) => {
   await ensureGameSchema(env);
-  const stake = Math.floor(+body.stake);
+  const stake = Math.floor(+body.stake), size = +body.size === 8 ? 8 : 4;
   if (!(stake >= T_STAKE[0] && stake <= T_STAKE[1])) bad(`Mise entre ${T_STAKE[0]} et ${T_STAKE[1]} pièces`);
   const active = (await one(env, "SELECT COUNT(*) n FROM tournament_players p JOIN tournaments t ON t.id = p.tid WHERE p.user_id = ? AND t.status IN ('open', 'running')", user.id)).n;
   if (active >= 2) bad('Tu participes déjà à 2 tournois en cours');
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', stake, user.id, stake);
   if (!paid.meta.changes) bad('Pas assez de pièces pour miser');
-  const ins = await run(env, 'INSERT INTO tournaments (creator, stake, maxp, created) VALUES (?,?,?,?)', user.id, stake, T_SIZE, now());
+  const ins = await run(env, 'INSERT INTO tournaments (creator, stake, maxp, created) VALUES (?,?,?,?)', user.id, stake, size, now());
   await run(env, 'INSERT INTO tournament_players (tid, user_id, joined) VALUES (?,?,?)', ins.meta.last_row_id, user.id, now());
-  notify(env, ctx, { t: 'notify', msg: `${user.name} ouvre un tournoi : mise ${stake} pièces, 4 joueurs.`, except: user.id });
+  notify(env, ctx, { t: 'notify', msg: `${user.name} ouvre un tournoi : mise ${stake} pièces, ${size} joueurs.`, except: user.id });
   notify(env, ctx, { t: 'refresh', what: 'tournaments' });
   return { ok: true, id: ins.meta.last_row_id };
 });
@@ -1305,13 +1305,13 @@ route('POST', '/api/tournaments/:id/join', async ({ env, ctx, user, params }) =>
   if (active >= 2) bad('Tu participes déjà à 2 tournois en cours');
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', t.stake, user.id, t.stake);
   if (!paid.meta.changes) bad('Pas assez de pièces pour miser');
-  const ins = await run(env, "INSERT INTO tournament_players (tid, user_id, joined) SELECT ?1, ?2, ?3 WHERE (SELECT COUNT(*) FROM tournament_players WHERE tid = ?1) < ?4 AND (SELECT status FROM tournaments WHERE id = ?1) = 'open' ON CONFLICT DO NOTHING", t.id, user.id, now(), T_SIZE);
+  const ins = await run(env, "INSERT INTO tournament_players (tid, user_id, joined) SELECT ?1, ?2, ?3 WHERE (SELECT COUNT(*) FROM tournament_players WHERE tid = ?1) < ?4 AND (SELECT status FROM tournaments WHERE id = ?1) = 'open' ON CONFLICT DO NOTHING", t.id, user.id, now(), t.maxp);
   if (!ins.meta.changes) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', t.stake, user.id); bad('Le tournoi est complet'); }
   const n = (await one(env, 'SELECT COUNT(*) n FROM tournament_players WHERE tid = ?', t.id)).n;
-  notify(env, ctx, { t: 'notify', msg: `${user.name} rejoint ${tName(t.id)} (${n}/${T_SIZE}).` }, t.creator);
-  if (n >= T_SIZE) { const go = await run(env, "UPDATE tournaments SET status = 'running', started = ? WHERE id = ? AND status = 'open'", now(), t.id); if (go.meta.changes) await lobbyCall(env, '/tour/start', { id: t.id }); }   // complet : les demi-finales démarrent
+  notify(env, ctx, { t: 'notify', msg: `${user.name} rejoint ${tName(t.id)} (${n}/${t.maxp}).` }, t.creator);
+  if (n >= t.maxp) { const go = await run(env, "UPDATE tournaments SET status = 'running', started = ? WHERE id = ? AND status = 'open'", now(), t.id); if (go.meta.changes) await lobbyCall(env, '/tour/start', { id: t.id }); }   // complet : les demi-finales démarrent
   notify(env, ctx, { t: 'refresh', what: 'tournaments' });
-  return { ok: true, started: n >= T_SIZE };
+  return { ok: true, started: n >= t.maxp };
 });
 route('POST', '/api/tournaments/:id/leave', async ({ env, ctx, user, params }) => {
   await ensureGameSchema(env);
@@ -1329,7 +1329,7 @@ route('GET', '/api/tournaments/:id', async ({ env, ctx, user, params }) => {
   const t = await getT(env, +params.id);
   const players = await all(env, 'SELECT p.user_id id, u.name, p.payout FROM tournament_players p JOIN users u ON u.id = p.user_id WHERE p.tid = ? ORDER BY p.joined', t.id);
   let br = null; try { br = t.bracket ? JSON.parse(t.bracket) : null; } catch { /* tableau illisible */ }
-  return { id: t.id, stake: t.stake, status: t.status, creator: t.creator, creatorName: t.cname, size: T_SIZE, stage: t.stage, bracket: br, preview: tPayouts(T_SIZE, t.stake),
+  return { id: t.id, stake: t.stake, status: t.status, creator: t.creator, creatorName: t.cname, size: t.maxp, stage: t.stage, bracket: br, preview: tPayouts(t.maxp, t.stake),
     players: players.map(p => ({ ...p, me: p.id === user.id, net: t.status === 'done' ? (p.payout || 0) - t.stake : null })), joined: players.some(p => p.id === user.id) };
 });
 

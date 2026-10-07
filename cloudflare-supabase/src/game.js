@@ -183,3 +183,11 @@ export async function syncTitles(env, uid) {
   if (added.length) { await env.DB.batch(added.map(id => env.DB.prepare('INSERT INTO user_titles (user_id, tid, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING').bind(uid, id, Date.now()))); added.forEach(id => have.add(id)); }
   return { owned: have, added, ctx };
 }
+
+/** Étape d'un tournoi à 4 ou 8 joueurs : tour 1 = tout le monde ; ensuite les gagnants et les perdants de chaque groupe se séparent (W / L) jusqu'à des matchs de classement. */
+export function tourLabel(n, round, path) {
+  const rounds = Math.log2(n);
+  if (round === rounds) { const idx = [...path].reduce((t, c) => t * 2 + (c === 'L' ? 1 : 0), 0); return idx === 0 ? 'Finale' : `Match pour la ${1 + 2 * idx}ᵉ place`; }
+  if (round === 1) return n === 4 ? 'Demi-finale' : 'Quart de finale';
+  return path.startsWith('W') ? 'Demi-finale' : 'Demi-finale de classement';
+}

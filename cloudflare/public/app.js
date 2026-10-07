@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.2';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.3';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1633,31 +1633,33 @@ views.dquiz = async v => {
 // ---------- tournois : 4 joueurs, mise en pièces, demi-finales puis finale et match pour la 3ᵉ place ----------
 let tourId = null;
 let duelMode = 'quiz';
-const TLAB = { r1: 'Demi-finale', final: 'Finale', cons: 'Match pour la 3ᵉ place' }, ordn = i => i === 0 ? '1er' : `${i + 1}ᵉ`;
+const ordn = i => i === 0 ? '1er' : `${i + 1}ᵉ`;
 views.tournaments = async v => {
   const d = await api('/tournaments');
   const row = t => `<div class="item tap trow" data-t="${t.id}"><div class="grow"><div class="nm">Tournoi n°${t.id} <span class="tstate ${t.status}">${{ open: 'Ouvert', running: 'En cours', done: 'Terminé' }[t.status]}</span></div><div class="sub">Créé par ${esc(t.cname)} · ${t.n} / ${t.size} joueurs${t.joined ? ' · inscrit' : ''}</div></div><b class="tstake">${ico('coin')}${fmt(t.stake)}</b></div>`;
   const live = d.tournaments.filter(t => t.status !== 'done'), done = d.tournaments.filter(t => t.status === 'done');
   v.innerHTML = `${pageHead('Tournois', 'Mise des pièces, 4 joueurs, combats de cartes')}
-    <div class="panel tnew"><h3>Créer un tournoi</h3><p class="mut" style="margin:0 0 10px">Chacun mise la même somme. Demi-finales en même temps, puis finale et match pour la 3ᵉ place : les <b>2 premiers gagnent</b> (la mise des 2 derniers se partage), les <b>2 derniers perdent</b> leur mise.</p>
+    <div class="panel tnew"><h3>Créer un tournoi</h3><p class="mut" style="margin:0 0 10px">Chacun mise la même somme et joue des combats de cartes. À chaque tour, gagnants et perdants se séparent : le classement est complet. La <b>moitié haute gagne</b> (les mises de l'autre moitié se partagent), la <b>moitié basse perd</b> sa mise.</p>
+      <div class="seg" id="t-size" style="margin-bottom:10px"><button data-n="4" class="on">4 joueurs</button><button data-n="8">8 joueurs</button></div>
       <div class="row"><input id="t-stake" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" value="100" aria-label="Mise"><button class="primary" id="t-new">Ouvrir (mise ${'<span id="t-s">100</span>'})</button></div></div>
     <h3 class="sec">En cours</h3><div class="list">${live.map(row).join('') || '<p class="mut">Aucun tournoi ouvert pour l\'instant.</p>'}</div>
     ${done.length ? `<h3 class="sec">Terminés récemment</h3><div class="list">${done.map(row).join('')}</div>` : ''}`;
+  let tsize = 4; $('#t-size').onclick = e => { const b = e.target.closest('[data-n]'); if (!b) return; tsize = +b.dataset.n; $('#t-size').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
   $('#t-stake').oninput = e => { $('#t-s').textContent = e.target.value || '0'; };
-  $('#t-new').onclick = safe(async () => { const r = await api('/tournaments', { stake: +$('#t-stake').value }); toast('Tournoi ouvert, mise payée'); await refreshMe(); tourId = r.id; tab = 'tournament'; render(); });
+  $('#t-new').onclick = safe(async () => { const r = await api('/tournaments', { stake: +$('#t-stake').value, size: tsize }); toast('Tournoi ouvert, mise payée'); await refreshMe(); tourId = r.id; tab = 'tournament'; render(); });
   v.querySelectorAll('[data-t]').forEach(el => el.onclick = () => { tourId = +el.dataset.t; tab = 'tournament'; render(); });
 };
 views.tournament = async v => {
   const t = await api('/tournaments/' + tourId), nm = id => t.bracket?.names?.[id] ?? t.players.find(p => p.id === id)?.name ?? '?';
-  const match = m => `<div class="tmatch ${m.s}"><small>${TLAB[m.k]}</small><div class="tvs"><b class="${m.w === m.a ? 'w' : m.w ? 'l' : ''}">${esc(nm(m.a))}</b><span>vs</span><b class="${m.w === m.b ? 'w' : m.w ? 'l' : ''}">${esc(nm(m.b))}</b></div><em>${{ wait: 'En attente des joueurs…', live: 'Combat en cours', done: `Vainqueur : ${esc(nm(m.w))}` }[m.s]}</em></div>`;
+  const match = m => `<div class="tmatch ${m.s}"><small>${esc(m.lb)}</small><div class="tvs"><b class="${m.w === m.a ? 'w' : m.w ? 'l' : ''}">${esc(nm(m.a))}</b><span>vs</span><b class="${m.w === m.b ? 'w' : m.w ? 'l' : ''}">${esc(nm(m.b))}</b></div><em>${{ wait: 'En attente des joueurs…', live: 'Combat en cours', done: `Vainqueur : ${esc(nm(m.w))}` }[m.s]}</em></div>`;
   const pay = t.preview;
   v.innerHTML = `${pageHead(`Tournoi n°${t.id}`, `Mise ${fmt(t.stake)} pièces par joueur`)}<p><button class="plain" id="t-back">← Tous les tournois</button></p>
     <div class="panel"><div class="tpot"><span>${ico('coin')} Cagnotte</span><b>${fmt(t.stake * t.size)}</b></div>
       <div class="tpay">${pay.map((p, i) => `<div class="${p > t.stake ? 'up' : 'down'}"><small>${ordn(i)}</small><b>${p > t.stake ? '+' + fmt(p - t.stake) : '−' + fmt(t.stake)}</b></div>`).join('')}</div></div>
     <h3 class="sec">Joueurs (${t.players.length} / ${t.size})</h3><div class="list">${t.players.map(p => `<div class="item row1 ${p.me ? 'me' : ''}">${avatar(p.name)}<div class="grow"><div class="nm">${esc(p.name)}${p.me ? ' (toi)' : ''}${ttl(p.name)}</div><div class="sub">${t.status === 'done' ? `${p.net >= 0 ? '+' : '−'}${fmt(Math.abs(p.net))} pièces` : ''}</div></div></div>`).join('')}</div>
-    ${t.bracket ? `<h3 class="sec">${t.status === 'done' ? 'Résultat' : t.bracket.stage === 'r1' ? 'Demi-finales' : 'Finale et 3ᵉ place'}</h3><div class="tbracket">${t.bracket.matches.map(match).join('')}</div>` : ''}
+    ${t.bracket ? [...new Set(t.bracket.matches.map(m => m.r))].map(rd => `<h3 class="sec">Tour ${rd} / ${t.bracket.rounds}</h3><div class="tbracket">${t.bracket.matches.filter(m => m.r === rd).map(match).join('')}</div>`).join('') : ''}
     ${t.bracket?.rank ? `<div class="panel"><h3>Classement final</h3>${t.bracket.rank.map((u, i) => `<div class="trank ${i < 2 ? 'win' : ''}"><span>${ordn(i)}</span><b>${esc(nm(u))}</b></div>`).join('')}</div>` : ''}
-    ${t.status === 'open' ? `<div class="row">${t.joined ? `<button class="plain" id="t-leave">${t.creator === me.id ? 'Annuler le tournoi' : 'Me retirer'}</button>` : `<button class="primary" id="t-join">Rejoindre (mise ${fmt(t.stake)})</button>`}</div><p class="mut dsmall">Le tournoi démarre dès que 4 joueurs sont inscrits, et reste ouvert 48 h au maximum.</p>` : ''}
+    ${t.status === 'open' ? `<div class="row">${t.joined ? `<button class="plain" id="t-leave">${t.creator === me.id ? 'Annuler le tournoi' : 'Me retirer'}</button>` : `<button class="primary" id="t-join">Rejoindre (mise ${fmt(t.stake)})</button>`}</div><p class="mut dsmall">Le tournoi démarre dès que ${t.size} joueurs sont inscrits, et reste ouvert 48 h au maximum.</p>` : ''}
     ${t.status === 'running' ? '<p class="mut dsmall">Reste connecté : ton match démarre dès que ton adversaire est là (10 minutes maximum d\'attente, sinon forfait). Les combats sont les mêmes que d\'habitude.</p>' : ''}`;
   $('#t-back').onclick = () => { tab = 'tournaments'; render(); };
   if ($('#t-join')) $('#t-join').onclick = safe(async () => { const r = await api(`/tournaments/${t.id}/join`, {}); toast(r.started ? 'Tournoi lancé ! Les demi-finales commencent.' : 'Inscrit, mise payée'); await refreshMe(); render(); });
