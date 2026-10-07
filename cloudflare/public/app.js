@@ -1093,7 +1093,7 @@ async function adminStats(box, day) {
       <small>${fmt(x.rq || 0)} req · ${fmt(x.tr || 0)} trajets · ${fmt(x.nr || 0)} lect. · ${fmt(x.nw || 0)} écr. · ${ko(x.by || 0)}${x.tr ? ` · ${Math.round((x.ms || 0) / x.tr)} ms/trajet` : ''}${x.e5 ? ` · <i class="bad">${x.e5} erreur(s)</i>` : ''}</small></div>`).join('') || '<p class="mut">Rien pour l\'instant.</p>'}</div>`;
   };
   box.innerHTML = `<div class="chips" id="st-days" style="margin-bottom:8px;overflow-x:auto">${d.perDay.slice().reverse().map(p => `<button data-day="${p.day}" class="${p.day === d.day ? 'on' : ''}">${p.day.slice(8)}/${p.day.slice(5, 7)} · ${fmt(p.rq || 0)}</button>`).join('')}</div>
-    <p class="mut" style="margin:0 0 8px;font-size:12.5px">Jour UTC ${esc(d.day)} (de 2 h à 2 h en France). Les compteurs repartent à zéro quand le serveur de combats redémarre ; on garde 14 jours.</p>
+    <p class="mut" style="margin:0 0 8px;font-size:12.5px">Jour UTC ${esc(d.day)} (de 2 h à 2 h en France). Les chiffres arrivent avec environ une minute de retard ; on garde 14 jours d'historique.</p>
     <div class="admgrid">
       ${card('Requêtes HTTP', fmt(t.rq || 0), `${fmt(t.e5 || 0)} erreur(s) serveur · ${fmt(t.e4 || 0)} refus · ${fmt(t.slow || 0)} lente(s)`)}
       ${card('Allers-retours Supabase', fmt(trips), avg ? `${avg} ms en moyenne` : '')}
