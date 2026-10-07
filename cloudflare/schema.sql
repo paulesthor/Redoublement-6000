@@ -166,9 +166,7 @@ CREATE INDEX IF NOT EXISTS push_msgs_ep ON push_msgs(endpoint);
 CREATE INDEX IF NOT EXISTS inventory_skey ON inventory(user_id, skey, card_id);
 CREATE INDEX IF NOT EXISTS inventory_acq ON inventory(user_id, acquired, card_id);
 CREATE INDEX IF NOT EXISTS inventory_nk ON inventory(user_id, nk, card_id);
-CREATE INDEX IF NOT EXISTS inventory_qty ON inventory(user_id, qty, card_id);
 CREATE INDEX IF NOT EXISTS inventory_fav ON inventory(user_id, fav, skey, card_id);
-CREATE INDEX IF NOT EXISTS inventory_stats ON inventory(user_id, rar, sh, qty);
 
 CREATE TABLE IF NOT EXISTS fight_events (     -- journal des combats (début, pauses, reprises, fin, erreurs) : sert à comprendre pourquoi un combat s'arrête
   id INTEGER PRIMARY KEY AUTOINCREMENT,

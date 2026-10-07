@@ -337,8 +337,8 @@ const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan',
 const BOT_PRICE = { common: [2, 6], uncommon: [5, 14], rare: [12, 36], super: [40, 110], ultra: [120, 320], legendary: [350, 900] };
 const BOT_MIX = [['common', .30], ['uncommon', .27], ['rare', .23], ['super', .12], ['ultra', .06], ['legendary', .02]];
 const BOT_MINUTES = [[60, .3], [360, .3], [720, .2], [1440, .2]];
-const BOT_LISTINGS = 45;                 // ventes simulées ouvertes en permanence
-const BOT_NEW_PER_TICK = 10;
+const BOT_LISTINGS = 30;                 // ventes simulées ouvertes en permanence
+const BOT_NEW_PER_TICK = 5;
 const pickW = list => { let r = Math.random() * list.reduce((t, x) => t + x[1], 0); for (const [v, w] of list) if ((r -= w) < 0) return v; return list.at(-1)[0]; };
 const rand = (a, b) => a + Math.random() * (b - a);
 /** Envie des joueurs pour une page : 0,2 (page très peu vue) à 1 (des dizaines de milliers de vues par mois). Plus une page est visitée, plus elle est convoitée. */
