@@ -1189,13 +1189,24 @@ route('POST', '/api/admin/run', admin(async ({ env, ctx, body }) => {
 }));
 
 // ---------- point d'entrée ----------
-let lastMeter = 0;
-/** Envoie le compteur d'écritures au Durable Object (une seule écriture de stockage, hors quota D1), au plus une fois par minute. */
-function sendMeter(env, ctx) {
-  if (now() - lastMeter < 60000) return;
-  lastMeter = now();
-  const items = takeMeter(); if (!items.length) return;
-  ctx.waitUntil(env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/meter', { method: 'POST', body: JSON.stringify(items) }).catch(() => {}));
+let flushing = false;
+/** Envoie les statistiques au Durable Object (cumul du jour) et écrit le journal en attente. */
+async function flushAll(env0) {
+  const items = takeMeter();
+  await Promise.all([
+    items.length ? env0.LOBBY.get(env0.LOBBY.idFromName('main')).fetch('https://lobby/meter', { method: 'POST', body: JSON.stringify(items) }).catch(e => console.error('meter', e)) : null,
+    flushLogs(env0, true),
+  ]);
+}
+/** Après chaque requête : on attend un instant (pour grouper les requêtes simultanées) puis on envoie statistiques et journal. Un Worker peut disparaître à tout moment : on ne compte pas sur une requête future. */
+function flushSoon(env0, ctx) {
+  if (flushing) return;
+  flushing = true;
+  ctx.waitUntil((async () => {
+    await new Promise(r => setTimeout(r, globalThis.__FLUSH_MS ?? 300));
+    flushing = false;
+    await flushAll(env0);
+  })());
 }
 /** Routes dont le succès n'est pas écrit au journal (trop fréquentes ou sans intérêt). */
 const QUIET = /^POST \/api\/(push\/pull|cards\/enrich|friends\/seen)$/;
@@ -1210,7 +1221,7 @@ function actionDetail(r, body, out) {
   return '';
 }
 async function api(req, env0, ctx, url) {
-  const t0 = Date.now(); sendMeter(env0, ctx);
+  const t0 = Date.now();
   const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
   const label = r?.label ?? `${req.method} ${url.pathname.slice(0, 60)}`;
   let env = meter(env0, 'R:' + label), user = null, status = 200, err = null, body = {}, out;
@@ -1235,7 +1246,7 @@ async function api(req, env0, ctx, url) {
     else if (status >= 400) logEvent({ ...base, level: 'warn', kind: 'refus', detail: err?.message });
     else if (ms > 1500) logEvent({ ...base, level: 'warn', kind: 'lent', detail: `${ms} ms` });
     else if (req.method === 'POST' && !QUIET.test(label)) logEvent({ ...base, level: 'info', kind: /\/api\/admin\//.test(label) ? 'admin' : 'action', detail: actionDetail(r, body, out) });
-    ctx.waitUntil(flushLogs(env0));
+    flushSoon(env0, ctx);
   }
 }
 
@@ -1248,7 +1259,7 @@ export default {
       for (const e of [e1, e2]) if (e) console.error('cron', e);
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await pruneLogs(withDb(env0)).catch(() => {});
-      await flushLogs(withDb(env0), true);
+      await flushAll(withDb(env0));
     })());
   },
   async fetch(req, env, ctx) {

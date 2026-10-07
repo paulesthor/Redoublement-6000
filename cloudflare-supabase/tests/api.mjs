@@ -3,6 +3,7 @@ import { makeDb } from './pgharness.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { Lobby } from '../src/lobby.js';
 const PUBLIC = new URL('../../cloudflare/public', import.meta.url).pathname;
+globalThis.__FLUSH_MS = 0;   // les statistiques et le journal partent tout de suite
 const { DB, pg, env: base, trips, log } = await makeDb();
 // --- Wikipédia factice : chaque page a un texte et une image ---
 globalThis.fetch = async (u, o) => {
