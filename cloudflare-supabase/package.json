@@ -1,0 +1,20 @@
+{
+  "name": "wikimasters-supabase",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Version Supabase (PostgreSQL) de Clodo Wiki : même jeu, base de données sans quota de lignes",
+  "scripts": {
+    "test": "node tests/all.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4",
+    "@electric-sql/pglite": "^0.2"
+  },
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

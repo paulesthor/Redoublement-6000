@@ -1,0 +1,28 @@
+{
+  // Version Supabase de Clodo Wiki. Même jeu, même interface (dossier ../cloudflare/public), mais la base de données est Supabase (PostgreSQL) au lieu de D1.
+  // Nom volontairement différent : on peut la déployer À CÔTÉ de la version actuelle pour la tester (adresse wikimasters-supabase.<compte>.workers.dev).
+  // Au basculement : remplacer "name" par "wikimasters" (ou copier ce fichier à la racine du dépôt, voir MIGRATION-SUPABASE.md).
+  "name": "wikimasters-supabase",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "../cloudflare/public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/ws", "/migrate"]
+  },
+  "vars": {
+    // Adresse du projet Supabase (Settings > API > Project URL). La clé secrète, elle, se range avec : npx wrangler secret put SUPABASE_KEY
+    "SUPABASE_URL": "https://VOTRE-PROJET.supabase.co"
+  },
+  // Pour la migration SEULEMENT (voir MIGRATION-SUPABASE.md) : décommenter pour lier l'ancienne base D1, puis ranger le secret MIGRATE_KEY.
+  // "d1_databases": [{ "binding": "OLD_DB", "database_name": "wikimasters", "database_id": "6ac810b7-6df0-4e97-8f67-b2f3a12588ed" }],
+  "durable_objects": {
+    "bindings": [{ "name": "LOBBY", "class_name": "Lobby" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }],
+  "triggers": { "crons": ["*/15 * * * *"] },
+  // Le Worker s'exécute près de la base : beaucoup moins de latence pour les requêtes qui s'enchaînent
+  "placement": { "mode": "smart" },
+  "ai": { "binding": "AI" }
+  // Pour exiger un code d'invitation à l'inscription : ajouter "INVITE_CODE": "ton-code" dans "vars"
+}
