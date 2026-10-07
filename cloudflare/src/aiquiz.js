@@ -24,6 +24,7 @@ export function buildMessages(title, text) {
       '- Les 3 mauvaises réponses sont très crédibles : même nature, même ordre de grandeur, même époque que la bonne, proches d\'elle. Aucun choix absurde.\n' +
       '- INTERDIT : les questions de synonyme, de définition d\'un mot ou de sens d\'un mot. Exception : si l\'article porte sur une langue étrangère ou un mot étranger, tu peux poser une question de vocabulaire ou de traduction (type "langue").\n' +
       '- La bonne réponse se trouve dans le texte (ou s\'en déduit). La question ne contient ni la réponse ni d\'indice évident, et ne répète pas les mots de la bonne réponse.\n' +
+      '- Les 4 choix ont une longueur voisine : la bonne réponse n\'est PAS plus longue ni plus détaillée que les mauvaises (au moins une mauvaise réponse est aussi longue qu\'elle). Place la bonne réponse à des indices variés.\n' +
       '- Chaque question se comprend seule (cite le sujet), moins de 220 caractères ; choix de moins de 80 caractères.\n' +
       `Réponds avec ce JSON exact : {"questions":[{"type":"${KINDS}","question":"…","choices":["…","…","…","…"],"answer":0}]} où "type" est l'un de ces mots et "answer" l'indice (0 à 3) du bon choix.` },
   ];
@@ -63,6 +64,8 @@ export function parseQuestions(raw, title, text) {
     }
     const tw = new Set(words(title)), qw = new Set(words(question).filter(x => !tw.has(x))), overlap = c => words(c).filter(x => qw.has(x)).length;
     if (overlap(good) > 0 && choices.every((c, i) => i === ans || overlap(c) === 0)) continue;   // seule la bonne réponse reprend des mots de la question : trop facile à deviner
+    const others = choices.filter((_, i) => i !== ans).map(c => c.length);
+    if (good.length > Math.max(...others) * 1.15 + 3) continue;                              // la bonne réponse ne doit pas être reconnaissable à sa longueur
     const key = norm(question);
     if (seen.has(key)) continue; seen.add(key);
     out.push({ type, text: norm(question).includes(norm(title)) ? question : `À propos de « ${title} » : ${question}`, options: choices, answer: ans, ai: true });

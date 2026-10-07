@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '2.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '3.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -775,7 +775,8 @@ async function renderGame() {
     const bar = id => { const pct = Math.max(0, Math.round((f.hp[id] ?? 0) / (f.max[id] || 1) * 100)); return `<div class="hpb ${id === me.id ? 'me' : ''}" data-id="${id}"><div class="hpt"><span>${nm(id)}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(f.hp[id] ?? 0)} PV</b></div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`; };
     const mini = (c, cls = '', attrs = '') => `<div class="bcard ${cls}" ${attrs} style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="bi ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}>${c.image ? '' : noimg(c)}</div>
       <b>${esc(c.title)}</b><span class="st"><em>ATK <i>${fmt(c.atk)}</i></em><em>DEF <i>${fmt(c.def)}</i></em></span></div>`;
-    const deckRow = id => `<div class="deckrow"><small>${nm(id)}</small><div>${f.deck[id].map(c => mini(c, (f.left?.[id] && !f.left[id].includes(c.id)) ? 'used' : '')).join('')}</div></div>`;
+    const back = `<div class="bcard back"><div class="bi noimg">?</div><b>Carte cachée</b></div>`;
+    const deckRow = id => `<div class="deckrow"><small>${nm(id)}</small><div>${f.deck[id].map(c => { const used = f.left?.[id] && !f.left[id].includes(c.id); return id === me.id || used ? mini(c, used ? 'used' : '') : back; }).join('')}</div></div>`;   // les cartes de l'adversaire restent cachées tant qu'il ne les a pas jouées
     let body = '';
     if (f.phase === 'intro') {
       body = `<p class="mut" style="text-align:center">Les decks sont prêts. ${nm(f.first)} attaque en premier.</p>${deckRow(f.a)}${deckRow(f.b)}`;
