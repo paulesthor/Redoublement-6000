@@ -12,7 +12,7 @@
   },
   "vars": {
     // Adresse du projet Supabase (Settings > API > Project URL). La clé secrète, elle, se range avec : npx wrangler secret put SUPABASE_KEY
-    "SUPABASE_URL": "https://VOTRE-PROJET.supabase.co"
+    "SUPABASE_URL": "https://dosgnqfhcgckzxibumdc.supabase.co"
   },
   // Pour la migration SEULEMENT (voir MIGRATION-SUPABASE.md) : décommenter pour lier l'ancienne base D1, puis ranger le secret MIGRATE_KEY.
   // "d1_databases": [{ "binding": "OLD_DB", "database_name": "wikimasters", "database_id": "6ac810b7-6df0-4e97-8f67-b2f3a12588ed" }],
