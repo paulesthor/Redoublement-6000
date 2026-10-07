@@ -806,6 +806,43 @@ route('GET', '/api/album', async ({ env, user, origin, query }) => {
   return { cards, total, rarityAvg };
 });
 
+// ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
+let albumsCache = null, albumImgs = { t: 0, m: new Map() };
+const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
+const albumReward = a => ({ c: 150 * a.cards.length, p: a.cards.length >= 8 ? 2 : 1 });
+route('GET', '/api/albums', async ({ env, user, origin }) => {
+  await ensureGameSchema(env);
+  const albums = await albumList(env, origin), ids = [...new Set(albums.flatMap(a => a.cards.map(c => c.id)))];
+  if (!ids.length) return { albums: [] };
+  if (now() - albumImgs.t > 600000) {                                     // photos des cartes déjà connues du jeu : partagées entre joueurs, relues toutes les 10 min
+    const rows = await all(env, `SELECT id, image FROM cards WHERE image IS NOT NULL AND id IN (${placeholders(ids.length)})`, ...ids);
+    albumImgs = { t: now(), m: new Map(rows.map(r => [r.id, r.image])) };
+  }
+  const [own, claimed] = await Promise.all([
+    all(env, `SELECT card_id FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET)),
+    all(env, 'SELECT album FROM album_claims WHERE user_id = ?', user.id),
+  ]);
+  const have = new Set(own.map(r => (r.card_id >= SHINY_OFFSET ? r.card_id - SHINY_OFFSET : r.card_id))), done = new Set(claimed.map(r => r.album));
+  return { albums: albums.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, reward: albumReward(a), claimed: done.has(a.id),
+    cards: a.cards.map(c => ({ id: c.id, t: c.t, own: have.has(c.id), img: have.has(c.id) ? albumImgs.m.get(c.id) ?? null : null })) })) };
+});
+route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, origin }) => {
+  await ensureGameSchema(env);
+  const a = (await albumList(env, origin)).find(x => x.id === params.id);
+  if (!a) bad('Album inconnu', 404);
+  const ids = a.cards.map(c => c.id);
+  const n = (await one(env, `SELECT COUNT(DISTINCT CASE WHEN card_id >= ? THEN card_id - ? ELSE card_id END) n FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, SHINY_OFFSET, SHINY_OFFSET, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET))).n;
+  if (+n < ids.length) bad(`Il te manque ${ids.length - n} carte${ids.length - n > 1 ? 's' : ''} pour terminer cet album`);
+  const first = await run(env, 'INSERT INTO album_claims (user_id, album, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, a.id, now());
+  if (!first.meta.changes) bad('Récompense déjà récupérée');
+  const rw = albumReward(a);
+  await run(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id);
+  notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces et ${rw.p} paquet${rw.p > 1 ? 's' : ''} !` }, user.id);
+  const ti = await syncTitles(env, user.id).catch(() => null);
+  ti?.added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
+  return { ok: true, reward: rw };
+});
+
 // ---------- fusion de doublons : la carte monte de niveau (+ATK/+DEF) ----------
 route('POST', '/api/fuse', async ({ env, ctx, user, body }) => {
   await ensureGameSchema(env);

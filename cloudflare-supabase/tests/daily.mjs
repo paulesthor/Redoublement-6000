@@ -87,6 +87,33 @@ const eq = await p.$('.titlecard.ok:not(.on)'); const tid = await eq.getAttribut
 ok('titre équipé affiché sous le pseudo', (await p.evaluate(() => me.title)) === tid && (await p.$('.avpanel .ttl')) !== null);
 await p.evaluate(() => { tab = 'customize'; render(); }); await p.waitForSelector('.avbig .av.hasph img'); for (const th of ['dark', 'light', 'beige']) { await p.evaluate(t => { localStorage.setItem('wm_theme', t); window.applyPrefs(); }, th); await p.waitForTimeout(300); await shot(p, 'photo-' + th); if (th !== 'dark') { const im = await p.screenshot({ clip: { x: 36, y: 215, width: 20, height: 20 } }); ok('photo non inversée en thème ' + th, im.length > 0); } }
 await p.evaluate(() => { localStorage.setItem('wm_theme', 'dark'); window.applyPrefs(); });
+console.log('— mes ventes : total à récupérer');
+{
+  const mine = (await DB.prepare('SELECT card_id FROM inventory WHERE user_id = 1 AND qty >= 1 AND card_id NOT IN (SELECT card_id FROM auctions) LIMIT 2').all()).results.map(r => r.card_id);
+  for (const c of mine) await call(A, 'POST', '/api/auctions', { card_id: c, price: 40, minutes: 60 });
+  const aid = (await DB.prepare('SELECT id FROM auctions WHERE seller_id = 1 ORDER BY id LIMIT 1').all()).results[0].id;
+  await DB.prepare('UPDATE users SET coins = 5000 WHERE id = 2').run();
+  await call(B, 'POST', `/api/auctions/${aid}/bid`, { amount: 75 });
+  await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'market'; render(); }); await p.waitForSelector('#mk-c'); await p.waitForTimeout(500);
+  await p.click('#mk-c [data-f=mine]'); await p.waitForSelector('.minesum'); await p.waitForTimeout(300); await shot(p, 'mes-ventes');
+  const txt = await p.textContent('.minesum');
+  ok('total à récupérer = enchères actuelles de mes ventes', /75/.test(txt) && /1 vente avec offre/.test(txt) && /1 sans offre/.test(txt), txt.replace(/\s+/g, ' '));
+  await call(B, 'POST', `/api/auctions/${aid}/bid`, { amount: 120 }); await p.evaluate(() => { gcache.clear(); render(); }); await p.waitForTimeout(700); await p.click('#mk-c [data-f=mine]'); await p.waitForTimeout(300);
+  ok('le total suit les surenchères', /120/.test(await p.textContent('.minesum')));
+  await p.click('#mk-c [data-f=""]'); await p.waitForTimeout(200); ok('le total n\'apparaît que dans « Mes ventes »', (await p.textContent('#mine-sum')).trim() === '');
+}
+console.log('— fiche de carte avec un très long article');
+{
+  await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'album'; render(); }); await p.waitForSelector('#g .card'); await p.waitForTimeout(500);
+  await p.evaluate(() => { const c = [...cardIndex.values()][0]; c.extract = 'Article très long. '.repeat(400); showCard(c.id); });
+  await p.waitForSelector('#det-close'); await p.waitForTimeout(300); await shot(p, 'fiche-longue');
+  const box = await p.$eval('#det-close', e => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
+  ok('bouton Fermer visible sans défiler', box.bottom <= 844 && box.top >= 0, J(box));
+  const sc = await p.$eval('.detail', e => ({ scrollable: e.scrollHeight > e.clientHeight, ov: getComputedStyle(e).overflowY }));
+  await p.evaluate(() => { const d = document.querySelector('.detail'); d.scrollTop = 99999; });
+  ok('la fiche défile (un seul défilement)', sc.scrollable && sc.ov === 'auto' && (await p.$eval('.detail', e => e.scrollTop)) > 100, J(sc));
+  await p.click('#det-close'); await p.waitForTimeout(300); ok('la fiche se ferme', (await p.$('.detail')) === null);
+}
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
 ok('3 types de combat en onglets', (await p.$$('#dm-seg button')).length === 3);

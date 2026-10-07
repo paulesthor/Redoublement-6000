@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.4';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -379,7 +379,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', albums: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -680,12 +680,15 @@ const views = {
         <select id="mk-s" aria-label="Tri">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${k === mk.sort ? 'selected' : ''}>Tri : ${l}</option>`).join('')}</select>
         <div class="chips" id="mk-c"><button data-f="" class="on">Toutes</button><button data-f="bid">Mes enchères (${auctions.filter(a => a.bidded || a.leading).length})</button><button data-f="lead">Je suis en tête</button><button data-f="mine">Mes ventes</button>${cfg.rarities.map(r => `<button data-f="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
+      <div id="mine-sum"></div>
       <div class="list" id="lots"></div>`;
     const draw = () => {
       const q = mk.q.trim().toLowerCase();
       const list = auctions.filter(a => (!q || a.title.toLowerCase().includes(q) || a.seller.toLowerCase().includes(q))
         && (!mk.f || (mk.f === 'mine' ? a.mine : mk.f === 'lead' ? a.leading : mk.f === 'bid' ? (a.bidded || a.leading) : a.rarity === mk.f))).sort(SORTS[mk.sort][1]);
       $('#lots').innerHTML = list.length ? list.map(row).join('') : `<div class="empty">${auctions.length ? 'Aucune enchère ne correspond.' : 'Aucune enchère en cours.<br>Mets une carte en vente depuis ta collection.'}</div>`;
+      const mine = auctions.filter(a => a.mine), withBid = mine.filter(a => a.bid > 0), total = withBid.reduce((t, a) => t + a.bid, 0);
+      $('#mine-sum').innerHTML = mk.f === 'mine' ? `<div class="panel minesum"><div><small>À récupérer en ce moment</small><b>${ico('coin')}${fmt(total)}</b></div><p class="mut">${mine.length ? `${withBid.length} vente${withBid.length > 1 ? 's' : ''} avec offre${mine.length - withBid.length ? ` · ${mine.length - withBid.length} sans offre pour l'instant (la carte te revient si personne n'enchérit)` : ''}. Le total change à chaque surenchère.` : 'Tu n\'as aucune vente en cours.'}</p></div>` : '';
       $('#mk-c').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.f === mk.f));
       $('#lots').querySelectorAll('[data-lot]').forEach(b => b.onclick = safe(() => lotSheet(b.dataset.lot)));
       upd();
@@ -1758,6 +1761,32 @@ async function cropSheet(file) {
     close(); await refreshMe(); await loadCosmetics(true); toast('Photo enregistrée'); render();
   });
 }
+
+// ---------- albums thématiques ----------
+let albumOpen = null;
+views.albums = async v => {
+  const d = await api('/albums');
+  if (!d.albums.length) { v.innerHTML = `${pageHead('Albums', 'Bientôt disponibles')}<div class="empty">Les albums thématiques arrivent très vite.</div>`; return; }
+  const done = d.albums.filter(a => a.claimed).length, tot = d.albums.length;
+  const prog = a => a.cards.filter(c => c.own).length;
+  const sorted = [...d.albums].sort((x, y) => (y.claimed - x.claimed === 0 ? 0 : x.claimed - y.claimed) || (prog(y) / y.cards.length) - (prog(x) / x.cards.length));
+  const tile = a => { const n = prog(a), full = n === a.cards.length; return `<button class="albtile ${full ? 'full' : ''} ${a.claimed ? 'claimed' : ''}" data-al="${a.id}"><span class="ae">${esc(a.emoji || '📚')}</span><b>${esc(a.name)}</b>
+    <div class="qbar"><i style="width:${Math.round(n / a.cards.length * 100)}%"></i></div><small>${n} / ${a.cards.length}${a.claimed ? ' · terminé ✓' : full ? ' · à récupérer !' : ''}</small></button>`; };
+  v.innerHTML = `${pageHead('Albums', `${done} / ${tot} complétés · réunis toutes les cartes d'un thème pour une récompense`)}
+    <div class="albgrid">${sorted.map(tile).join('')}</div>`;
+  const open = id => {
+    const a = d.albums.find(x => x.id === id); if (!a) return; albumOpen = id;
+    const n = prog(a), full = n === a.cards.length, m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; albumOpen = null; };
+    m.hidden = false;
+    m.innerHTML = `<div class="albsheet"><h2>${esc(a.emoji || '📚')} ${esc(a.name)}</h2><p class="mut" style="margin:0 0 10px">${esc(a.blurb || '')}</p>
+      <div class="albcards">${a.cards.map(c => `<div class="albcard ${c.own ? 'own' : ''}"><div class="ai" ${c.img ? `style="background-image:url('${esc(c.img)}')"` : ''}>${c.own ? (c.img ? '' : '✓') : '?'}</div><span>${esc(c.t)}</span></div>`).join('')}</div>
+      <p class="mut" style="margin:10px 0">Récompense : ${rewardChips(a.reward)} · ${n} / ${a.cards.length} cartes (une variante shiny compte aussi)</p>
+      <div class="row">${a.claimed ? '<button class="plain" disabled style="flex:1">Récompense récupérée ✓</button>' : `<button id="al-claim" style="flex:1" ${full ? '' : 'disabled'}>${full ? 'Récupérer la récompense' : `Il manque ${a.cards.length - n} carte${a.cards.length - n > 1 ? 's' : ''}`}</button>`}<button class="plain" id="al-x" style="flex:1">Fermer</button></div></div>`;
+    $('#al-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    $('#al-claim')?.addEventListener('click', safe(async () => { $('#al-claim').disabled = true; const r = await api(`/albums/${a.id}/claim`, {}); sparks($('.albsheet'), 34); toast(`+${r.reward.c} pièces, +${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''} !`); await refreshMe(); setTimeout(() => { close(); render(); }, 900); }));
+  };
+  v.querySelectorAll('[data-al]').forEach(b => b.onclick = () => open(b.dataset.al));
+};
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -1767,7 +1796,7 @@ function moreSheet() {
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
     <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
-    <h3>Explorer</h3><div class="mgrid">${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
+    <h3>Explorer</h3><div class="mgrid">${T('albums', 'album', 'Albums', 'Séries de cartes à compléter')}${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
     <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };

@@ -218,6 +218,8 @@ CREATE TABLE IF NOT EXISTS user_titles (user_id BIGINT NOT NULL, tid TEXT NOT NU
 
 CREATE TABLE IF NOT EXISTS login_fails (k TEXT PRIMARY KEY, n INTEGER NOT NULL, first BIGINT NOT NULL);
 
+CREATE TABLE IF NOT EXISTS album_claims (user_id BIGINT NOT NULL, album TEXT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, album));
+
 DO $$ DECLARE t record; BEGIN
   FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
