@@ -980,3 +980,5 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .thcard{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:14px;background:linear-gradient(160deg,#f5c5421a,var(--panel));border:1px solid #f5c54244}
 .thcard .ae{font-size:28px;line-height:1}.thcard b{font-size:14px}.thcard small{color:var(--mut);font-size:11.5px;line-height:1.35;flex:1}
 .thcard button{display:flex;align-items:center;justify-content:center;gap:6px}.thcard button .ic{width:15px;height:15px}
+
+.inlclk{display:inline-block;vertical-align:-3px;margin-right:2px}.inlclk .ic{width:15px;height:15px}

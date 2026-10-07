@@ -128,6 +128,16 @@ console.log('— mise en vente multiple (interface)');
   ok('3 enchères créées d\'un coup', nbB - nbA === 3, [nbA, nbB]);
   ok('prix modifié pris en compte', (await DB.prepare('SELECT COUNT(*) n FROM auctions WHERE seller_id = 1 AND start_price = 77').all()).results[0].n === 1);
 }
+console.log('— albums et paquets du jour (interface)');
+{
+  await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'albums'; render(); }); await p.waitForSelector('.albtile'); await p.waitForTimeout(500); await shot(p, 'albums');
+  ok('liste des albums affichée', (await p.$$('.albtile')).length >= 30);
+  await p.click('.albtile'); await p.waitForSelector('.albsheet'); await p.waitForTimeout(300); await shot(p, 'album-detail');
+  ok('détail d\'un album : cartes et récompense', (await p.$$('.albcard')).length >= 4 && (await p.textContent('.albsheet')).includes('Récompense'));
+  await p.click('#al-x');
+  await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('.thcard'); await p.waitForTimeout(400); await shot(p, 'paquets-du-jour');
+  ok('2 paquets du jour', (await p.$$('.thcard')).length === 2);
+}
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
 ok('3 types de combat en onglets', (await p.$$('#dm-seg button')).length === 3);

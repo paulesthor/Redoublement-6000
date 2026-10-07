@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1836,7 +1836,7 @@ views.themepacks = async v => {
   const d = await api('/themepacks');
   if (!d.themes.length) { v.innerHTML = `${pageHead('Paquets du jour', 'Bientôt disponibles')}<div class="empty">Les paquets par catégorie arrivent très vite.</div>`; return; }
   v.innerHTML = `${pageHead('Paquets du jour', `Deux catégories tirées au sort chaque jour · ${fmt(d.price)} pièces le paquet · légendaires ×${d.mult}`)}
-    <p class="mut qreset" style="margin:-6px 0 12px">${ico('clock')} Nouvelles catégories dans <b id="th-left">${hmLeft(d.resetIn)}</b> · tu as <b>${fmt(me.coins)}</b> pièces. Les légendaires du paquet viennent toutes de la catégorie ; les autres raretés sont tirées normalement, sans GODPACK.</p>
+    <p class="mut" style="margin:-6px 0 12px"><span class="inlclk">${ico('clock')}</span> Nouvelles catégories dans <b id="th-left">${hmLeft(d.resetIn)}</b> · tu as <b>${fmt(me.coins)}</b> pièces. Les légendaires du paquet viennent toutes de la catégorie ; les autres raretés sont tirées normalement, sans GODPACK.</p>
     <div class="thgrid">${d.themes.map(t => `<div class="thcard"><span class="ae">${esc(t.emoji || '📦')}</span><b>${esc(t.name)}</b><small>${t.count} légendaires possibles : ${t.sample.map(esc).join(', ')}…</small>
       <button data-th="${t.id}" ${me.coins < d.price ? 'class="plain"' : ''}>${ico('coin')} ${fmt(d.price)}</button></div>`).join('')}</div>`;
   { const end = Date.now() + d.resetIn; tick = setInterval(() => { const e = $('#th-left'); if (e) e.textContent = hmLeft(end - Date.now()); }, 30000); }

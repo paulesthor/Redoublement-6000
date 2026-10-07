@@ -372,6 +372,16 @@ console.log('— récompense quotidienne');
   }
   console.log('— paquets thématiques et albums');
   {
+    const { readFileSync } = await import('node:fs'), { __testHooks: H } = await import('../src/index.js'); H.resetAlbums();
+    const real = JSON.parse(readFileSync(new URL('../../cloudflare/public/catalog/albums.json', import.meta.url))).albums, sh0 = JSON.parse(readFileSync(new URL('../../cloudflare/public/catalog/0.json', import.meta.url))), LEG = JSON.parse(readFileSync(new URL('../../cloudflare/public/catalog/meta.json', import.meta.url))).ranges.legendary[1];
+    ok('albums réels : au moins 30 albums de 4 à 8 cartes', real.length >= 30 && real.every(a => a.cards.length >= 4 && a.cards.length <= 8), real.length);
+    ok('albums réels : chaque carte est une légendaire du catalogue, rang et titre exacts', real.every(a => a.cards.every(c => c.r < LEG && sh0[c.r][0] === c.id && sh0[c.r][1] === c.t)));
+    ok('albums réels : identifiants uniques, pas de carte en double dans un album', new Set(real.map(a => a.id)).size === real.length && real.every(a => new Set(a.cards.map(c => c.id)).size === a.cards.length));
+    ok('l\'album « Dictateurs » contient Hitler, Staline et Poutine', ['Adolf Hitler', 'Joseph Staline', 'Vladimir Poutine'].every(t => real.find(a => a.id === 'dictateurs').cards.some(c => c.t === t)));
+    [s, r] = await call(A, 'GET', '/api/albums'); ok('API albums : tous les albums réels', s === 200 && r.albums.length === real.length, J([s]));
+    [s, r] = await call(A, 'GET', '/api/themepacks'); ok('paquets du jour réels : 2 catégories', s === 200 && r.themes.length === 2 && r.themes.every(t => t.count >= 4), J(r).slice(0, 200)); H.resetAlbums();
+  }
+  {
     const { default: CFGm } = await import('../src/config.js'); const { __testHooks } = await import('../src/index.js'); __testHooks.resetAlbums(); const { readFileSync } = await import('node:fs');
     const shard = JSON.parse(readFileSync(new URL('../../cloudflare/public/catalog/0.json', import.meta.url))).slice(0, 8);
     const fx = { albums: [{ id: 'ta', name: 'Test A', emoji: '🧪', blurb: 'a', cards: shard.slice(0, 4).map((e, i) => ({ id: e[0], t: e[1], r: i })) }, { id: 'tb', name: 'Test B', emoji: '🧫', blurb: 'b', cards: shard.slice(4, 8).map((e, i) => ({ id: e[0], t: e[1], r: 4 + i })) }] };
