@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '2.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '2.8';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -359,7 +359,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'duel', ach: 'duel', market: 'market', trades: 'market', friends: 'friends' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -368,7 +368,7 @@ const bindSeg = v => v.querySelectorAll('[data-seg]').forEach(b => b.onclick = (
 const avColor = name => `hsl(${[...String(name)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)} 62% 68%)`;
 const avatar = (name, on = false) => `<span class="av ${on ? 'on' : ''}" style="--avc:${avColor(name)}">${esc(String(name)[0]?.toUpperCase() || '?')}</span>`;
 const timeLeft = ms => { const r = Math.max(0, Math.round(ms / 1000)); return r >= 3600 ? `${Math.floor(r / 3600)} h ${Math.floor(r % 3600 / 60)} min` : r >= 60 ? `${Math.floor(r / 60)} min ${r % 60} s` : `${r} s`; };
-const COMBAT_SEG = [['duel', 'Combats'], ['rank', 'Classement'], ['ach', 'Succès']];
+const RANK_SEG = [['rank', 'Classement'], ['ach', 'Succès']];
 const MARKET_SEG = [['market', 'Enchères'], ['trades', 'Échanges']];
 
 /** Liste paginée : charge les pages du serveur au fil du défilement (une page de plus quand le bas approche). */
@@ -578,7 +578,7 @@ const views = {
 
   async duel(v) {
     const { users } = await api('/users');
-    v.innerHTML = `${pageHead('Combats', 'Défie un joueur connecté')}${seg(COMBAT_SEG, 'duel')}
+    v.innerHTML = `${pageHead('Combats', 'Défie un joueur connecté')}
       <details class="panel rulesd"><summary>Règles</summary><p class="mut" style="margin:10px 0 0"><b style="color:var(--fg)">Quiz</b> : 5 questions, les réponses rapides rapportent plus. <b style="color:var(--fg)">Combat</b> : chacun choisit 3 cartes (PV de départ = somme de leurs DEF). À tour de rôle, un joueur attaque avec une carte et l'autre répond à 3 questions sur son article : chaque mauvaise réponse coûte le tiers de l'ATK de la carte. Le plus de PV à la fin gagne : +50 pièces (moitié moins contre un joueur simulé).</p></details></div>
       <button id="vs-bot" class="botbtn">${ico('sword')} Combat contre un joueur simulé</button>
       <div class="list">${users.map(u => `<div class="item row1 tap ${u.me ? 'me' : ''}" data-pl="${u.id}">${avatar(u.name, online.has(u.id))}
@@ -591,19 +591,41 @@ const views = {
 
   async market(v) {
     const { auctions } = await api('/auctions');
-    v.innerHTML = `${pageHead('Marché', 'Enchères entre joueurs')}${seg(MARKET_SEG, 'market')}` + (auctions.length
-      ? `<div class="list">${auctions.map(a => `<div class="item lot" style="--c:var(--${a.rarity})">
+    const cur = a => a.bid || a.start_price;
+    const SORTS = {
+      end: ['Bientôt terminées', (x, y) => x.ends_at - y.ends_at], recent: ['Plus récentes', (x, y) => y.id - x.id],
+      up: ['Prix croissant', (x, y) => cur(x) - cur(y)], down: ['Prix décroissant', (x, y) => cur(y) - cur(x)],
+      rar: ['Rareté', (x, y) => RANK[y.rarity] - RANK[x.rarity] || cur(y) - cur(x)], bids: ['Plus d\'offres', (x, y) => (y.bids || 0) - (x.bids || 0)],
+    };
+    const row = a => `<div class="item lot" style="--c:var(--${a.rarity})">
           <div class="thumb ${a.image ? '' : 'noimg'}" ${a.image ? `style="background-image:url('${esc(a.image)}')"` : ''}>${a.image ? '' : noimg(a)}<span class="chip" style="--c:var(--${a.rarity})">${ABBR[a.rarity]}</span></div>
           <div class="info"><div class="nm">${esc(a.title)}</div>
             <div class="sub"><span class="rar ${a.rarity}">${RAR[a.rarity]}</span><span>par ${esc(a.seller)}</span><span>prix moyen ${a.avg_price ?? '—'}</span><span>${a.bids || 0} offre${a.bids > 1 ? 's' : ''}</span></div>
-            <div class="price">${ico('coin')}${a.bid || a.start_price}<span class="mut" style="font-size:12px;font-weight:400;font-family:var(--f-body)">${a.bid ? `${esc(a.bidder)}${a.leading ? ' (toi)' : ''}` : 'mise de départ'}</span></div>
+            <div class="price">${ico('coin')}${cur(a)}<span class="mut" style="font-size:12px;font-weight:400;font-family:var(--f-body)">${a.bid ? `${esc(a.bidder)}${a.leading ? ' (toi)' : ''}` : 'mise de départ'}</span></div>
             <div class="time" data-end="${a.ends_at}">${ico('clock')}<span></span></div></div>
-          <div class="acts" style="align-self:center">${a.mine ? '<span class="mut">Ta vente</span>' : ''}<button class="${a.mine ? 'plain' : ''}" data-lot="${a.id}">${a.mine ? 'Voir' : 'Enchérir'}</button></div></div>`).join('')}</div>`
-      : '<div class="empty">Aucune enchère en cours.<br>Mets une carte en vente depuis ta collection.</div>');
-    bindSeg(v);
-    v.querySelectorAll('[data-lot]').forEach(b => b.onclick = safe(() => lotSheet(b.dataset.lot)));
+          <div class="acts" style="align-self:center">${a.mine ? '<span class="mut">Ta vente</span>' : ''}<button class="${a.mine ? 'plain' : ''}" data-lot="${a.id}">${a.mine ? 'Voir' : 'Enchérir'}</button></div></div>`;
+    v.innerHTML = `${pageHead('Marché', `${auctions.length} enchère${auctions.length > 1 ? 's' : ''} entre joueurs`)}${seg(MARKET_SEG, 'market')}
+      <div class="toolbar mk">
+        <div class="search">${ico('search')}<input id="mk-q" placeholder="Chercher une carte ou un vendeur" autocomplete="off" value="${esc(mk.q)}"></div>
+        <select id="mk-s" aria-label="Tri">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${k === mk.sort ? 'selected' : ''}>Tri : ${l}</option>`).join('')}</select>
+        <div class="chips" id="mk-c"><button data-f="" class="on">Toutes</button><button data-f="mine">Mes ventes</button><button data-f="lead">Je suis en tête</button>${cfg.rarities.map(r => `<button data-f="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+      </div>
+      <div class="list" id="lots"></div>`;
+    const draw = () => {
+      const q = mk.q.trim().toLowerCase();
+      const list = auctions.filter(a => (!q || a.title.toLowerCase().includes(q) || a.seller.toLowerCase().includes(q))
+        && (!mk.f || (mk.f === 'mine' ? a.mine : mk.f === 'lead' ? a.leading : a.rarity === mk.f))).sort(SORTS[mk.sort][1]);
+      $('#lots').innerHTML = list.length ? list.map(row).join('') : `<div class="empty">${auctions.length ? 'Aucune enchère ne correspond.' : 'Aucune enchère en cours.<br>Mets une carte en vente depuis ta collection.'}</div>`;
+      $('#mk-c').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.f === mk.f));
+      $('#lots').querySelectorAll('[data-lot]').forEach(b => b.onclick = safe(() => lotSheet(b.dataset.lot)));
+      upd();
+    };
     const upd = () => v.querySelectorAll('[data-end]').forEach(s => { const ms = s.dataset.end - Date.now(); s.querySelector('span').textContent = timeLeft(ms); s.classList.toggle('hot', ms < 60000); });
-    upd(); tick = setInterval(upd, 1000);
+    bindSeg(v);
+    $('#mk-q').oninput = e => { mk.q = e.target.value; draw(); };
+    $('#mk-s').onchange = e => { mk.sort = e.target.value; draw(); };
+    $('#mk-c').onclick = e => { const b = e.target.closest('button'); if (!b) return; mk.f = b.dataset.f; draw(); };
+    draw(); tick = setInterval(upd, 1000);
   },
 
   async trades(v) {
@@ -675,7 +697,7 @@ const views = {
   async ach(v) {
     const { achievements: list } = await api('/achievements');
     const done = list.filter(a => a.done).length;
-    v.innerHTML = `${pageHead('Succès', `${done} / ${list.length} débloqués`)}${seg(COMBAT_SEG, 'ach')}
+    v.innerHTML = `${pageHead('Succès', `${done} / ${list.length} débloqués`)}${seg(RANK_SEG, 'ach')}
       <div class="achlist">${list.map(a => `<div class="ach ${a.done ? 'done' : ''}"><div class="medal">${ico(a.done ? 'trophy' : 'shield')}</div>
         <div class="grow"><div class="nm">${esc(a.t)}</div><div class="sub">${esc(a.d)}</div>
           ${a.done ? '' : `<div class="bar"><i style="width:${Math.round(a.value / a.n * 100)}%"></i></div><div class="sub">${fmt(a.value)} / ${fmt(a.n)}</div>`}</div>
@@ -685,7 +707,7 @@ const views = {
 
   async rank(v) {
     const { players } = await api('/leaderboard');
-    v.innerHTML = `${pageHead('Classement', 'Score = valeur des cartes uniques (selon la rareté) + 10 par victoire')}${seg(COMBAT_SEG, 'rank')}
+    v.innerHTML = `${pageHead('Classement', 'Score = valeur des cartes uniques (selon la rareté) + 10 par victoire')}${seg(RANK_SEG, 'rank')}
       <div class="list">${players.map((p, i) => `<div class="item tap r${i + 1} ${p.id === me.id ? 'me' : ''}" data-pl="${p.id}"><span class="rank-n">${i + 1}</span>${avatar(p.name, online.has(p.id))}
         <div class="grow"><div class="nm">${esc(p.name)}</div><div class="sub"><span>${p.uniques} cartes</span><span>${p.wins} V / ${p.losses} D</span><span>${fmt(p.coins)} pièces</span></div></div>
         <div class="score">${fmt(p.score)}<small>points</small></div></div>`).join('')}</div>`;
@@ -1172,13 +1194,16 @@ views.player = async v => {
     $('#vc-rm').onclick = () => { close(); save(ids().filter(i => i !== c.id)); };
   });
 };
+let lastRenderKey = '';
 const render = safe(async () => {
   clearInterval(tick); markTab();
+  const key = tab + ':' + (tab === 'player' ? playerId : ''), keepY = key === lastRenderKey ? window.scrollY : 0;   // même page qui se rafraîchit (enchère, évènement serveur) : on ne remonte pas en haut
+  lastRenderKey = key;
   if (tab === 'duel' && game) return renderGame();
   const v = $('#view'), sk = setTimeout(() => { v.innerHTML = SKELETON; }, 140);   // squelette si les données tardent
   try { await views[tab](v); } finally { clearTimeout(sk); }
   labelTables($('#view'));
-  window.scrollTo(0, 0); fitLock(); setTimeout(fitLock, 250); setTimeout(fitLock, 1000);
+  window.scrollTo(0, keepY); fitLock(); setTimeout(fitLock, 250); setTimeout(fitLock, 1000);
 });
 async function refreshMe() {
   me = await api('/me');
@@ -1190,6 +1215,7 @@ const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.
 /** Profil d'un joueur : stats, meilleures cartes, succès. */
 /** Ouvre la page d'un joueur (profil, vitrine, meilleures cartes, succès). */
 let playerId = null, playerFrom = 'packs';
+const mk = { q: '', sort: 'end', f: '' };                       // recherche, tri et filtre du marché (gardés quand la liste se rafraîchit)
 function openPlayer(id) {
   const m = $('#modal'); m.hidden = true; m.innerHTML = ''; lotOpen = null; clearInterval(lotTick);
   if (tab !== 'player') playerFrom = tab;                        // pour le bouton Retour
@@ -1239,7 +1265,7 @@ async function pushStartup() {
 function profileSheet() {
   const m = $('#modal');
   m.hidden = false;
-  m.innerHTML = `<div><div class="profile">${avatar(me.name)}<div><b>${esc(me.name)}</b><div class="mut">${me.wins} victoire${me.wins > 1 ? 's' : ''} · ${me.losses} défaite${me.losses > 1 ? 's' : ''}</div></div></div>
+  m.innerHTML = `<div><div class="profile tapp" id="pf-head" role="button" tabindex="0">${avatar(me.name)}<div><b>${esc(me.name)}</b><div class="mut">${me.wins} victoire${me.wins > 1 ? 's' : ''} · ${me.losses} défaite${me.losses > 1 ? 's' : ''}</div></div><span class="chev" aria-hidden="true">Voir ma page ›</span></div>
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
     ${me.admin ? `<label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>` : ''}
     <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
@@ -1255,7 +1281,7 @@ function profileSheet() {
     m.innerHTML = `<div><h2>Journal</h2><p class="mut" style="margin:0 0 8px">Build ${BUILD} · chargé à ${hms(LOADED)}</p><div class="jlog">${l.slice().reverse().map(([t, x]) => `<div><b>${hms(new Date(t))}</b> ${esc(x)}</div>`).join('') || 'Vide'}</div><div class="row"><button class="plain" id="jl-close">Fermer</button></div></div>`;
     $('#jl-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   };
-  $('#pf-me').onclick = () => playerSheet(me.id);
+  $('#pf-me').onclick = $('#pf-head').onclick = () => playerSheet(me.id);
   if (me.admin) $('#pf-admin').onclick = () => { m.hidden = true; m.innerHTML = ''; tab = 'admin'; render(); };
   pushState().then(st => {
     const t = $('#pf-pushtxt'), c = $('#pf-push'); if (!t) return;
