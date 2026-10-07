@@ -70,25 +70,38 @@ export function notify(env, ctx, msg, to = null) {
 /** Seau de l'index de recherche (public/catalog/s/N.json) d'un titre : même fonction que scripts/build-search-index.mjs. */
 export const searchBucket = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619) >>> 0; return h & 4095; };
 
-// ---- compteur d'écritures D1 : qui écrit, par quelle route, avec quelle requête (limite gratuite : 100 000 lignes écrites par jour) ----
-const meterAcc = new Map();                                       // 'R:route' | 'U:joueur' | 'Q:requête' -> { n, r, w }
+// ---- compteur d'activité : qui consomme quoi (par action, par joueur, par requête SQL, par heure) ----
+// Clés : 'R:action' | 'U:joueur' | 'T:heure UTC' | 'Q:requête' -> { rq, e4, e5, slow, hms (HTTP) ; tr, nr, nw, r, w, by, ms (base) }
+//  rq = requêtes HTTP, e4/e5 = erreurs 4xx/5xx, slow = requêtes > 1,5 s, hms = durée totale ;
+//  tr = allers-retours vers Supabase, nr/nw = instructions de lecture/écriture, r/w = lignes lues(renvoyées)/écrites, by = octets renvoyés, ms = temps passé à attendre la base.
+const meterAcc = new Map();
 const sigOf = sql => sql.replace(/\s+/g, ' ').trim().slice(0, 90);
-function rec(tags, sql, meta) {
-  const r = meta?.rows_read || 0, w = meta?.rows_written || 0;
-  for (const k of [...tags.filter(Boolean), 'Q:' + sigOf(sql)]) { const x = meterAcc.get(k) ?? { n: 0, r: 0, w: 0 }; x.n++; x.r += r; x.w += w; meterAcc.set(k, x); }
+const hourTag = () => 'T:' + String(new Date().getUTCHours()).padStart(2, '0');
+const bump = (keys, add) => {
+  for (const k of keys) { const x = meterAcc.get(k) ?? {}; for (const [f, v] of Object.entries(add)) if (v) x[f] = (x[f] || 0) + v; meterAcc.set(k, x); }
+};
+const isRead = sql => /^\s*(select|with|values)\b/i.test(sql);
+/** Une instruction SQL terminée (ms = temps de l'aller-retour, trips = 1 pour la première instruction d'un lot). */
+function rec(tags, sql, meta, ms = 0, trips = 1) {
+  const read = isRead(sql);
+  bump([...tags.filter(Boolean), hourTag(), 'Q:' + sigOf(sql)], { tr: trips, nr: read ? 1 : 0, nw: read ? 0 : 1, r: meta?.rows_read || 0, w: meta?.rows_written || 0, by: meta?.bytes || 0, ms });
 }
-/** Copie de `env` dont la base compte les lignes lues et écrites de chaque requête, rattachées aux étiquettes données (route, joueur). */
+/** Une requête HTTP terminée. */
+export function recHttp(tags, ms, status) {
+  bump([...tags.filter(Boolean), hourTag()], { rq: 1, hms: ms, e5: status >= 500 ? 1 : 0, e4: status >= 400 && status < 500 ? 1 : 0, slow: ms > 1500 ? 1 : 0 });
+}
+/** Copie de `env` dont la base compte chaque instruction (lectures/écritures, lignes, octets, durée), rattachée aux étiquettes données (action, joueur). */
 export function meter(env, ...tags) {
   if (!env.DB || env.DB.__metered) return env;
   const wrap = (s, sql) => ({
     _s: s, _sql: sql,
     bind: (...a) => wrap(s.bind(...a), sql),
-    run: async () => { const r = await s.run(); rec(tags, sql, r.meta); return r; },
-    all: async () => { const r = await s.all(); rec(tags, sql, r.meta); return r; },
+    run: async () => { const t = Date.now(), r = await s.run(); rec(tags, sql, r.meta, Date.now() - t); return r; },
+    all: async () => { const t = Date.now(), r = await s.all(); rec(tags, sql, r.meta, Date.now() - t); return r; },
     first: (...a) => s.first(...a), raw: (...a) => s.raw(...a),
   });
   const DB = { __metered: true, prepare: sql => wrap(env.DB.prepare(sql), sql), exec: (...a) => env.DB.exec(...a),
-    batch: async list => { const res = await env.DB.batch(list.map(x => x._s ?? x)); res.forEach((r, i) => rec(tags, list[i]._sql ?? '?', r.meta)); return res; } };
+    batch: async list => { const t = Date.now(), res = await env.DB.batch(list.map(x => x._s ?? x)), ms = Date.now() - t; res.forEach((r, i) => rec(tags, list[i]._sql ?? '?', r.meta, i ? 0 : ms, i ? 0 : 1)); return res; } };
   return { ...env, DB };
 }
 /** Vide le compteur local et renvoie son contenu. */

@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '4.1';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '4.2';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1075,11 +1075,65 @@ document.fonts?.ready.then(() => fitLock());
 window.addEventListener('resize', fitLock); document.addEventListener('toggle', fitLock, true);
 const Q_PER_CARD_UI = 3;
 const SKELETON = '<div class="skel"><i class="sk-h"></i><i class="sk-p"></i><div class="sk-g"><i></i><i></i><i></i><i></i></div></div>';
+// ---------- administration : tableau de bord d'activité et journal de contrôle ----------
+const ko = n => n >= 1e9 ? (n / 1e9).toFixed(2) + ' Go' : n >= 1e6 ? (n / 1e6).toFixed(1) + ' Mo' : (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + ' Ko';
+const localHour = (day, h) => new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10), h)).getHours();
+let statsSort = 'ops';
+async function adminStats(box, day) {
+  const d = await api('/admin/stats' + (day ? '?day=' + day : ''));
+  const t = d.total, trips = t.tr || 0, avg = trips ? Math.round((t.ms || 0) / trips) : 0, GO5 = 5e9;
+  const card = (k, v, sub = '') => `<div><span>${k}</span><b>${v}</b>${sub ? `<small class="mut">${sub}</small>` : ''}</div>`;
+  const hours = Array.from({ length: 24 }, (_, h) => d.hours.find(x => +x.k === h) ?? { k: h });
+  const peak = Math.max(1, ...hours.map(h => (h.nr || 0) + (h.nw || 0)));
+  const METRICS = { ops: ['Instructions', x => (x.nr || 0) + (x.nw || 0)], rq: ['Requêtes', x => x.rq || 0], nw: ['Écritures', x => x.nw || 0], nr: ['Lectures', x => x.nr || 0], by: ['Données', x => x.by || 0], ms: ['Temps base', x => x.ms || 0] };
+  const val = (m, x) => m === 'by' ? ko(x.by || 0) : m === 'ms' ? ((x.ms || 0) / 1000).toFixed(1) + ' s' : fmt(METRICS[m][1](x));
+  const rank = (title, list) => {
+    const f = METRICS[statsSort][1], rows = list.filter(x => f(x) > 0).sort((p, q) => f(q) - f(p)).slice(0, 12), top = Math.max(1, ...rows.map(f));
+    return `<h3 class="sec">${title}</h3><div class="stlist">${rows.map(x => `<div class="strow" style="--p:${Math.round(f(x) / top * 100)}%"><div class="stn">${esc(x.k)}</div><b>${val(statsSort, x)}</b>
+      <small>${fmt(x.rq || 0)} req · ${fmt(x.tr || 0)} trajets · ${fmt(x.nr || 0)} lect. · ${fmt(x.nw || 0)} écr. · ${ko(x.by || 0)}${x.tr ? ` · ${Math.round((x.ms || 0) / x.tr)} ms/trajet` : ''}${x.e5 ? ` · <i class="bad">${x.e5} erreur(s)</i>` : ''}</small></div>`).join('') || '<p class="mut">Rien pour l\'instant.</p>'}</div>`;
+  };
+  box.innerHTML = `<div class="chips" id="st-days" style="margin-bottom:8px;overflow-x:auto">${d.perDay.slice().reverse().map(p => `<button data-day="${p.day}" class="${p.day === d.day ? 'on' : ''}">${p.day.slice(8)}/${p.day.slice(5, 7)} · ${fmt(p.rq || 0)}</button>`).join('')}</div>
+    <p class="mut" style="margin:0 0 8px;font-size:12.5px">Jour UTC ${esc(d.day)} (de 2 h à 2 h en France). Les compteurs repartent à zéro quand le serveur de combats redémarre ; on garde 14 jours.</p>
+    <div class="admgrid">
+      ${card('Requêtes HTTP', fmt(t.rq || 0), `${fmt(t.e5 || 0)} erreur(s) serveur · ${fmt(t.e4 || 0)} refus · ${fmt(t.slow || 0)} lente(s)`)}
+      ${card('Allers-retours Supabase', fmt(trips), avg ? `${avg} ms en moyenne` : '')}
+      ${card('Lectures (SELECT)', fmt(t.nr || 0), `${fmt(t.r || 0)} lignes renvoyées`)}
+      ${card('Écritures', fmt(t.nw || 0), `${fmt(t.w || 0)} lignes touchées`)}
+      ${card('Données renvoyées', ko(t.by || 0), 'transfert sortant estimé')}
+      ${card('Ce mois-ci', ko(d.monthBytes || 0), `sur 5 Go gratuits (${Math.min(100, Math.round((d.monthBytes || 0) / GO5 * 100))} %)`)}
+    </div>
+    <h3 class="sec">Activité par heure <span class="mut" style="font-weight:400;font-size:12px">(<i class="lg r"></i> lectures <i class="lg w"></i> écritures, heure locale)</span></h3>
+    <div class="hbars">${hours.map(h => { const lh = localHour(d.day, +h.k), nr = h.nr || 0, nw = h.nw || 0; return `<div title="${lh} h : ${fmt(h.rq || 0)} requêtes, ${fmt(nr)} lectures, ${fmt(nw)} écritures, ${ko(h.by || 0)}"><i class="w" style="height:${nw / peak * 100}%"></i><i class="r" style="height:${nr / peak * 100}%"></i><em>${lh % 3 ? '' : lh}</em></div>`; }).join('')}</div>
+    <div class="chips wrap" id="st-sort" style="margin:12px 0 0">${Object.entries(METRICS).map(([k, [l]]) => `<button data-s="${k}" class="${k === statsSort ? 'on' : ''}">Trier : ${l}</button>`).join('')}</div>
+    ${rank('Par joueur', d.users)}${rank('Par action', d.routes)}${rank('Par requête SQL', d.queries)}`;
+  $('#st-days').onclick = e => { const b = e.target.closest('[data-day]'); if (b) adminStats(box, b.dataset.day).catch(x => toast(x.message)); };
+  $('#st-sort').onclick = e => { const b = e.target.closest('[data-s]'); if (b) { statsSort = b.dataset.s; adminStats(box, d.day).catch(x => toast(x.message)); } };
+}
+const LOGF = { '': ['Tout', ''], error: ['Erreurs', 'level=error'], warn: ['Alertes', 'level=warn'], action: ['Actions', 'kind=action'], admin: ['Admin', 'kind=admin'], cron: ['Tâche planifiée', 'kind=cron'] };
+let logFilter = '', logQuery = '';
+async function adminLogs(box, before = 0, append = false) {
+  const qs = `${LOGF[logFilter][1]}${logQuery ? '&q=' + encodeURIComponent(logQuery) : ''}${before ? '&before=' + before : ''}`;
+  const d = await api('/admin/logs?' + qs);
+  const day0 = new Date().toDateString();
+  const row = e => { const dt = new Date(+e.ts); return `<div class="lg-${e.level}"><b>${dt.toDateString() === day0 ? '' : dt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' '}${hms(dt)}</b> <span class="lv ${e.level}">${e.level === 'error' ? 'ERREUR' : e.level === 'warn' ? 'ALERTE' : e.kind === 'admin' ? 'ADMIN' : 'info'}</span> ${e.usr ? `<u>${esc(e.usr)}</u> ` : ''}<code>${esc(e.route)}</code>${e.status ? ` <span class="${e.status >= 400 ? 'bad' : ''}">${e.status}</span>` : ''}${e.ms ? ` <small>${e.ms} ms</small>` : ''}${e.detail ? ` <em>${esc(e.detail)}</em>` : ''}</div>`; };
+  if (!append) {
+    box.innerHTML = `<div class="chips wrap" id="lg-f" style="margin-bottom:8px">${Object.entries(LOGF).map(([k, [l]]) => `<button data-f="${k}" class="${k === logFilter ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="search wide" style="margin-bottom:8px">${ico('search')}<input id="lg-q" placeholder="Joueur, action ou texte" autocomplete="off" value="${esc(logQuery)}"></div>
+      <p class="mut" style="margin:0 0 6px;font-size:12.5px">24 dernières heures : <b class="bad">${d.last24h.error || 0}</b> erreur(s) · <b>${d.last24h.warn || 0}</b> alerte(s) · ${d.last24h.info || 0} action(s). Journal conservé 14 jours. <button class="plain" id="lg-r" style="padding:4px 10px;margin-left:6px">Actualiser</button></p>
+      <div class="jlog logbox" id="lg-box"></div>`;
+    $('#lg-f').onclick = e => { const b = e.target.closest('[data-f]'); if (b) { logFilter = b.dataset.f; adminLogs(box).catch(x => toast(x.message)); } };
+    let tm; $('#lg-q').oninput = e => { clearTimeout(tm); tm = setTimeout(() => { logQuery = e.target.value.trim(); adminLogs(box).catch(x => toast(x.message)); }, 350); };
+    $('#lg-r').onclick = () => adminLogs(box).catch(x => toast(x.message));
+  }
+  const lb = $('#lg-box'); lb.querySelector('.more')?.remove();
+  lb.insertAdjacentHTML('beforeend', d.logs.map(row).join('') || (append ? '' : '<p class="mut">Aucune entrée.</p>'));
+  if (d.logs.length >= 100) { lb.insertAdjacentHTML('beforeend', '<button class="plain more" style="margin:8px 0">Plus ancien</button>'); lb.querySelector('.more').onclick = () => adminLogs(box, d.logs.at(-1).id, true).catch(x => toast(x.message)); }
+}
 let adminTab = 'overview';   // l'onglet « Joueurs » (pièces, paquets, cartes, taux) a été retiré
 views.admin = async v => {
   jlog('ouverture de l\'administration');
   if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
-  const seg = [['overview', 'Aperçu'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
+  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
   v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips wrap" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
   const adminBody = async () => {
@@ -1152,7 +1206,9 @@ views.admin = async v => {
           });
         }
       });
-    } else if (adminTab === 'market') {
+    } else if (adminTab === 'stats') await adminStats(box);
+    else if (adminTab === 'logs') await adminLogs(box);
+    else if (adminTab === 'market') {
       const m = await api('/admin/market'); let pick = null, mins = 360, rmins = 0;
       const durs = [[60, '1 h'], [360, '6 h'], [720, '12 h'], [1440, '24 h']];
       const chips = (id, cur, withAuto) => `<div class="chips wrap" id="${id}">${withAuto ? `<button data-m="0" class="${cur === 0 ? 'on' : ''}">Variée</button>` : ''}${durs.map(([v, l]) => `<button data-m="${v}" class="${v === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -1207,23 +1263,10 @@ views.admin = async v => {
     } else {
       box.innerHTML = `<div class="panel"><b>Marché</b><p class="mut">Fait agir les joueurs simulés tout de suite (ventes, enchères).</p><button id="t-bots">Animer le marché</button></div>
         <div class="panel"><b>Réserve de cartes</b><p class="mut">Prépare des cartes complétées (texte + photo) pour que les paquets s'ouvrent sans attente.</p><button id="t-res">Remplir la réserve</button></div>
-        <div class="panel"><b>Lectures de la base (aujourd'hui)</b><p class="mut">Quelles requêtes consomment la limite gratuite de 5 millions de lectures par jour. Les chiffres s'accumulent au fil de la journée.</p><button class="plain" id="t-usage">Afficher</button></div>
-        <div class="panel"><b>Écritures de la base (aujourd'hui)</b><p class="mut">La limite gratuite est de 100 000 lignes écrites par jour. Qui écrit, depuis quelle action, avec quelle requête. Compte depuis la dernière mise en ligne.</p><button class="plain" id="t-meter">Afficher</button></div>
         <div class="panel"><b>Journal des combats</b><p class="mut">Début, pauses, reprises, fin et erreurs des derniers combats (pour comprendre pourquoi l'un s'arrête).</p><button class="plain" id="t-fights">Afficher</button></div>
         <div class="panel"><b>Journal de l'appli</b><p class="mut">Les 40 derniers évènements sur cet appareil.</p><button class="plain" id="t-log">Afficher</button></div>`;
       const act = (id, action, msg) => { $(id).onclick = safe(async () => { $(id).disabled = true; try { await api('/admin/run', { action }); toast(msg); } finally { $(id).disabled = false; } }); };
       act('#t-bots', 'bots', 'Marché animé'); act('#t-res', 'reserve', 'Réserve remplie');
-      $('#t-usage').onclick = safe(async () => {
-        const u = await api('/admin/usage');
-        $('#t-usage').closest('.panel').insertAdjacentHTML('beforeend', `<p style="margin:10px 0 4px"><b>${fmt(u.total)}</b> lignes lues enregistrées le ${esc(u.day)}</p><div class="jlog">${u.rows.map(r => `<div><b>${fmt(r.rows)}</b> · ${fmt(r.n)}× · ${esc(r.sig)}</div>`).join('') || 'Pas encore de données.'}</div>`);
-        $('#t-usage').remove();
-      });
-      $('#t-meter').onclick = safe(async () => {
-        const m = await api('/admin/meter');
-        const sec = (t, l) => `<p style="margin:12px 0 4px"><b>${t}</b></p><div class="jlog">${l.map(r => `<div><b>${fmt(r.w)}</b> écrites · ${fmt(r.n)}× · ${fmt(r.r)} lues · ${esc(r.k)}</div>`).join('') || '<div>Rien pour l\'instant.</div>'}</div>`;
-        $('#t-meter').closest('.panel').insertAdjacentHTML('beforeend', `<p style="margin:10px 0 4px"><b>${fmt(m.total)}</b> lignes écrites enregistrées le ${esc(m.day)}</p>${sec('Par joueur', m.users)}${sec('Par action', m.routes)}${sec('Par requête', m.queries)}`);
-        $('#t-meter').remove();
-      });
       $('#t-fights').onclick = safe(async () => {
         const { events } = await api('/admin/fights');
         $('#t-fights').closest('.panel').insertAdjacentHTML('beforeend', `<div class="jlog" style="margin-top:10px">${events.map(e => `<div><b>${hms(new Date(e.ts))}</b> ${esc(e.battle)} · ${esc(e.players)} · <span class="${e.kind === 'erreur' ? 'bad' : ''}">${esc(e.kind)}</span> ${esc(e.detail)}</div>`).join('') || 'Aucun combat enregistré.'}</div>`);

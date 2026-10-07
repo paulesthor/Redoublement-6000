@@ -774,3 +774,20 @@ body.fx-win #view{animation:fxglow 4.5s both}@keyframes fxglow{0%,100%{filter:no
 .selbar{position:sticky;bottom:calc(64px + env(safe-area-inset-bottom));z-index:6;display:flex;align-items:center;gap:8px;padding:10px 12px;margin-top:10px;border-radius:14px;background:#14141df2;border:1px solid var(--line2);backdrop-filter:blur(12px)}
 .selbar span{flex:1;font-size:13.5px}
 @media(min-width:821px){.selbar{bottom:8px}}
+
+/* ---- admin : tableau de bord et journal ---- */
+.admgrid small{font-size:11px;line-height:1.35}
+.hbars{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;align-items:end;height:110px;margin:6px 0 16px;padding-bottom:16px}
+.hbars>div{position:relative;height:100%;display:flex;flex-direction:column-reverse;justify-content:flex-start;background:#ffffff08;border-radius:4px;overflow:visible}
+.hbars i{display:block;width:100%;min-height:0}.hbars i.r{background:#5aa9ff}.hbars i.w{background:#f2a34f}
+.hbars em{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-style:normal;font-size:9.5px;color:var(--mut)}
+.lg{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 2px 0 6px;vertical-align:middle}.lg.r{background:#5aa9ff}.lg.w{background:#f2a34f}
+.stlist{display:flex;flex-direction:column;gap:6px}
+.strow{position:relative;display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line2);background:linear-gradient(90deg,#f2a34f26 var(--p,0%),transparent var(--p,0%))}
+.strow .stn{font-size:12.5px;overflow-wrap:anywhere;font-weight:600}.strow b{font-family:var(--f-disp)}.strow small{grid-column:1/-1;color:var(--mut);font-size:11px}
+.strow .bad,.logbox .bad{color:#ff8a80;font-weight:700;font-style:normal}
+.logbox{max-height:62dvh}.logbox>div{padding:6px 0;line-height:1.45;overflow-wrap:anywhere}
+.logbox code{font-size:11.5px;color:var(--fg)}.logbox u{text-decoration:none;color:#9ad1ff}.logbox em{font-style:normal;color:var(--mut)}
+.logbox .lv{font-size:10px;font-weight:800;letter-spacing:.04em;padding:1px 6px;border-radius:99px;background:#ffffff14;color:var(--mut)}
+.logbox .lv.error{background:#ff5d5d33;color:#ff8a80}.logbox .lv.warn{background:#f2a34f2e;color:#f2a34f}
+.logbox .lg-error{background:#ff5d5d0f}

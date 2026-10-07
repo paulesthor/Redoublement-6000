@@ -132,7 +132,7 @@ const sc = (await q('SELECT card_id FROM inventory WHERE user_id = ? LIMIT 2', a
 
 console.log('— administration');
 await q('UPDATE users SET is_admin = 1 WHERE id = ?', alice);
-for (const [m, p, b] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/market'], ['POST', '/api/admin/lot', { title: 'Paris' }], ['POST', '/api/admin/lots-random', { count: 3 }], ['GET', '/api/admin/usage'], ['GET', '/api/admin/meter'], ['GET', '/api/admin/fights'], ['POST', '/api/admin/announce', { text: 'Test', push: false }], ['POST', '/api/admin/run', { action: 'bots' }], ['POST', '/api/admin/run', { action: 'reserve' }], ['POST', '/api/admin/test-mode', { user_id: alice, on: true }]]) {
+for (const [m, p, b] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/market'], ['POST', '/api/admin/lot', { title: 'Paris' }], ['POST', '/api/admin/lots-random', { count: 3 }], ['GET', '/api/admin/stats'], ['GET', '/api/admin/logs'], ['GET', '/api/admin/fights'], ['POST', '/api/admin/announce', { text: 'Test', push: false }], ['POST', '/api/admin/run', { action: 'bots' }], ['POST', '/api/admin/run', { action: 'reserve' }], ['POST', '/api/admin/test-mode', { user_id: alice, on: true }]]) {
   [s, r] = await call(A, m, p, b); ok(`admin ${m} ${p}`, s === 200, J([s, r]).slice(0, 300));
 }
 [s, r] = await call(B, 'GET', '/api/admin/overview'); ok('admin refusé aux autres', s === 403);
@@ -214,10 +214,22 @@ console.log('— chemins moins fréquents');
   await call(A, 'POST', '/api/push/subscribe', { endpoint: 'https://push.example/mort' }); await call(A, 'POST', '/api/push/test', {});
   ok('abonnement push mort supprimé', +(await q("SELECT COUNT(*) n FROM push_subs WHERE endpoint = 'https://push.example/mort'"))[0].n === 0);
   globalThis.fetch = rf2;
-  // statistiques d'usage
-  const { flushUsage } = await import('../src/util.js'); const rn = Date.now; Date.now = () => rn() + 20 * 60000; await flushUsage(env); Date.now = rn;
-  ok('statistiques d\'usage enregistrées', +(await q('SELECT COUNT(*) n FROM usage'))[0].n > 0);
-  [s, r] = await call(A, 'GET', '/api/admin/usage'); ok('admin/usage lit les statistiques', s === 200 && r.rows.length > 0, J([s, r]).slice(0, 200));
+  // tableau de bord d'activité et journal de contrôle
+  await call(A, 'GET', '/api/inconnue'); await call(null, 'POST', '/api/login', { name: 'Alice', password: 'mauvais-mot-de-passe-xyz' });
+  await settle();
+  [s, r] = await call(A, 'GET', '/api/admin/stats'); await settle(); [s, r] = await call(A, 'GET', '/api/admin/stats');
+  ok('stats : totaux du jour', s === 200 && r.total.rq > 50 && r.total.nr > 100 && r.total.nw > 50 && r.total.by > 1000 && r.total.tr > 100, J(r.total));
+  ok('stats : par heure, par action, par joueur, par requête', r.hours.length >= 1 && r.routes.some(x => x.k === 'POST /api/packs/open' && x.rq > 5 && x.nw > 0) && r.users.some(x => x.k === 'Alice' && x.nr > 0) && r.queries.length > 10, J({ h: r.hours.length, r: r.routes.length, u: r.users.map(x => x.k), q: r.queries.length }));
+  ok('stats : historique par jour et transfert du mois', r.perDay.length >= 1 && r.monthBytes > 0, J([r.perDay, r.monthBytes]));
+  const rw = r.routes.find(x => x.k === 'POST /api/packs/open'); console.log('   exemple POST /api/packs/open :', J({ rq: rw.rq, trajets: rw.tr, lectures: rw.nr, ecritures: rw.nw, lignes_ecrites: rw.w, Ko: Math.round(rw.by / 1000), ms_base: rw.ms }));
+  await call(A, 'POST', '/api/admin/announce', { text: 'Journal', push: false }); await settle();
+  [s, r] = await call(A, 'GET', '/api/admin/logs?limit=300'); await settle(); [s, r] = await call(A, 'GET', '/api/admin/logs?limit=300');
+  ok('journal : actions des joueurs', s === 200 && r.logs.some(l => l.kind === 'action' && l.route === 'POST /api/packs/open' && /cartes/.test(l.detail) && l.usr === 'Alice'), J(r.logs.slice(0, 3)));
+  ok('journal : refus et route inconnue', r.logs.some(l => l.level === 'warn' && l.kind === 'refus' && l.status === 404) && r.logs.some(l => l.kind === 'refus' && l.status === 401 && l.usr === 'Alice'), J(r.logs.filter(l => l.kind === 'refus').slice(0, 3)));
+  ok('journal : actions admin avec leur contenu', r.logs.some(l => l.kind === 'admin' && /Journal/.test(l.detail)), J(r.logs.filter(l => l.kind === 'admin').slice(0, 2)));
+  ok('journal : jamais de mot de passe ni de message privé', !J(r.logs).includes('secret1') && !J(r.logs).includes('mauvais-mot-de-passe') && !J(r.logs).includes("Salut $1 'Bob'"), '');
+  [s, r] = await call(A, 'GET', '/api/admin/logs?level=warn'); ok('journal : filtre par niveau', r.logs.length > 0 && r.logs.every(l => l.level === 'warn'));
+  [s, r] = await call(A, 'GET', '/api/admin/logs?q=Chlo'); ok('journal : recherche', r.logs.every(l => /chlo/i.test(`${l.usr} ${l.route} ${l.detail}`)), J(r.logs.slice(0, 2)));
 }
 
 const top = [...globalThis.__T.tripStats].sort((x, y) => y[1][0] - x[1][0]).slice(0, 14);

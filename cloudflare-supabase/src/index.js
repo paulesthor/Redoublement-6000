@@ -1,8 +1,9 @@
 import CFG from './config.js';
 import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json, one, all, run, st, placeholders, cardRows,
-  userFromToken, hash, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG, meter, takeMeter } from './util.js';
+  userFromToken, hash, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG, meter, takeMeter, recHttp } from './util.js';
 import { withDb } from './pg.js';
 import { handleMigrate } from './migrate.js';
+import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -252,7 +253,7 @@ async function finishPack(env, ctx, user, drawn) {
     st(env, `SELECT card_id FROM inventory WHERE user_id = ? AND card_id IN (${ph})`, user.id, ...ids),
     ...drawn.map(c => insertCard(env, c)),
     ...drawn.map(c => addCard(env, user.id, c.id)),
-    ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', c.id - SHINY_OFFSET, c.id)),
+    ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0 AND EXISTS (SELECT 1 FROM cards WHERE id = ?1)', c.id - SHINY_OFFSET, c.id)),
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
     ...(god ? [st(env, 'INSERT INTO hits (username, title, shiny, ts) VALUES (?,?,?,?)', user.name, 'un GODPACK', 0, now())] : []),
     ...hitsOf.map(c => st(env, 'INSERT INTO hits (username, title, shiny, ts) VALUES (?,?,?,?)', user.name, c.title, c.shiny, now())),
@@ -329,7 +330,7 @@ async function prepareFor(env, ctx, user, stock) {
       await env.DB.batch(drawn.map(c => insertCard(env, c)));
       await enrich(env, ids);
       await env.DB.batch([
-        ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', c.id - SHINY_OFFSET, c.id)),
+        ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0 AND EXISTS (SELECT 1 FROM cards WHERE id = ?1)', c.id - SHINY_OFFSET, c.id)),
         st(env, 'INSERT INTO prepared (user_id, cards, ts, w) VALUES (?,?,?,?)', user.id, JSON.stringify(drawn), now(), wk),
       ]);
     }
@@ -1155,17 +1156,20 @@ route('POST', '/api/admin/lot/remove', admin(async ({ env, ctx, body }) => {
   (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   return { ok: true };
 }));
-route('GET', '/api/admin/usage', admin(async ({ env }) => {
-  const day = new Date().toISOString().slice(0, 10);
-  const rows = await all(env, 'SELECT sig, n, rows FROM usage WHERE day = ? ORDER BY rows DESC LIMIT 30', day);
-  return { day, total: rows.reduce((t, r) => t + r.rows, 0), rows };
+const statsFromDO = async (env, days) => env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/meter?days=' + days).then(x => x.json()).catch(() => ({ days: [] }));
+/** Tableau de bord : activité par jour (14 jours) et détail du jour choisi (par heure, par action, par joueur, par requête SQL). */
+route('GET', '/api/admin/stats', admin(async ({ env, query }) => {
+  const r = await statsFromDO(env, 14), days = r.days ?? [];
+  const sum = items => items.filter(([k]) => k.startsWith('T:')).reduce((t, [, x]) => { for (const f of Object.keys(x)) t[f] = (t[f] || 0) + x[f]; return t; }, {});
+  const perDay = days.map(d => ({ day: d.day, ...sum(d.items) }));
+  const day = query.get('day') && days.find(d => d.day === query.get('day')) ? query.get('day') : days.at(-1)?.day ?? new Date().toISOString().slice(0, 10);
+  const items = days.find(d => d.day === day)?.items ?? [];
+  const pick = p => items.filter(([k]) => k.startsWith(p)).map(([k, x]) => ({ k: k.slice(p.length), ...x }));
+  const month = days.filter(d => d.day.slice(0, 7) === day.slice(0, 7)).reduce((t, d) => t + (sum(d.items).by || 0), 0);
+  return { day, perDay, total: perDay.find(d => d.day === day) ?? {}, hours: pick('T:'), routes: pick('R:'), users: pick('U:'), queries: pick('Q:').sort((a, b) => ((b.nr || 0) + (b.nw || 0)) - ((a.nr || 0) + (a.nw || 0))).slice(0, 60), monthBytes: month };
 }));
-route('GET', '/api/admin/meter', admin(async ({ env }) => {
-  const r = await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/meter').then(x => x.json()).catch(() => ({ day: '', items: [] }));
-  const by = p => r.items.filter(([k]) => k.startsWith(p)).map(([k, x]) => ({ k: k.slice(2), ...x })).sort((a, b) => b.w - a.w).slice(0, 12);
-  const total = r.items.filter(([k]) => k.startsWith('R:')).reduce((t, [, x]) => t + x.w, 0);
-  return { day: r.day, total, users: by('U:'), routes: by('R:'), queries: by('Q:') };
-}));
+/** Journal de log et de contrôle (table logs de Supabase, 14 jours). */
+route('GET', '/api/admin/logs', admin(async ({ env, query }) => { await flushLogs(env, true); return readLogs(env, { level: query.get('level') || '', kind: query.get('kind') || '', q: (query.get('q') || '').slice(0, 60), before: +query.get('before') || 0, limit: +query.get('limit') || 100 }); }));
 route('GET', '/api/admin/fights', admin(async ({ env }) => ({ events: await all(env, 'SELECT ts, battle, players, kind, detail FROM fight_events ORDER BY id DESC LIMIT 80') })));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
   const text = String(body.text || '').trim().slice(0, 180); if (!text) bad('Message vide');
@@ -1193,30 +1197,58 @@ function sendMeter(env, ctx) {
   const items = takeMeter(); if (!items.length) return;
   ctx.waitUntil(env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/meter', { method: 'POST', body: JSON.stringify(items) }).catch(() => {}));
 }
+/** Routes dont le succès n'est pas écrit au journal (trop fréquentes ou sans intérêt). */
+const QUIET = /^POST \/api\/(push\/pull|cards\/enrich|friends\/seen)$/;
+/** Résumé d'une action réussie pour le journal de contrôle (jamais de mot de passe, jamais le contenu d'un message). */
+function actionDetail(r, body, out) {
+  if (/^POST \/api\/admin\//.test(r.label)) return JSON.stringify(body).slice(0, 250);
+  if (out?.cards?.length) return `${out.cards.length} cartes` + (out.cards.filter(c => c.rarity === 'legendary').length ? `, ${out.cards.filter(c => c.rarity === 'legendary').length} légendaire(s)` : '') + (out.god ? ' · GODPACK' : '');
+  if (body?.amount) return `offre ${body.amount}`;
+  if (body?.price && body?.card_id) return `vente à ${body.price}`;
+  if (out?.price != null) return `+${out.price} pièces` + (out.count ? ` (${out.count})` : '');
+  if (body?.name && /register|login/.test(r.label)) return String(body.name).slice(0, 40);
+  return '';
+}
 async function api(req, env0, ctx, url) {
-  ctx.waitUntil(flushUsage(env0)); sendMeter(env0, ctx);
+  const t0 = Date.now(); sendMeter(env0, ctx);
   const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
-  if (!r) bad('Route inconnue', 404);
-  let env = meter(env0, 'R:' + r.label);
-  if (/^\/api\/admin\/(users|give|password|drop|cards|take-card)$/.test(url.pathname)) bad('Fonction retirée : plus aucun réglage des joueurs (pièces, paquets, cartes, taux) depuis l\'administration', 403);
-  const params = url.pathname.match(r.re).groups || {};
-  let user = null;
-  if (r.auth) {
-    user = await userFromToken(env, (req.headers.get('authorization') || '').replace('Bearer ', ''));
-    if (!user) bad('Non connecté', 401);
-    env = meter(env0, 'R:' + r.label, 'U:' + user.name);
+  const label = r?.label ?? `${req.method} ${url.pathname.slice(0, 60)}`;
+  let env = meter(env0, 'R:' + label), user = null, status = 200, err = null, body = {}, out;
+  try {
+    if (!r) bad('Route inconnue', 404);
+    if (/^\/api\/admin\/(users|give|password|drop|cards|take-card)$/.test(url.pathname)) bad('Fonction retirée : plus aucun réglage des joueurs (pièces, paquets, cartes, taux) depuis l\'administration', 403);
+    const params = url.pathname.match(r.re).groups || {};
+    if (r.auth) {
+      user = await userFromToken(env, (req.headers.get('authorization') || '').replace('Bearer ', ''));
+      if (!user) bad('Non connecté', 401);
+      env = meter(env0, 'R:' + label, 'U:' + user.name);
+    }
+    if (req.method === 'POST') { try { body = await req.json(); } catch { body = {}; } }
+    out = await r.fn({ env, ctx, user, params, body, query: url.searchParams, origin: url.origin });
+    return json(out);
+  } catch (e) { err = e; status = e instanceof HttpError ? e.code : 500; throw e; }
+  finally {
+    const ms = Date.now() - t0, who = user?.name ?? (label.includes('/login') || label.includes('/register') ? String(body?.name ?? '').slice(0, 40) : null);
+    recHttp(['R:' + label, user && 'U:' + user.name], ms, status);
+    const base = { user: who, route: label, status, ms };
+    if (status >= 500) logEvent({ ...base, level: 'error', kind: isQuotaError(err) ? 'base' : 'erreur', detail: err?.message });
+    else if (status >= 400) logEvent({ ...base, level: 'warn', kind: 'refus', detail: err?.message });
+    else if (ms > 1500) logEvent({ ...base, level: 'warn', kind: 'lent', detail: `${ms} ms` });
+    else if (req.method === 'POST' && !QUIET.test(label)) logEvent({ ...base, level: 'info', kind: /\/api\/admin\//.test(label) ? 'admin' : 'action', detail: actionDetail(r, body, out) });
+    ctx.waitUntil(flushLogs(env0));
   }
-  let body = {};
-  if (req.method === 'POST') { try { body = await req.json(); } catch { body = {}; } }
-  return json(await r.fn({ env, ctx, user, params, body, query: url.searchParams, origin: url.origin }));
 }
 
 export default {
   async scheduled(event, env0, ctx) {
     const env = meter(withDb(env0), 'R:tâche planifiée');
     ctx.waitUntil((async () => {
-      await botTick(env, ctx, true).catch(e => console.error('botTick', e));
-      await refillReserve(env).catch(e => console.error('refillReserve', e));
+      const t0 = Date.now();
+      const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
+      for (const e of [e1, e2]) if (e) console.error('cron', e);
+      logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
+      await pruneLogs(withDb(env0)).catch(() => {});
+      await flushLogs(withDb(env0), true);
     })());
   },
   async fetch(req, env, ctx) {

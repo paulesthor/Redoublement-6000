@@ -36,8 +36,13 @@ export class Lobby {
   async addMeter(items) {
     if (!items.length) return;
     const key = 'meter:' + new Date().toISOString().slice(0, 10), cur = new Map((await this.state.storage.get(key)) ?? []);
-    for (const [k, v] of items) { const o = cur.get(k) ?? { n: 0, r: 0, w: 0 }; cur.set(k, { n: o.n + v.n, r: o.r + v.r, w: o.w + v.w }); }
+    for (const [k, v] of items) { const o = cur.get(k) ?? {}; for (const [f, n] of Object.entries(v)) o[f] = (o[f] || 0) + n; cur.set(k, o); }
     await this.state.storage.put(key, [...cur]);
+    if (!this.pruned || this.pruned !== key) {                       // on ne garde que 14 jours de statistiques
+      this.pruned = key;
+      const old = [...(await this.state.storage.list({ prefix: 'meter:' })).keys()].sort().slice(0, -14);
+      for (const k of old) await this.state.storage.delete(k);
+    }
   }
   /** Garde une trace des évènements d'un combat (consultable dans l'admin) : sert à comprendre pourquoi un combat s'arrête. */
   trace(bt, kind, detail = '') {
@@ -102,11 +107,12 @@ export class Lobby {
       else this.broadcast(msg, msg.except ?? null);
       return new Response('ok');
     }
-    if (url.pathname === '/meter') {                      // compteur d'écritures D1 : cumul du jour, stocké ici (hors quota D1)
+    if (url.pathname === '/meter') {                      // statistiques d'activité du jeu : cumul par jour, stocké ici (hors base de données)
       if (req.method === 'POST') { await this.addMeter(await req.json()); return new Response('ok'); }
       await this.addMeter(takeMeter());
-      const day = new Date().toISOString().slice(0, 10);
-      return Response.json({ day, items: (await this.state.storage.get('meter:' + day)) ?? [] });
+      const n = Math.min(14, Math.max(1, +url.searchParams.get('days') || 1));
+      const all = await this.state.storage.list({ prefix: 'meter:' });
+      return Response.json({ days: [...all].sort(([a], [b]) => a.localeCompare(b)).slice(-n).map(([k, items]) => ({ day: k.slice(6), items })) });
     }
     if (url.pathname === '/online') return Response.json({ ids: [...this.clients.keys()] });
     if (req.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket attendu', { status: 426 });

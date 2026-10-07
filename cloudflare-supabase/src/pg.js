@@ -4,6 +4,7 @@
 //  - un lot (batch) part en un seul appel HTTPS et s'exécute dans UNE transaction (comme sur D1) ;
 //  - le transport est interchangeable : HTTPS vers Supabase en production, PGlite (PostgreSQL local) dans les tests.
 
+const isRead = sql => /^\s*(select|with|values)\b/i.test(sql);
 /** Tables dont la clé « id » est auto-incrémentée : on renvoie l'identifiant créé (meta.last_row_id, comme D1). */
 const ID_TABLES = new Set(['users', 'auctions', 'sales', 'trades', 'hits', 'friend_requests', 'bids', 'prepared', 'dms', 'push_msgs', 'fight_events']);
 
@@ -46,14 +47,17 @@ export function compile(sql, params = []) {
   return { sql: out, wantId };
 }
 
-const shape = (r, wantId) => ({ results: r.results, success: true, meta: { changes: r.changes, last_row_id: wantId ? (r.results?.[0]?.id ?? 0) : 0, rows_read: 0, rows_written: 0 } });
+/** Résultat façon D1. rows_read = lignes renvoyées par un SELECT, rows_written = lignes touchées par une écriture, bytes = taille des données renvoyées (transfert sortant de Supabase). */
+const shape = (r, wantId, read = false) => ({ results: r.results, success: true, meta: {
+  changes: r.changes, last_row_id: wantId ? (r.results?.[0]?.id ?? 0) : 0,
+  rows_read: read ? r.changes : 0, rows_written: read ? 0 : r.changes, bytes: r.results?.length ? JSON.stringify(r.results).length : 0 } });
 
 /** Base « façon D1 » au-dessus d'un transport : stmts [{sql}] -> [{results, changes}]. */
 export function pgDB(transport) {
   const make = (sql, params = []) => ({
     _sql: sql, _params: params,
     bind: (...p) => make(sql, p),
-    run: async function () { const c = compile(sql, params); return shape((await transport([{ sql: c.sql }]))[0], c.wantId); },
+    run: async function () { const c = compile(sql, params); return shape((await transport([{ sql: c.sql }]))[0], c.wantId, isRead(sql)); },
     all: async function () { return this.run(); },
     first: async function (col) { const r = (await this.run()).results[0] ?? null; return col && r ? r[col] : r; },
     raw: async function () { return (await this.run()).results.map(o => Object.values(o)); },
@@ -64,7 +68,7 @@ export function pgDB(transport) {
     batch: async list => {
       const cs = list.map(s => compile(s._sql, s._params));
       const res = await transport(cs.map(c => ({ sql: c.sql })));
-      return res.map((r, i) => shape(r, cs[i].wantId));
+      return res.map((r, i) => shape(r, cs[i].wantId, isRead(list[i]._sql)));
     },
     exec: async sql => { await transport([{ sql }]); return { count: 1 }; },
   };
