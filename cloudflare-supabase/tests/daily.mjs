@@ -1,5 +1,6 @@
 // Captures d'écran de l'interface d'administration (tableau de bord, journal) sur téléphone, avec le vrai Worker et un vrai PostgreSQL.
 import './api.mjs';
+import { CSP } from '../src/secure.js';
 import { createRequire } from 'node:module';
 import http from 'node:http'; import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path';
 const require = createRequire('/opt/node22/lib/node_modules/'); const { chromium } = require('playwright');
@@ -19,10 +20,10 @@ const srv = http.createServer(async (q, res) => {
     res.writeHead(rr.status, { 'content-type': rr.headers.get('content-type') || 'application/json', 'cache-control': rr.headers.get('cache-control') || 'no-store' }); return res.end(Buffer.from(await rr.arrayBuffer()));
   }
   let p = path.join(PUB, u.pathname); if (p.endsWith('/')) p += 'index.html'; if (!existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }[path.extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
+  res.writeHead(200, { ...(path.extname(p) === '.html' ? { 'content-security-policy': CSP } : {}), 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }[path.extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
 }).listen(8768);
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-const mk = async (w, h) => { const c = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, A); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8768/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(900); return p; };
+const mk = async (w, h) => { const c = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, A); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); p.on('console', m => { if (/Content Security Policy|Refused to/i.test(m.text())) p.errs.push('CSP: ' + m.text().slice(0, 160)); }); await p.goto('http://localhost:8768/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(900); return p; };
 env.AI = { run: async () => ({ response: JSON.stringify({ questions: Array.from({ length: 9 }, (_, i) => ({ type: ['annee', 'lieu', 'personne', 'chiffre', 'cause', 'relation', 'calcul', 'langue'][i % 8], question: `Question ${i + 1} : vers quelle ${['époque', 'année', 'période', 'date', 'ère', 'datation', 'moment', 'phase', 'siècle'][i]} Paris a-t-elle été fondée selon l'article ?`, choices: ['250 av. J.-C.', '150 av. J.-C.', '350 av. J.-C.', '450 av. J.-C.'], answer: 0 })) }) }) };
 const shot = async (p, n) => p.screenshot({ path: n + '.png' });
 console.log('— première connexion du jour (téléphone)');

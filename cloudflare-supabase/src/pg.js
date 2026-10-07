@@ -15,7 +15,8 @@ export function literal(v) {
   if (typeof v === 'bigint') return v.toString();
   if (typeof v === 'number') { if (!Number.isFinite(v)) throw new Error('Paramètre numérique invalide'); return v < 0 ? `(${v})` : String(v); }
   const s = String(v).replace(/\u0000/g, '');
-  let tag = '$q$'; for (let i = 0; s.includes(tag); i++) tag = `$q${i}$`;
+  // la balise ne doit apparaître nulle part dans « texte + balise de fin », sinon un texte finissant par « $q » fermerait la chaîne trop tôt (injection possible entre deux paramètres)
+  let tag = '$q$'; for (let i = 0; (s + tag).indexOf(tag) !== s.length; i++) tag = `$q${i}$`;
   return tag + s + tag;
 }
 

@@ -4,6 +4,7 @@ import CFG from './config.js';
 import { withDb } from './pg.js';
 import { one, all, run, st, placeholders, cardRows, caseSql, RANK, userFromToken, randomPool, meter, takeMeter, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
 import { battleQuestions, aiQuestions } from './aiquiz.js';
+import { makeArticleQuestions } from './quiz.js';
 import { pushFor } from './push.js';
 import { bumpQuests, ensureGameSchema, boosted, tPayouts, grantTitle, TITLE } from './game.js';
 
@@ -31,7 +32,8 @@ export class Lobby {
     this.battles = new Map();
     this.hidden = new Map();  // userId -> true quand l'appli est en arrière-plan (écran verrouillé, autre appli) : on le notifie alors par push
     this.away = new Map();   // userId -> heure de la dernière déconnexion complète
-    this.tours = new Set(); this.tlock = new Map();       // tournois en cours (ids) ; verrou par tournoi pendant une mise à jour
+    this.tours = new Set(); this.tlock = new Map();
+    this.texts = new Map(); this.aiP = new Map(); this.poolC = null;   // textes d'articles, questions IA en cours de fabrication, cartes pour les questions de secours : partagés entre le choix des decks et le début du combat       // tournois en cours (ids) ; verrou par tournoi pendant une mise à jour
     setInterval(() => { this.broadcast({ t: 'ping' }); if (this.tours.size) this.tourTick().catch(e => console.error('tourTick', e)); }, 30000); // garde les connexions ouvertes
     state.blockConcurrencyWhile(() => this.restore().catch(e => console.error('restore', e)));   // les combats en cours survivent à un redémarrage du serveur (mise à jour du jeu…)
   }
@@ -282,7 +284,7 @@ export class Lobby {
     const owned = new Set((await all(this.env, `SELECT card_id FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(ids.length)})`, user.id, ...ids)).map(r => r.card_id));
     if (!ids.every(i => owned.has(i))) return this.push(user.id, { t: 'error', msg: 'Carte non possédée' });
     bt.picks[user.id] = ids;
-    this.prefetchQuizzes(ids);                                       // les questions des cartes choisies se préparent pendant que l'adversaire choisit
+    this.prefetchQuizzes(ids, bt.qPer);                              // les questions des cartes choisies se préparent pendant que l'adversaire choisit
     if (bt.bot) { const bp = await this.botPicks(bt, user.id); if (!bp) { this.battles.delete(bt.id); return this.push(user.id, { t: 'error', msg: 'Le joueur simulé n’a pas trouvé d’équipe, réessaie' }); } bt.picks[bt.bot] = bp; }
     else this.push(user.id, { t: 'info', msg: 'Équipe validée, en attente de l’adversaire…' });
     if (bt.players.every(p => bt.picks[p])) { try { if (bt.stake && !(await this.stakeEscrow(bt))) return; await this.resolveBattle(bt); } catch (e) { this.crash(bt, e); } }
@@ -312,18 +314,33 @@ export class Lobby {
   async articleTexts(cards) {
     const out = new Map(), UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
     const pid = c => (c.id >= SHINY ? c.id - SHINY : c.id);
+    for (const c of cards) if (this.texts.has(c.id)) out.set(c.id, this.texts.get(c.id));        // déjà lus pendant le choix des decks
+    const todo = cards.filter(c => !out.has(c.id));
+    if (!todo.length) return out;
     try {
-      const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '4000', exlimit: 'max', pageids: [...new Set(cards.map(pid))].join('|') });
+      const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '4000', exlimit: 'max', pageids: [...new Set(todo.map(pid))].join('|') });
       const r = await fetch('https://fr.wikipedia.org/w/api.php?' + params, { headers: UA });
       const pages = r.ok ? (await r.json()).query?.pages ?? {} : {};
-      for (const c of cards) { const p = pages[pid(c)]; if (p && p.title === c.title && p.extract) out.set(c.id, p.extract); }
+      for (const c of todo) { const p = pages[pid(c)]; if (p && p.title === c.title && p.extract) { out.set(c.id, p.extract); this.texts.set(c.id, p.extract); } }
+      if (this.texts.size > 300) for (const k of [...this.texts.keys()].slice(0, 100)) this.texts.delete(k);
     } catch { /* repli sur l'extrait déjà stocké */ }
     return out;
   }
-  async prefetchQuizzes(ids) {
+  /** Questions IA d'une carte : une seule fabrication à la fois par carte (le choix du deck et le début du combat partagent le même travail). */
+  aiShared(card, text, want = 3) {
+    const k = card.id + ':' + want;
+    let p = this.aiP.get(k);
+    if (!p) { p = aiQuestions(this.env, card, text, want).catch(() => []); this.aiP.set(k, p); setTimeout(() => this.aiP.delete(k), 600000); }
+    return p;
+  }
+  async cardPool() {
+    if (!this.poolC || now() - this.poolC.t > 300000) this.poolC = { t: now(), v: await randomPool(this.env, 30) };
+    return this.poolC.v;
+  }
+  async prefetchQuizzes(ids, want = 3) {
     try {
       const rows = await cardRows(this.env, ids), texts = await this.articleTexts(rows);
-      await Promise.all(rows.map(c => aiQuestions(this.env, c, texts.get(c.id) || c.extract)));
+      await Promise.all(rows.map(c => this.aiShared(c, texts.get(c.id) || c.extract, want)));
     } catch { /* tant pis : les règles prendront le relais */ }
   }
   // ---------- combat : 3 cartes chacun ; à tour de rôle, l'attaquant choisit une carte et le défenseur répond à 3 questions sur son article ----------
@@ -332,22 +349,31 @@ export class Lobby {
     clearTimeout(bt.timer);
     for (const p of bt.players) this.push(p, { t: 'battle_prep', id: bt.id });
     const [a, b] = bt.players, pub = c => ({ id: c.id, title: c.title, rarity: c.rarity, shiny: c.shiny, atk: c.atk, def: c.def, lvl: c.lvl || 0, image: c.image });
+    const t0 = now();
     await ensureGameSchema(this.env);
-    const rows = {}; for (const uid of bt.players) {
+    const rows = {};
+    await Promise.all(bt.players.map(async uid => {                   // les deux équipes en parallèle
       const base = await cardRows(this.env, bt.picks[uid]);
-      if (uid === bt.bot || !base.length) { rows[uid] = base; continue; }
+      if (uid === bt.bot || !base.length) { rows[uid] = base; return; }
       const lv = bt.escrow ? new Map([[bt.escrow.cid[uid], bt.escrow.lvl[uid]]]) : new Map((await all(this.env, `SELECT card_id, lvl FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(base.length)})`, uid, ...base.map(c => c.id))).map(x => [x.card_id, x.lvl]));
       rows[uid] = base.map(c => boosted(c, CFG.RARITIES.indexOf(c.rarity), lv.get(c.id) || 0));   // les stats de fusion comptent en combat
-    }
+    }));
+    const tRows = now() - t0;
     const first = Math.random() < .5 ? a : b;
     const f = bt.fight = { turn: 0, total: bt.rounds * 2, order: [first, first === a ? b : a], hp: {}, max: {}, deck: {}, left: {}, qs: new Map(), cur: null, log: [] };
     for (const uid of bt.players) { f.deck[uid] = rows[uid].map(pub); f.max[uid] = f.hp[uid] = f.deck[uid].reduce((t, c) => t + c.def, 0); f.left[uid] = new Set(f.deck[uid].map(c => c.id)); }
     const all6 = bt.players.flatMap(uid => rows[uid].map(c => ({ uid, c })));
-    const [texts, pool] = await Promise.all([
-      this.articleTexts(all6.map(x => x.c)),
-      randomPool(this.env, 30),
-    ]);
-    await Promise.all(all6.map(async ({ uid, c }) => f.qs.set(uid + ':' + c.id, await battleQuestions(this.env, c, texts.get(c.id) || c.extract, { cards: pool }, bt.qPer))));
+    const [texts, pool] = await Promise.all([this.articleTexts(all6.map(x => x.c)), this.cardPool()]);
+    const tTexts = now() - t0 - tRows;
+    // l'IA a au plus 7 s pour fabriquer des questions manquantes : passé ce délai, on prend les questions « à règles » (l'IA termine en tâche de fond et les garde pour la prochaine fois)
+    let slow = 0;
+    await Promise.all(all6.map(async ({ uid, c }) => {
+      const text = texts.get(c.id) || c.extract, fallback = Symbol();
+      const ai = battleQuestions(this.env, c, text, { cards: pool }, bt.qPer, (cc, tx, want) => this.aiShared(cc, tx, want));
+      const q = await Promise.race([ai, new Promise(res => setTimeout(() => res(fallback), 7000))]);
+      if (q === fallback) { slow++; f.qs.set(uid + ':' + c.id, makeArticleQuestions(c, text, { cards: pool }, bt.qPer)); } else f.qs.set(uid + ':' + c.id, q);
+    }));
+    this.trace(bt, 'préparation', `${now() - t0} ms (cartes ${tRows}, textes ${tTexts}, questions ${now() - t0 - tRows - tTexts}${slow ? `, ${slow} carte(s) sans IA car trop lentes` : ''})`);
     bt.startMsg = { t: 'bf_start', id: bt.id, names: bt.names, a, b, deck: f.deck, hp: f.hp, max: f.max, first, total: f.total };
     for (const p of bt.players) this.push(p, bt.startMsg);
     bt.gen = 0; bt.phase = 'intro'; bt.rearm = () => this.resume(bt);

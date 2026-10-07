@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.1';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '5.2';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -92,7 +92,7 @@ async function auth(kind) {
 }
 $('#a-login').onclick = () => auth('login'); $('#a-register').onclick = () => auth('register');
 async function logout() {
-  try { await Promise.race([api('/push/unsubscribe', {}), new Promise(r => setTimeout(r, 900))]); } catch { /* hors ligne : tant pis */ }   // cet appareil ne doit plus recevoir les notifications de ce compte
+  try { await Promise.race([Promise.all([api('/push/unsubscribe', {}), api('/logout', {})]), new Promise(r => setTimeout(r, 1200))]); } catch { /* hors ligne : tant pis */ }   // cet appareil ne doit plus recevoir les notifications de ce compte
   store.clear(); location.reload();
 }
 
@@ -1681,7 +1681,7 @@ views.settings = async v => {
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
     <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
-    <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
+    <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
   $('#tx-seg').onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); $('#tx-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
@@ -1691,6 +1691,11 @@ views.settings = async v => {
   $('#st-fast').onchange = e => setPref('wm_fast', e.target.checked ? '1' : '0');
   $('#st-god').onclick = () => window.previewGod?.();
   $('#st-me').onclick = () => playerSheet(me.id); $('#st-out').onclick = logout;
+  $('#st-pw').onclick = safe(async () => {
+    const f = await ask('Changer le mot de passe', [{ label: 'Mot de passe actuel', type: 'password' }, { label: 'Nouveau (6 caractères minimum)', type: 'password' }], { text: 'Tes autres appareils seront déconnectés.', ok: 'Changer' });
+    if (!f) return;
+    await api('/me/password', { old: f[0], password: f[1] }); toast('Mot de passe changé');
+  });
   pushState().then(st => {
     const t = $('#st-pushtxt'), c = $('#st-push'); if (!t) return;
     t.textContent = { ok: 'Activées sur cet appareil', off: 'Enchères, défis, amis… même écran verrouillé', denied: 'Bloquées : autorise-les dans les réglages du téléphone', install: 'Ajoute d\'abord l\'appli à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil)', none: 'Non disponibles sur ce navigateur' }[st] || '';

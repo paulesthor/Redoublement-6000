@@ -49,8 +49,9 @@ export async function randomPool(env, n) {
 export const placeholders = n => Array(n).fill('?').join(',');
 export const cardRows = (env, ids) => (ids.length ? all(env, `SELECT * FROM cards WHERE id IN (${placeholders(ids.length)})`, ...ids) : Promise.resolve([]));
 
+export const SESSION_MAX_AGE = 180 * 86400000;   // une connexion reste valable 180 jours
 export const userFromToken = (env, token) => token
-  ? one(env, 'SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', token) : Promise.resolve(null);
+  ? one(env, 'SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.created > ?', token, Date.now() - SESSION_MAX_AGE) : Promise.resolve(null);
 
 export async function hashPw(pw, salt) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);

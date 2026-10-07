@@ -3,6 +3,7 @@ import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json,
   userFromToken, hash, hashPw, randomHex, notify, searchBucket, flushUsage, randomPool, isQuotaError, nextResetMs, QUOTA_MSG, meter, takeMeter, recHttp } from './util.js';
 import { withDb } from './pg.js';
 import { handleMigrate } from './migrate.js';
+import { secure } from './secure.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
@@ -518,22 +519,48 @@ const newSession = async (env, uid) => {
   await run(env, 'INSERT INTO sessions (token, user_id, created) VALUES (?,?,?)', token, uid, now());
   return { token };
 };
-route('POST', '/api/register', async ({ env, body }) => {
+/** Limite les essais de connexion (devinette de mot de passe) et les créations de compte en rafale : par pseudo et par adresse IP. */
+const THROTTLE = { login: [8, 15 * 60000], register: [20, 3600000] }, IP_FACTOR = 5;   // une adresse partagée (wifi d'une famille) tolère 5 fois plus d'essais qu'un seul pseudo
+async function throttleCheck(env, kind, keys) {
+  await ensureGameSchema(env);
+  const [max, win] = THROTTLE[kind];
+  const rows2 = await all(env, `SELECT k, n FROM login_fails WHERE k IN (${placeholders(keys.length)}) AND first > ?`, ...keys.map(k => kind + ':' + k), now() - win);
+  if (rows2.some(r => r.n >= (r.k.includes(':ip:') || kind === 'register' ? max * (kind === 'login' ? IP_FACTOR : 1) : max))) bad(kind === 'login' ? 'Trop d’essais : réessaie dans quelques minutes' : 'Trop de créations de compte depuis cette connexion, réessaie plus tard', 429);
+}
+const throttleHit = (env, kind, keys) => env.DB.batch(keys.map(k => st(env, `INSERT INTO login_fails (k, n, first) VALUES (?, 1, ?) ON CONFLICT (k) DO UPDATE SET n = CASE WHEN login_fails.first > ? THEN login_fails.n + 1 ELSE 1 END, first = CASE WHEN login_fails.first > ? THEN login_fails.first ELSE ? END`, kind + ':' + k, now(), now() - THROTTLE[kind][1], now() - THROTTLE[kind][1], now())));
+const clientIp = req => req.headers.get('cf-connecting-ip') || 'inconnue';
+route('POST', '/api/register', async ({ env, body, req }) => {
   const name = String(body.name || '').trim(), pw = String(body.password || '');
   if (!/^[\p{L}\p{N}_-]{2,20}$/u.test(name)) bad('Pseudo : 2 à 20 caractères (lettres, chiffres, _ -)');
-  if (pw.length < 4) bad('Mot de passe trop court (4 min.)');
+  if (pw.length < 6) bad('Mot de passe trop court (6 min.)');
+  if (pw.length > 200) bad('Mot de passe trop long');
   if (env.INVITE_CODE && body.invite !== env.INVITE_CODE) bad('Code d’invitation invalide', 403);
+  const ip = clientIp(req);
+  await throttleCheck(env, 'register', [ip]);
   if (await one(env, 'SELECT 1 FROM users WHERE lower(name) = lower(?)', name)) bad('Pseudo déjà pris', 409);
   const salt = randomHex(16);
   const r = await run(env, 'INSERT INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, friend_code) VALUES (?,?,?,?,?,?,?,?)',
     name, salt, await hashPw(pw, salt), CFG.START_COINS, CFG.START_PACKS, now(), now(), randomHex(5));
+  await throttleHit(env, 'register', [ip]);
   return newSession(env, r.meta.last_row_id);
 }, false);
-route('POST', '/api/login', async ({ env, body }) => {
+route('POST', '/api/login', async ({ env, body, req }) => {
+  const name = String(body.name || '').trim().toLowerCase().slice(0, 40), keys = ['n:' + name, 'ip:' + clientIp(req)];
+  await throttleCheck(env, 'login', keys);
   const u = await one(env, 'SELECT * FROM users WHERE lower(name) = lower(?)', String(body.name || '').trim());
-  if (!u || (await hashPw(String(body.password || ''), u.salt)) !== u.hash) bad('Pseudo ou mot de passe incorrect', 401);
+  if (!u || (await hashPw(String(body.password || '').slice(0, 200), u.salt)) !== u.hash) { await throttleHit(env, 'login', keys); bad('Pseudo ou mot de passe incorrect', 401); }
+  await run(env, 'DELETE FROM login_fails WHERE k = ?', 'login:' + keys[0]);
   return newSession(env, u.id);
 }, false);
+route('POST', '/api/logout', async ({ req, env }) => { await run(env, 'DELETE FROM sessions WHERE token = ?', (req.headers.get('authorization') || '').replace('Bearer ', '')); return { ok: true }; });
+route('POST', '/api/me/password', async ({ env, req, user, body }) => {
+  const old = String(body.old || ''), pw = String(body.password || '');
+  if ((await hashPw(old.slice(0, 200), user.salt)) !== user.hash) bad('Mot de passe actuel incorrect', 403);
+  if (pw.length < 6 || pw.length > 200) bad('Nouveau mot de passe : 6 caractères minimum');
+  const salt = randomHex(16), cur = (req.headers.get('authorization') || '').replace('Bearer ', '');
+  await env.DB.batch([st(env, 'UPDATE users SET salt = ?, hash = ? WHERE id = ?', salt, await hashPw(pw, salt), user.id), st(env, 'DELETE FROM sessions WHERE user_id = ? AND token <> ?', user.id, cur)]);   // les autres appareils sont déconnectés
+  return { ok: true };
+});
 /** Pastilles du jeu : récompense quotidienne dispo, quêtes à récupérer, quiz du jour pas encore fait. */
 async function gameBadges(env, uid) {
   await ensureGameSchema(env);
@@ -939,7 +966,8 @@ route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) =>
 });
 
 // aperçu des questions qui seraient posées pour un article (utile pour tester le modèle) : /api/quiz/preview?q=TotalEnergies
-route('GET', '/api/quiz/preview', async ({ env, query }) => {
+route('GET', '/api/quiz/preview', async ({ env, user, query }) => {
+  if (!user.is_admin) bad('Réservé à l’administrateur', 403);   // consomme le quota de l'IA
   const q = (query.get('q') || '').trim().slice(0, 80);
   if (!q) bad('Donne un titre : ?q=TotalEnergies');
   const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '2500', redirects: '1', titles: q });
@@ -1577,8 +1605,11 @@ async function api(req, env0, ctx, url) {
       if (!user) bad('Non connecté', 401);
       env = meter(env0, 'R:' + label, 'U:' + user.name);
     }
-    if (req.method === 'POST') { try { body = await req.json(); } catch { body = {}; } }
-    out = await r.fn({ env, ctx, user, params, body, query: url.searchParams, origin: url.origin });
+    if (req.method === 'POST') {
+      if (+req.headers.get('content-length') > 250000) bad('Requête trop volumineuse', 413);
+      try { body = await req.json(); } catch { body = {}; }
+    }
+    out = await r.fn({ env, ctx, user, params, body, req, query: url.searchParams, origin: url.origin });
     return out instanceof Response ? out : json(out);
   } catch (e) { err = e; status = e instanceof HttpError ? e.code : 500; throw e; }
   finally {
@@ -1593,6 +1624,22 @@ async function api(req, env0, ctx, url) {
   }
 }
 
+async function handle(req, env, ctx) {
+    env = withDb(env);
+    const url = new URL(req.url);
+    try {
+      const mig = await handleMigrate(req, env, url); if (mig) return mig;
+      if (url.pathname === '/ws') return env.LOBBY.get(env.LOBBY.idFromName('main')).fetch(req);
+      if (url.pathname.startsWith('/api/')) return await api(req, env, ctx, url);
+      return env.ASSETS.fetch(req);
+    } catch (e) {
+      if (!(e instanceof HttpError) && !/Paramètre numérique invalide/.test(String(e?.message))) console.error(e);
+      if (isQuotaError(e)) return json({ error: QUOTA_MSG, quota: true, until: nextResetMs() }, 503);   // message clair quand la limite gratuite de la base est atteinte
+      if (/Paramètre numérique invalide/.test(String(e?.message))) return json({ error: 'Valeur numérique invalide' }, 400);   // un nombre absurde envoyé par un client : refus, pas une panne
+      return json({ error: e instanceof HttpError ? e.message : 'Erreur serveur' }, (e instanceof HttpError && e.code) || 500);
+    }
+}
+
 export default {
   async scheduled(event, env0, ctx) {
     const env = meter(withDb(env0), 'R:tâche planifiée');
@@ -1605,19 +1652,6 @@ export default {
       await flushAll(withDb(env0));
     })());
   },
-  async fetch(req, env, ctx) {
-    env = withDb(env);
-    const url = new URL(req.url);
-    try {
-      const mig = await handleMigrate(req, env, url); if (mig) return mig;
-      if (url.pathname === '/ws') return env.LOBBY.get(env.LOBBY.idFromName('main')).fetch(req);
-      if (url.pathname.startsWith('/api/')) return await api(req, env, ctx, url);
-      return env.ASSETS.fetch(req);
-    } catch (e) {
-      if (!(e instanceof HttpError)) console.error(e);
-      if (isQuotaError(e)) return json({ error: QUOTA_MSG, quota: true, until: nextResetMs() }, 503);   // message clair quand la limite gratuite de la base est atteinte
-      return json({ error: e instanceof HttpError ? e.message : 'Erreur serveur' }, (e instanceof HttpError && e.code) || 500);
-    }
-  },
+  async fetch(req, env, ctx) { return secure(await handle(req, env, ctx)); },
 };
 export { pickRarity, userWeights, wishRoll, WISH_CHANCE };   // exportés pour les tests

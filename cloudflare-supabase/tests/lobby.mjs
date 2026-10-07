@@ -41,6 +41,7 @@ ok('6 tours et 18 questions', types(socks[a]).filter(t => t === 'bf_turn').lengt
 ok('aucun message d\'erreur', !types(socks[a]).includes('bf_error') && !types(socks[a]).includes('error'), J(socks[a].log.filter(m => /error/.test(m.t))));
 const c1 = [await coins(a), await coins(b)];
 ok('récompenses versées', c1[0].coins > c0[0].coins || c1[1].coins > c0[1].coins, J([c0, c1]));
+{ const pr = await q("SELECT detail FROM fight_events WHERE kind = 'préparation'"); ok('délai de préparation tracé', pr.length >= 1 && /ms/.test(pr[0].detail), J(pr)); console.log('   ', pr[0]?.detail); }
 const ev = await q('SELECT kind FROM fight_events'); ok('journal des combats écrit', ev.length >= 2, J(ev));
 const left = await q('SELECT COUNT(*) n FROM fight_events WHERE kind = ?', 'erreur'); ok('aucune erreur dans le journal', +left[0].n === 0, J(left));
 console.log('— duel de quiz');

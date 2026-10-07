@@ -146,8 +146,8 @@ export async function aiQuestions(env, card, text, want = 3) {
 export const lastAiError = () => lastError.msg;
 
 /** n questions pour un article : celles du modèle (tirées au hasard à chaque partie, choix mélangés), complétées par les règles si besoin. */
-export async function battleQuestions(env, card, text, pool, n = 3) {
-  const ai = shuffle(await aiQuestions(env, card, text, Math.max(3, n))).slice(0, n).map(q => { const o = shuffle(q.options.map((t, i) => ({ t, ok: i === q.answer }))); return { text: q.text, options: o.map(x => x.t), answer: o.findIndex(x => x.ok), ai: true }; });   // choix mélangés à chaque partie
+export async function battleQuestions(env, card, text, pool, n = 3, aiFn = null) {
+  const ai = shuffle(await (aiFn ? aiFn(card, text, Math.max(3, n)) : aiQuestions(env, card, text, Math.max(3, n)))).slice(0, n).map(q => { const o = shuffle(q.options.map((t, i) => ({ t, ok: i === q.answer }))); return { text: q.text, options: o.map(x => x.t), answer: o.findIndex(x => x.ok), ai: true }; });   // choix mélangés à chaque partie
   if (ai.length >= n) return ai;
   const rules = makeArticleQuestions(card, text, pool, n - ai.length);
   return shuffle([...ai, ...rules]);
