@@ -23,7 +23,9 @@ Le jeu actuel (`cloudflare/`) n'est **pas touché** : cette version vit dans `cl
 3. Menu **Project Settings → API** : note l'**URL du projet** (`https://xxxx.supabase.co`) et la clé **`service_role`** (secrète).
 
 ### 2. Déployer la version Supabase À CÔTÉ (sans toucher au jeu actuel)
-1. Cloudflare → Workers & Pages → Create → **Import a repository** → ce dépôt, branche `claude/wikimasters-clone`, **Root directory : `cloudflare-supabase`**. Nom : `wikimasters-supabase`.
+1. Cloudflare → Workers & Pages → Create → **Import a repository** → ce dépôt, branche `claude/wikimasters-clone`. Nom : **`wikimasters-supabase`** (exactement le nom du fichier de configuration).
+   - Dossier : soit **Root directory** = `cloudflare-supabase` (réglages avancés), soit — plus simple — dossier vide et **Deploy command** = `npx wrangler deploy --config cloudflare-supabase/wrangler.jsonc`.
+   - Si le Worker affiche seulement « Hello world », le déploiement Git n'a pas encore tourné : Deployments / Builds → **Retry build** (ou pousser un nouveau commit sur la branche).
 2. Dans `cloudflare-supabase/wrangler.jsonc`, remplace `SUPABASE_URL` par l'URL du projet (je peux le faire pour toi).
 3. Dans le Worker → **Settings → Variables and Secrets** → ajoute en **secret** : `SUPABASE_KEY` = la clé `service_role`.
 4. Pour recopier les données : ajoute aussi le secret `MIGRATE_KEY` (invente une longue phrase) et demande-moi de décommenter la ligne `d1_databases` (`OLD_DB`) dans `wrangler.jsonc`.
