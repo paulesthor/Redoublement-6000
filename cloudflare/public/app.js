@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '3.7';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '3.8';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -507,8 +507,34 @@ const views = {
       </div>
       <div class="bulk">
         <select id="bulk-r" aria-label="Rareté maximale">${tiers.map(t => `<option value="${t.r}" ${t.r === bulkDefault ? 'selected' : ''}>${RAR[t.r]} et moins · ${t.n} carte${t.n > 1 ? 's' : ''} · +${fmt(t.price)}</option>`).join('')}</select>
-        <button class="plain" id="bulk-go">Vendre</button></div>
-      <div class="grid" id="g"></div>`;
+        <button class="plain" id="bulk-go">Vendre</button><button class="plain" id="selmode">Sélectionner</button></div>
+      <div class="grid" id="g"></div>
+      <div class="selbar" id="selbar" hidden><span id="selinfo2"></span><button class="plain" id="sel-cancel">Annuler</button><button id="sel-go">Défausser</button></div>`;
+    // sélection multiple : un appui sur chaque carte, puis une seule défausse
+    let selMode = false; const picked = new Map();
+    const markPicked = root => root.querySelectorAll('.card').forEach(el => el.classList.toggle('picked', picked.has(+el.dataset.id)));
+    const selSync = () => {
+      const n = picked.size, gain = [...picked.values()].reduce((t, c) => t + sellValue(c), 0);
+      $('#g').classList.toggle('selecting', selMode); $('#selmode').textContent = selMode ? 'Terminer' : 'Sélectionner';
+      $('#selbar').hidden = !selMode; $('#selinfo2').innerHTML = n ? `<b>${n}</b> carte${n > 1 ? 's' : ''} · +${fmt(gain)} pièces` : 'Touche les cartes à défausser';
+      $('#sel-go').disabled = !n; $('#sel-go').textContent = n ? `Défausser (${n})` : 'Défausser';
+    };
+    $('#selmode').onclick = () => { selMode = !selMode; if (!selMode) { picked.clear(); markPicked($('#g')); } selSync(); };
+    $('#sel-cancel').onclick = () => { selMode = false; picked.clear(); markPicked($('#g')); selSync(); };
+    $('#g').addEventListener('click', e => {                         // en mode sélection, un appui sur une carte la coche (étoile et boutons désactivés)
+      if (!selMode) return;
+      e.stopPropagation(); e.preventDefault();
+      const el = e.target.closest('.card'); if (!el) return;
+      const id = +el.dataset.id, c = P.items.find(x => x.id === id); if (!c) return;
+      if (picked.has(id)) picked.delete(id); else picked.set(id, c);
+      el.classList.toggle('picked', picked.has(id)); selSync();
+    }, true);
+    $('#sel-go').onclick = safe(async () => {
+      const list = [...picked.values()]; if (!list.length) return;
+      const gain = list.reduce((t, c) => t + sellValue(c), 0), last = list.filter(c => c.qty === 1).length;
+      if (!(await ask(`Défausser ${list.length} carte${list.length > 1 ? 's' : ''} ?`, [], { text: `Un exemplaire de chaque pour ${fmt(gain)} pièces.${last ? ` ${last} ${last > 1 ? 'sont tes dernières' : 'est ta dernière'} (elles quitteront ta collection).` : ''}`, ok: 'Défausser' }))) return;
+      const r = await api('/discard-many', { ids: list.map(c => c.id) }); toast(`${r.count} cartes défaussées, +${fmt(r.price)} pièces`); await refreshMe(); render();
+    });
     // les cartes arrivent 40 par 40 depuis le serveur (tri et filtres faits par la base)
     const P = pager($('#g'), {
       fetchPage: cardPage(), root: null,
@@ -519,7 +545,7 @@ const views = {
       }),
       empty: p => p.fav ? 'Aucun favori pour l\'instant.<br>Touche l\'étoile ★ d\'une carte.' : 'Aucune carte ne correspond.',
       onPage: (page, box) => {
-        lazyImages(box);
+        lazyImages(box); markPicked(box);
         // photos manquantes : on retente en arrière-plan (Wikipédia, puis Wikidata) et on remplace seulement les cartes concernées
         const need = page.filter(c => !c.image && c.enriched < 2).slice(0, 20);
         if (need.length) api('/cards/enrich', { ids: need.map(c => c.id) }).then(({ cards: got }) => {

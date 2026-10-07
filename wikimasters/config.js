@@ -10,7 +10,7 @@ module.exports = {
 
   PACK_SIZE: 10,               // cartes par booster
   PACK_EVERY: 10 * 60 * 1000,  // un booster gratuit toutes les 10 min
-  VERSION: '3.7',              // numéro de build affiché dans le profil (à incrémenter à chaque mise à jour)
+  VERSION: '3.8',              // numéro de build affiché dans le profil (à incrémenter à chaque mise à jour)
   PACK_MAX: 1e9,               // pas de plafond : les boosters gratuits s'accumulent (1 toutes les 10 min) même si on ne se connecte pas
   PACK_PRICE: 60,              // prix d'un booster acheté (ouvert immédiatement)
 

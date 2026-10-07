@@ -712,6 +712,21 @@ route('POST', '/api/discard', async ({ env, user, body }) => {
   statsCache.delete(user.id);
   return { price };
 });
+// défausse un exemplaire de chacune des cartes choisies (sélection multiple dans la collection)
+route('POST', '/api/discard-many', async ({ env, user, body }) => {
+  const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(Number).filter(Number.isInteger))].slice(0, 100);
+  if (!ids.length) bad('Aucune carte choisie');
+  const rows = await all(env, `SELECT card_id, qty, rar FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(ids.length)}) AND qty >= 1`, user.id, ...ids);
+  if (!rows.length) bad('Tu ne possèdes plus ces cartes');
+  const price = rows.reduce((t, r) => t + SELL[RARITIES[r.rar]], 0), got = rows.map(r => r.card_id);
+  await env.DB.batch([
+    ...got.map(id => st(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty >= 1', user.id, id)),
+    st(env, `DELETE FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(got.length)}) AND qty <= 0`, user.id, ...got),
+    st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id),
+  ]);
+  statsCache.delete(user.id);
+  return { price, count: rows.length };
+});
 // vend tous les exemplaires en trop (on garde 1 exemplaire) des cartes de rareté <= max_rarity
 route('POST', '/api/discard-dupes', async ({ env, user, body }) => {
   const max = RANK[body.max_rarity] ?? 0;
