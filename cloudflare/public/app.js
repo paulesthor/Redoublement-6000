@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '3.1';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '3.2';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -742,13 +742,58 @@ function gameEvent(m) {
   else if (m.t === 'bf_card') Object.assign(game.f, { card: m.card, hp: m.hp, phase: 'card' });
   else if (m.t === 'bf_q') Object.assign(game.f, { q: m, picked: null, sent: false, res: null, phase: 'q', end: Date.now() + t, time: m.full ?? t, hp: m.hp });
   else if (m.t === 'bf_picked') game.f.picked = m.choice;
-  else if (m.t === 'bf_a') Object.assign(game.f, { res: m, hp: m.hp, phase: 'a' });
-  else if (m.t === 'bf_turn_end') Object.assign(game.f, { summary: m, hp: m.hp, phase: 'turnend' });
+  else if (m.t === 'bf_a') { Object.assign(game.f, { res: m, hp: m.hp, phase: 'a' }); if (!m.ok) fx = { kind: 'hit', m }; }
+  else if (m.t === 'bf_turn_end') { Object.assign(game.f, { summary: m, hp: m.hp, phase: 'turnend' }); if (m.wrong >= 3) fx = { kind: 'fatal', m }; else if (m.wrong === 0) fx = { kind: 'wall', m }; }
   else if (m.t === 'bf_wait') { if (game?.f) game.f.wait = { names: m.names, until: m.until }; }
   else if (m.t === 'bf_resume') { if (game?.f) game.f.wait = null; }
   else if (m.t === 'bf_end') { game = { ...game, kind: 'fight', view: 'end', result: m }; refreshMe(); }
   else if (m.t === 'battle_cancel') game = null;
   renderGame();
+  if (fx) { const e = fx; fx = null; if (game?.f) fightFx(e); }
+}
+// ---------- animations de combat : moqueries, tremblements, confettis ----------
+let fx = null;
+const pickOf = arr => arr[Math.floor(Math.random() * arr.length)];
+const TAUNT = {
+  miss: ['Raté 🤡', 'Même pas proche…', 'Aïe, ça pique 💀', 'Retourne réviser !', 'C\'était pourtant facile', 'Wikipédia pleure 😭'],
+  hit: ['Touché 💥', 'Bien envoyé 🎯', 'Il a pas vu venir', 'Ça fait mal 😈'],
+  fatal: ['FATALITY ☠️', 'HUMILIATION TOTALE', 'Zéro sur trois 🤡', 'Une vraie leçon 📚'],
+  wall: ['Mur imprenable 🛡️', 'Rien ne passe !', 'Attaque ridicule 😴'],
+};
+function stamp(text, cls, ms = 1400) {
+  const s = document.createElement('div'); s.className = 'fxstamp ' + cls; s.innerHTML = text; document.body.append(s); setTimeout(() => s.remove(), ms);
+}
+function rain(chars, n = 26, ms = 3200) {
+  const box = document.createElement('div'); box.className = 'fxrain'; box.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < n; i++) { const e = document.createElement('i'); e.textContent = pickOf(chars); e.style.cssText = `left:${Math.random() * 100}%;animation-delay:${Math.random() * 1.4}s;animation-duration:${2 + Math.random() * 1.6}s;font-size:${18 + Math.random() * 22}px`; box.append(e); }
+  document.body.append(box); setTimeout(() => box.remove(), ms + 1500);
+}
+function shake(el) { el?.classList.remove('shake'); void el?.offsetWidth; el?.classList.add('shake'); }
+function fightFx({ kind, m }) {
+  const f = game.f, iDef = f.defender === me.id, buzz = p => { try { navigator.vibrate?.(p); } catch { /* non supporté */ } };
+  const nm = id => esc(game.names[id]);
+  if (kind === 'hit') {
+    shake($('#fshell'));
+    if (iDef) { stamp(`${pickOf(TAUNT.miss)}<small>−${fmt(m.dmg)} PV</small>`, 'bad'); buzz([60, 30, 60]); }
+    else { stamp(`${pickOf(TAUNT.hit)}<small>${nm(f.defender)} −${fmt(m.dmg)} PV</small>`, 'good'); buzz(25); }
+  } else if (kind === 'fatal') {
+    shake($('#fshell')); rain(iDef ? ['🤡', '💀', '🗑️'] : ['🔥', '💥', '⚔️'], 22);
+    stamp(`${pickOf(TAUNT.fatal)}<small>${iDef ? 'Tu as tout raté…' : nm(f.defender) + ' n\'a rien vu venir'}</small>`, iDef ? 'bad big' : 'good big', 2000); buzz([100, 40, 100, 40, 200]);
+  } else if (kind === 'wall') {
+    stamp(`${pickOf(TAUNT.wall)}<small>${iDef ? 'Tu as tout bloqué' : nm(f.defender) + ' a tout bloqué'}</small>`, iDef ? 'good' : 'bad', 1500);
+  }
+}
+/** Écran de fin : le gagnant triomphe, le perdant se fait chambrer. */
+function endFx(r) {
+  const win = r.winner === me.id, lose = r.winner !== null && !win;
+  if (r.winner === null) return;
+  const gap = Math.abs(r.hp[r.a] - r.hp[r.b]), crush = gap > .6 * Math.max(r.max[r.a], r.max[r.b]), hu = !!r.forfeit && lose;
+  const top = win ? (crush ? pickOf(['ÉCRASÉ 🔥', 'DOMINATION TOTALE', 'FATALITY ☠️']) : pickOf(['GG 👑', 'VICTOIRE 🏆', 'Sans pitié 😎'])) : (hu ? 'FORFAIT 🐔' : crush ? pickOf(['HUMILIÉ 🤡', 'PULVÉRISÉ 💀', 'ANÉANTI 🗑️']) : pickOf(['PERDU 😭', 'DÉFAITE 🤡', 'Retente ta chance 🥲']));
+  const sub = win ? `${esc(r.names[r.a === me.id ? r.b : r.a])} s'incline, ${fmt(gap)} PV d'écart` : `${esc(r.names[r.winner])} t'a mis ${fmt(gap)} PV d'écart${crush ? ' : c\'est la honte' : ''}`;
+  rain(win ? ['🎉', '👑', '🏆', '✨', '🔥'] : ['🤡', '💩', '🍅', '😭', '🗑️'], 34, 4500);
+  stamp(`${top}<small>${sub}</small>`, (win ? 'good' : 'bad') + ' big', 2800);
+  try { navigator.vibrate?.(win ? [60, 30, 60, 30, 200] : [300, 100, 300]); } catch { /* non supporté */ }
+  document.body.classList.add(win ? 'fx-win' : 'fx-lose'); setTimeout(() => document.body.classList.remove('fx-win', 'fx-lose'), 4500);
 }
 // surveillance : si plus rien n'arrive pendant une partie, on redemande l'état au serveur (et on abandonne s'il n'y a plus de partie)
 setInterval(() => { if (game && game.view !== 'end' && game.view !== 'pick' && Date.now() - lastEvt > 40000) { lastEvt = Date.now(); if (ws?.readyState === 1) send({ t: 'sync' }); else connect(); } }, 5000);
@@ -866,8 +911,9 @@ async function renderGame() {
     if (game.kind === 'quiz') {
       v.innerHTML = `${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire' : 'Défaite')}<div class="panel">${names(r.score)}</div><button id="back">Retour</button>`;
     } else {
+      if (!r.fxDone) { r.fxDone = true; endFx(r); }
       const bar = id => `<div class="hpb ${id === me.id ? 'me' : ''}"><div class="hpt"><span>${esc(r.names[id])}${id === me.id ? ' (toi)' : ''}</span><b>${fmt(r.hp[id])} / ${fmt(r.max[id])} PV</b></div><div class="hpbar"><i style="width:${Math.round(r.hp[id] / (r.max[id] || 1) * 100)}%"></i></div></div>`;
-      v.innerHTML = `${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire' : 'Défaite')}<div class="hpwrap">${bar(r.a)}${bar(r.b)}</div>
+      v.innerHTML = `<div class="endwrap ${r.winner === null ? '' : r.winner === me.id ? 'won' : 'lost'}">${pageHead(r.winner === null ? 'Égalité' : r.winner === me.id ? 'Victoire 👑' : 'Défaite 🤡')}</div><div class="hpwrap">${bar(r.a)}${bar(r.b)}</div>
         <p class="mut" style="text-align:center">${r.winner === null ? 'Autant de PV de chaque côté.' : (r.forfeit ? `${esc(r.names[r.forfeit])} a quitté la partie : ${esc(r.names[r.winner])} gagne par forfait.` : `${esc(r.names[r.winner])} termine avec le plus de PV.`)}</p><p><button id="back" style="margin-top:12px">Retour</button></p>`;
     }
     $('#back').onclick = () => { game = null; render(); };

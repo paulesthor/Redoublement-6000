@@ -83,7 +83,7 @@ const rarIdx = col => caseSql(col, RANK);
 const addCard = (env, uid, cid, n = 1) => (statsCache.delete(uid), st(env,
   `INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav)
    SELECT ?1, c.id, ?2, ?3, ${rarIdx('c.rarity')}, c.shiny, ${rarIdx('c.rarity')} * 1000000000 + MIN(c.views, 999999999), lower(c.title), 0 FROM cards c WHERE c.id = ?4
-   ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty, acquired = excluded.acquired`, uid, n, now(), cid));   // acquired = dernière obtention (tri par date)
+   ON CONFLICT(user_id, card_id) DO UPDATE SET qty = qty + excluded.qty`, uid, n, now(), cid));   // acquired = première obtention : un doublon ne réécrit plus l'index de date (économie d'écritures D1)
 
 // ---------- description + image via l'API MediaWiki, conservées en base ----------
 // enriched : 0 = rien, 1 = Wikipédia lu (image éventuellement manquante), 2 = terminé (Wikidata consulté pour les pages sans photo)
@@ -300,7 +300,7 @@ function maybeRefill(env, ctx) {
 // ---------- paquets préparés d'avance ----------
 // Dès que le joueur arrive (ou après chaque ouverture), on tire et on complète (texte + photos) ses prochains paquets :
 // ils s'ouvrent ensuite instantanément, les uns après les autres. Rien n'est ajouté à la collection avant l'ouverture.
-const PREPARE_MAX = 3;
+const PREPARE_MAX = 2;
 const preparing = new Set();
 async function prepareFor(env, ctx, user, stock) {
   if (user.is_bot || preparing.has(user.id)) return;

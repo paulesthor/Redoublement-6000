@@ -30,7 +30,7 @@ export const json = (data, status = 200) => new Response(JSON.stringify(data), {
 const usage = new Map(); let lastFlush = Date.now();
 export const track = (sql, rows) => { const k = sql.replace(/\s+/g, ' ').trim().slice(0, 100); const x = usage.get(k) ?? { n: 0, rows: 0 }; x.n++; x.rows += rows || 0; usage.set(k, x); };
 export async function flushUsage(env) {
-  if (!usage.size || Date.now() - lastFlush < 120000) return;
+  if (!usage.size || Date.now() - lastFlush < 900000) return;
   lastFlush = Date.now();
   const day = new Date().toISOString().slice(0, 10), items = [...usage]; usage.clear();
   await env.DB.batch(items.map(([k, x]) => env.DB.prepare('INSERT INTO usage (day, sig, n, rows) VALUES (?,?,?,?) ON CONFLICT(day, sig) DO UPDATE SET n = n + excluded.n, rows = rows + excluded.rows').bind(day, k, x.n, x.rows))).catch(() => {});
