@@ -3,6 +3,8 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '6.8', icon: '🔞', title: 'Nouvel album : Stars du X', items: [
+    { t: 'Album « Stars du X »', d: 'Une nouvelle catégorie de cartes légendaires (6 cartes) avec sa récompense, et des paquets thématiques possibles. Réservé aux adultes.', go: 'album' } ] },
   { v: '6.7', icon: '🧠', title: 'Questions de combat corrigées', items: [
     { t: 'Retour des questions sur l\'article', d: 'Depuis la migration, le modèle d\'IA n\'était plus appelé et les combats retombaient sur les questions génériques (« à propos de… », « quel article est le plus consulté »). C\'est corrigé.' } ] },
   { v: '6.6', icon: '🧠', title: 'Questions de combat : diagnostic', items: [
