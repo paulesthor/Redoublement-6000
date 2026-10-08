@@ -3,6 +3,10 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '6.3', icon: '🎲', title: 'Parie sur les combats', items: [
+    { t: 'Combats en direct', d: 'Dans l\'onglet Combats, « En direct » liste les combats en cours entre joueurs, avec la cagnotte et les cotes.', go: 'duel' },
+    { t: 'Miser sur ton favori', d: 'Choisis le joueur et ta mise (10 à 500 pièces) jusqu\'au 2ᵉ tour. Ton joueur gagne : tu reprends ta mise + 75 % de la cagnotte des perdants.' },
+    { t: 'Le vainqueur est récompensé', d: 'Le combattant qui gagne empoche aussi 25 % de la cagnotte perdante : une raison de plus de gagner !' } ] },
   { v: '6.2', icon: '✨', title: 'La page des nouveautés', items: [
     { t: 'Les nouveautés à chaque mise à jour', d: 'À l\'ouverture du jeu après une mise à jour, cette page te présente ce qui change, avec un bouton « Voir » pour y aller.' },
     { t: 'Revoir l\'historique', d: 'Dans Réglages, « Voir les nouveautés » rouvre toutes les mises à jour.', go: 'settings' } ] },

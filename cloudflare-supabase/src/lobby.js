@@ -13,6 +13,7 @@ const AWAY_PAUSE = 180000;  // un joueur déconnecté en plein combat : on met l
 // pauses entre les étapes du combat (ms)
 const T = { intro: 1800, card: 1300, closeAfterAnswer: 600, nextQ: 2000, nextTurn: 2200 };
 const now = () => Date.now();
+const FIGHT_BET = { min: 10, max: 500, fighter: 0.25, openTurns: 2 };   // paris sur les combats : mises, part du vainqueur dans la cagnotte perdante, dernier tour où l'on peut encore parier
 const TOUR_WAIT = 10 * 60000;   // un joueur de tournoi absent plus de 10 minutes perd son match
 
 function mask(extract, title) {
@@ -33,7 +34,7 @@ export class Lobby {
     this.away = new Map();   // userId -> heure de la dernière déconnexion complète
     this.tours = new Set(); this.tlock = new Map();
     this.texts = new Map(); this.aiP = new Map(); this.poolC = null;   // textes d'articles, questions IA en cours de fabrication, cartes pour les questions de secours : partagés entre le choix des decks et le début du combat       // tournois en cours (ids) ; verrou par tournoi pendant une mise à jour
-    setInterval(() => { this.broadcast({ t: 'ping' }); if (this.tours.size) this.tourTick().catch(e => console.error('tourTick', e)); }, 30000); // garde les connexions ouvertes
+    setInterval(() => { this.broadcast({ t: 'ping' }); if (this.tours.size) this.tourTick().catch(e => console.error('tourTick', e)); this.betJanitor().catch(() => {}); }, 30000); // garde les connexions ouvertes
     state.blockConcurrencyWhile(() => this.restore().catch(e => console.error('restore', e)));   // les combats en cours survivent à un redémarrage du serveur (mise à jour du jeu…)
   }
 
@@ -96,6 +97,7 @@ export class Lobby {
     if (bt.over) return;
     bt.over = true; bt.gen++; this.battles.delete(bt.id); this.forget(bt);
     if (bt.stake) this.stakeSettle(bt, null).catch(() => {});                                       // cartes rendues
+    this.betSettle(bt, null).catch(() => {});                                                          // paris remboursés
     for (const p of bt.players) this.push(p, { t: 'bf_error', id: bt.id, quota: isQuotaError(e) });
     if (bt.tour) this.tourRequeue(bt.tour).catch(() => {});                                          // le match de tournoi sera relancé
   }
@@ -122,6 +124,8 @@ export class Lobby {
       const all = await this.state.storage.list({ prefix: 'meter:' });
       return Response.json({ days: [...all].sort(([a], [b]) => a.localeCompare(b)).slice(-n).map(([k, items]) => ({ day: k.slice(6), items })) });
     }
+    if (url.pathname === '/live') return Response.json({ fights: await this.liveFights(+url.searchParams.get('uid') || 0) });
+    if (url.pathname === '/bet') { const b = await req.json(); try { return Response.json(await this.placeBet(b)); } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); } }
     if (url.pathname === '/tour/start') { const { id } = await req.json(); await this.tourStart(+id); return new Response('ok'); }
     if (url.pathname === '/online') return Response.json({ ids: [...this.clients.keys()] });
     if (req.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket attendu', { status: 426 });
@@ -264,9 +268,11 @@ export class Lobby {
     this.battles.set(bt.id, bt);
     for (const p of bt.players) this.push(p, { t: 'battle_start', id: bt.id, names: bt.names, rounds: bt.rounds, tour: tour?.label, stake: bt.stake });
     this.trace(bt, 'début', vsBot ? 'contre un joueur simulé' : '');
+    if (!vsBot) this.broadcast({ t: 'refresh', what: 'fights' });
     bt.timer = setTimeout(() => { // un joueur n'a pas choisi : combat annulé
       if (!this.battles.delete(bt.id)) return;
       this.trace(bt, 'annulé', 'deck non choisi à temps');
+      this.betSettle(bt, bt.tour && bt.players.filter(p => bt.picks[p]).length === 1 ? bt.players.find(p => bt.picks[p]) : null).catch(() => {}); this.broadcast({ t: 'refresh', what: 'fights' });
       if (bt.tour) {                                                       // tournoi : celui qui n'a pas choisi d'équipe perd le match
         const ok = bt.players.filter(p => bt.picks[p]);
         for (const p of bt.players) { this.push(p, { t: 'info', msg: 'Match de tournoi : équipe non choisie à temps.' }); this.push(p, { t: 'battle_cancel' }); }
@@ -482,9 +488,10 @@ export class Lobby {
     bt.over = true; bt.gen++; this.battles.delete(bt.id); this.forget(bt);
     const f = bt.fight, [a, b] = bt.players;
     this.trace(bt, 'fin', quitters.length ? `forfait de ${quitters.map(p => bt.names[p]).join(', ')}` : `normale, tour ${Math.min(f.turn, f.total)}/${f.total}, PV ${a}:${f.hp[a]} ${b}:${f.hp[b]}`);
-    if (quitters.length === 2) { if (bt.stake) await this.stakeSettle(bt, null); if (bt.tour) await this.tourResult(bt.tour.tid, bt.tour.mi, null); return; }   // plus personne : rien à récompenser
+    if (quitters.length === 2) { this.betSettle(bt, null).catch(() => {}); this.broadcast({ t: 'refresh', what: 'fights' }); if (bt.stake) await this.stakeSettle(bt, null); if (bt.tour) await this.tourResult(bt.tour.tid, bt.tour.mi, null); return; }   // plus personne : rien à récompenser
     const win = quitters.length ? bt.players.find(p => !quitters.includes(p)) : f.hp[a] === f.hp[b] ? null : f.hp[a] > f.hp[b] ? a : b;
     if (bt.stake) await this.stakeSettle(bt, win);
+    await this.betSettle(bt, win).catch(e => console.error('paris', e)); this.broadcast({ t: 'refresh', what: 'fights' });
     const k = bt.bot ? .5 : 1;                                        // contre un joueur simulé, gains réduits de moitié
     await this.reward(bt.players.filter(p => p !== bt.bot), win, Math.round(CFG.BATTLE_WIN * k), Math.round(CFG.BATTLE_LOSE * k), Math.round(CFG.BATTLE_DRAW * k));
     for (const p of bt.players) if (p !== bt.bot) bumpQuests(this.env, p, { battle_play: 1, battle_win: p === win ? 1 : 0 });
@@ -618,7 +625,7 @@ export class Lobby {
     const rows = {};
     for (const p of bt.players) rows[p] = await one(this.env, 'SELECT qty, lvl FROM inventory WHERE user_id = ? AND card_id = ?', p, cid[p]);
     const bad = bt.players.find(p => !rows[p] || rows[p].qty < 1);
-    const cancel = (msg) => { this.battles.delete(bt.id); this.forget(bt); clearTimeout(bt.timer); for (const p of bt.players) { this.push(p, { t: 'info', msg }); this.push(p, { t: 'battle_cancel' }); } return false; };
+    const cancel = (msg) => { this.battles.delete(bt.id); this.forget(bt); this.betSettle(bt, null).catch(() => {}); this.broadcast({ t: 'refresh', what: 'fights' }); clearTimeout(bt.timer); for (const p of bt.players) { this.push(p, { t: 'info', msg }); this.push(p, { t: 'battle_cancel' }); } return false; };
     if (bad) return cancel(`Duel annulé : ${bt.names[bad]} ne possède plus la carte choisie.`);
     const res = await this.env.DB.batch([...bt.players.map(p => st(this.env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty >= 1', p, cid[p])), st(this.env, 'DELETE FROM inventory WHERE qty <= 0 AND card_id IN (?, ?) AND user_id IN (?, ?)', cid[bt.players[0]], cid[bt.players[1]], bt.players[0], bt.players[1])]);
     const took = bt.players.filter((p, i) => res[i].meta.changes);
@@ -645,6 +652,73 @@ export class Lobby {
     const [a, b] = bt.players;
     if (win === null || win === undefined) { await this.giveCard(a, e.cid[a], e.lvl[a]); await this.giveCard(b, e.cid[b], e.lvl[b]); }
     else { const lose = win === a ? b : a; await this.giveCard(win, e.cid[win], e.lvl[win]); await this.giveCard(win, e.cid[lose], 0); this.titleNote(win, 'stake_win'); }
+  }
+
+  // ---------- paris sur les combats : cagnotte partagée entre les parieurs du vainqueur, dont 25 % de la cagnotte perdante vont au combattant gagnant ----------
+  betOpen(bt) { return !bt.over && !bt.bot && (!bt.fight || bt.fight.turn <= FIGHT_BET.openTurns); }
+  /** Combats en cours entre joueurs (cartes, mise, tournoi) avec cagnotte, cotes et pari du joueur qui consulte. */
+  async liveFights(uid) {
+    await ensureGameSchema(this.env);
+    const list = [...this.battles.values()].filter(b => !b.over && !b.bot);
+    if (!list.length) return [];
+    const ids = list.map(b => b.id), pids = [...new Set(list.flatMap(b => b.players))];
+    const [pools, mine, recs] = await Promise.all([
+      all(this.env, `SELECT battle, side, SUM(stake) s, COUNT(*) n FROM fight_bets WHERE settled = 0 AND battle IN (${placeholders(ids.length)}) GROUP BY battle, side`, ...ids),
+      uid ? all(this.env, `SELECT battle, side, stake FROM fight_bets WHERE settled = 0 AND user_id = ? AND battle IN (${placeholders(ids.length)})`, uid, ...ids) : [],
+      all(this.env, `SELECT id, duel_wins w, duel_losses l FROM users WHERE id IN (${placeholders(pids.length)})`, ...pids),
+    ]);
+    const rec = new Map(recs.map(r => [r.id, r]));
+    return list.map(b => {
+      const [a, c] = b.players, f = b.fight, pool = id => { const p = pools.find(x => x.battle === b.id && x.side === id); return { sum: +(p?.s || 0), n: +(p?.n || 0) }; };
+      return { id: b.id, kind: b.tour ? 'tour' : b.stake ? 'stake' : 'combat', label: b.tour?.label ?? (b.stake ? 'Duel à la mise' : 'Combat de cartes'),
+        players: [a, c].map(id => ({ id, name: b.names[id], w: rec.get(id)?.w ?? 0, l: rec.get(id)?.l ?? 0, hp: f?.hp?.[id] ?? null, max: f?.max?.[id] ?? null, bet: pool(id), deck: f ? f.deck[id].map(x => ({ t: x.title, r: x.rarity, atk: x.atk, def: x.def, lvl: x.lvl || 0 })) : null })),
+        started: !!f, turn: f ? Math.min(f.turn, f.total) : 0, total: f?.total ?? b.rounds * 2, open: this.betOpen(b), mine: mine.find(m => m.battle === b.id) ?? null, fighting: b.players.includes(uid), share: FIGHT_BET.fighter };
+    });
+  }
+  async placeBet({ uid, name, battle, side, stake }) {
+    const E = (m, status = 400) => Object.assign(new Error(m), { status });
+    await ensureGameSchema(this.env);
+    const bt = this.battles.get(battle);
+    if (!bt || bt.over || bt.bot) throw E('Ce combat n’est plus disponible', 404);
+    if (bt.players.includes(uid)) throw E('Tu ne peux pas parier sur ton propre combat');
+    if (!this.betOpen(bt)) throw E('Les paris sont fermés : le combat est trop avancé');
+    side = +side; stake = Math.floor(+stake);
+    if (!bt.players.includes(side)) throw E('Choisis l’un des deux joueurs');
+    if (!(stake >= FIGHT_BET.min && stake <= FIGHT_BET.max)) throw E(`Mise entre ${FIGHT_BET.min} et ${FIGHT_BET.max} pièces`);
+    if (await one(this.env, 'SELECT 1 x FROM fight_bets WHERE battle = ? AND user_id = ?', battle, uid)) throw E('Tu as déjà parié sur ce combat');
+    const paid = await run(this.env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', stake, uid, stake);
+    if (!paid.meta.changes) throw E('Pas assez de pièces');
+    const ins = await run(this.env, 'INSERT INTO fight_bets (battle, user_id, side, stake, ts) VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING', battle, uid, side, stake, now());
+    if (!ins.meta.changes) { await run(this.env, 'UPDATE users SET coins = coins + ? WHERE id = ?', stake, uid); throw E('Tu as déjà parié sur ce combat'); }
+    this.broadcast({ t: 'refresh', what: 'fights' });
+    for (const p of bt.players) this.push(p, { t: 'notify', msg: `🎲 ${name} a parié ${stake} pièces sur ${bt.names[side]} (la cagnotte grossit !)` });
+    return { ok: true };
+  }
+  /** Règle les paris d'un combat. win = id du vainqueur, ou null (égalité, annulation, panne : tout le monde est remboursé). */
+  async betSettle(bt, win) {
+    const rows = await all(this.env, 'SELECT id, user_id, side, stake FROM fight_bets WHERE battle = ? AND settled = 0', bt.id);
+    if (!rows.length) return;
+    const claim = await run(this.env, 'UPDATE fight_bets SET settled = 1 WHERE battle = ? AND settled = 0', bt.id);
+    if (!claim.meta.changes) return;
+    const total = rows.reduce((t, r) => t + r.stake, 0), onWin = rows.filter(r => r.side === win), winSum = onWin.reduce((t, r) => t + r.stake, 0), loserPool = total - winSum;
+    const refund = win == null || !onWin.length || !loserPool;                                      // pas de vainqueur, ou personne d'un côté : on rend les mises
+    const share = refund ? 0 : Math.floor(loserPool * FIGHT_BET.fighter), dist = total - share, stmts = [], notes = [];
+    for (const r of rows) {
+      const pay = refund ? r.stake : r.side === win ? Math.floor(r.stake / winSum * dist) : 0;
+      stmts.push(st(this.env, 'UPDATE fight_bets SET payout = ? WHERE id = ?', pay, r.id));
+      if (pay) stmts.push(st(this.env, 'UPDATE users SET coins = coins + ? WHERE id = ?', pay, r.user_id));
+      notes.push([r.user_id, refund ? `Pari remboursé${bt.names?.[r.side] ? ` (${bt.names[r.side]})` : ''} : ${r.stake} pièces rendues.` : pay ? `Pari gagné sur ${bt.names[win]} : +${pay - r.stake} pièces !` : `Pari perdu sur ${bt.names[r.side]} : −${r.stake} pièces.`]);
+    }
+    if (share && !bt.bot) { stmts.push(st(this.env, 'UPDATE users SET coins = coins + ? WHERE id = ?', share, win)); notes.push([win, `Victoire ! Tu remportes aussi ${share} pièces de la cagnotte des paris.`]); }
+    await this.env.DB.batch(stmts);
+    for (const [u, msg] of notes) this.tourNote(u, msg);
+  }
+  /** Paris dont le combat a disparu (redémarrage du serveur…) : remboursés. */
+  async betJanitor() {
+    if (this.janitorAt && now() - this.janitorAt < 120000) return; this.janitorAt = now();
+    await ensureGameSchema(this.env);
+    const rows = await all(this.env, 'SELECT DISTINCT battle FROM fight_bets WHERE settled = 0 AND ts < ?', now() - 180000);
+    for (const { battle } of rows) if (!this.battles.has(battle)) await this.betSettle({ id: battle, names: {}, bot: false }, null);
   }
 
 }

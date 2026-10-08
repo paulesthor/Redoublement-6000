@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '6.2';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '6.3';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -151,7 +151,7 @@ function onWs(m) {
   else if (m.t === 'friend') onFriend(m);
   else if (m.t === 'dm') onDm(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
-  else if (m.t === 'refresh') { gcache.clear(); if ((tab === (m.what === 'auctions' ? 'market' : m.what) || (m.what === 'tournaments' && tab === 'tournament')) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
+  else if (m.t === 'refresh') { gcache.clear(); if ((tab === (m.what === 'auctions' ? 'market' : m.what) || (m.what === 'tournaments' && tab === 'tournament') || (m.what === 'fights' && tab === 'duel' && duelMode === 'live')) && !game) render(); if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
     $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : m.mode === 'stake' ? 'duel à la mise : vous misez chacun une carte et le gagnant garde les deux' : 'duel de quiz'}.</p>
@@ -673,8 +673,9 @@ const views = {
   },
 
   async duel(v) {
+    if (duelMode === 'live') return liveFights(v);
     const { users } = await api('/users');
-    const MODES = [['quiz', 'Quiz'], ['battle', 'Combat'], ['stake', 'Duel à la mise']];
+    const MODES = [['quiz', 'Quiz'], ['battle', 'Combat'], ['stake', 'Mise'], ['live', '🎲 En direct']];
     const INFO = {
       quiz: '<b>Duel de quiz</b> : 5 questions identiques pour les deux joueurs, les réponses rapides rapportent plus. Le gagnant empoche des pièces.',
       battle: '<b>Combat de cartes</b> : chacun choisit 3 cartes (PV de départ = somme de leurs DEF). À tour de rôle, un joueur attaque avec une carte et l\'autre répond à 3 questions sur son article : chaque mauvaise réponse coûte le tiers de l\'ATK. Le plus de PV à la fin gagne : +50 pièces (moitié moins contre un joueur simulé).',
@@ -1985,6 +1986,37 @@ function whatsNew({ force = false, then } = {}) {
   $('#wn-ok').onclick = done; m.onclick = e => { if (e.target === m) done(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const k = b.dataset.go; done(); lastPack = null; tab = k; if (game?.view === 'end') game = null; render(); });
   return true;
+}
+
+// ---------- combats en direct et paris ----------
+async function liveFights(v) {
+  const MODES = [['quiz', 'Quiz'], ['battle', 'Combat'], ['stake', 'Mise'], ['live', '🎲 En direct']];
+  const d = await api('/fights/live'), list = d.fights;
+  const hp = p => p.hp == null ? '' : `<div class="lhp"><i style="width:${Math.max(0, Math.round(p.hp / (p.max || 1) * 100))}%"></i></div><small>${fmt(p.hp)} PV</small>`;
+  const odds = (f, i) => { const tot = f.players[0].bet.sum + f.players[1].bet.sum; return tot ? Math.round(f.players[i].bet.sum / tot * 100) : null; };
+  v.innerHTML = `${pageHead('Combats', 'Défie un joueur, ou parie sur un combat en cours')}
+    <div class="seg" id="dm-seg">${MODES.map(([k, l]) => `<button data-dm="${k}" class="${k === duelMode ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="panel rulesd" style="margin-bottom:12px"><p class="mut" style="margin:0"><b>Paris sur les combats</b> : mise entre 10 et 500 pièces sur le joueur de ton choix, jusqu'au 2ᵉ tour du combat. Si ton joueur gagne, tu récupères ta mise <b>+ 75 % de la cagnotte des perdants</b> ; <b>le combattant vainqueur empoche les 25 % restants</b>. Tu ne peux pas parier sur ton propre combat.</p></div>
+    ${list.length ? `<div class="fights">${list.map(f => `<div class="fight ${f.fighting ? 'mine' : ''}"><div class="ft"><span class="fk ${f.kind}">${esc(f.label)}</span><small>${f.started ? `tour ${f.turn} / ${f.total}` : 'choix des decks'}</small></div>
+      <div class="fvs">${f.players.map((p, i) => `<div class="fp"><b>${esc(p.name)}</b><small>${p.w} V · ${p.l} D</small>${hp(p)}${odds(f, i) != null ? `<span class="fodd">${odds(f, i)} % des mises</span>` : ''}</div>${i === 0 ? '<span class="vs">VS</span>' : ''}`).join('')}</div>
+      <div class="fpot">${ico('coin')} Cagnotte <b>${fmt(f.players[0].bet.sum + f.players[1].bet.sum)}</b> · ${f.players[0].bet.n + f.players[1].bet.n} pari${f.players[0].bet.n + f.players[1].bet.n > 1 ? 's' : ''}</div>
+      ${f.mine ? `<div class="fmine">Ton pari : <b>${fmt(f.mine.stake)}</b> sur ${esc(f.players.find(p => p.id === f.mine.side)?.name || '?')}</div>` : f.fighting ? '<div class="fmine mut">Tu combats : concentre-toi, ta victoire rapporte aussi une part de la cagnotte !</div>' : f.open ? `<div class="row"><button data-bet="${f.id}" data-side="${f.players[0].id}" style="flex:1">Parier sur ${esc(f.players[0].name)}</button><button data-bet="${f.id}" data-side="${f.players[1].id}" style="flex:1">Parier sur ${esc(f.players[1].name)}</button></div>` : '<div class="fmine mut">Paris fermés (combat trop avancé)</div>'}</div>`).join('')}</div>`
+      : '<div class="empty">Aucun combat en cours pour le moment.<br>Défie un joueur dans l\'onglet Combat : les spectateurs pourront parier dessus !</div>'}`;
+  $('#dm-seg').onclick = e => { const b = e.target.closest('[data-dm]'); if (!b) return; duelMode = b.dataset.dm; render(); };
+  v.querySelectorAll('[data-bet]').forEach(b => b.onclick = () => {
+    const f = list.find(x => x.id === b.dataset.bet), side = +b.dataset.side, me2 = f.players.find(p => p.id === side), other = f.players.find(p => p.id !== side), box = $('#modal'); box.hidden = false;
+    const est = stake => { const win = me2.bet.sum + stake, lose = other.bet.sum; return lose ? Math.floor(stake + stake / win * (lose * (1 - f.share))) : null; };
+    box.innerHTML = `<div class="betsheet"><h2>Parier sur ${esc(me2.name)}</h2><p class="mut" style="margin:0 0 8px">${esc(f.label)} · contre ${esc(other.name)} · ${me2.w} V / ${me2.l} D</p>
+      ${me2.deck ? `<div class="deckpeek">${me2.deck.map(c => `<span class="rar ${c.r}">${esc(c.t)}${c.lvl ? ' ★' + c.lvl : ''} · ${fmt(c.atk)}/${fmt(c.def)}</span>`).join('')}</div>` : ''}
+      <label class="fld" style="margin-top:10px">Mise (10 à 500 pièces)<input id="bt-stake" type="number" inputmode="numeric" value="50" min="10" max="500"></label>
+      <p class="mut" id="bt-est" style="margin:4px 0 10px"></p>
+      <div class="row"><button id="bt-ok" style="flex:1">Parier</button><button class="plain" id="bt-x" style="flex:1">Annuler</button></div></div>`;
+    const paint = () => { const st = Math.floor(+$('#bt-stake').value) || 0, e = est(st); $('#bt-est').innerHTML = e ? `Si ${esc(me2.name)} gagne : tu reçois environ <b>${fmt(e)}</b> pièces (cote actuelle, elle change avec les autres mises).` : 'Personne n\'a encore parié contre : ta mise serait rendue si ça reste ainsi.'; };
+    $('#bt-stake').oninput = paint; paint();
+    const close = () => { box.hidden = true; box.innerHTML = ''; }; $('#bt-x').onclick = close; box.onclick = e => { if (e.target === box) close(); };
+    $('#bt-ok').onclick = safe(async () => { await api('/fights/bet', { battle: f.id, side, stake: +$('#bt-stake').value }); close(); toast(`Pari placé sur ${me2.name}`); await refreshMe(); render(); });
+  });
+  tick = setInterval(() => { if (tab === 'duel' && duelMode === 'live' && !game && $('#modal').hidden) render(); }, 6000);
 }
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {

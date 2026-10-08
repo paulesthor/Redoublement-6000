@@ -851,6 +851,14 @@ route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) =>
   return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
 });
 
+// ---------- paris sur les combats en cours (les paris et les combats vivent dans le Durable Object) ----------
+route('GET', '/api/fights/live', async ({ env, user }) => (await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/live?uid=' + user.id)).json()));
+route('POST', '/api/fights/bet', async ({ env, user, body }) => {
+  const r = await lobbyCall(env, '/bet', { uid: user.id, name: user.name, battle: String(body.battle || ''), side: body.side, stake: body.stake }), j = await r.json();
+  if (!r.ok) bad(j.error || 'Pari impossible', r.status === 404 ? 404 : 400);
+  return j;
+});
+
 // ---------- bourse, « plus ou moins », cours des cartes, banque, dividendes, expéditions (voir economy.js) ----------
 const economy = installEconomy({ route, bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now,
   albumCount: async (env, uid) => +(await one(env, 'SELECT COUNT(*) n FROM album_claims WHERE user_id = ?', uid)).n });
