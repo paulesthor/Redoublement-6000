@@ -42,7 +42,7 @@ shift += 86400000; globalThis.__PV_FAIL = true; [s, r] = await call(A, 'GET', '/
 globalThis.__PV_FAIL = false; globalThis.__PV = undefined;
 
 console.log('— plus ou moins');
-[s, r] = await call(A, 'GET', '/api/hilo'); ok('état initial', s === 200 && r.active === false && r.perDay === 6 && r.table[0] === 1.85, J(r));
+[s, r] = await call(A, 'GET', '/api/hilo'); ok('état initial', s === 200 && r.active === false && r.perDay === 2 && r.table[0] === 1.85, J(r));
 [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 5 }); ok('mise trop basse', s === 400);
 const h0 = await coins(alice); [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 100 }); ok('partie lancée, mise prélevée, vues de B cachées', s === 200 && r.active && r.a.v > 0 && r.b.v === undefined && (await coins(alice)) === h0 - 100, J(r));
 [s] = await call(A, 'POST', '/api/hilo/start', { stake: 100 }); ok('une seule partie à la fois', s === 400);
@@ -58,8 +58,8 @@ const cb = await coins(alice); [s, r] = await call(A, 'POST', '/api/hilo/cashout
 await call(A, 'POST', '/api/hilo/start', { stake: 50 }); { const p = JSON.parse((await q('SELECT pair FROM hilo_games WHERE user_id = ?', alice))[0].pair); [s, r] = await call(A, 'POST', '/api/hilo/guess', { guess: p.b.v > p.a.v ? 'less' : 'more' }); }
 ok('mauvaise réponse : mise perdue, partie terminée, valeurs révélées', r.right === false && r.reveal.v > 0 && (await q('SELECT active FROM hilo_games WHERE user_id = ?', alice))[0].active === 0, J(r));
 [s] = await call(A, 'POST', '/api/hilo/guess', { guess: 'more' }); ok('plus de partie en cours', s === 400);
-for (let i = 0; i < 4; i++) { await call(A, 'POST', '/api/hilo/start', { stake: 10 }); await q('UPDATE hilo_games SET active = 0 WHERE user_id = ?', alice); }
-[s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 10 }); ok('6 parties par jour au maximum', s === 400 && /Maximum 6/.test(r.error), J([s, r]));
+for (let i = 0; i < 1; i++) { await call(A, 'POST', '/api/hilo/start', { stake: 10 }); await q('UPDATE hilo_games SET active = 0 WHERE user_id = ?', alice); }
+[s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 10 }); ok('2 parties par jour au maximum', s === 400 && /Maximum 2/.test(r.error), J([s, r]));
 
 console.log('— cours des cartes, tendances, alertes');
 const card = (await q('SELECT card_id FROM inventory WHERE user_id = ? LIMIT 1', alice))[0].card_id;

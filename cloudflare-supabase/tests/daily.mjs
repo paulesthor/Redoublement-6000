@@ -164,7 +164,15 @@ console.log('— économie (interface)');
   await p.click('#dv-go'); await p.waitForTimeout(700); ok('dividendes récupérés', await p.$eval('#dv-go', b => b.disabled));
   await go('expeditions'); await p.waitForSelector('#ex-new'); await shot(p, 'eco-exped');
   await DB.prepare('UPDATE inventory SET qty = 4 WHERE user_id = 1 AND card_id IN (SELECT card_id FROM inventory WHERE user_id = 1 AND sh = 0 ORDER BY card_id LIMIT 3)').run(); await go('expeditions');
-  await p.click('#ex-new'); await p.waitForSelector('.exitem'); await p.click('.exitem [data-p]'); await p.click('.exitem [data-p]'); await shot(p, 'eco-exped-new'); ok('estimation du gain affichée', (await p.textContent('#ex-sum')).includes('gain estimé'));
+  await DB.prepare("UPDATE cards SET title = 'Un titre vraiment très long pour vérifier que rien ne déborde sur le côté de lécran même avec un nom interminable' WHERE id = (SELECT card_id FROM inventory WHERE user_id = 1 AND qty > 1 AND sh = 0 ORDER BY card_id LIMIT 1)").run(); await go('expeditions');
+  await p.click('#ex-new'); await p.waitForSelector('.exitem'); await p.waitForTimeout(300);
+  const ov = await p.$eval('.exlist', e => ({ sw: e.scrollWidth, cw: e.clientWidth })), ov2 = await p.$eval('.exsheet', e => ({ sw: e.scrollWidth, cw: e.clientWidth })), ov3 = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+  ok('sélection d\'expédition : aucun défilement horizontal', ov.sw <= ov.cw + 1 && ov2.sw <= ov2.cw + 1 && ov3, JSON.stringify([ov, ov2, ov3]));
+  const btn = await p.$eval('.exitem [data-p]', e => { const r = e.getBoundingClientRect(); return r.right <= innerWidth && r.left >= 0; }); ok('le bouton + est visible sans défiler', btn);
+  await p.click('.exitem'); await p.click('.exitem'); ok('toucher la ligne ajoute un exemplaire', (await p.textContent('.exitem [data-n]')) === '2' || (await p.textContent('.exitem [data-n]')) === '1');
+  await p.click('#ex-auto'); await p.waitForTimeout(200); ok('remplissage automatique', (await p.$$('.exitem.sel')).length >= 1 && (await p.textContent('#ex-sum')).includes('gain estimé'));
+  await p.click('#ex-clear'); ok('vider', (await p.$$('.exitem.sel')).length === 0 && await p.$eval('#ex-go', b => b.disabled)); await p.click('.exitem'); await shot(p, 'eco-exped-new');
+  const goBox = await p.$eval('#ex-go', e => { const r = e.getBoundingClientRect(); return r.bottom <= innerHeight; }); ok('le bouton Envoyer reste visible', goBox);
   await p.click('#ex-go'); await p.waitForTimeout(900); ok('expédition lancée', (await p.$$('.exrow')).length === 1);
 }
 console.log('— page des nouveautés (interface)');

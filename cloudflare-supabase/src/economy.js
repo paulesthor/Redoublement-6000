@@ -3,7 +3,7 @@
 
 const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
 export const BOURSE = { slots: 12, minStake: 10, maxStake: 500, maxBets: 8, dayStake: 2000, payout: 1.8, popularRanks: 1500 };
-export const HILO = { minStake: 10, maxStake: 500, perDay: 6, step: 1.85, maxStreak: 10, gap: 0.15, ranks: 30000 };
+export const HILO = { minStake: 10, maxStake: 500, perDay: 2, step: 1.85, maxStreak: 10, gap: 0.15, ranks: 30000 };
 export const BANK = { rate: 0.006, cap: 5000, lockDays: 7, fee: 0.1 };               // 0,6 % par jour, 5 000 pièces au plus, retrait avant 7 jours : 10 % de frais
 export const DIV = { rate: [0.02, 0.1, 0.4, 1.5, 5, 20], lvl: 0.25, shiny: 2, album: 20, maxDays: 3 };   // pièces par carte et par jour, selon la rareté
 export const EXPED = { slots: 2, maxCards: 12, hours: [[1, 1], [4, 3.2], [8, 6]], base: [3, 6, 15, 40, 120, 400], pack: { 1: 0.01, 4: 0.06, 8: 0.15 } };

@@ -3,6 +3,9 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '6.4', icon: '🧭', title: 'Expéditions plus simples', items: [
+    { t: 'Sélection en un geste', d: 'Touche une carte pour l\'envoyer en expédition (plus de défilement sur le côté), « Remplir automatiquement » choisit les doublons les moins rares, et le bouton Envoyer reste toujours visible.', go: 'expeditions' },
+    { t: 'Plus ou moins : 2 parties par jour', d: 'La limite quotidienne passe de 6 à 2 parties.', go: 'hilo' } ] },
   { v: '6.3', icon: '🎲', title: 'Parie sur les combats', items: [
     { t: 'Combats en direct', d: 'Dans l\'onglet Combats, « En direct » liste les combats en cours entre joueurs, avec la cagnotte et les cotes.', go: 'duel' },
     { t: 'Miser sur ton favori', d: 'Choisis le joueur et ta mise (10 à 500 pièces) jusqu\'au 2ᵉ tour. Ton joueur gagne : tu reprends ta mise + 75 % de la cagnotte des perdants.' },

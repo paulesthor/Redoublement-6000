@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '6.3';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '6.4';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1957,14 +1957,23 @@ views.expeditions = async v => {
     const sp = (await api('/expeditions/spare')).cards, m = $('#modal'); let hours = d.options[1].hours; const pick = new Map();
     if (!sp.length) return toast('Tu n\'as aucun doublon à envoyer pour le moment');
     m.hidden = false;
-    const est = () => { const n = [...pick.values()].reduce((t, x) => t + x, 0), opt = d.options.find(o => o.hours === hours), base = sp.reduce((t, c) => t + (pick.get(c.id) || 0) * d.base[cfg.rarities.indexOf(c.rarity)], 0); return { n, lo: Math.floor(base * opt.mult * 0.7), hi: Math.floor(base * opt.mult * 1.4) }; };
-    const paint = () => { const e = est(); $('#ex-sum').innerHTML = e.n ? `<b>${e.n}</b> carte${e.n > 1 ? 's' : ''} · gain estimé <b>${fmt(e.lo)} – ${fmt(e.hi)}</b> pièces` : 'Choisis des cartes (12 au maximum)'; $('#ex-go').disabled = !e.n; m.querySelectorAll('[data-n]').forEach(el => { el.textContent = pick.get(+el.dataset.n) || 0; }); };
+    const total = () => [...pick.values()].reduce((t, x) => t + x, 0);
+    const est = () => { const opt = d.options.find(o => o.hours === hours), base = sp.reduce((t, c) => t + (pick.get(c.id) || 0) * d.base[cfg.rarities.indexOf(c.rarity)], 0); return { n: total(), lo: Math.floor(base * opt.mult * 0.7), hi: Math.floor(base * opt.mult * 1.4) }; };
+    const paint = () => {
+      const e = est(); $('#ex-sum').innerHTML = e.n ? `<b>${e.n}</b> / ${d.maxCards} carte${e.n > 1 ? 's' : ''} · gain estimé <b>${fmt(e.lo)} – ${fmt(e.hi)}</b> pièces` : `Touche une carte pour l'ajouter (${d.maxCards} au maximum)`;
+      $('#ex-go').disabled = !e.n; $('#ex-go').textContent = e.n ? `Envoyer (${e.n})` : 'Envoyer';
+      m.querySelectorAll('.exitem').forEach(el => { const n = pick.get(+el.dataset.id) || 0; el.classList.toggle('sel', n > 0); el.querySelector('[data-n]').textContent = n; el.querySelector('[data-m]').style.visibility = n ? 'visible' : 'hidden'; });
+    };
     m.innerHTML = `<div class="exsheet"><h2>Nouvelle expédition</h2><div class="chips" id="ex-h">${d.options.map(o => `<button data-h="${o.hours}" class="${o.hours === hours ? 'on' : ''}">${o.hours} h · ×${o.mult}</button>`).join('')}</div>
-      <div class="exlist">${sp.map(c => `<div class="exitem" style="--c:var(--${c.rarity})"><span class="rar ${c.rarity}">${ABBR[c.rarity]}</span><span class="t">${esc(c.title)}</span><span class="mut">×${c.spare}</span><span class="ctr"><button class="plain" data-m="${c.id}">−</button><b data-n="${c.id}">0</b><button class="plain" data-p="${c.id}">+</button></span></div>`).join('')}</div>
-      <p class="mut" id="ex-sum" style="margin:8px 0"></p><div class="row"><button id="ex-go" style="flex:1">Envoyer</button><button class="plain" id="ex-x" style="flex:1">Annuler</button></div></div>`;
+      <div class="exquick"><button class="plain" id="ex-auto">Remplir automatiquement</button><button class="plain" id="ex-clear">Vider</button></div>
+      <div class="exlist">${sp.map(c => `<div class="exitem" data-id="${c.id}" style="--c:var(--${c.rarity})"><span class="rar ${c.rarity}">${ABBR[c.rarity]}</span><span class="t">${esc(c.title)}<small>${c.spare} en double</small></span><span class="ctr"><button class="plain" data-m="${c.id}" aria-label="Retirer">−</button><b data-n="${c.id}">0</b><button class="plain" data-p="${c.id}" aria-label="Ajouter">+</button></span></div>`).join('')}</div>
+      <div class="exfoot"><p class="mut" id="ex-sum"></p><div class="row"><button id="ex-go" style="flex:2">Envoyer</button><button class="plain" id="ex-x" style="flex:1">Annuler</button></div></div></div>`;
     const close = () => { m.hidden = true; m.innerHTML = ''; }; $('#ex-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#ex-h').onclick = e => { const b = e.target.closest('[data-h]'); if (!b) return; hours = +b.dataset.h; $('#ex-h').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); paint(); };
-    m.querySelector('.exlist').onclick = e => { const p = e.target.closest('[data-p]'), mi = e.target.closest('[data-m]'); const id = +(p?.dataset.p ?? mi?.dataset.m); if (!id) return; const c = sp.find(x => x.id === id), cur = pick.get(id) || 0, tot = est().n; if (p && cur < c.spare && tot < d.maxCards) pick.set(id, cur + 1); if (mi && cur > 0) pick.set(id, cur - 1); paint(); };
+    const add = (id, delta) => { const c = sp.find(x => x.id === id), cur = pick.get(id) || 0; if (delta > 0 && (cur >= c.spare || total() >= d.maxCards)) return; if (delta < 0 && !cur) return; pick.set(id, cur + delta); paint(); };
+    m.querySelector('.exlist').onclick = e => { const row = e.target.closest('.exitem'); if (!row) return; const id = +row.dataset.id; if (e.target.closest('[data-m]')) add(id, -1); else add(id, 1); };   // toucher une ligne = ajouter un exemplaire
+    $('#ex-clear').onclick = () => { pick.clear(); paint(); };
+    $('#ex-auto').onclick = () => { pick.clear(); let left = d.maxCards; for (const c of sp) { const n = Math.min(c.spare, left); if (n > 0) { pick.set(c.id, n); left -= n; } if (!left) break; } paint(); };   // les cartes les moins rares d'abord
     $('#ex-go').onclick = safe(async () => { await api('/expeditions/start', { hours, cards: [...pick].filter(([, n]) => n > 0).map(([id, n]) => ({ id, n })) }); close(); toast('Expédition lancée !'); await refreshMe(); render(); });
     paint();
   });
