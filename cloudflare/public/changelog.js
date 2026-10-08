@@ -3,6 +3,8 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '6.6', icon: '🧠', title: 'Questions de combat : diagnostic', items: [
+    { t: 'Suivi des questions IA', d: 'Si le modèle ne produit pas de questions, la raison est maintenant enregistrée et visible côté administration (Aperçu).' } ] },
   { v: '6.5', icon: '🔎', title: 'Recherche de carte & classement', items: [
     { t: 'Retrouve une carte précise', d: 'Dans Recherche, chaque carte indique si tu la possèdes ou si tu l\'as déjà eue un jour (avec la date de première obtention), même vendue ou échangée depuis.', go: 'search' },
     { t: 'Classement plus discret', d: 'Les pièces des autres joueurs ne sont plus affichées.', go: 'rank' } ] },

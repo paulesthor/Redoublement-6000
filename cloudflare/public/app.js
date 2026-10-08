@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '6.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '6.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1227,7 +1227,7 @@ views.admin = async v => {
     if (adminTab === 'overview') {
       const o = await api('/admin/overview');
       const rows = [['Joueurs', o.users], ['En ligne maintenant', o.online], ['Joueurs simulés', o.bots], ['Paquets ouverts', fmt(o.packs)], ['Cartes possédées', fmt(o.owned)], ['Cartes en base', fmt(o.cards)], ['Pièces en circulation', fmt(o.coins)],
-        ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['Questions IA aujourd\'hui', `${o.aiToday} / ≈ 250`], ['Version serveur', o.version]];
+        ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['Questions IA aujourd\'hui', `${o.aiToday} / ≈ 250`], ['Dernière erreur IA', o.aiErr || 'aucune'], ['Version serveur', o.version]];
       box.innerHTML = `<div class="admgrid">${rows.map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>`;
     } else if (adminTab === 'users') {
       const { users, defaults, rarities, labels } = await api('/admin/users');

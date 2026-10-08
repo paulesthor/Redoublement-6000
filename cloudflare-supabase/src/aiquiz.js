@@ -104,6 +104,8 @@ export async function tryModel(env, model, card, text) {
 }
 let backoffUntil = 0;     // quota épuisé ou modèle saturé : on laisse la main aux règles quelques minutes
 const lastError = { msg: null };
+/** Garde la dernière erreur de l'IA en base (visible dans l'administration > Aperçu) : le Worker et le salon de combat sont deux processus différents. */
+const noteError = (env, msg) => { lastError.msg = msg; try { env.DB.prepare("INSERT INTO settings (key, value) VALUES ('ai_last_error', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(`${new Date().toISOString()} · ${String(msg).slice(0, 300)}`).run().catch(() => {}); } catch { /* sans importance */ } };
 // Mistral (le plus fin, ~39 neurons par article) tant qu'on en a généré moins de MISTRAL_PER_DAY aujourd'hui ; ensuite Llama 8B (~15 neurons, 2,6 fois plus d'articles par jour).
 const MISTRAL_PER_DAY = 120;
 let mistralCount = { n: 0, at: 0 };
@@ -115,16 +117,17 @@ async function modelOrder(env) {
   return mistralCount.n < MISTRAL_PER_DAY ? MODELS : [...MODELS].reverse();
 }
 async function generate(env, card, text, want = 3) {
-  if (!env.AI || Date.now() < backoffUntil || env.AI_QUIZ === '0') return null;
+  if (!env.AI) { noteError(env, 'liaison AI absente du Worker'); return null; }
+  if (Date.now() < backoffUntil || env.AI_QUIZ === '0') return null;
   for (const model of await modelOrder(env)) {
     try {
       const out = await env.AI.run(model, { messages: buildMessages(card.title, text, want > 3 ? want + 3 : 4, want), max_tokens: want > 3 ? 2800 : 1200, temperature: .5 });
       const raw = typeof out === 'string' ? out : (out?.response ?? out?.result?.response ?? out?.choices?.[0]?.message?.content ?? out);
       const qs = parseQuestions(raw, card.title, text);
       if (qs.length >= want) return { qs: pickThree(qs, want), model: model + '|' + QUIZ_VERSION };
-      lastError.msg = `${model}: ${qs.length} question(s) valide(s)`;
+      noteError(env, `${model}: ${qs.length} question(s) valide(s) sur ${want} attendues`);
     } catch (e) {
-      lastError.msg = `${model}: ${e.message}`;
+      noteError(env, `${model}: ${e.message}`);
       if (/limit|quota|capacity|3040|4006|429/i.test(String(e.message))) { backoffUntil = Date.now() + 10 * 60000; return null; }
     }
   }

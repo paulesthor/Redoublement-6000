@@ -1549,7 +1549,8 @@ route('GET', '/api/admin/overview', admin(async ({ env }) => {
     n('SELECT COALESCE(SUM(coins),0) n FROM users WHERE is_bot = 0'), n('SELECT COUNT(*) n FROM push_subs'), n('SELECT COUNT(*) n FROM quizzes'),
     n('SELECT COUNT(*) n FROM quizzes WHERE ts >= ?', day.getTime()), n('SELECT COUNT(*) n FROM reserve'), n('SELECT COUNT(*) n FROM bids'),
   ]);
-  return { users, bots, cards, owned, auctions, packs, coins, subs, quizzes, aiToday, reserve, bids, online: (await onlineIds(env)).length, version: CFG.VERSION };
+  const aiErr = (await one(env, "SELECT value FROM settings WHERE key = 'ai_last_error'").catch(() => null))?.value ?? null;
+  return { users, bots, cards, owned, auctions, packs, coins, subs, quizzes, aiToday, aiErr, reserve, bids, online: (await onlineIds(env)).length, version: CFG.VERSION };
 }));
 route('GET', '/api/admin/users', admin(async ({ env }) => {
   const online = new Set(await onlineIds(env));
