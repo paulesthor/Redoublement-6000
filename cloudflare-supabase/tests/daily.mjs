@@ -142,14 +142,30 @@ console.log('— résumé de paquet : Continuer / Ouvrir un autre');
 {
   await DB.prepare('UPDATE users SET pack_stock = 5, coins = 5000 WHERE id = 1').run();
   await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; localStorage.setItem('wm_fast', '1'); tab = 'packs'; render(); }); await p.waitForSelector('#open'); await p.waitForTimeout(500);
-  const before = await p.evaluate(() => me.packs);
+  const before = (await DB.prepare('SELECT packs_opened n FROM users WHERE id = 1').all()).results[0].n;
   await p.click('#open'); await p.waitForSelector('#reveal .skip', { timeout: 15000 }); await p.click('#reveal .skip'); await p.waitForSelector('#reveal .sum .again', { timeout: 15000 }); await p.waitForTimeout(400); await shot(p, 'resume-paquet');
   ok('deux boutons dans le résumé : Continuer (gauche) et ouvrir un autre (droite)', (await p.$$eval('#reveal .sticky-bar button', bs => bs.map(b => b.textContent.trim()))).join('|').startsWith('Continuer|Ouvrir un autre paquet'));
   const [bx, ax] = await p.$$eval('#reveal .sticky-bar button', bs => bs.map(b => Math.round(b.getBoundingClientRect().left))); ok('Continuer est à gauche', bx < ax, [bx, ax]);
   await p.click('#reveal .again'); await p.waitForSelector('#reveal .skip', { timeout: 15000 }); await p.waitForTimeout(500);
-  ok('« Ouvrir un autre » lance directement un 2e paquet sans repasser par l\'accueil', (await p.evaluate(() => me.packs)) === before - 2, await p.evaluate(() => me.packs));
+  ok('« Ouvrir un autre » lance directement un 2e paquet sans repasser par l\'accueil', (await DB.prepare('SELECT packs_opened n FROM users WHERE id = 1').all()).results[0].n === before + 2, before);
   await p.click('#reveal .skip'); await p.waitForSelector('#reveal .sum .finish'); await p.click('#reveal .finish'); await p.waitForTimeout(500); ok('Continuer ferme le résumé', await p.$('#reveal') === null);
   await p.evaluate(() => localStorage.removeItem('wm_fast'));
+}
+console.log('— économie (interface)');
+{
+  await DB.prepare('UPDATE users SET coins = 8000 WHERE id = 1').run();
+  const go = async t => { await p.evaluate(tb => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = tb; render(); }, t); await p.waitForTimeout(700); };
+  await go('bourse'); await p.waitForSelector('.bourserow', { timeout: 8000 }); await shot(p, 'eco-bourse'); ok('bourse : 12 titres', (await p.$$('.bourserow')).length === 12);
+  await p.click('.bourserow'); await p.waitForSelector('#b-up'); await p.fill('#b-stake', '40'); await p.click('#b-up'); await p.waitForTimeout(800); ok('pari enregistré depuis la fiche', (await p.$$('.bourserow.has')).length === 1);
+  await go('hilo'); await p.waitForSelector('#h-go'); await p.click('#h-go'); await p.waitForSelector('.hilo'); await shot(p, 'eco-hilo'); ok('plus ou moins : partie lancée', !!(await p.$('#h-more')));
+  await p.click('#h-more'); await p.waitForTimeout(900); ok('plus ou moins : résultat affiché', (await p.$('.hflash')) !== null);
+  await go('trends'); await p.waitForSelector('.pagehead'); await shot(p, 'eco-trends');
+  await go('bank'); await p.waitForSelector('#bk-in'); await shot(p, 'eco-bank'); ok('banque : dividendes à récupérer', !(await p.$eval('#dv-go', b => b.disabled)));
+  await p.click('#dv-go'); await p.waitForTimeout(700); ok('dividendes récupérés', await p.$eval('#dv-go', b => b.disabled));
+  await go('expeditions'); await p.waitForSelector('#ex-new'); await shot(p, 'eco-exped');
+  await DB.prepare('UPDATE inventory SET qty = 4 WHERE user_id = 1 AND card_id IN (SELECT card_id FROM inventory WHERE user_id = 1 AND sh = 0 ORDER BY card_id LIMIT 3)').run(); await go('expeditions');
+  await p.click('#ex-new'); await p.waitForSelector('.exitem'); await p.click('.exitem [data-p]'); await p.click('.exitem [data-p]'); await shot(p, 'eco-exped-new'); ok('estimation du gain affichée', (await p.textContent('#ex-sum')).includes('gain estimé'));
+  await p.click('#ex-go'); await p.waitForTimeout(900); ok('expédition lancée', (await p.$$('.exrow')).length === 1);
 }
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);

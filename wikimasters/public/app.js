@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '6.0';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '6.1';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -332,9 +332,10 @@ function showCard(id) {
         <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}${c.shiny ? ' · Shiny' : ''}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div></div></div>
     ${fuseBox(c)}<p class="extract">${c.extract ? esc(c.extract) : '<span class="mut">Description en cours de chargement…</span>'}</p>
     <p class="mut">Défausse : ${sellValue(c)} pièces${c.avg_price != null ? ` · prix moyen au marché : ${c.avg_price}` : ''}</p>
-    <div class="row"><a class="btn" href="https://fr.wikipedia.org/wiki/${encodeURIComponent(c.title.replace(/ /g, '_'))}" target="_blank" rel="noopener">Lire sur Wikipédia</a><button class="plain" id="det-close">Fermer</button></div></div>`;
+    <div class="row"><a class="btn" href="https://fr.wikipedia.org/wiki/${encodeURIComponent(c.title.replace(/ /g, '_'))}" target="_blank" rel="noopener">Lire sur Wikipédia</a><button class="plain" id="det-prices">Cours</button><button class="plain" id="det-close">Fermer</button></div></div>`;
   $('#det-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
+  $('#det-prices').onclick = () => priceSheet(c.id, c.title);
   const fb = $('#fuse-go');
   if (fb) fb.onclick = safe(async () => {
     fb.disabled = true;
@@ -406,7 +407,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -1421,7 +1422,7 @@ async function refreshMe() {
   loadCosmetics();
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
-  document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily);
+  document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily || me.ex > 0);
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'hasph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
 }
@@ -1850,6 +1851,121 @@ views.themepacks = async v => {
     await openThemed(t.id, d.price);
   }));
 };
+
+// ---------- économie : bourse, plus ou moins, tendances, banque, expéditions ----------
+const sparkline = (vals, w = 120, h = 34) => {
+  if (!vals || vals.length < 2) return '';
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1, up = vals.at(-1) >= vals[0];
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1) * (w - 4) + 2).toFixed(1)},${(h - 3 - (v - lo) / span * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark ${up ? 'up' : 'down'}" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+};
+const cdTxt = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
+
+views.bourse = async v => {
+  const d = await api('/bourse');
+  if (!d.market.length) { v.innerHTML = `${pageHead('Bourse', 'Paris sur les vues Wikipédia')}<div class="empty">Le marché du jour n'est pas disponible (les statistiques Wikipédia ne répondent pas).<br>Réessaie dans quelques minutes.</div>`; return; }
+  const res = { won: ['Gagné', 'ok'], lost: ['Perdu', 'ko'], tie: ['Rendu', ''], wait: ['En attente', ''] };
+  v.innerHTML = `${pageHead('Bourse', 'Les vues de l\'article vont-elles monter ou baisser aujourd\'hui ?')}
+    <div class="panel boursehead"><p class="mut" style="margin:0">Pour chaque titre, parie sur les vues <b>du jour</b> comparées à la <b>moyenne des 7 derniers jours</b>. Bon pari : <b>×${d.payout}</b>. Résultat demain (les statistiques de Wikipédia sortent après minuit). ${ico('clock')} Nouveau marché dans ${cdTxt(d.resetIn)} · ${d.left} pari${d.left > 1 ? 's' : ''} restant${d.left > 1 ? 's' : ''} · ${fmt(Math.max(0, d.dayStake))} pièces misables.</p></div>
+    <div class="list">${d.market.map(m => `<div class="item tap bourserow ${m.bet ? 'has' : ''}" data-slot="${m.slot}"><div class="grow"><div class="nm">${esc(m.title)}</div><div class="sub"><span>moy. ${fmt(m.ref)} vues/jour</span>${m.bet ? `<span class="betchip ${m.bet.dir}">${m.bet.dir === 'up' ? '▲' : '▼'} ${fmt(m.bet.stake)}</span>` : ''}</div></div>${sparkline(m.series)}</div>`).join('')}</div>
+    ${d.past.length ? `<h3 class="sec">Mes derniers paris</h3><div class="list">${d.past.map(p => `<div class="item row1"><div class="grow"><div class="nm">${esc(p.title)}</div><div class="sub"><span>${p.dir === 'up' ? '▲ hausse' : '▼ baisse'} · ${fmt(p.stake)}</span><span>réf. ${fmt(p.ref)}${p.settled ? ` → ${fmt(p.actual)}` : ''}</span></div></div><b class="res ${res[p.result][1]}">${res[p.result][0]}${p.result === 'won' ? ` +${fmt(p.payout - p.stake)}` : ''}</b></div>`).join('')}</div>` : ''}`;
+  v.querySelectorAll('[data-slot]').forEach(el => el.onclick = () => {
+    const m = d.market.find(x => x.slot === +el.dataset.slot), box = $('#modal'); box.hidden = false;
+    box.innerHTML = `<div class="betsheet"><h2>${esc(m.title)}</h2><p class="mut" style="margin:0 0 8px">Vues des 7 derniers jours (moyenne ${fmt(m.ref)}) :</p><div class="bigspark">${sparkline(m.series, 300, 70)}</div>
+      <div class="barlist">${m.series.map(x => `<span>${fmt(x)}</span>`).join('')}</div>
+      ${m.bet ? `<p class="mut" style="margin:10px 0 0">Tu as déjà parié ${m.bet.dir === 'up' ? '▲ à la hausse' : '▼ à la baisse'} : ${fmt(m.bet.stake)} pièces.</p><div class="row"><button class="plain" id="b-x">Fermer</button></div>`
+      : `<label class="fld" style="margin-top:12px">Mise (${d.min} à ${d.max} pièces)<input id="b-stake" type="number" inputmode="numeric" value="50" min="${d.min}" max="${d.max}"></label>
+        <div class="row"><button id="b-up" style="flex:1">▲ Hausse</button><button id="b-down" style="flex:1">▼ Baisse</button></div><div class="row"><button class="plain" id="b-x" style="flex:1">Annuler</button></div>`}</div>`;
+    const close = () => { box.hidden = true; box.innerHTML = ''; }; $('#b-x').onclick = close; box.onclick = e => { if (e.target === box) close(); };
+    for (const dir of ['up', 'down']) $('#b-' + dir)?.addEventListener('click', safe(async () => { await api('/bourse/bet', { slot: m.slot, dir, stake: +$('#b-stake').value }); close(); toast(`Pari enregistré : ${dir === 'up' ? 'hausse' : 'baisse'}`); await refreshMe(); render(); }));
+  });
+};
+
+views.hilo = async v => {
+  const d = await api('/hilo'); let g = d;
+  const draw = (flash = '') => {
+    v.innerHTML = `${pageHead('Plus ou moins', 'Quel article a le plus de vues ?')}
+      <p class="mut qreset" style="margin:-8px 0 12px">${ico('coin')} Tu as <b>${fmt(me.coins)}</b> pièces · ${d.perDay} parties par jour</p>${flash}
+      ${g.active ? `<div class="hilo"><div class="hcard a"><small>Départ</small><b>${esc(g.a.t)}</b><span>${fmt(g.a.v)} vues</span></div><div class="vs">VS</div><div class="hcard b"><small>Mystère</small><b>${esc(g.b.t)}</b><span>? vues</span></div></div>
+        <p class="hstat">Mise <b>${fmt(g.stake)}</b> · série <b>${g.streak}</b> · gain actuel <b>${fmt(g.cash)}</b> <span class="mut">(×${g.mult})</span> · prochain ×${g.next}</p>
+        <div class="row"><button id="h-more" style="flex:1">▲ Plus de vues</button><button id="h-less" style="flex:1">▼ Moins de vues</button></div>
+        <div class="row"><button class="plain" id="h-cash" style="flex:1" ${g.streak < 1 ? 'disabled' : ''}>Encaisser ${g.streak ? fmt(g.cash) : ''}</button></div>`
+      : `<div class="panel"><p class="mut" style="margin:0 0 10px">On te montre un article et son nombre de vues. Devine si le suivant en a <b>plus</b> ou <b>moins</b>. Chaque bonne réponse multiplie ta mise par <b>×${d.step}</b> ; tu peux encaisser quand tu veux, une erreur fait tout perdre.</p>
+        <div class="row"><input id="h-stake" type="number" inputmode="numeric" value="50" min="${d.min}" max="${d.max}" style="flex:0 0 110px;text-align:center;font-weight:700"><button id="h-go" style="flex:1" ${d.plays >= d.perDay ? 'disabled' : ''}>Jouer (${d.plays} / ${d.perDay} aujourd'hui)</button></div>
+        <p class="mut" style="margin:10px 0 0;font-size:12.5px">Gains par série : ${d.table.map((x, i) => `${i + 1} → ×${x}`).join(' · ')}…</p></div>`}`;
+    $('#h-go')?.addEventListener('click', safe(async () => { g = await api('/hilo/start', { stake: +$('#h-stake').value }); await refreshMe(); draw(); }));
+    for (const gs of ['more', 'less']) $('#h-' + gs)?.addEventListener('click', safe(async () => {
+      const r = await api('/hilo/guess', { guess: gs });
+      if (r.right === false) { g = { active: false }; d.plays++; await refreshMe(); return draw(`<div class="hflash ko"><b>Raté !</b> ${esc(r.reveal.t)} avait ${fmt(r.reveal.v)} vues (${esc(r.a.t)} : ${fmt(r.a.v)}). Mise perdue : ${fmt(r.lost)}.</div>`); }
+      if (r.cashed) { g = { active: false }; d.plays++; await refreshMe(); return draw(`<div class="hflash ok"><b>Série maximale !</b> Encaissé d'office : +${fmt(r.cashed)} pièces.</div>`); }
+      g = r; draw(`<div class="hflash ok"><b>Bravo !</b> ${esc(r.reveal.t)} : ${fmt(r.reveal.v)} vues (${esc(r.prev.t)} : ${fmt(r.prev.v)}).</div>`);
+    }));
+    $('#h-cash')?.addEventListener('click', safe(async () => { const r = await api('/hilo/cashout', {}); g = { active: false }; d.plays++; await refreshMe(); draw(`<div class="hflash ok"><b>Encaissé !</b> +${fmt(r.cashed)} pièces (série de ${r.streak}).</div>`); }));
+  };
+  draw();
+};
+
+/** Fiche de prix d'une carte : courbe des 30 dernières ventes et alerte de prix. */
+async function priceSheet(id, title) {
+  const d = await api(`/cards/${id}/prices`), m = $('#modal'); m.hidden = false;
+  m.innerHTML = `<div class="betsheet"><h2>Cours · ${esc(title)}</h2>${d.sales.length ? `<div class="bigspark">${sparkline(d.sales.map(x => x.price), 300, 70)}</div>
+    <p class="hstat">Dernier <b>${fmt(d.last)}</b> · moyenne <b>${fmt(d.avg)}</b> · min <b>${fmt(d.min)}</b> · max <b>${fmt(d.max)}</b> <span class="mut">(${d.sales.length} vente${d.sales.length > 1 ? 's' : ''})</span></p>` : '<p class="mut">Aucune vente enregistrée pour cette carte.</p>'}
+    <h3 class="sec" style="margin-top:14px">Alerte de prix</h3><p class="mut" style="margin:0 0 8px;font-size:13px">Tu es prévenu quand une vente passe ce seuil.</p>
+    <div class="row"><select id="al-dir"><option value="up">Vendue à partir de ≥</option><option value="down">Vendue à moins de ≤</option></select><input id="al-price" type="number" inputmode="numeric" value="${d.avg ?? 100}" style="flex:0 0 110px;text-align:center"></div>
+    <div class="row"><button id="al-ok" style="flex:1">Créer l'alerte</button><button class="plain" id="al-x" style="flex:1">Fermer</button></div></div>`;
+  const close = () => { m.hidden = true; m.innerHTML = ''; }; $('#al-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  $('#al-ok').onclick = safe(async () => { await api('/alerts', { card_id: id, dir: $('#al-dir').value, price: +$('#al-price').value }); toast('Alerte créée'); close(); });
+}
+views.trends = async v => {
+  const d = await api('/trends');
+  const row = c => `<div class="item tap trendrow" data-c="${c.id}" data-t="${esc(c.title)}"><div class="grow"><div class="nm">${esc(c.title)}</div><div class="sub"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>dernière vente ${fmt(c.last)} · moy. ${fmt(c.avg)}</span></div></div>${sparkline(c.series, 80, 30)}<b class="pct ${c.pct >= 0 ? 'up' : 'down'}">${c.pct > 0 ? '+' : ''}${c.pct} %</b></div>`;
+  v.innerHTML = `${pageHead('Tendances', 'Les cartes qui montent et qui baissent aux enchères')}
+    <h3 class="sec">📈 En hausse</h3><div class="list">${d.up.map(row).join('') || '<p class="mut">Pas encore assez de ventes.</p>'}</div>
+    <h3 class="sec">📉 En baisse</h3><div class="list">${d.down.map(row).join('') || '<p class="mut">Pas encore assez de ventes.</p>'}</div>
+    <h3 class="sec">Mes alertes</h3><div class="list">${d.alerts.length ? d.alerts.map(a => `<div class="item row1"><div class="grow"><div class="nm">${esc(a.title)}</div><div class="sub">${a.dir === 'up' ? 'vente ≥' : 'vente ≤'} ${fmt(a.price)}</div></div><button class="plain" data-rm="${a.card_id}" data-dir="${a.dir}">Retirer</button></div>`).join('') : '<p class="mut">Aucune alerte. Touche une carte pour en créer une.</p>'}</div>
+    <p class="mut" style="margin-top:12px;font-size:13px">Astuce : le cours d'une carte est aussi accessible depuis sa fiche dans ta collection.</p>`;
+  v.querySelectorAll('[data-c]').forEach(el => el.onclick = () => priceSheet(+el.dataset.c, el.dataset.t));
+  v.querySelectorAll('[data-rm]').forEach(b => b.onclick = safe(async () => { await api('/alerts/remove', { card_id: +b.dataset.rm, dir: b.dataset.dir }); render(); }));
+};
+
+views.bank = async v => {
+  const d = await api('/bank'), s = d.savings, dv = d.dividends, rn = ['Communes', 'Peu communes', 'Rares', 'Super rares', 'Ultra rares', 'Légendaires'];
+  v.innerHTML = `${pageHead('Banque', 'Épargne et dividendes de ta collection')}
+    <div class="panel minesum"><div><small>Épargne</small><b>${ico('coin')}${fmt(s.amount)}</b></div><p class="mut">+${(s.rate * 100).toFixed(1)} % par jour (≈ ${fmt(s.perDay)} pièces/jour) · plafond ${fmt(s.cap)} · retrait avant ${s.lockDays} jours après le dernier dépôt : ${Math.round(s.fee * 100)} % de frais${s.interest ? ` · dont ${fmt(s.interest)} d'intérêts à venir` : ''}.${s.locked > Date.now() ? ` Libre sans frais dans ${cdTxt(s.locked - Date.now())}.` : ''}</p>
+      <div class="row"><button id="bk-in" style="flex:1">Déposer</button><button class="plain" id="bk-out" style="flex:1" ${s.amount ? '' : 'disabled'}>Retirer</button></div></div>
+    <div class="panel"><h3 style="margin:0 0 6px">Dividendes de collection</h3><p class="mut" style="margin:0 0 8px">Ta collection te rapporte <b>${fmt(dv.daily)} pièces par jour</b> (fusion et albums complétés augmentent le revenu). Tu peux cumuler jusqu'à 3 jours.</p>
+      <div class="divlist">${dv.byRarity.map((x, i) => x ? `<div><span class="rar ${cfg.rarities[i]}">${rn[i]}</span><b>${fmt(x)}</b></div>` : '').join('')}${dv.bonus ? `<div><span>Albums complétés (${dv.albums})</span><b>${fmt(dv.bonus)}</b></div>` : ''}</div>
+      <div class="row"><button id="dv-go" style="flex:1" ${dv.claimable ? '' : 'disabled'}>${dv.claimable ? `Récupérer ${fmt(dv.claimable)} pièces (${dv.days} jour${dv.days > 1 ? 's' : ''})` : 'Déjà récupérés aujourd\'hui'}</button></div></div>`;
+  $('#bk-in').onclick = safe(async () => { const f = await ask('Déposer à la banque', [{ label: `Montant (marge restante : ${fmt(s.cap - s.amount)})`, type: 'number', value: Math.min(me.coins, s.cap - s.amount, 500) }], { ok: 'Déposer' }); if (!f) return; await api('/bank/deposit', { amount: +f[0] }); toast('Dépôt effectué'); await refreshMe(); render(); });
+  $('#bk-out').onclick = safe(async () => { const f = await ask('Retirer de la banque', [{ label: `Montant (disponible : ${fmt(s.amount)})`, type: 'number', value: s.amount }], { text: s.locked > Date.now() ? `Retrait anticipé : ${Math.round(s.fee * 100)} % de frais.` : 'Sans frais.', ok: 'Retirer' }); if (!f) return; const r = await api('/bank/withdraw', { amount: +f[0] }); toast(`+${fmt(r.received)} pièces${r.fee ? ` (frais ${fmt(r.fee)})` : ''}`); await refreshMe(); render(); });
+  $('#dv-go').onclick = safe(async () => { const r = await api('/bank/dividends/claim', {}); toast(`+${fmt(r.got)} pièces de dividendes`); await refreshMe(); render(); });
+};
+
+views.expeditions = async v => {
+  const d = await api('/expeditions');
+  v.innerHTML = `${pageHead('Expéditions', 'Envoie tes doublons explorer le monde')}
+    <p class="mut" style="margin:-8px 0 12px">Les doublons partent (un exemplaire reste toujours à la maison), puis reviennent avec des pièces et parfois un paquet. ${d.active.length} / ${d.slots} en cours.</p>
+    <div class="list">${d.active.map(e => `<div class="item row1 exrow ${e.ready ? 'ready' : ''}"><div class="grow"><div class="nm">Expédition de ${e.hours} h · ${e.n} carte${e.n > 1 ? 's' : ''}</div><div class="sub" data-end="${e.ends}">${e.ready ? `Rentrés ! ${fmt(e.rc)} pièces${e.rp ? ' + 1 paquet' : ''}` : ''}</div></div>${e.ready ? `<button data-col="${e.id}">Récupérer</button>` : '<span class="mut" data-cd="' + e.ends + '"></span>'}</div>`).join('') || '<p class="mut">Aucune expédition en cours.</p>'}</div>
+    <div class="row" style="margin-top:12px"><button id="ex-new" style="flex:1" ${d.active.length >= d.slots ? 'disabled' : ''}>Nouvelle expédition</button></div>`;
+  tick = setInterval(() => v.querySelectorAll('[data-cd]').forEach(s => { const ms = +s.dataset.cd - Date.now(); if (ms <= 0) { clearInterval(tick); render(); } else s.textContent = cdTxt(ms); }), 15000);
+  v.querySelectorAll('[data-cd]').forEach(s => { s.textContent = cdTxt(+s.dataset.cd - Date.now()); });
+  v.querySelectorAll('[data-col]').forEach(b => b.onclick = safe(async () => { const r = await api(`/expeditions/${b.dataset.col}/collect`, {}); toast(`+${fmt(r.coins)} pièces${r.packs ? ' et 1 paquet !' : ''} · ${r.cards} carte${r.cards > 1 ? 's' : ''} rentrée${r.cards > 1 ? 's' : ''}`); await refreshMe(); render(); }));
+  $('#ex-new').onclick = safe(async () => {
+    const sp = (await api('/expeditions/spare')).cards, m = $('#modal'); let hours = d.options[1].hours; const pick = new Map();
+    if (!sp.length) return toast('Tu n\'as aucun doublon à envoyer pour le moment');
+    m.hidden = false;
+    const est = () => { const n = [...pick.values()].reduce((t, x) => t + x, 0), opt = d.options.find(o => o.hours === hours), base = sp.reduce((t, c) => t + (pick.get(c.id) || 0) * d.base[cfg.rarities.indexOf(c.rarity)], 0); return { n, lo: Math.floor(base * opt.mult * 0.7), hi: Math.floor(base * opt.mult * 1.4) }; };
+    const paint = () => { const e = est(); $('#ex-sum').innerHTML = e.n ? `<b>${e.n}</b> carte${e.n > 1 ? 's' : ''} · gain estimé <b>${fmt(e.lo)} – ${fmt(e.hi)}</b> pièces` : 'Choisis des cartes (12 au maximum)'; $('#ex-go').disabled = !e.n; m.querySelectorAll('[data-n]').forEach(el => { el.textContent = pick.get(+el.dataset.n) || 0; }); };
+    m.innerHTML = `<div class="exsheet"><h2>Nouvelle expédition</h2><div class="chips" id="ex-h">${d.options.map(o => `<button data-h="${o.hours}" class="${o.hours === hours ? 'on' : ''}">${o.hours} h · ×${o.mult}</button>`).join('')}</div>
+      <div class="exlist">${sp.map(c => `<div class="exitem" style="--c:var(--${c.rarity})"><span class="rar ${c.rarity}">${ABBR[c.rarity]}</span><span class="t">${esc(c.title)}</span><span class="mut">×${c.spare}</span><span class="ctr"><button class="plain" data-m="${c.id}">−</button><b data-n="${c.id}">0</b><button class="plain" data-p="${c.id}">+</button></span></div>`).join('')}</div>
+      <p class="mut" id="ex-sum" style="margin:8px 0"></p><div class="row"><button id="ex-go" style="flex:1">Envoyer</button><button class="plain" id="ex-x" style="flex:1">Annuler</button></div></div>`;
+    const close = () => { m.hidden = true; m.innerHTML = ''; }; $('#ex-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    $('#ex-h').onclick = e => { const b = e.target.closest('[data-h]'); if (!b) return; hours = +b.dataset.h; $('#ex-h').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); paint(); };
+    m.querySelector('.exlist').onclick = e => { const p = e.target.closest('[data-p]'), mi = e.target.closest('[data-m]'); const id = +(p?.dataset.p ?? mi?.dataset.m); if (!id) return; const c = sp.find(x => x.id === id), cur = pick.get(id) || 0, tot = est().n; if (p && cur < c.spare && tot < d.maxCards) pick.set(id, cur + 1); if (mi && cur > 0) pick.set(id, cur - 1); paint(); };
+    $('#ex-go').onclick = safe(async () => { await api('/expeditions/start', { hours, cards: [...pick].filter(([, n]) => n > 0).map(([id, n]) => ({ id, n })) }); close(); toast('Expédition lancée !'); await refreshMe(); render(); });
+    paint();
+  });
+};
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -1859,6 +1975,7 @@ function moreSheet() {
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
     <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
+    <h3>Gagner des pièces</h3><div class="mgrid">${T('bourse', 'market', 'Bourse', 'Paris sur les vues')}${T('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${T('trends', 'trophy', 'Tendances', 'Cours et alertes')}${T('bank', 'building', 'Banque', 'Épargne et dividendes')}${T('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires')}${T('albums', 'album', 'Albums', 'Séries de cartes à compléter')}${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
     <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;

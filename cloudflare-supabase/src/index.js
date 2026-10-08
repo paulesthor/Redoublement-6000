@@ -4,6 +4,7 @@ import { SHINY_OFFSET, SHARD, RANK, stats, urlOf, caseSql, HttpError, bad, json,
 import { withDb } from './pg.js';
 import { handleMigrate } from './migrate.js';
 import { secure } from './secure.js';
+import { installEconomy } from './economy.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
@@ -488,6 +489,15 @@ async function botTick(env, ctx, force = false) {
   }
 }
 
+/** Alertes de prix : prévient les joueurs dont le seuil est franchi par une vente (« ≥ » pour une hausse, « ≤ » pour une baisse), puis retire l'alerte. */
+async function checkAlerts(env, ctx, cid, price, title) {
+  try {
+    await ensureGameSchema(env);
+    const rows = await all(env, "SELECT user_id, dir, price FROM price_alerts WHERE card_id = ? AND ((dir = 'up' AND ? >= price) OR (dir = 'down' AND ? <= price))", cid, price, price);
+    for (const r of rows) { notify(env, ctx, { t: 'notify', msg: `📈 Alerte prix : « ${title} » vient de se vendre ${price} pièces (seuil ${r.dir === 'up' ? '≥' : '≤'} ${r.price}).` }, r.user_id); await run(env, 'DELETE FROM price_alerts WHERE user_id = ? AND card_id = ? AND dir = ?', r.user_id, cid, r.dir); }
+  } catch (e) { console.error('alertes', e); }
+}
+
 // ---------- enchères : règlement à la demande (pas de minuteur côté Workers) ----------
 async function settleAuctions(env, ctx) {
   const due = await all(env, "SELECT * FROM auctions WHERE status = 'open' AND ends_at <= ? LIMIT 5", now());
@@ -503,6 +513,7 @@ async function settleAuctions(env, ctx) {
         ...(bidderBot ? [] : [addCard(env, a.bidder_id, a.card_id)]),
         st(env, 'INSERT INTO sales (card_id, price, ts) VALUES (?,?,?)', a.card_id, a.bid, now()),
       ]);
+      ctx?.waitUntil(checkAlerts(env, ctx, a.card_id, a.bid, card.title));
       if (!bidderBot) bq(env, ctx, a.bidder_id, { win_auction: 1 });
       if (!sellerBot) bq(env, ctx, a.seller_id, { sale_done: 1 });
       if (!bidderBot) notify(env, ctx, { t: 'notify', msg: `Tu as remporté « ${card.title} » pour ${a.bid} pièces` }, a.bidder_id);
@@ -571,14 +582,15 @@ route('POST', '/api/me/password', async ({ env, req, user, body }) => {
 async function gameBadges(env, uid) {
   await ensureGameSchema(env);
   const day = dayKey();
-  const [d, q, z] = await Promise.all([
+  const [d, q, z, ex] = await Promise.all([
     one(env, 'SELECT daily_day, daily_streak FROM users WHERE id = ?', uid),
     all(env, 'SELECT qid, progress, claimed FROM quests WHERE user_id = ? AND day = ?', uid, day),
     one(env, 'SELECT finished FROM daily_quiz_runs WHERE user_id = ? AND day = ?', uid, day),
+    one(env, "SELECT COUNT(*) n FROM expeditions WHERE user_id = ? AND status = 'out' AND ends <= ?", uid, now()),
   ]);
   const ds = dailyState(d ?? {}), ids = questsFor(uid, day);
   const qc = q.filter(r => ids.includes(r.qid) && !r.claimed && r.progress >= QUEST[r.qid].goal).length;
-  return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new' };
+  return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new', ex: +(ex?.n || 0) };
 }
 route('GET', '/api/me', async ({ env, ctx, user }) => {
   // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
@@ -586,6 +598,7 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
   ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {}));
+  if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
   return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra };
 });
@@ -837,6 +850,10 @@ route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) =>
   catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); throw e; }   // tirage impossible : remboursé
   return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
 });
+
+// ---------- bourse, « plus ou moins », cours des cartes, banque, dividendes, expéditions (voir economy.js) ----------
+const economy = installEconomy({ route, bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now,
+  albumCount: async (env, uid) => +(await one(env, 'SELECT COUNT(*) n FROM album_claims WHERE user_id = ?', uid)).n });
 
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
 export const __testHooks = { resetAlbums: () => { albumsCache = null; } };   // utilisé par les tests pour changer de fichier d'albums
@@ -1284,7 +1301,7 @@ const recap = (quiz, run_) => {
     questions: qs.map((q, i) => ({ text: q.text, options: q.options, answer: q.answer, given: ans[i] ?? -1, ok: ans[i] === q.answer })) };
 };
 /** Vainqueur de la veille : le meilleur score (puis le temps total le plus court) gagne un paquet en plus. Réglé au premier passage de la nouvelle journée. */
-let lastSettle = 0;
+let lastSettle = 0, lastBourse = 0;
 async function settleDailyWinners(env, ctx, force = false) {
   if (!force && now() - lastSettle < 300000) return;
   lastSettle = now();

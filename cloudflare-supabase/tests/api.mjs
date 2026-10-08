@@ -17,6 +17,13 @@ globalThis.fetch = async (u, o) => {
     const pages = Object.fromEntries([...ids.map(id => [id, mk(id, null)]), ...titles.map((t, i) => ['9' + i, mk('9' + i, t)])]);   // par identifiant : titre inconnu (le code relance par titre)
     return new Response(JSON.stringify({ query: { pages } }), { status: 200 });
   }
+  if (url.includes('wikimedia.org/api/rest_v1/metrics/pageviews')) {                // vues Wikipédia factices : globalThis.__PV(titre, 'YYYY-MM-DD') peut les imposer
+    const m = url.match(/user\/([^/]+)\/daily\/(\d{8})00\/(\d{8})00/); if (!m) return new Response('{}', { status: 400 });
+    if (globalThis.__PV_FAIL) return new Response('{}', { status: 500 });
+    const title = decodeURIComponent(m[1]).replace(/_/g, ' '), items = [], d0 = Date.parse(m[2].replace(/(\d{4})(\d\d)(\d\d)/, '$1-$2-$3') + 'T00:00:00Z'), d1 = Date.parse(m[3].replace(/(\d{4})(\d\d)(\d\d)/, '$1-$2-$3') + 'T00:00:00Z');
+    for (let t = d0; t <= d1; t += 86400000) { const day = new Date(t).toISOString().slice(0, 10), over = globalThis.__PV?.(title, day); if (over === null) continue; items.push({ timestamp: day.replace(/-/g, '') + '00', views: over ?? 1000 + ([...title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 400, 7)) }); }
+    return items.length ? new Response(JSON.stringify({ items }), { status: 200 }) : new Response('{}', { status: 404 });
+  }
   return new Response('{}', { status: 404 });
 };
 const ASSETS = { fetch: async req => { const p = new URL(typeof req === 'string' ? req : req.url).pathname; const f = PUBLIC + p; return existsSync(f) ? new Response(readFileSync(f), { headers: { 'content-type': 'application/json' } }) : new Response('', { status: 404 }); } };

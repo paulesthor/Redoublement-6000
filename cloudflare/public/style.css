@@ -985,3 +985,19 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 
 /* résumé d'un paquet : Continuer à gauche, ouvrir un autre paquet à droite */
 .sticky-bar.split{display:flex;gap:10px}.sticky-bar.split button{flex:1;min-width:0}.sticky-bar.split .again:disabled{opacity:.45}
+
+/* ---- économie : bourse, plus ou moins, tendances, banque, expéditions ---- */
+.spark{flex:none;overflow:visible}.spark.up polyline{stroke:#7be0a0}.spark.down polyline{stroke:#ee91bc}
+.bigspark{margin:6px 0}.bigspark .spark{width:100%;height:70px}
+.barlist{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:10.5px;color:var(--mut);margin-top:4px}
+.bourserow.has{border-color:#f5c54255}.betchip{padding:0 7px;border-radius:99px;font-weight:700;font-size:11px;background:#ffffff14}.betchip.up{color:#7be0a0}.betchip.down{color:#ee91bc}
+.res{font-size:12.5px;white-space:nowrap}.res.ok{color:#7be0a0}.res.ko{color:#ee91bc}
+.boursehead svg{width:14px;height:14px;vertical-align:-2px}
+.hilo{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:stretch;margin:8px 0 12px}.hilo .vs{align-self:center;color:var(--mut);font-weight:800}
+.hcard{display:flex;flex-direction:column;gap:4px;padding:14px 10px;border-radius:14px;background:var(--panel);border:1px solid var(--line2);text-align:center}.hcard small{color:var(--mut);text-transform:uppercase;letter-spacing:.1em;font-size:10.5px}.hcard b{font-size:15px;line-height:1.25}.hcard span{color:var(--gold-fav);font-weight:700}.hcard.b{border-style:dashed}
+.hstat{text-align:center;margin:6px 0 12px}.hflash{padding:10px 12px;border-radius:12px;margin:0 0 10px;font-size:13.5px}.hflash.ok{background:#7be0a022;border:1px solid #7be0a055}.hflash.ko{background:#ee91bc22;border:1px solid #ee91bc55}
+.pct{min-width:62px;text-align:right}.pct.up{color:#7be0a0}.pct.down{color:#ee91bc}
+.divlist{display:grid;gap:4px;margin:0 0 10px}.divlist div{display:flex;justify-content:space-between;font-size:13.5px}
+.exrow.ready{border-color:#7be0a0}.exsheet .exlist{max-height:42vh;overflow:auto;display:grid;gap:6px;margin-top:10px}
+.exitem{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;background:#ffffff08;border:1px solid color-mix(in srgb,var(--c) 40%,var(--line2))}.exitem .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.exitem .ctr{display:flex;align-items:center;gap:6px}.exitem .ctr button{min-height:30px;width:30px;padding:0}.exitem .ctr b{min-width:16px;text-align:center}
