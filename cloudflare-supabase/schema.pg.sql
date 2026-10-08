@@ -236,3 +236,6 @@ DO $$ DECLARE t record; BEGIN
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
   END LOOP;
 END $$;
+
+CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id));  -- cartes déjà possédées un jour (déclencheur sur inventory)
+ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY;

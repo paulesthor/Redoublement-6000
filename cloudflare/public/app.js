@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '6.4';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '6.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -653,7 +653,7 @@ const views = {
   },
 
   async search(v) {
-    v.innerHTML = `${pageHead('Recherche', 'Retrouve n\'importe quelle page de Wikipédia et sa rareté')}
+    v.innerHTML = `${pageHead('Recherche', 'Retrouve n\'importe quelle page de Wikipédia, sa rareté et si tu l\'as déjà eue')}
       <div class="search wide">${ico('search')}<input id="gq" placeholder="Nom d'une page (ex. Tour Eiffel)" autocomplete="off" enterkeyhint="search"></div>
       <div id="gr" class="grid"><div class="empty" style="grid-column:1/-1">Tape au moins 2 lettres.<br>Les ${fmt(cfg.catalog)} pages du catalogue sont cherchables.</div></div>`;
     let timer = null, seq = 0;
@@ -664,7 +664,7 @@ const views = {
       try {
         const { cards } = await api('/catalog/search?q=' + encodeURIComponent(q));
         if (my !== seq) return;
-        box.innerHTML = cards.length ? cards.map(c => cardHtml(c, { tag: c.owned ? `<span class="tag new">Possédée ×${c.owned}</span>` : '', extra: `<div class="meta">Rang <b>#${fmt(c.rank ?? 0)}</b></div>` })).join('')
+        box.innerHTML = cards.length ? cards.map(c => cardHtml(c, { tag: c.owned ? `<span class="tag new">Possédée ×${c.owned}</span>` : c.ever ? `<span class="tag">Déjà possédée${c.first ? ' · ' + new Date(c.first).toLocaleDateString('fr-FR') : ''}</span>` : '', extra: `<div class="meta">Rang <b>#${fmt(c.rank ?? 0)}</b></div>` })).join('')
           : '<div class="empty" style="grid-column:1/-1">Aucune page trouvée.</div>';
       } catch (e) { if (my === seq) box.innerHTML = `<div class="empty" style="grid-column:1/-1">${esc(e.message)}</div>`; }
     };
@@ -818,7 +818,7 @@ const views = {
     const { players } = await api('/leaderboard');
     v.innerHTML = `${pageHead('Classement', 'Score = valeur des cartes uniques (selon la rareté) + 10 par victoire')}${seg(RANK_SEG, 'rank')}
       <div class="list">${players.map((p, i) => `<div class="item tap r${i + 1} ${p.id === me.id ? 'me' : ''}" data-pl="${p.id}"><span class="rank-n">${i + 1}</span>${avatar(p.name, online.has(p.id))}
-        <div class="grow"><div class="nm">${esc(p.name)}${ttl(p.name)}</div><div class="sub"><span>${p.uniques} cartes</span><span>${p.wins} V / ${p.losses} D</span><span>${fmt(p.coins)} pièces</span></div></div>
+        <div class="grow"><div class="nm">${esc(p.name)}${ttl(p.name)}</div><div class="sub"><span>${p.uniques} cartes</span><span>${p.wins} V / ${p.losses} D</span>${p.id === me.id ? `<span>${fmt(me.coins)} pièces</span>` : ''}</div></div>
         <div class="score">${fmt(p.score)}<small>points</small></div></div>`).join('')}</div>`;
     bindSeg(v); bindPlayers(v);
   },

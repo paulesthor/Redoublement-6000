@@ -115,5 +115,11 @@ shift += 2 * 3600000; [s, r] = await call(A, 'GET', '/api/me'); ok('/me : pastil
 const x0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('retour : pièces créditées et exemplaires rendus', s === 200 && r.cards === 2 && (await coins(alice)) === x0 + r.coins && (await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', alice, c1.id))[0].qty === q0, J(r));
 [s] = await call(A, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('récupérable une seule fois', s === 404 || s === 400);
 [s] = await call(B, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('expédition d\'un autre joueur : introuvable', s === 404);
+{ const cid = (await q('SELECT id FROM cards ORDER BY id DESC LIMIT 1'))[0].id;
+  await q('DELETE FROM inventory WHERE user_id = ? AND card_id = ?', alice, cid);
+  await DB.prepare("INSERT INTO inventory (user_id, card_id, qty, acquired) VALUES (?,?,1,?)").bind(alice, cid, 1700000000000).run();
+  await DB.prepare('DELETE FROM inventory WHERE user_id = ? AND card_id = ?').bind(alice, cid).run();
+  ok('historique : carte vendue = toujours « déjà possédée »', (await q('SELECT ts FROM card_seen WHERE user_id = ? AND card_id = ?', alice, cid)).length === 1);
+  [s, r] = await call(A, 'GET', '/api/leaderboard'); ok('classement sans pièces', s === 200 && r.players.every(p => p.coins === undefined), J(r.players?.[0])); }
 Date.now = realNow;
 done();

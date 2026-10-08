@@ -113,8 +113,15 @@ export async function ensureGameSchema(env) {
     'ALTER TABLE avatars ENABLE ROW LEVEL SECURITY', 'ALTER TABLE user_titles ENABLE ROW LEVEL SECURITY',
     'ALTER TABLE tournaments ENABLE ROW LEVEL SECURITY', 'ALTER TABLE tournament_players ENABLE ROW LEVEL SECURITY',
     'ALTER TABLE quests ENABLE ROW LEVEL SECURITY', 'ALTER TABLE daily_quiz ENABLE ROW LEVEL SECURITY', 'ALTER TABLE daily_quiz_runs ENABLE ROW LEVEL SECURITY',
+    'CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id))',
+    'ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY',
+    // historique « déjà possédée un jour » : alimenté par un déclencheur, donc quel que soit le chemin d'obtention (paquet, échange, enchère, duel…)
+    `CREATE OR REPLACE FUNCTION card_seen_fn() RETURNS trigger AS $fn$ BEGIN INSERT INTO card_seen (user_id, card_id, ts) VALUES (NEW.user_id, NEW.card_id, COALESCE(NEW.acquired, 0)) ON CONFLICT DO NOTHING; RETURN NEW; END $fn$ LANGUAGE plpgsql`,
+    'DROP TRIGGER IF EXISTS card_seen_trg ON inventory',
+    'CREATE TRIGGER card_seen_trg AFTER INSERT ON inventory FOR EACH ROW EXECUTE FUNCTION card_seen_fn()',
   ].map(s => env.DB.prepare(s));
   try { await env.DB.batch(stmts); } catch (e) { await new Promise(r => setTimeout(r, 200)); await env.DB.batch(stmts); }   // deux Workers qui créent en même temps : le second réessaie
+  await env.DB.prepare('INSERT INTO card_seen (user_id, card_id, ts) SELECT user_id, card_id, COALESCE(acquired, 0) FROM inventory WHERE NOT EXISTS (SELECT 1 FROM card_seen LIMIT 1) ON CONFLICT DO NOTHING').run().catch(() => {});   // première fois : reprend l'existant
   ready = true;
 }
 

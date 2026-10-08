@@ -1057,7 +1057,9 @@ route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) =>
   if (cards[0] && q.length >= 3 && !(user.is_admin && query.get('admin'))) if (wishRoll(user.id, cards[0])) ctx.waitUntil(wishListing(env, cards[0]).catch(() => {}));   // la carte cherchée sera peut-être bientôt en vente (pas garanti)
   const own = cards.length ? await all(env, `SELECT card_id, SUM(qty) qty FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(cards.length)}) GROUP BY card_id`, user.id, ...cards.map(c => c.id)) : [];
   const owned = new Map(own.map(r => [r.card_id, r.qty]));
-  return { cards: cards.map(c => ({ ...c, owned: owned.get(c.id) || 0 })) };
+  const ever = cards.length ? await all(env, `SELECT card_id, ts FROM card_seen WHERE user_id = ? AND card_id IN (${placeholders(cards.length)})`, user.id, ...cards.map(c => c.id)).catch(() => []) : [];
+  const seenAt = new Map(ever.map(r => [r.card_id, r.ts]));
+  return { cards: cards.map(c => ({ ...c, owned: owned.get(c.id) || 0, ever: seenAt.has(c.id), first: seenAt.get(c.id) || 0 })) };
 });
 
 // aperçu des questions qui seraient posées pour un article (utile pour tester le modèle) : /api/quiz/preview?q=TotalEnergies
@@ -1085,7 +1087,7 @@ route('GET', '/api/quiz/preview', async ({ env, user, query }) => {
 let lbCache = { t: 0, v: null };                                        // classement partagé : lecture lourde (toutes les collections), gardé 60 s
 const byRar = (map, col = 'i.rar') => `CASE ${col} ${RARITIES.map((r, k) => `WHEN ${k} THEN ${map[r]}`).join(' ')} ELSE 0 END`;   // valeur selon le rang de rareté
 route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 && lbCache.v) || (lbCache = { t: now(), v: {
-  players: await all(env, `SELECT u.id, u.name, u.coins, u.duel_wins wins, u.duel_losses losses,
+  players: await all(env, `SELECT u.id, u.name, u.duel_wins wins, u.duel_losses losses,
     COALESCE(SUM(${byRar(POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(i.card_id) AS uniques
     FROM users u LEFT JOIN inventory i ON i.user_id = u.id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 } }).v);

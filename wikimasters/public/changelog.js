@@ -3,6 +3,9 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '6.5', icon: '🔎', title: 'Recherche de carte & classement', items: [
+    { t: 'Retrouve une carte précise', d: 'Dans Recherche, chaque carte indique si tu la possèdes ou si tu l\'as déjà eue un jour (avec la date de première obtention), même vendue ou échangée depuis.', go: 'search' },
+    { t: 'Classement plus discret', d: 'Les pièces des autres joueurs ne sont plus affichées.', go: 'rank' } ] },
   { v: '6.4', icon: '🧭', title: 'Expéditions plus simples', items: [
     { t: 'Sélection en un geste', d: 'Touche une carte pour l\'envoyer en expédition (plus de défilement sur le côté), « Remplir automatiquement » choisit les doublons les moins rares, et le bouton Envoyer reste toujours visible.', go: 'expeditions' },
     { t: 'Plus ou moins : 2 parties par jour', d: 'La limite quotidienne passe de 6 à 2 parties.', go: 'hilo' } ] },
