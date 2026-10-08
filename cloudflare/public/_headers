@@ -9,6 +9,8 @@
   Cache-Control: no-cache
 /reveal.js
   Cache-Control: no-cache
+/changelog.js
+  Cache-Control: no-cache
 /pack.js
   Cache-Control: no-cache
 /qrcode.js

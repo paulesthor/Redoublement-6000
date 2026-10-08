@@ -23,7 +23,7 @@ const srv = http.createServer(async (q, res) => {
   res.writeHead(200, { ...(path.extname(p) === '.html' ? { 'content-security-policy': CSP } : {}), 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }[path.extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
 }).listen(8768);
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-const mk = async (w, h) => { const c = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, A); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); p.on('console', m => { if (/Content Security Policy|Refused to/i.test(m.text())) p.errs.push('CSP: ' + m.text().slice(0, 160)); }); await p.goto('http://localhost:8768/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(900); return p; };
+const mk = async (w, h) => { const c = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); if (!localStorage.getItem('wm_seen_ver')) localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, A); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); p.on('console', m => { if (/Content Security Policy|Refused to/i.test(m.text())) p.errs.push('CSP: ' + m.text().slice(0, 160)); }); await p.goto('http://localhost:8768/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(900); return p; };
 env.AI = { run: async () => ({ response: JSON.stringify({ questions: Array.from({ length: 9 }, (_, i) => ({ type: ['annee', 'lieu', 'personne', 'chiffre', 'cause', 'relation', 'calcul', 'langue'][i % 8], question: `Question ${i + 1} : vers quelle ${['époque', 'année', 'période', 'date', 'ère', 'datation', 'moment', 'phase', 'siècle'][i]} Paris a-t-elle été fondée selon l'article ?`, choices: ['250 av. J.-C.', '150 av. J.-C.', '350 av. J.-C.', '450 av. J.-C.'], answer: 0 })) }) }) };
 const shot = async (p, n) => p.screenshot({ path: n + '.png' });
 console.log('— première connexion du jour (téléphone)');
@@ -166,6 +166,23 @@ console.log('— économie (interface)');
   await DB.prepare('UPDATE inventory SET qty = 4 WHERE user_id = 1 AND card_id IN (SELECT card_id FROM inventory WHERE user_id = 1 AND sh = 0 ORDER BY card_id LIMIT 3)').run(); await go('expeditions');
   await p.click('#ex-new'); await p.waitForSelector('.exitem'); await p.click('.exitem [data-p]'); await p.click('.exitem [data-p]'); await shot(p, 'eco-exped-new'); ok('estimation du gain affichée', (await p.textContent('#ex-sum')).includes('gain estimé'));
   await p.click('#ex-go'); await p.waitForTimeout(900); ok('expédition lancée', (await p.$$('.exrow')).length === 1);
+}
+console.log('— page des nouveautés (interface)');
+{
+  const mkc = async seen => { const c = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }); await c.addInitScript(([tok, sv]) => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); if (sv) localStorage.setItem('wm_seen_ver', sv); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, [A, seen]); const q = await c.newPage(); q.errs = []; q.on('pageerror', e => q.errs.push(e.message)); await q.goto('http://localhost:8768/'); await q.waitForSelector('#app:not([hidden])', { timeout: 15000 }); return q; };
+  await DB.prepare("UPDATE users SET daily_day = NULL WHERE id = 1").run();
+  let q = await mkc('5.5'); await q.waitForSelector('.wnew', { timeout: 8000 }); await q.waitForTimeout(400); await shot(q, 'nouveautes');
+  const rels = await q.$$eval('.wnrel b.x, .wnrel .wnh small', es => es.map(e => e.textContent));
+  ok('mises à jour depuis la dernière visite (5.5 → dernière) : les 4 plus récentes, rien d\'ancien', rels.length === 4 && rels.some(t => t.startsWith('v6.2')) && rels.some(t => t.startsWith('v5.9')) && !rels.some(t => t.startsWith('v5.5')) && !rels.some(t => t.startsWith('v5.3')), rels.join());
+  ok('la plus récente est marquée « nouveau »', (await q.textContent('.wnrel.top small')).includes('nouveau'));
+  await q.click('#wn-ok'); await q.waitForSelector('.daily', { timeout: 6000 }); ok('puis la récompense du jour', true);
+  ok('version vue mémorisée', (await q.evaluate(() => localStorage.getItem('wm_seen_ver'))) === (await q.evaluate(() => BUILD)));
+  await q.close();
+  q = await mkc(null); await q.waitForSelector('.wnew', { timeout: 8000 }); ok('premier lancement : seulement la dernière version', (await q.$$('.wnrel')).length === 1); await q.close();
+  q = await mkc('99'); await q.waitForTimeout(2500); ok('rien à montrer si tout est déjà vu', await q.$('.wnew') === null); await q.close();
+  q = await mkc('6.1'); await q.waitForSelector('.wnew'); await q.click('.wnrel [data-go]'); await q.waitForTimeout(800);
+  ok('« Voir » ferme la page et ouvre l\'écran', await q.$('.wnew') === null && (await q.evaluate(() => tab)) === 'settings'); await q.close();
+  q = await mkc('99'); await q.evaluate(() => { tab = 'settings'; render(); }); await q.waitForSelector('#st-news'); await q.click('#st-news'); await q.waitForSelector('.wnew'); ok('Réglages : revoir tout l\'historique', (await q.$$('.wnrel')).length >= 8); await q.close();
 }
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
