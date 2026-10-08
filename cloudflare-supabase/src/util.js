@@ -1,4 +1,5 @@
 import CFG from './config.js';
+import { extendEnv } from './pg.js';
 
 export const SHINY_OFFSET = 100000000; // id d'une variante shiny = id de la page + SHINY_OFFSET
 export const SHARD = 10000;            // pages par fichier de catalogue
@@ -103,7 +104,7 @@ export function meter(env, ...tags) {
   });
   const DB = { __metered: true, prepare: sql => wrap(env.DB.prepare(sql), sql), exec: (...a) => env.DB.exec(...a),
     batch: async list => { const t = Date.now(), res = await env.DB.batch(list.map(x => x._s ?? x)), ms = Date.now() - t; res.forEach((r, i) => rec(tags, list[i]._sql ?? '?', r.meta, i ? 0 : ms, i ? 0 : 1)); return res; } };
-  return { ...env, DB };
+  return extendEnv(env, { DB });
 }
 /** Vide le compteur local et renvoie son contenu. */
 export function takeMeter() { const o = [...meterAcc]; meterAcc.clear(); return o; }

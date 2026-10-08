@@ -103,6 +103,12 @@ export function supabaseTransport(url, key) {
   };
 }
 
+/** Copie de env avec des liaisons en plus. Reprend TOUTES les propriétés (même non énumérables, comme peut l'être la liaison Workers AI) : « {...env} » les perdait. */
+export function extendEnv(env, extra) {
+  const out = Object.create(Object.getPrototypeOf(env) ?? Object.prototype);
+  for (const k of Object.getOwnPropertyNames(env)) { try { out[k] = env[k]; } catch { /* propriété illisible : ignorée */ } }
+  return Object.assign(out, extra);
+}
 const cache = new WeakMap();
 /** env avec env.DB branché sur Supabase (si env.DB n'existe pas déjà : les tests fournissent le leur). */
 export function withDb(env) {
@@ -110,7 +116,7 @@ export function withDb(env) {
   let w = cache.get(env);
   if (!w) {
     if (!env.SUPABASE_URL || !env.SUPABASE_KEY) throw new Error('Secrets SUPABASE_URL et SUPABASE_KEY manquants');
-    w = { ...env, DB: pgDB(supabaseTransport(env.SUPABASE_URL, env.SUPABASE_KEY)) };
+    w = extendEnv(env, { DB: pgDB(supabaseTransport(env.SUPABASE_URL, env.SUPABASE_KEY)) });
     cache.set(env, w);
   }
   return w;

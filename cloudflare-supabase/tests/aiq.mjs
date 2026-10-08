@@ -18,4 +18,6 @@ const b = await battleQuestions(e2, card, text, { cards: [] }, 3); ok('battleQue
 const bad = { ...env, AI: { run: async () => { throw new Error('modèle indisponible'); } } };
 await aiQuestions(bad, { id: 777, title: 'Autre' }, text, 3); await new Promise(r => setTimeout(r, 300));
 const er = await DB.prepare("SELECT value FROM settings WHERE key = 'ai_last_error'").first(); ok('erreur IA enregistrée', er && /indisponible/.test(er.value), J(er));
+{ const { extendEnv } = await import('../src/pg.js'); const raw = {}; Object.defineProperty(raw, 'AI', { value: { run: 1 }, enumerable: false }); raw.X = 2;
+  const w = extendEnv(raw, { DB: 3 }); ok('liaison non énumérable (AI) conservée', w.AI?.run === 1 && w.X === 2 && w.DB === 3, J(Object.keys(w))); }
 done();
