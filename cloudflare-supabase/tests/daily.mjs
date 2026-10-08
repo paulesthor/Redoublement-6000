@@ -138,6 +138,19 @@ console.log('— albums et paquets du jour (interface)');
   await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('.thcard'); await p.waitForTimeout(400); await shot(p, 'paquets-du-jour');
   ok('2 paquets du jour', (await p.$$('.thcard')).length === 2);
 }
+console.log('— résumé de paquet : Continuer / Ouvrir un autre');
+{
+  await DB.prepare('UPDATE users SET pack_stock = 5, coins = 5000 WHERE id = 1').run();
+  await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; localStorage.setItem('wm_fast', '1'); tab = 'packs'; render(); }); await p.waitForSelector('#open'); await p.waitForTimeout(500);
+  const before = await p.evaluate(() => me.packs);
+  await p.click('#open'); await p.waitForSelector('#reveal .skip', { timeout: 15000 }); await p.click('#reveal .skip'); await p.waitForSelector('#reveal .sum .again', { timeout: 15000 }); await p.waitForTimeout(400); await shot(p, 'resume-paquet');
+  ok('deux boutons dans le résumé : Continuer (gauche) et ouvrir un autre (droite)', (await p.$$eval('#reveal .sticky-bar button', bs => bs.map(b => b.textContent.trim()))).join('|').startsWith('Continuer|Ouvrir un autre paquet'));
+  const [bx, ax] = await p.$$eval('#reveal .sticky-bar button', bs => bs.map(b => Math.round(b.getBoundingClientRect().left))); ok('Continuer est à gauche', bx < ax, [bx, ax]);
+  await p.click('#reveal .again'); await p.waitForSelector('#reveal .skip', { timeout: 15000 }); await p.waitForTimeout(500);
+  ok('« Ouvrir un autre » lance directement un 2e paquet sans repasser par l\'accueil', (await p.evaluate(() => me.packs)) === before - 2, await p.evaluate(() => me.packs));
+  await p.click('#reveal .skip'); await p.waitForSelector('#reveal .sum .finish'); await p.click('#reveal .finish'); await p.waitForTimeout(500); ok('Continuer ferme le résumé', await p.$('#reveal') === null);
+  await p.evaluate(() => localStorage.removeItem('wm_fast'));
+}
 console.log('— onglets de combat');
 await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; tab = 'duel'; render(); }); await p.waitForSelector('#dm-seg'); await p.waitForTimeout(300);
 ok('3 types de combat en onglets', (await p.$$('#dm-seg button')).length === 3);

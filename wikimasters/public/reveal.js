@@ -67,10 +67,10 @@
     const done = new Promise(r => { finished = r; });
     const wrapEl = () => root.querySelector('.wrap');
     const setDx = (px) => { const w = wrapEl(); if (!w) return; w.style.setProperty('--dx', px + 'px'); w.style.setProperty('--ry', (px * -.06) + 'deg'); w.style.setProperty('--rot', (px * .02) + 'deg'); };
-    const close = () => {
+    const close = (result) => {
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release);
-      root.remove(); document.body.classList.remove('noscroll'); finished();
+      root.remove(); document.body.classList.remove('noscroll'); finished(result);
     };
 
     // 2) une carte à la fois
@@ -189,10 +189,12 @@
       if (!root.isConnected) return;
       locked = true;
       root.className = '';
+      const again = typeof o.again === 'function' ? o.again() : null;      // « ouvrir un autre paquet » à côté de « Continuer »
       root.innerHTML = `<div class="bg"></div><div class="sum"><h2>Ton tirage${cards.god ? ' <span class="godtag">GODPACK</span>' : ''}</h2>
         <div class="grid">${[...seq].reverse().map(c => o.cardHtml(c, { star: true })).join('')}</div>
-        <div class="sticky-bar"><button class="finish">Continuer</button></div></div>`;
-      root.querySelector('.finish').onclick = close;
+        <div class="sticky-bar ${again ? 'split' : ''}"><button class="finish ${again ? 'plain' : ''}">Continuer</button>${again ? `<button class="again" ${again.ok ? '' : 'disabled'}>${esc(again.label)}</button>` : ''}</div></div>`;
+      root.querySelector('.finish').onclick = () => close();
+      if (again) root.querySelector('.again').onclick = () => close('again');
     }
 
     await show(0);

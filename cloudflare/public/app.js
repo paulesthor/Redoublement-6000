@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '5.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '6.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -516,8 +516,10 @@ const views = {
         return r.cards;
       })();
       cardsPromise.catch(() => {});
-      try { await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg }); }
-      finally { render(); }
+      let again;
+      try { again = await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg, again: () => path === '/packs/open' ? { ok: me.test || me.packs > 0, label: me.test ? 'Ouvrir un autre paquet' : `Ouvrir un autre paquet (${me.packs})` } : { ok: me.coins >= cfg.packPrice, label: `Acheter un autre (${cfg.packPrice})` } }); }
+      finally { await render(); }
+      if (again === 'again') setTimeout(() => $(path === '/packs/open' ? '#open' : '#buy')?.click(), 60);   // on enchaîne sans repasser par l'accueil
     });
     $('#rates-btn').onclick = () => {
       const m = $('#modal'); m.hidden = false;
@@ -1821,7 +1823,7 @@ views.albums = async v => {
 };
 
 // ---------- paquets thématiques ----------
-async function openThemed(id) {
+async function openThemed(id, themePrice = 150) {
   const cardsPromise = (async () => {
     const r = await api('/themepacks/buy', { theme: id });
     schedulePrefetch();
@@ -1830,7 +1832,9 @@ async function openThemed(id) {
     return r.cards;
   })();
   cardsPromise.catch(() => {});
-  try { await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg }); } finally { render(); }
+  let again;
+  try { again = await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg, again: () => ({ ok: me.coins >= themePrice, label: `Racheter un paquet (${themePrice})` }) }); } finally { await render(); }
+  if (again === 'again') setTimeout(() => safe(() => openThemed(id, themePrice))(), 60);
 }
 views.themepacks = async v => {
   const d = await api('/themepacks');
@@ -1843,7 +1847,7 @@ views.themepacks = async v => {
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = safe(async () => {
     const t = d.themes.find(x => x.id === b.dataset.th);
     if (!(await ask(`Ouvrir un paquet « ${t.name} » ?`, [], { text: `${fmt(d.price)} pièces. Toute légendaire du paquet sera l'une des ${t.count} cartes de cette catégorie.`, ok: 'Ouvrir' }))) return;
-    await openThemed(t.id);
+    await openThemed(t.id, d.price);
   }));
 };
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */

@@ -982,3 +982,6 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .thcard button{display:flex;align-items:center;justify-content:center;gap:6px}.thcard button .ic{width:15px;height:15px}
 
 .inlclk{display:inline-block;vertical-align:-3px;margin-right:2px}.inlclk .ic{width:15px;height:15px}
+
+/* résumé d'un paquet : Continuer à gauche, ouvrir un autre paquet à droite */
+.sticky-bar.split{display:flex;gap:10px}.sticky-bar.split button{flex:1;min-width:0}.sticky-bar.split .again:disabled{opacity:.45}
