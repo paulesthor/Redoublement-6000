@@ -205,6 +205,10 @@ console.log('— paris sur les combats (interface)');
   await p.click('#bt-ok'); await p.waitForTimeout(900);
   ok('pari placé : « Ton pari » affiché avec la cagnotte', (await p.textContent('.fmine')).includes('120') && (await p.textContent('.fpot')).includes('120'));
   ok('mise prélevée', (await DB.prepare('SELECT coins FROM users WHERE id = 1').all()).results[0].coins === 2880);
+  // spectateur : les rafraîchissements (minuteur, présence, évènement serveur) ne redessinent pas la page
+  await p.evaluate(() => { document.querySelector('#dm-seg').dataset.keep = '1'; window.__sk = 0; new MutationObserver(() => { if ([...document.querySelectorAll('#view .skel, #view [class*=skeleton]')].length) window.__sk++; }).observe(document.querySelector('#view'), { childList: true, subtree: true }); });
+  await p.evaluate(() => { onWs({ t: 'online', ids: [1, 2, 3] }); onWs({ t: 'refresh', what: 'fights' }); liveSoft(); }); await p.waitForTimeout(900);
+  ok('spectateur : la page n\'est pas redessinée par les rafraîchissements (pas de clignotement)', await p.evaluate(() => document.querySelector('#dm-seg')?.dataset.keep === '1' && !window.__sk));
   const bt = [...lobby.battles.values()][0]; await lobby.betSettle(bt, bt.players[0]); lobby.battles.delete(bt.id);
 }
 console.log('— onglets de combat');
