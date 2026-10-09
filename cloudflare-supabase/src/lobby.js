@@ -152,6 +152,8 @@ export class Lobby {
   async onMessage(user, msg) {
     const mode = msg.mode === 'battle' || msg.mode === 'stake' ? msg.mode : 'quiz';
     if (msg.t === 'sync') return this.sync(user.id);
+    if (msg.t === 'bf_watch') return this.watchFight(user, msg);
+    if (msg.t === 'bf_unwatch') { for (const b of this.battles.values()) b.watch?.delete(user.id); return; }
     if (msg.t === 'vis') { this.hidden.set(user.id, !msg.v); return; }
     if ((msg.t === 'challenge' || msg.t === 'accept' || msg.t === 'challenge_bot') && this.gameOf(user.id)) return this.push(user.id, { t: 'info', msg: 'Tu es déjà dans une partie.' });
     if (msg.t === 'challenge') {
@@ -391,8 +393,22 @@ export class Lobby {
     if (m.t === 'bf_turn') f.log = [];
     else if (m.t === 'bf_q') f.log = f.log.filter(e => e.m.t === 'bf_turn' || e.m.t === 'bf_card');
     f.log.push({ m, dl });
-    for (const p of bt.players) this.push(p, m);
+    for (const p of this.audience(bt)) this.push(p, m);
     this.persist(bt);
+  }
+  /** Joueurs du combat + spectateurs qui le regardent (questions et réponses en direct). */
+  audience(bt) { return [...bt.players, ...(bt.watch ?? [])]; }
+  /** Un joueur libre se met à regarder un combat commencé : il reçoit l'état actuel puis chaque évènement, sans pouvoir agir. */
+  watchFight(user, msg) {
+    const bt = this.battles.get(msg.id);
+    if (!bt || bt.over || !bt.startMsg || !bt.fight) return this.push(user.id, { t: 'info', msg: 'Ce combat n\'est pas encore commencé ou est terminé.' });
+    if (bt.players.includes(user.id) || this.gameOf(user.id)) return;
+    for (const other of this.battles.values()) other.watch?.delete(user.id);
+    if ((bt.watch ??= new Set()).size >= 40) return this.push(user.id, { t: 'info', msg: 'Trop de spectateurs sur ce combat.' });
+    bt.watch.add(user.id);
+    this.push(user.id, { ...bt.startMsg, watch: true });
+    for (const { m, dl } of bt.fight.log) this.push(user.id, dl ? { ...m, time: Math.max(0, dl - now()), full: m.time } : m);
+    if (bt.paused) { const gone = this.absent(bt); if (gone.length) this.push(user.id, { t: 'bf_wait', id: bt.id, names: gone.map(x => bt.names[x]), until: Math.min(...gone.map(p => (this.away.get(p) ?? now()) + AWAY_PAUSE)) }); }
   }
   /** Joueurs humains actuellement déconnectés. */
   absent(bt) { return bt.players.filter(p => p !== bt.bot && !this.clients.has(p)); }
@@ -406,7 +422,7 @@ export class Lobby {
       if (bt.over || g !== bt.gen) return;                             // partie finie, ou étape remplacée par une plus récente
       const gone = this.absent(bt);
       if (!gone.length) {
-        if (bt.paused) { bt.paused = false; this.trace(bt, 'reprise'); for (const p of bt.players) this.push(p, { t: 'bf_resume', id: bt.id }); if (timed && bt.rearm) { try { bt.rearm(); } catch (e) { this.crash(bt, e); } return; } }
+        if (bt.paused) { bt.paused = false; this.trace(bt, 'reprise'); for (const p of this.audience(bt)) this.push(p, { t: 'bf_resume', id: bt.id }); if (timed && bt.rearm) { try { bt.rearm(); } catch (e) { this.crash(bt, e); } return; } }
         try { const r = fn(); if (r && r.catch) r.catch(e => this.crash(bt, e)); } catch (e) { this.crash(bt, e); }
         return;
       }
@@ -415,7 +431,7 @@ export class Lobby {
       if (!bt.paused) {
         bt.paused = true; this.trace(bt, 'pause', gone.map(x => bt.names[x]).join(', ') + ' déconnecté');
         const until = Math.min(...gone.map(p => (this.away.get(p) ?? now()) + AWAY_PAUSE));
-        for (const p of bt.players) this.push(p, { t: 'bf_wait', id: bt.id, names: gone.map(x => bt.names[x]), until });
+        for (const p of this.audience(bt)) this.push(p, { t: 'bf_wait', id: bt.id, names: gone.map(x => bt.names[x]), until });
       }
       setTimeout(run, 1500);
     };
@@ -495,7 +511,7 @@ export class Lobby {
     const k = bt.bot ? .5 : 1;                                        // contre un joueur simulé, gains réduits de moitié
     await this.reward(bt.players.filter(p => p !== bt.bot), win, Math.round(CFG.BATTLE_WIN * k), Math.round(CFG.BATTLE_LOSE * k), Math.round(CFG.BATTLE_DRAW * k));
     for (const p of bt.players) if (p !== bt.bot) bumpQuests(this.env, p, { battle_play: 1, battle_win: p === win ? 1 : 0 });
-    for (const p of bt.players) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null, stake: bt.stake ? { cards: Object.fromEntries(bt.players.map(p => [p, { title: f.deck[p][0].title, rarity: f.deck[p][0].rarity, image: f.deck[p][0].image }])) } : undefined, tour: bt.tour ? (win === null ? 'Égalité : tirage au sort pour le tournoi.' : bt.tour.lb) : undefined });
+    for (const p of this.audience(bt)) this.push(p, { t: 'bf_end', id: bt.id, names: bt.names, a, b, hp: f.hp, max: f.max, winner: win, forfeit: quitters[0] ?? null, stake: bt.stake ? { cards: Object.fromEntries(bt.players.map(p => [p, { title: f.deck[p][0].title, rarity: f.deck[p][0].rarity, image: f.deck[p][0].image }])) } : undefined, tour: bt.tour ? (win === null ? 'Égalité : tirage au sort pour le tournoi.' : bt.tour.lb) : undefined });
     if (bt.tour) await this.tourResult(bt.tour.tid, bt.tour.mi, win);
   }
   // ---------- tournois : 4 joueurs, 2 demi-finales en même temps, puis finale et match pour la 3e place ----------
@@ -672,7 +688,7 @@ export class Lobby {
       const [a, c] = b.players, f = b.fight, pool = id => { const p = pools.find(x => x.battle === b.id && x.side === id); return { sum: +(p?.s || 0), n: +(p?.n || 0) }; };
       return { id: b.id, kind: b.tour ? 'tour' : b.stake ? 'stake' : 'combat', label: b.tour?.label ?? (b.stake ? 'Duel à la mise' : 'Combat de cartes'),
         players: [a, c].map(id => ({ id, name: b.names[id], w: rec.get(id)?.w ?? 0, l: rec.get(id)?.l ?? 0, hp: f?.hp?.[id] ?? null, max: f?.max?.[id] ?? null, bet: pool(id), deck: f ? f.deck[id].map(x => ({ t: x.title, r: x.rarity, atk: x.atk, def: x.def, lvl: x.lvl || 0 })) : null })),
-        started: !!f, turn: f ? Math.min(f.turn, f.total) : 0, total: f?.total ?? b.rounds * 2, open: this.betOpen(b), mine: mine.find(m => m.battle === b.id) ?? null, fighting: b.players.includes(uid), share: FIGHT_BET.fighter };
+        started: !!f, watch: !!(f && b.startMsg), watchers: b.watch?.size ?? 0, turn: f ? Math.min(f.turn, f.total) : 0, total: f?.total ?? b.rounds * 2, open: this.betOpen(b), mine: mine.find(m => m.battle === b.id) ?? null, fighting: b.players.includes(uid), share: FIGHT_BET.fighter };
     });
   }
   async placeBet({ uid, name, battle, side, stake }) {

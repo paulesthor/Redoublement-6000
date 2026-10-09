@@ -58,8 +58,13 @@ await lobby.betSettle({ id: 'test-unilateral', names: { [a]: 'Alice' } }, a); ok
 await q('INSERT INTO fight_bets (battle, user_id, side, stake, ts) VALUES (?,?,?,?,?)', 'orphelin', c, a, 30, Date.now() - 600000); cc = await coins(c);
 lobby.janitorAt = 0; await lobby.betJanitor(); ok('combat disparu (redémarrage) : paris remboursés', (await coins(c)) === cc + 30);
 console.log('— combat réel jusqu\'au bout (≈ 1 à 2 minutes)');
+await say(e, { t: 'bf_watch', id: bid }); ok('spectateur : refusé avant le début du combat (decks pas encore choisis)', socks[e].log.some(m => m.t === 'info') && !socks[e].log.some(m => m.t === 'bf_start'));
 const picks = new Set(); await say(a, { t: 'pick', id: bid, cards: await deck(a) }); await say(b, { t: 'pick', id: bid, cards: await deck(b) });
 await q('DELETE FROM fight_bets'); await call(T.Chloé, 'POST', '/api/fights/bet', { battle: bid, side: b, stake: 100 }); await call(T.Dan, 'POST', '/api/fights/bet', { battle: bid, side: a, stake: 100 });
+for (let i = 0; i < 150 && !lobby.battles.get(bid)?.startMsg; i++) await sleep(100);
+await say(e, { t: 'bf_watch', id: bid }); await sleep(100);
+ok('spectateur : reçoit l\'état du combat (bf_start marqué « watch »)', socks[e].log.some(m => m.t === 'bf_start' && m.watch === true && m.id === bid));
+await say(e, { t: 'bf_pick', id: bid, card: 1 }); await say(e, { t: 'bf_answer', id: bid, choice: 0 });
 const t0 = Date.now(); const cs = await coins(c), ds = await coins(d), as = await coins(a), bs = await coins(b);
 while (lobby.battles.has(bid) && Date.now() - t0 < 240000) {
   const g = lobby.battles.get(bid)?.fight;
@@ -69,6 +74,10 @@ while (lobby.battles.has(bid) && Date.now() - t0 < 240000) {
 }
 await settle(); for (let i = 0; i < 100 && !(await q('SELECT 1 FROM fight_bets WHERE settled = 0')).length === false; i++) await sleep(100);
 const end = socks[a].log.findLast(m => m.t === 'bf_end');
+{ const lg = socks[e].log; ok('spectateur : voit les questions, les réponses choisies et les résultats', lg.some(m => m.t === 'bf_q' && m.text && m.options?.length === 4) && lg.some(m => m.t === 'bf_picked') && lg.some(m => m.t === 'bf_a' && m.right !== undefined), J(lg.map(m => m.t).slice(0, 30)));
+  ok('spectateur : reçoit la fin du combat', lg.some(m => m.t === 'bf_end' && m.id === bid));
+  ok('spectateur : ne peut ni choisir une carte ni répondre', !lg.some(m => m.t === 'bf_card' && m.attacker === e));
+  ok('spectateur : retiré à la fin du combat', !lobby.battles.has(bid)); }
 ok('combat terminé et paris réglés', !!end && (await q('SELECT COUNT(*) n FROM fight_bets WHERE settled = 0'))[0].n === 0, J(end));
 if (end.winner) { const w = end.winner, wb = w === a ? d : c, base = wb === c ? cs : ds, lb = w === a ? c : d, lbase = lb === c ? cs : ds;
   ok('le parieur du vainqueur gagne 175 (sa mise + 75 % de la cagnotte perdante)', (await coins(wb)) === base + 175, J([await coins(wb), base]));

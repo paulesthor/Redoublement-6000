@@ -209,6 +209,21 @@ console.log('— paris sur les combats (interface)');
   await p.evaluate(() => { document.querySelector('#dm-seg').dataset.keep = '1'; window.__sk = 0; new MutationObserver(() => { if ([...document.querySelectorAll('#view .skel, #view [class*=skeleton]')].length) window.__sk++; }).observe(document.querySelector('#view'), { childList: true, subtree: true }); });
   await p.evaluate(() => { onWs({ t: 'online', ids: [1, 2, 3] }); onWs({ t: 'refresh', what: 'fights' }); liveSoft(); }); await p.waitForTimeout(900);
   ok('spectateur : la page n\'est pas redessinée par les rafraîchissements (pas de clignotement)', await p.evaluate(() => document.querySelector('#dm-seg')?.dataset.keep === '1' && !window.__sk));
+  // écran du spectateur : voit la question et les réponses, sans pouvoir répondre
+  const sp = await p.evaluate(() => {
+    const A = 901, B = 902, card = (id, t) => ({ id, title: t, rarity: 'rare', atk: 300, def: 400, lvl: 0, image: null });
+    onWs({ t: 'bf_start', watch: true, id: 'w1', names: { [A]: 'Chloé', [B]: 'Dan' }, a: A, b: B, deck: { [A]: [card(1, 'Paris')], [B]: [card(2, 'Lyon')] }, hp: { [A]: 400, [B]: 400 }, max: { [A]: 400, [B]: 400 }, first: A, total: 2 });
+    onWs({ t: 'bf_turn', id: 'w1', turn: 1, total: 2, attacker: A, defender: B, hp: { [A]: 400, [B]: 400 }, left: { [A]: [1], [B]: [2] }, time: 20000 });
+    onWs({ t: 'bf_card', id: 'w1', turn: 1, attacker: A, defender: B, card: card(1, 'Paris'), hp: { [A]: 400, [B]: 400 } });
+    onWs({ t: 'bf_q', id: 'w1', turn: 1, k: 1, kTotal: 3, attacker: A, defender: B, card: card(1, 'Paris'), text: 'Quelle est la capitale ?', options: ['Paris', 'Lyon', 'Nice', 'Lille'], time: 20000, hp: { [A]: 400, [B]: 400 } });
+    onWs({ t: 'bf_picked', id: 'w1', turn: 1, k: 1, choice: 2 });
+    const opts = [...document.querySelectorAll('#fbody .opt')];
+    return { n: opts.length, allDisabled: opts.every(o => o.disabled), sel: opts.findIndex(o => o.classList.contains('sel')), q: document.querySelector('#fbody .bq-text')?.textContent, leave: !!document.querySelector('#f-leave') };
+  });
+  ok('spectateur (écran) : question, 4 réponses non cliquables, réponse choisie visible, bouton Quitter', sp.n === 4 && sp.allDisabled && sp.sel === 2 && /capitale/.test(sp.q) && sp.leave, JSON.stringify(sp));
+  await p.evaluate(() => { onWs({ t: 'bf_end', id: 'w1', names: { 901: 'Chloé', 902: 'Dan' }, a: 901, b: 902, hp: { 901: 400, 902: 0 }, max: { 901: 400, 902: 400 }, winner: 901 }); }); await p.waitForTimeout(200);
+  ok('spectateur (écran) : fin du combat et retour', /Chloé remporte/.test(await p.textContent('#view')) && !!(await p.$('#f-leave'))); await p.click('#f-leave'); await p.waitForTimeout(500);
+  ok('spectateur : retour à la liste des combats', await p.evaluate(() => !game && tab === 'duel'));
   const bt = [...lobby.battles.values()][0]; await lobby.betSettle(bt, bt.players[0]); lobby.battles.delete(bt.id);
 }
 console.log('— onglets de combat');

@@ -3,6 +3,8 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '7.0', icon: '👁', title: 'Mode spectateur', items: [
+    { t: 'Regarde les combats en direct', d: 'Dans l\'onglet Combat > En direct, le bouton « Regarder le combat » te montre les cartes jouées, les questions, les réponses choisies par les joueurs et les PV, en temps réel. Tu peux continuer à parier.', go: 'duel' } ] },
   { v: '6.9', icon: '👀', title: 'Spectateurs : plus de clignotement', items: [
     { t: 'Liste des combats en direct stable', d: 'La page se met à jour discrètement (sans squelette, sans remonter en haut) et seulement quand un combat ou une cote change.', go: 'duel' } ] },
   { v: '6.8', icon: '🔞', title: 'Nouvel album : Stars du X', items: [

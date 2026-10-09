@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '6.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -828,6 +828,7 @@ const views = {
 let lastEvt = 0;
 function gameEvent(m) {
   if (m.t === 'game_none') {                                       // le serveur n'a plus (ou pas) de partie pour moi
+    if (game?.watch && game.view !== 'end') { game = null; render(); return; }                  // un spectateur n'a pas de partie à reprendre
     if (game && game.view !== 'end') { game = null; toast('La partie a été interrompue (le serveur a redémarré). Aucune perte.'); render(); }
     return;
   }
@@ -843,7 +844,7 @@ function gameEvent(m) {
   else if (m.t === 'battle_wait') game = { ...game, kind: 'battle', id: m.id, view: 'wait', waitMsg: m.msg };
   else if (m.t === 'battle_prep') game = { ...game, view: 'wait', waitMsg: 'Préparation des questions…' };
   else if (m.t === 'bf_start') {
-    game = { kind: 'fight', id: m.id, names: m.names, view: 'fight', f: { ...m, phase: 'intro' } };
+    game = { kind: 'fight', id: m.id, names: m.names, view: 'fight', watch: !!m.watch, f: { ...m, phase: 'intro' } };
     for (const c of Object.values(m.deck).flat()) if (c.image) new Image().src = c.image;   // photos déjà chargées quand les cartes apparaissent
   }
   else if (m.t === 'bf_turn') Object.assign(game.f, { turn: m.turn, attacker: m.attacker, defender: m.defender, left: m.left, hp: m.hp, phase: 'pick', card: null, q: null, res: null, picked: null, sent: false, summary: null, end: Date.now() + t, time: m.full ?? t });
@@ -911,6 +912,8 @@ function runBar(el, remaining, full) {
   el.style.transition = 'none'; el.style.width = Math.max(0, Math.min(100, remaining / full * 100)) + '%'; void el.offsetWidth;
   el.style.transition = `width ${Math.max(0, remaining)}ms linear`; el.style.width = '0%';
 }
+/** Le spectateur quitte le combat qu'il regardait et revient à la liste des combats en direct. */
+function leaveWatch() { try { send({ t: 'bf_unwatch' }); } catch { /* hors ligne */ } game = null; duelMode = 'live'; render(); }
 async function renderGame() {
   const v = $('#view'); clearInterval(tick);
   if (!game) return render();
@@ -936,7 +939,7 @@ async function renderGame() {
     } else if (f.phase === 'pick') {
       body = iAtt ? `<p class="bq-text">À toi d'attaquer : choisis une carte.</p><div class="qbar"><i id="tb" style="width:100%"></i></div>
         <div class="deckrow"><div>${f.deck[me.id].filter(c => f.left[me.id].includes(c.id)).map(c => mini(c, 'pickable', `data-card="${c.id}"`)).join('')}</div></div>${deckRow(f.defender)}`
-        : `<p class="bq-text">${nm(f.attacker)} choisit une carte pour t'attaquer…</p><div class="qbar"><i id="tb" style="width:100%"></i></div>${deckRow(f.attacker)}${deckRow(me.id)}`;
+        : `<p class="bq-text">${nm(f.attacker)} choisit une carte pour ${game.watch ? 'attaquer ' + nm(f.defender) : 't\'attaquer'}…</p><div class="qbar"><i id="tb" style="width:100%"></i></div>${deckRow(f.attacker)}${deckRow(game.watch ? f.defender : me.id)}`;
     } else {
       const q = f.q, r = f.res, dots = [0, 1, 2].map(i => `<i class="${q && i < q.k - (r ? 0 : 1) ? 'done' : ''} ${q && i === q.k - 1 ? 'cur' : ''}"></i>`).join('');
       body = `<div class="atkcard">${mini(f.card)}<div class="atkinfo"><small>Attaque de ${nm(f.attacker)}</small><b>${fmt(f.card.atk)} ATK</b><span>−${fmt(Math.round(f.card.atk / 3))} PV par mauvaise réponse</span></div></div>`;
@@ -952,7 +955,7 @@ async function renderGame() {
     // l'écran est monté une seule fois : ensuite on ne met à jour que les PV (avec animation) et la zone centrale
     let sh = v.querySelector('#fshell');
     if (!sh || sh.dataset.gid !== game.id) {
-      v.innerHTML = `${pageHead('Combat')}<div id="fshell" data-gid="${game.id}"><div class="bwait" id="fwait" hidden></div><div class="hpwrap">${bar(f.a)}${bar(f.b)}</div><p class="mut" id="fturn" style="text-align:center;margin:4px 0 8px"></p><div id="fbody"></div></div>`;
+      v.innerHTML = `${pageHead(game.watch ? 'Combat en direct' : 'Combat')}${game.watch ? '<div class="row" style="margin:-6px 0 10px;align-items:center"><span class="mut" style="flex:1">👁 Tu regardes ce combat : questions et réponses en direct.</span><button class="plain" id="f-leave">Quitter</button></div>' : ''}<div id="fshell" data-gid="${game.id}"><div class="bwait" id="fwait" hidden></div><div class="hpwrap">${bar(f.a)}${bar(f.b)}</div><p class="mut" id="fturn" style="text-align:center;margin:4px 0 8px"></p><div id="fbody"></div></div>`;
       sh = v.querySelector('#fshell');
     } else {
       for (const id of [f.a, f.b]) {
@@ -963,6 +966,7 @@ async function renderGame() {
       }
     }
     for (const id of [f.a, f.b]) sh.querySelector(`.hpb[data-id="${id}"]`).dataset.hp = f.hp[id] ?? 0;
+    $('#f-leave')?.addEventListener('click', leaveWatch);
     $('#fturn').textContent = f.turn ? `Tour ${f.turn} / ${f.total}` : '';
     const fb = $('#fbody'), key = f.turn + ':' + (f.phase === 'q' || f.phase === 'a' ? 'q' + f.q?.k : f.phase);
     fb.innerHTML = body;
@@ -1014,6 +1018,10 @@ async function renderGame() {
     $('#pchips').onclick = e => { const b = e.target.closest('button'); if (!b) return; rf = b.dataset.r; $('#pchips').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); fill(); };
     $('#go').onclick = () => { send({ t: 'pick', id: game.id, cards: game.sel }); v.innerHTML = pageHead('Combat', 'Deck validé, en attente de l’adversaire…'); };
     mark(); fill();
+  } else if (game.view === 'end' && game.watch) {
+    const r = game.result, nm = id => esc(r.names[id]);
+    v.innerHTML = `${pageHead('Combat terminé', r.winner === null ? 'Égalité' : `${nm(r.winner)} remporte le combat${r.forfeit ? ' (forfait)' : ''}`)}<div class="hpwrap">${[r.a, r.b].map(id => `<div class="hpb"><div class="hpt"><span>${nm(id)}</span><b>${fmt(r.hp[id])} / ${fmt(r.max[id])} PV</b></div><div class="hpbar"><i style="width:${Math.round(r.hp[id] / (r.max[id] || 1) * 100)}%"></i></div></div>`).join('')}</div><button id="f-leave" style="margin-top:14px;width:100%">Retour aux combats</button>`;
+    $('#f-leave').onclick = leaveWatch;
   } else if (game.view === 'end') {
     const r = game.result;
     if (game.kind === 'quiz') {
@@ -2006,6 +2014,7 @@ async function liveFights(v) {
   const body = list => `${list.length ? `<div class="fights">${list.map(f => `<div class="fight ${f.fighting ? 'mine' : ''}"><div class="ft"><span class="fk ${f.kind}">${esc(f.label)}</span><small>${f.started ? `tour ${f.turn} / ${f.total}` : 'choix des decks'}</small></div>
       <div class="fvs">${f.players.map((p, i) => `<div class="fp"><b>${esc(p.name)}</b><small>${p.w} V · ${p.l} D</small>${hp(p)}${odds(f, i) != null ? `<span class="fodd">${odds(f, i)} % des mises</span>` : ''}</div>${i === 0 ? '<span class="vs">VS</span>' : ''}`).join('')}</div>
       <div class="fpot">${ico('coin')} Cagnotte <b>${fmt(f.players[0].bet.sum + f.players[1].bet.sum)}</b> · ${f.players[0].bet.n + f.players[1].bet.n} pari${f.players[0].bet.n + f.players[1].bet.n > 1 ? 's' : ''}</div>
+      ${f.watch && !f.fighting ? `<button class="plain fwatch" data-watch="${f.id}">👁 Regarder le combat${f.watchers ? ` (${f.watchers})` : ''}</button>` : ''}
       ${f.mine ? `<div class="fmine">Ton pari : <b>${fmt(f.mine.stake)}</b> sur ${esc(f.players.find(p => p.id === f.mine.side)?.name || '?')}</div>` : f.fighting ? '<div class="fmine mut">Tu combats : concentre-toi, ta victoire rapporte aussi une part de la cagnotte !</div>' : f.open ? `<div class="row"><button data-bet="${f.id}" data-side="${f.players[0].id}" style="flex:1">Parier sur ${esc(f.players[0].name)}</button><button data-bet="${f.id}" data-side="${f.players[1].id}" style="flex:1">Parier sur ${esc(f.players[1].name)}</button></div>` : '<div class="fmine mut">Paris fermés (combat trop avancé)</div>'}</div>`).join('')}</div>`
       : '<div class="empty">Aucun combat en cours pour le moment.<br>Défie un joueur dans l\'onglet Combat : les spectateurs pourront parier dessus !</div>'}`;
   v.innerHTML = `${pageHead('Combats', 'Défie un joueur, ou parie sur un combat en cours')}
@@ -2013,7 +2022,11 @@ async function liveFights(v) {
     <div class="panel rulesd" style="margin-bottom:12px"><p class="mut" style="margin:0"><b>Paris sur les combats</b> : mise entre 10 et 500 pièces sur le joueur de ton choix, jusqu'au 2ᵉ tour du combat. Si ton joueur gagne, tu récupères ta mise <b>+ 75 % de la cagnotte des perdants</b> ; <b>le combattant vainqueur empoche les 25 % restants</b>. Tu ne peux pas parier sur ton propre combat.</p></div>
     <div id="lf">${body(list)}</div>`;
   $('#dm-seg').onclick = e => { const b = e.target.closest('[data-dm]'); if (!b) return; duelMode = b.dataset.dm; render(); };
-  const bindBets = () => v.querySelectorAll('[data-bet]').forEach(b => b.onclick = () => {
+  const bindBets = () => {
+    v.querySelectorAll('[data-watch]').forEach(b => b.onclick = () => { send({ t: 'bf_watch', id: b.dataset.watch }); });
+    bindBetBtns();
+  };
+  const bindBetBtns = () => v.querySelectorAll('[data-bet]').forEach(b => b.onclick = () => {
     const f = list.find(x => x.id === b.dataset.bet), side = +b.dataset.side, me2 = f.players.find(p => p.id === side), other = f.players.find(p => p.id !== side), box = $('#modal'); box.hidden = false;
     const est = stake => { const win = me2.bet.sum + stake, lose = other.bet.sum; return lose ? Math.floor(stake + stake / win * (lose * (1 - f.share))) : null; };
     box.innerHTML = `<div class="betsheet"><h2>Parier sur ${esc(me2.name)}</h2><p class="mut" style="margin:0 0 8px">${esc(f.label)} · contre ${esc(other.name)} · ${me2.w} V / ${me2.l} D</p>
