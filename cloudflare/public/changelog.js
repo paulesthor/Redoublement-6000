@@ -3,6 +3,10 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '7.1', icon: '🎁', title: 'Événements surprise', items: [
+    { t: 'Des événements à dates secrètes', d: 'Heure dorée (légendaires ×3 pendant 1 h), week-end shiny, festival des catégories (paquets du jour à 90 pièces avec légendaire garantie), album éphémère de 7 jours et objectif collectif. Personne ne connaît les dates : ils s\'annoncent par notification et bandeau.', go: 'events' },
+    { t: 'Défi de la semaine, carte recherchée, saison', d: 'Un défi tiré au sort chaque lundi, une carte légendaire cachée à trouver chaque jour (le premier gagne gros), et des saisons de 2 semaines avec classement et récompenses.', go: 'events' },
+    { t: 'Paquets du jour stables', d: 'Les catégories du jour ne changent plus quand un album est ajouté.' } ] },
   { v: '7.0', icon: '👁', title: 'Mode spectateur', items: [
     { t: 'Regarde les combats en direct', d: 'Dans l\'onglet Combat > En direct, le bouton « Regarder le combat » te montre les cartes jouées, les questions, les réponses choisies par les joueurs et les PV, en temps réel. Tu peux continuer à parier.', go: 'duel' } ] },
   { v: '6.9', icon: '👀', title: 'Spectateurs : plus de clignotement', items: [

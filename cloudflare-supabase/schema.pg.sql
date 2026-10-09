@@ -239,3 +239,8 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id));  -- cartes déjà possédées un jour (déclencheur sur inventory)
 ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS event_progress (key TEXT NOT NULL, user_id BIGINT NOT NULL, n BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (key, user_id));  -- défi de la semaine (w:), saison (s:), objectif collectif (g:), cible (gt:, user_id 0)
+CREATE TABLE IF NOT EXISTS event_claims (key TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (key, user_id));  -- récompenses d'événements déjà récupérées
+CREATE TABLE IF NOT EXISTS event_hunt (day TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (day, user_id));  -- joueurs qui ont trouvé la carte recherchée du jour
+ALTER TABLE event_progress ENABLE ROW LEVEL SECURITY; ALTER TABLE event_claims ENABLE ROW LEVEL SECURITY; ALTER TABLE event_hunt ENABLE ROW LEVEL SECURITY;

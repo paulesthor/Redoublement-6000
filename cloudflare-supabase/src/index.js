@@ -5,6 +5,8 @@ import { withDb } from './pg.js';
 import { handleMigrate } from './migrate.js';
 import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
+import { installEvents } from './events.js';
+import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
@@ -62,11 +64,13 @@ async function reserveCounts(env) {
   if (now() - reserveCountsCache.t > 300000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n, MIN(id) lo, MAX(id) hi FROM reserve GROUP BY rarity')).map(r => [r.rarity, r])); reserveCountsCache.t = now(); }
   return reserveCountsCache.v;
 }
-async function drawCards(env, origin, n, w = CFG.DROP, theme = null) {
+async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) {
   const { ranges } = await getMeta(env, origin);
+  if (ev && (ev.legend > 1 || ev.ultra > 1)) w = { ...w, legendary: w.legendary * ev.legend, ultra: w.ultra * ev.ultra };     // heure dorée
   if (theme) w = { ...w, legendary: w.legendary * CFG.THEME_LEGEND_MULT };               // paquet thématique : plus de légendaires, toutes de la catégorie
   const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE;           // très rare : tout le paquet est ultra rare ou légendaire
   const rarities = god ? godRarities(n) : Array.from({ length: n }, () => pickRarity(ranges, 0, w));
+  if (theme && ev?.themeGuarantee && !rarities.includes('legendary')) rarities[Math.floor(Math.random() * n)] = 'legendary';   // festival des catégories : une légendaire garantie
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
   try {
@@ -97,10 +101,16 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null) {
       if (!taken.has(rank) || tries >= 30) { taken.add(rank); return { rarity, rank }; }
     }
   });
+  // cartes d'événement : la carte recherchée du jour et une carte de l'album éphémère remplacent une carte de basse rareté du paquet
+  for (const c of theme ? [] : [ev?.hunt && { r: ev.hunt.r }, ev?.album?.length && { r: ev.album[Math.floor(Math.random() * ev.album.length)].r }].filter(Boolean)) {
+    if (picks.some(p => p.rank === c.r)) continue;
+    const slot = picks.findIndex(p => !p.ready && (p.rarity === 'common' || p.rarity === 'uncommon')), i = slot >= 0 ? slot : picks.findIndex(p => p.rarity !== 'legendary');
+    if (i >= 0) picks[i] = { rarity: RARITIES.find(r => c.r >= ranges[r][0] && c.r < ranges[r][1]) ?? 'common', rank: c.r };
+  }
   const entries = await Promise.all(picks.map(p => p.ready ? null : entryAt(env, origin, p.rank)));
   return picks.map((p, i) => {
     const [page, title, views] = p.ready ? [p.ready.id, p.ready.title, p.ready.views] : entries[i];
-    const shiny = p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE;
+    const shiny = p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
     return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...(god ? { god: 1 } : {}), ...stats(title, p.rarity, shiny) };
   });
 }
@@ -288,6 +298,7 @@ async function finishPack(env, ctx, user, drawn, spent = 0) {
   }
   for (const c of cards.filter(c => c.rarity === 'legendary')) notify(env, ctx, { t: 'hit', user: user.name, title: c.title, shiny: !!c.shiny, ts: now() });
   if (god) ctx.waitUntil(grantTitle(env, user.id, 'godpack').then(n => n && notify(env, ctx, { t: 'notify', msg: 'Nouveau titre débloqué : « Touché par les dieux » !' }, user.id)));
+  ctx.waitUntil(events.afterPack(env, ctx, user, drawn));                      // carte recherchée du jour
   bq(env, ctx, user.id, { open_pack: 1, new_cards: cards.filter(c => c.isNew).length, rare_plus: cards.filter(c => RANK[c.rarity] >= 2).length, legendary: cards.filter(c => c.rarity === 'legendary').length, spend: spent });
   return { cards, god };
 }
@@ -600,7 +611,8 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {}));
   if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra };
+  const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
+  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -727,7 +739,8 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
-  const drawn = (await takePrepared(env, u.id, u.drop_w ?? '')) ?? await drawCards(env, origin, PACK_SIZE, userWeights(u));
+  const evm = await events.drawMods(env, origin);
+  const drawn = (!evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
   ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
   return finishPack(env, ctx, user, drawn);
 });
@@ -735,7 +748,8 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-  const drawn = (await takePrepared(env, user.id, user.drop_w ?? '')) ?? await drawCards(env, origin, PACK_SIZE, userWeights(user));
+  const evm = await events.drawMods(env, origin);
+  const drawn = (!evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
   ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
   return finishPack(env, ctx, user, drawn, CFG.PACK_PRICE);
 });
@@ -828,13 +842,12 @@ route('GET', '/api/album', async ({ env, user, origin, query }) => {
 // ---------- paquets thématiques : les légendaires du paquet viennent toutes d'une même catégorie ----------
 /** Les deux catégories du jour (les mêmes pour tous, tirées au hasard, renouvelées à minuit). */
 async function todaysThemes(env, origin) {
-  const all_ = (await albumList(env, origin)).filter(a => a.cards.length && a.cards.every(c => Number.isInteger(c.r))).sort((x, y) => (x.id < y.id ? -1 : 1)), n = all_.length, day = dayKey();
-  if (n <= 2) return all_;
-  const i = hash('theme1' + day) % n, j = (i + 1 + hash('theme2' + day) % (n - 1)) % n;
-  return [all_[i], all_[j]];
+  const day = dayKey(), all_ = (await albumList(env, origin)).filter(a => a.cards.length && a.cards.every(c => Number.isInteger(c.r)));
+  // on garde les deux albums à l'empreinte la plus petite pour ce jour : ajouter ou retirer un album ne change presque jamais les catégories du jour (seulement si le nouveau est tiré)
+  return all_.map(a => [hash(day + ':' + a.id), a]).sort((x, y) => x[0] - y[0] || (x[1].id < y[1].id ? -1 : 1)).slice(0, 2).map(x => x[1]);
 }
 route('GET', '/api/themepacks', async ({ env, origin }) => ({
-  price: CFG.THEME_PACK_PRICE, mult: CFG.THEME_LEGEND_MULT, resetIn: msToMidnight(),
+  price: (await events.mods(env)).themePrice ?? CFG.THEME_PACK_PRICE, normalPrice: CFG.THEME_PACK_PRICE, festival: !!(await events.mods(env)).themeGuarantee, mult: CFG.THEME_LEGEND_MULT, resetIn: msToMidnight(),
   themes: (await todaysThemes(env, origin)).map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, count: a.cards.length, sample: a.cards.slice(0, 3).map(c => c.t) })),
 }));
 route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) => {
@@ -842,11 +855,11 @@ route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) =>
   if (!asked) bad('Catégorie inconnue', 404);
   const theme = (await todaysThemes(env, origin)).find(a => a.id === asked.id);
   if (!theme) bad('Cette catégorie n’est pas disponible aujourd’hui : reviens demain, deux nouvelles catégories sont tirées chaque jour', 400);
-  const price = CFG.THEME_PACK_PRICE;
+  const evm = await events.drawMods(env, origin), price = evm.themePrice ?? CFG.THEME_PACK_PRICE;
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', price, user.id, price);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${price} requises)`);
   let drawn;
-  try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme); }
+  try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm); }
   catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); throw e; }   // tirage impossible : remboursé
   return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
 });
@@ -863,14 +876,28 @@ route('POST', '/api/fights/bet', async ({ env, user, body }) => {
 const economy = installEconomy({ route, bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now,
   albumCount: async (env, uid) => +(await one(env, 'SELECT COUNT(*) n FROM album_claims WHERE user_id = ?', uid)).n });
 
+// ---------- événements surprise (voir events.js) ----------
+const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN,
+  albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
+
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
-export const __testHooks = { resetAlbums: () => { albumsCache = null; } };   // utilisé par les tests pour changer de fichier d'albums
+export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get events() { return events; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
-const albumReward = a => ({ c: 150 * a.cards.length, p: a.cards.length >= 8 ? 2 : 1 });
+const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: 150 * a.cards.length, p: a.cards.length >= 8 ? 2 : 1 });
+/** Albums éphémères (cartes + dates), lus une fois dans le catalogue statique. */
+let eventAlbumsCache = null;
+const eventAlbums = async (env, origin) => { try { return (eventAlbumsCache ??= (await assetJson(env, origin, '/catalog/albums-events.json')).albums); } catch { return []; } };
+/** Albums affichés et récupérables : les albums permanents + l'album éphémère du moment (avec sa date de fin). */
+async function albumsAll(env, origin) {
+  const base = await albumList(env, origin), m = await events.mods(env);
+  if (!m.album) return base;
+  const e = (await events.activeNow(env)).find(x => x.kind === 'album'), a = (await eventAlbums(env, origin)).find(x => x.id === m.album);
+  return a && e ? [{ ...a, ev: { until: e.end } }, ...base] : base;
+}
 route('GET', '/api/albums', async ({ env, user, origin }) => {
   await ensureGameSchema(env);
-  const albums = await albumList(env, origin), ids = [...new Set(albums.flatMap(a => a.cards.map(c => c.id)))];
+  const albums = await albumsAll(env, origin), ids = [...new Set(albums.flatMap(a => a.cards.map(c => c.id)))];
   if (!ids.length) return { albums: [] };
   if (now() - albumImgs.t > 600000) {                                     // photos des cartes déjà connues du jeu : partagées entre joueurs, relues toutes les 10 min
     const rows = await all(env, `SELECT id, image FROM cards WHERE image IS NOT NULL AND id IN (${placeholders(ids.length)})`, ...ids);
@@ -881,13 +908,13 @@ route('GET', '/api/albums', async ({ env, user, origin }) => {
     all(env, 'SELECT album FROM album_claims WHERE user_id = ?', user.id),
   ]);
   const have = new Set(own.map(r => (r.card_id >= SHINY_OFFSET ? r.card_id - SHINY_OFFSET : r.card_id))), done = new Set(claimed.map(r => r.album));
-  return { albums: albums.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, reward: albumReward(a), claimed: done.has(a.id),
+  return { albums: albums.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, reward: albumReward(a), claimed: done.has(a.id), ...(a.ev ? { until: a.ev.until } : {}),
     cards: a.cards.map(c => ({ id: c.id, t: c.t, own: have.has(c.id), img: have.has(c.id) ? albumImgs.m.get(c.id) ?? null : null })) })) };
 });
 route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, origin }) => {
   await ensureGameSchema(env);
-  const a = (await albumList(env, origin)).find(x => x.id === params.id);
-  if (!a) bad('Album inconnu', 404);
+  const a = (await albumsAll(env, origin)).find(x => x.id === params.id);
+  if (!a) bad(params.id && EVENT_ALBUMS.some(x => x.id === params.id) ? 'Cet album éphémère n\'est plus disponible' : 'Album inconnu', 404);
   const ids = a.cards.map(c => c.id);
   const n = (await one(env, `SELECT COUNT(DISTINCT CASE WHEN card_id >= ? THEN card_id - ? ELSE card_id END) n FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, SHINY_OFFSET, SHINY_OFFSET, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET))).n;
   if (+n < ids.length) bad(`Il te manque ${ids.length - n} carte${ids.length - n > 1 ? 's' : ''} pour terminer cet album`);
@@ -896,6 +923,7 @@ route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, origin }
   const rw = albumReward(a);
   await run(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id);
   notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces et ${rw.p} paquet${rw.p > 1 ? 's' : ''} !` }, user.id);
+  if (a.ev) await events.titleNotify(env, ctx, user.id, 'ev_alb_' + a.id);
   const ti = await syncTitles(env, user.id).catch(() => null);
   ti?.added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
   return { ok: true, reward: rw };
@@ -1773,6 +1801,7 @@ export default {
       const t0 = Date.now();
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
+      await events.tick(env, ctx).catch(e => console.error('événements', e));            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await pruneLogs(withDb(env0)).catch(() => {});
       await flushAll(withDb(env0));

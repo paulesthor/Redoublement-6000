@@ -192,6 +192,18 @@ console.log('— page des nouveautés (interface)');
   ok('« Voir » ferme la page et ouvre l\'écran', await q.$('.wnew') === null && (await q.evaluate(() => tab)) === goTo, goTo); await q.close();
   q = await mkc('99'); await q.evaluate(() => { tab = 'settings'; render(); }); await q.waitForSelector('#st-news'); await q.click('#st-news'); await q.waitForSelector('.wnew'); ok('Réglages : revoir tout l\'historique', (await q.$$('.wnrel')).length >= 8); await q.close();
 }
+console.log('— événements (interface)');
+{
+  await p.evaluate(() => { tab = 'events'; render(); }); await p.waitForSelector('.evcard.weekly', { timeout: 8000 }); await p.waitForTimeout(300);
+  ok('page Événements : défi de la semaine, carte recherchée, saison', !!(await p.$('.evcard.weekly')) && !!(await p.$('.evcard.hunt')) && !!(await p.$('.evcard.season')), (await p.textContent('#view')).slice(0, 200));
+  ok('page Événements : aucune date à venir affichée, message « surprises » sans événement', /Événements/.test(await p.textContent('.pagehead')));
+  await shot(p, 'evenements');
+  await p.evaluate(() => { me.ev = [{ id: 'golden:x', kind: 'golden', name: 'Heure dorée', emoji: '✨', end: Date.now() + 40 * 60000 }]; paintEvBar(); });
+  ok('bandeau des événements en cours sous l\'en-tête', (await p.$$('#evb .evchip')).length === 1 && /Heure dorée/.test(await p.textContent('#evb')) && !(await p.$eval('#evb', e => e.hidden)));
+  await p.click('#evb .evchip'); await p.waitForTimeout(500); ok('toucher le bandeau ouvre la page Événements', await p.evaluate(() => tab === 'events'));
+  await p.evaluate(() => { me.ev = []; paintEvBar(); }); ok('bandeau masqué quand rien n\'est en cours', await p.$eval('#evb', e => e.hidden));
+  const ov = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth); ok('page Événements : pas de défilement horizontal', ov);
+}
 console.log('— paris sur les combats (interface)');
 {
   const [, rc] = await call(null, 'POST', '/api/register', { name: 'Chloé', password: 'secret3' }), [, rd] = await call(null, 'POST', '/api/register', { name: 'Dan', password: 'secret4' });

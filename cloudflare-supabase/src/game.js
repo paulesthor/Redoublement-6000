@@ -1,5 +1,6 @@
 // Récompense quotidienne, quêtes du jour, quiz du jour : règles, catalogue de quêtes, suivi de progression.
 import { st } from './util.js';
+import { EVENT_ALBUMS } from './events-data.js';
 
 const TZ = 'Europe/Paris';
 /** Jour de jeu (« YYYY-MM-DD », heure de Paris) : tout se remet à zéro à minuit, heure française. */
@@ -113,6 +114,10 @@ export async function ensureGameSchema(env) {
     'ALTER TABLE avatars ENABLE ROW LEVEL SECURITY', 'ALTER TABLE user_titles ENABLE ROW LEVEL SECURITY',
     'ALTER TABLE tournaments ENABLE ROW LEVEL SECURITY', 'ALTER TABLE tournament_players ENABLE ROW LEVEL SECURITY',
     'ALTER TABLE quests ENABLE ROW LEVEL SECURITY', 'ALTER TABLE daily_quiz ENABLE ROW LEVEL SECURITY', 'ALTER TABLE daily_quiz_runs ENABLE ROW LEVEL SECURITY',
+    'CREATE TABLE IF NOT EXISTS event_progress (key TEXT NOT NULL, user_id BIGINT NOT NULL, n BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (key, user_id))',
+    'CREATE TABLE IF NOT EXISTS event_claims (key TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (key, user_id))',
+    'CREATE TABLE IF NOT EXISTS event_hunt (day TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (day, user_id))',
+    'ALTER TABLE event_progress ENABLE ROW LEVEL SECURITY', 'ALTER TABLE event_claims ENABLE ROW LEVEL SECURITY', 'ALTER TABLE event_hunt ENABLE ROW LEVEL SECURITY',
     'CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id))',
     'ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY',
     // historique « déjà possédée un jour » : alimenté par un déclencheur, donc quel que soit le chemin d'obtention (paquet, échange, enchère, duel…)
@@ -126,6 +131,9 @@ export async function ensureGameSchema(env) {
 }
 
 const seen = new Set();
+let trackHook = null;
+/** Branche le suivi des événements (défi de la semaine, saison, objectif collectif) sur chaque action du joueur. */
+export const onTrack = fn => { trackHook = fn; };
 /** Une action du joueur : fait avancer ses quêtes du jour. `ev` = { open_pack: 1, new_cards: 4, … }. Ne bloque jamais le jeu (erreurs ignorées). */
 export async function bumpQuests(env, uid, ev) {
   try {
@@ -137,6 +145,7 @@ export async function bumpQuests(env, uid, ev) {
     if (stmts.length) await env.DB.batch(stmts);
     seen.add(key); if (seen.size > 5000) seen.clear();
   } catch (e) { console.error('bumpQuests', e); }
+  try { await trackHook?.(env, uid, ev); } catch (e) { console.error('track', e); }
 }
 
 // ---------- tournois (4 joueurs : deux demi-finales, puis finale et match pour la 3e place) ----------
@@ -152,7 +161,7 @@ export function tPayouts(n, stake) {
 // ---------- titres à débloquer (profil) ----------
 // calc : débloqué automatiquement d'après les statistiques ; sans calc : accordé par un événement (grantTitle) ; season : réservé aux futures saisons.
 const TI = (id, cat, label, desc, calc, prog) => ({ id, cat, label, desc, calc, prog });
-export const TITLE_CATS = { modes: 'Modes de jeu', exploits: 'Exploits et collection', saison: 'Saisons' };
+export const TITLE_CATS = { modes: 'Modes de jeu', exploits: 'Exploits et collection', evenements: 'Événements', saison: 'Saisons' };
 export const TITLES = [
   TI('duelist', 'modes', 'Duelliste', 'Gagne 10 duels ou combats', c => c.wins >= 10, c => [c.wins, 10]),
   TI('gladiator', 'modes', 'Gladiateur', 'Gagne 50 duels ou combats', c => c.wins >= 50, c => [c.wins, 50]),
@@ -178,6 +187,13 @@ export const TITLES = [
   TI('album_15', 'exploits', 'Encyclopédiste', 'Complète 15 albums thématiques', c => c.albums >= 15, c => [c.albums, 15]),
   TI('packs_100', 'exploits', 'Ouvreur', 'Ouvre 100 paquets', c => c.packs >= 100, c => [c.packs, 100]),
   TI('packs_1000', 'exploits', 'Machine à boosters', 'Ouvre 1 000 paquets', c => c.packs >= 1000, c => [c.packs, 1000]),
+  TI('ev_hunter', 'evenements', 'Chasseur de légendes', 'Trouve le premier la carte recherchée du jour'),
+  TI('ev_weekly4', 'evenements', 'Assidu du défi', 'Termine 4 défis de la semaine'),
+  TI('ev_team', 'evenements', 'Esprit d\'équipe', 'Participe à un objectif collectif réussi'),
+  TI('ev_season_champ', 'evenements', 'Champion de saison', 'Termine 1er d\'une saison'),
+  TI('ev_season_podium', 'evenements', 'Sur le podium', 'Termine 2e ou 3e d\'une saison'),
+  TI('ev_season_vet', 'evenements', 'Vétéran de saison', 'Marque 50 points de saison'),
+  ...EVENT_ALBUMS.map(a => TI('ev_alb_' + a.id, 'evenements', `${a.emoji} ${a.name}`, `Complète l'album éphémère « ${a.name} »`)),
   { id: 's1_champion', cat: 'saison', label: 'Champion de la saison 1', desc: 'Titre exclusif de la saison 1', season: true },
   { id: 's1_veteran', cat: 'saison', label: 'Vétéran de la saison 1', desc: 'Titre exclusif de la saison 1', season: true },
 ];

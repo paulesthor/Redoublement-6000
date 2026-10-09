@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.0';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.1';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -151,7 +151,7 @@ function onWs(m) {
   else if (m.t === 'friend') onFriend(m);
   else if (m.t === 'dm') onDm(m);
   else if (m.t === 'hit') { recentHits.unshift(m); showHits(recentHits); }
-  else if (m.t === 'refresh') { gcache.clear(); if ((tab === (m.what === 'auctions' ? 'market' : m.what) || (m.what === 'tournaments' && tab === 'tournament') || (m.what === 'fights' && tab === 'duel' && duelMode === 'live')) && !game) { if (m.what === 'fights') liveSoft?.(); else render(); } if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
+  else if (m.t === 'refresh') { gcache.clear(); if (m.what === 'events') { if (tab === 'events' && !game) render(); refreshMe(); return; } if ((tab === (m.what === 'auctions' ? 'market' : m.what) || (m.what === 'tournaments' && tab === 'tournament') || (m.what === 'fights' && tab === 'duel' && duelMode === 'live')) && !game) { if (m.what === 'fights') liveSoft?.(); else render(); } if (m.what === 'auctions' && lotOpen) lotSheet(lotOpen); refreshMe(); }
   else if (m.t === 'challenge') {
     $('#modal').hidden = false;
     $('#modal').innerHTML = `<div><h2>Défi</h2><p>${esc(m.name)} te propose un ${m.mode === 'battle' ? 'combat de cartes' : m.mode === 'stake' ? 'duel à la mise : vous misez chacun une carte et le gagnant garde les deux' : 'duel de quiz'}.</p>
@@ -407,7 +407,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -1434,6 +1434,14 @@ async function refreshMe() {
   document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily || me.ex > 0);
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'hasph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   $('#profile').onclick = profileSheet;
+  paintEvBar();
+}
+/** Bandeau des événements en cours (heure dorée, week-end shiny…) sous l'en-tête, sur tous les écrans. */
+function paintEvBar() {
+  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
+  const left = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
+  const list = me.ev || [];
+  b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${e.emoji} <b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join(''); b.hidden = !list.length;
 }
 const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.onclick = e => { if (e.target.closest('button')) return; playerSheet(el.dataset.pl); });
 /** Profil d'un joueur : stats, meilleures cartes, succès. */
@@ -1815,8 +1823,8 @@ views.albums = async v => {
   if (!d.albums.length) { v.innerHTML = `${pageHead('Albums', 'Bientôt disponibles')}<div class="empty">Les albums thématiques arrivent très vite.</div>`; return; }
   const done = d.albums.filter(a => a.claimed).length, tot = d.albums.length;
   const prog = a => a.cards.filter(c => c.own).length;
-  const sorted = [...d.albums].sort((x, y) => (y.claimed - x.claimed === 0 ? 0 : x.claimed - y.claimed) || (prog(y) / y.cards.length) - (prog(x) / x.cards.length));
-  const tile = a => { const n = prog(a), full = n === a.cards.length; return `<button class="albtile ${full ? 'full' : ''} ${a.claimed ? 'claimed' : ''}" data-al="${a.id}"><span class="ae">${esc(a.emoji || '📚')}</span><b>${esc(a.name)}</b>
+  const sorted = [...d.albums].sort((x, y) => (!!y.until - !!x.until) || (y.claimed - x.claimed === 0 ? 0 : x.claimed - y.claimed) || (prog(y) / y.cards.length) - (prog(x) / x.cards.length));
+  const tile = a => { const n = prog(a), full = n === a.cards.length; return `<button class="albtile ${full ? 'full' : ''} ${a.claimed ? 'claimed' : ''} ${a.until ? 'evalb' : ''}" data-al="${a.id}">${a.until ? `<i class="evtag">⏳ éphémère · ${cdLong(a.until - Date.now())}</i>` : ''}<span class="ae">${esc(a.emoji || '📚')}</span><b>${esc(a.name)}</b>
     <div class="qbar"><i style="width:${Math.round(n / a.cards.length * 100)}%"></i></div><small>${n} / ${a.cards.length}${a.claimed ? ' · terminé ✓' : full ? ' · à récupérer !' : ''}</small></button>`; };
   v.innerHTML = `${pageHead('Albums', `${done} / ${tot} complétés · réunis toutes les cartes d'un thème pour une récompense`)}
     <div class="albgrid">${sorted.map(tile).join('')}</div>`;
@@ -1826,7 +1834,7 @@ views.albums = async v => {
     m.hidden = false;
     m.innerHTML = `<div class="albsheet"><h2>${esc(a.emoji || '📚')} ${esc(a.name)}</h2><p class="mut" style="margin:0 0 10px">${esc(a.blurb || '')}</p>
       <div class="albcards">${a.cards.map(c => `<div class="albcard ${c.own ? 'own' : ''}"><div class="ai" ${c.img ? `style="background-image:url('${esc(c.img)}')"` : ''}>${c.own ? (c.img ? '' : '✓') : '?'}</div><span>${esc(c.t)}</span></div>`).join('')}</div>
-      <p class="mut" style="margin:10px 0">Récompense : ${rewardChips(a.reward)} · ${n} / ${a.cards.length} cartes (une variante shiny compte aussi)</p>
+      ${a.until ? `<p class="mut" style="margin:0 0 8px">⏳ Album éphémère : plus que <b>${cdLong(a.until - Date.now())}</b>. Ses cartes tombent bien plus souvent dans les paquets, et la récompense inclut un titre exclusif.</p>` : ''}<p class="mut" style="margin:10px 0">Récompense : ${rewardChips(a.reward)} · ${n} / ${a.cards.length} cartes (une variante shiny compte aussi)</p>
       <div class="row">${a.claimed ? '<button class="plain" disabled style="flex:1">Récompense récupérée ✓</button>' : `<button id="al-claim" style="flex:1" ${full ? '' : 'disabled'}>${full ? 'Récupérer la récompense' : `Il manque ${a.cards.length - n} carte${a.cards.length - n > 1 ? 's' : ''}`}</button>`}<button class="plain" id="al-x" style="flex:1">Fermer</button></div></div>`;
     $('#al-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#al-claim')?.addEventListener('click', safe(async () => { $('#al-claim').disabled = true; const r = await api(`/albums/${a.id}/claim`, {}); sparks($('.albsheet'), 34); toast(`+${r.reward.c} pièces, +${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''} !`); await refreshMe(); setTimeout(() => { close(); render(); }, 900); }));
@@ -1851,7 +1859,7 @@ async function openThemed(id, themePrice = 150) {
 views.themepacks = async v => {
   const d = await api('/themepacks');
   if (!d.themes.length) { v.innerHTML = `${pageHead('Paquets du jour', 'Bientôt disponibles')}<div class="empty">Les paquets par catégorie arrivent très vite.</div>`; return; }
-  v.innerHTML = `${pageHead('Paquets du jour', `Deux catégories tirées au sort chaque jour · ${fmt(d.price)} pièces le paquet · légendaires ×${d.mult}`)}
+  v.innerHTML = `${pageHead('Paquets du jour', `Deux catégories tirées au sort chaque jour · ${fmt(d.price)} pièces le paquet · légendaires ×${d.mult}`)}${d.festival ? `<div class="panel evfest">🎪 <b>Festival des catégories</b> : ${fmt(d.price)} pièces au lieu de ${fmt(d.normalPrice)} et <b>une légendaire garantie</b> dans chaque paquet !</div>` : ''}
     <p class="mut" style="margin:-6px 0 12px"><span class="inlclk">${ico('clock')}</span> Nouvelles catégories dans <b id="th-left">${hmLeft(d.resetIn)}</b> · tu as <b>${fmt(me.coins)}</b> pièces. Les légendaires du paquet viennent toutes de la catégorie ; les autres raretés sont tirées normalement, sans GODPACK.</p>
     <div class="thgrid">${d.themes.map(t => `<div class="thcard"><span class="ae">${esc(t.emoji || '📦')}</span><b>${esc(t.name)}</b><small>${t.count} légendaires possibles : ${t.sample.map(esc).join(', ')}…</small>
       <button data-th="${t.id}" ${me.coins < d.price ? 'class="plain"' : ''}>${ico('coin')} ${fmt(d.price)}</button></div>`).join('')}</div>`;
@@ -1861,6 +1869,39 @@ views.themepacks = async v => {
     if (!(await ask(`Ouvrir un paquet « ${t.name} » ?`, [], { text: `${fmt(d.price)} pièces. Toute légendaire du paquet sera l'une des ${t.count} cartes de cette catégorie.`, ok: 'Ouvrir' }))) return;
     await openThemed(t.id, d.price);
   }));
+};
+
+// ---------- événements surprise ----------
+const cdLong = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
+views.events = async v => {
+  const d = await api('/events');
+  const dayFmt = t => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const bursts = d.bursts.length ? d.bursts.map(b => `<div class="panel evcard ${b.kind}"><span class="ae">${b.emoji}</span><div class="grow"><b>${esc(b.name)}</b><p class="mut">${esc(b.desc)}</p><small>Se termine dans <b>${cdLong(b.end - Date.now())}</b></small></div>
+      ${b.kind === 'album' ? '<button data-go="albums">Voir l\'album</button>' : b.kind === 'theme' ? '<button data-go="themepacks">Paquets du jour</button>' : ''}</div>`).join('')
+    : '<div class="panel evcard"><span class="ae">🌙</span><div class="grow"><b>Aucun événement spécial pour le moment</b><p class="mut">Les surprises arrivent sans prévenir (heure dorée, week-end shiny, album éphémère…) : active les notifications pour ne rien rater.</p></div></div>';
+  const w = d.weekly, wBar = w ? `<div class="panel evcard weekly"><span class="ae">🏅</span><div class="grow"><b>Défi de la semaine</b><p>${esc(w.text)}</p><div class="qbar"><i style="width:${Math.round(w.progress / w.goal * 100)}%"></i></div>
+      <small>${fmt(w.progress)} / ${fmt(w.goal)} · récompense ${rewardChips(w.reward)} · nouveau défi dans ${cdLong(w.until - Date.now())}</small><br><small class="mut">${w.completed} défi${w.completed > 1 ? 's' : ''} terminé${w.completed > 1 ? 's' : ''} · titre « Assidu du défi » à ${w.titleAfter}</small></div>
+      ${w.claimed ? '<span class="evok">✓</span>' : w.progress >= w.goal ? '<button id="ev-w">Récupérer</button>' : ''}</div>` : '';
+  const h = d.hunt, hBar = h ? `<div class="panel evcard hunt"><span class="ae">🔎</span><div class="grow"><b>Carte recherchée du jour</b>
+      <p>${h.title ? `<b>${esc(h.title)}</b>` : `Commence par « <b>${esc(h.first)}</b> » · ${h.len} caractères${h.category ? ` · catégorie « ${esc(h.category)} »` : ''}`}</p>
+      <small>${h.found ? `Trouvée en premier par <b>${esc(h.found.by)}</b>${h.mine ? ' (c\'est toi !)' : ''}. Les suivants gagnent ${rewardChips(h.reward.other)}` : `Le premier à l'obtenir gagne ${rewardChips(h.reward.first)} et le titre « Chasseur de légendes ». Elle tombe dans environ 1 paquet sur 100.`}</small>
+      <br><small class="mut">Change dans ${cdLong(h.until - Date.now())}</small></div></div>` : '';
+  const g = d.goal, gBar = g ? `<div class="panel evcard goal"><span class="ae">🎯</span><div class="grow"><b>Objectif collectif</b><div class="qbar"><i style="width:${Math.min(100, Math.round(g.total / g.target * 100))}%"></i></div>
+      <small>${fmt(g.total)} / ${fmt(g.target)} paquets ouverts ensemble · toi : <b>${fmt(g.mine)}</b> (au moins ${g.minOpen} pour être récompensé) · récompense ${rewardChips(g.reward)}</small>
+      <br><small class="mut">${g.ended ? (g.reached ? 'Objectif atteint !' : 'Objectif manqué cette fois…') : `Se termine dans ${cdLong(g.until - Date.now())}`}</small></div>
+      ${g.claimed ? '<span class="evok">✓</span>' : g.claimable ? '<button id="ev-g">Récupérer</button>' : ''}</div>` : '';
+  const s = d.season;
+  const sBar = !s ? '' : s.upcoming ? `<div class="panel evcard season"><span class="ae">🏆</span><div class="grow"><b>${esc(s.name)}</b><p class="mut">La première saison commence ${dayFmt(s.start)}. Chaque action rapporte des points ; les meilleurs gagnent des paquets, des pièces et des titres.</p></div></div>`
+    : `<div class="panel evcard season"><span class="ae">🏆</span><div class="grow"><b>${esc(s.name)}</b> <small class="mut">· se termine dans ${cdLong(s.until - Date.now())}</small>
+      <p>Tes points : <b>${fmt(s.points)}</b>${s.rank ? ` · ${s.rank}${s.rank === 1 ? 'er' : 'e'}` : ''}</p>
+      ${s.top.length ? `<ol class="evtop">${s.top.map(t => `<li class="${t.id === me.id ? 'me' : ''}"><span>${esc(t.name)}</span><b>${fmt(t.pts)}</b></li>`).join('')}</ol>` : '<p class="mut">Personne n\'a encore de points : lance-toi !</p>'}
+      <small class="mut">Points : 1 par paquet, 8 par légendaire, 5 par victoire en duel ou quiz du jour, 6 par combat gagné, 3 à 4 par échange, vente, fusion ou expédition…</small><br>
+      <small class="mut">Récompenses : 1er ${rewardChips(s.rewards[0])} · 2e ${rewardChips(s.rewards[1])} · 3e ${rewardChips(s.rewards[2])} · dès ${s.part.min} points ${rewardChips({ c: s.part.c, p: s.part.p })}</small>
+      ${s.prev && s.prev.reward ? `<div class="evprev"><b>${esc(s.prev.name)} terminée</b> : ${fmt(s.prev.points)} points, ${s.prev.rank}${s.prev.rank === 1 ? 'er' : 'e'} · ${rewardChips(s.prev.reward)} ${s.prev.claimed ? '<span class="evok">✓</span>' : `<button id="ev-s" data-idx="${s.prev.idx}">Récupérer</button>`}</div>` : ''}</div></div>`;
+  v.innerHTML = `${pageHead('Événements', 'Des surprises à tout moment : reste attentif !')}<h3 class="sec">En ce moment</h3>${bursts}<h3 class="sec">Toujours en cours</h3>${wBar}${hBar}${gBar}${sBar}`;
+  v.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { tab = b.dataset.go; markTab(); render(); });
+  const claim = (sel, path, body) => $(sel)?.addEventListener('click', safe(async () => { $(sel).disabled = true; const r = await api(path, body); toast(`+${r.reward.c ? r.reward.c + ' pièces' : ''}${r.reward.c && r.reward.p ? ' et ' : ''}${r.reward.p ? r.reward.p + ' paquet' + (r.reward.p > 1 ? 's' : '') : ''} !`); await refreshMe(); render(); }));
+  claim('#ev-w', '/events/weekly/claim', {}); claim('#ev-g', '/events/goal/claim', { id: g?.id }); if ($('#ev-s')) claim('#ev-s', '/events/season/claim', { idx: +$('#ev-s').dataset.idx });
 };
 
 // ---------- économie : bourse, plus ou moins, tendances, banque, expéditions ----------
@@ -2058,7 +2099,7 @@ function moreSheet() {
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
     <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>
-    <h3>Gagner des pièces</h3><div class="mgrid">${T('bourse', 'market', 'Bourse', 'Paris sur les vues')}${T('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${T('trends', 'trophy', 'Tendances', 'Cours et alertes')}${T('bank', 'building', 'Banque', 'Épargne et dividendes')}${T('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)}</div>
+    <h3>Gagner des pièces</h3><div class="mgrid">${T('events', 'spark', 'Événements', 'Défis, saison, surprises', (me.ev || []).length)}${T('bourse', 'market', 'Bourse', 'Paris sur les vues')}${T('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${T('trends', 'trophy', 'Tendances', 'Cours et alertes')}${T('bank', 'building', 'Banque', 'Épargne et dividendes')}${T('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires')}${T('albums', 'album', 'Albums', 'Séries de cartes à compléter')}${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
     <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;

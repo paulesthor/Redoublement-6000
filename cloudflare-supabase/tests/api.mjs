@@ -30,7 +30,7 @@ const ASSETS = { fetch: async req => { const p = new URL(typeof req === 'string'
 globalThis.caches = { default: { match: async () => undefined, put: async () => {} } };
 const storage = new Map();
 const state = { storage: { put: async (k, v) => storage.set(k, structuredClone(v)), get: async k => structuredClone(storage.get(k)), delete: async k => storage.delete(k), list: async ({ prefix }) => new Map([...storage].filter(([k]) => k.startsWith(prefix))) }, blockConcurrencyWhile: async fn => { await fn(); } };
-const env = { ...base, ASSETS, INVITE_CODE: undefined, AI: { run: async () => ({ response: '{"questions":[]}' }) } };
+const env = { ...base, ASSETS, INVITE_CODE: undefined, EVENTS: '0', AI: { run: async () => ({ response: '{"questions":[]}' }) } };
 env.LOBBY = { idFromName: () => 'x', get: () => ({ fetch: (u, o) => lobby.fetch(new Request(u, o)) }) };
 const lobby = new Lobby(state, env);
 const { default: worker } = await import('../src/index.js');

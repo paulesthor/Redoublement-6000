@@ -440,7 +440,7 @@ console.log('— récompense quotidienne');
     const res2 = await worker.fetch(new Request('http://x/api/avatar/' + chloe), env, ctx); ok('avatar : 404 si aucune photo', res2.status === 404);
     [s, r] = await call(A, 'GET', '/api/me'); ok('/me : version de la photo', r.av > 0, J(r.av));
     [s, r] = await call(B, 'GET', '/api/cosmetics'); ok('cosmétiques : photo visible par les autres joueurs', r.players.some(p => p.name === 'Alice' && p.v > 0) && r.labels.duelist === 'Duelliste', J(r).slice(0, 200));
-    [s, r] = await call(A, 'GET', '/api/titles'); ok('titres : catalogue complet', s === 200 && r.titles.length >= 20 && r.titles.some(x => x.season && !x.unlocked) && r.titles.every(x => ['modes', 'exploits', 'saison'].includes(x.cat)), J(r).slice(0, 200));
+    [s, r] = await call(A, 'GET', '/api/titles'); ok('titres : catalogue complet', s === 200 && r.titles.length >= 20 && r.titles.some(x => x.season && !x.unlocked) && r.titles.every(x => ['modes', 'exploits', 'evenements', 'saison'].includes(x.cat)), J(r).slice(0, 200));
     ok('titres : progression affichée', r.titles.find(x => x.id === 'collector_1000').prog?.[1] === 1000);
     [s, r] = await call(A, 'POST', '/api/me/title', { id: 'warlord' }); ok('titre non débloqué : refusé', s === 400, J([s, r]));
     [s, r] = await call(A, 'POST', '/api/me/title', { id: 's1_champion' }); ok('titre de saison : pas encore disponible', s === 400, J([s, r]));
