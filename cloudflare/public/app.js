@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.3';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.4';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2020,7 +2020,7 @@ views.expeditions = async v => {
     const add = (id, delta) => { const c = sp.find(x => x.id === id), cur = pick.get(id) || 0; if (delta > 0 && (cur >= c.spare || total() >= d.maxCards)) return; if (delta < 0 && !cur) return; pick.set(id, cur + delta); paint(); };
     m.querySelector('.exlist').onclick = e => { const row = e.target.closest('.exitem'); if (!row) return; const id = +row.dataset.id; if (e.target.closest('[data-m]')) add(id, -1); else add(id, 1); };   // toucher une ligne = ajouter un exemplaire
     $('#ex-clear').onclick = () => { pick.clear(); paint(); };
-    $('#ex-auto').onclick = () => { pick.clear(); let left = d.maxCards; for (const c of sp) { const n = Math.min(c.spare, left); if (n > 0) { pick.set(c.id, n); left -= n; } if (!left) break; } paint(); };   // les cartes les moins rares d'abord
+    $('#ex-auto').onclick = () => { pick.clear(); let left = d.maxCards; for (const c of [...sp].reverse()) { const n = Math.min(c.spare, left); if (n > 0) { pick.set(c.id, n); left -= n; } if (!left) break; } paint(); };   // les cartes les moins rares d'abord
     $('#ex-go').onclick = safe(async () => { await api('/expeditions/start', { hours, cards: [...pick].filter(([, n]) => n > 0).map(([id, n]) => ({ id, n })) }); close(); toast('Expédition lancée !'); await refreshMe(); render(); });
     paint();
   });

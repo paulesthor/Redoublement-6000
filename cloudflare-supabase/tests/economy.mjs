@@ -102,6 +102,7 @@ console.log('— expéditions');
 const spare = (await call(A, 'GET', '/api/expeditions/spare'))[1].cards; 
 await q('UPDATE inventory SET qty = 6 WHERE user_id = ? AND card_id IN (SELECT card_id FROM inventory WHERE user_id = ? AND sh = 0 ORDER BY card_id LIMIT 2)', alice, alice);
 const sp = (await call(A, 'GET', '/api/expeditions/spare'))[1].cards; ok('doublons disponibles (un exemplaire reste toujours à la maison)', sp.length >= 2 && sp.every(c => c.spare >= 1), J(sp).slice(0, 150));
+{ const RK = ['common', 'uncommon', 'rare', 'super', 'ultra', 'legendary']; ok('doublons triés du plus rare au moins rare', sp.every((c, k) => !k || RK.indexOf(sp[k - 1].rarity) >= RK.indexOf(c.rarity)), J(sp.map(c => c.rarity))); }
 const c1 = sp[0], q0 = (await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', alice, c1.id))[0].qty;
 [s, r] = await call(A, 'POST', '/api/expeditions/start', { hours: 3, cards: [{ id: c1.id, n: 1 }] }); ok('durée inconnue refusée', s === 400);
 [s, r] = await call(A, 'POST', '/api/expeditions/start', { hours: 1, cards: [{ id: c1.id, n: c1.spare + 1 }] }); ok('on ne peut pas envoyer le dernier exemplaire', s === 400 && (await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', alice, c1.id))[0].qty === q0);

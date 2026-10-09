@@ -258,7 +258,7 @@ export function installEconomy(d) {
       active: rows.map(r => ({ id: r.id, hours: r.hours, ends: r.ends, ready: r.ends <= now(), n: JSON.parse(r.cards).reduce((t, c) => t + c.n, 0), cards: JSON.parse(r.cards), rc: r.ends <= now() ? r.rc : null, rp: r.ends <= now() ? r.rp : null })) };
   });
   route('GET', '/api/expeditions/spare', async ({ env, user }) => ({
-    cards: await all(env, 'SELECT c.id, c.title, c.rarity, c.image, i.qty - 1 spare FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.qty > 1 AND i.sh = 0 ORDER BY i.rar, i.qty DESC LIMIT 300', user.id),
+    cards: await all(env, 'SELECT c.id, c.title, c.rarity, c.image, i.qty - 1 spare FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.qty > 1 AND i.sh = 0 ORDER BY i.rar DESC, i.skey DESC, i.qty DESC LIMIT 300', user.id),
   }));
   route('POST', '/api/expeditions/start', async ({ env, ctx, user, body }) => {
     await ensureGameSchema(env);
