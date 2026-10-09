@@ -192,6 +192,14 @@ console.log('— page des nouveautés (interface)');
   ok('« Voir » ferme la page et ouvre l\'écran', await q.$('.wnew') === null && (await q.evaluate(() => tab)) === goTo, goTo); await q.close();
   q = await mkc('99'); await q.evaluate(() => { tab = 'settings'; render(); }); await q.waitForSelector('#st-news'); await q.click('#st-news'); await q.waitForSelector('.wnew'); ok('Réglages : revoir tout l\'historique', (await q.$$('.wnrel')).length >= 8); await q.close();
 }
+console.log('— faux godpack (interface)');
+{
+  await p.evaluate(() => { window.__pf = previewFake(); }); await p.waitForSelector('.gp-skip', { timeout: 6000 }); await p.click('.gp-skip');
+  await p.waitForSelector('.fko-finger', { timeout: 6000 });
+  ok('faux godpack : après l\'animation de godpack, le doigt d\'honneur', /T'AS CRU/.test(await p.textContent('.fko-main')) && !!(await p.$('.fko-rain i')));
+  await shot(p, 'faux-godpack'); await p.click('.fko .gp-skip'); await p.waitForTimeout(900);
+  ok('faux godpack : la scène se referme', await p.$('#reveal') === null);
+}
 console.log('— événements (interface)');
 {
   await p.evaluate(() => { tab = 'events'; render(); }); await p.waitForSelector('.evcard.weekly', { timeout: 8000 }); await p.waitForTimeout(300);

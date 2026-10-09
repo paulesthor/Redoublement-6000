@@ -9,7 +9,7 @@ export default {
 
   PACK_SIZE: 10,               // cartes par booster
   PACK_EVERY: 10 * 60 * 1000,  // un booster gratuit toutes les 10 min
-  VERSION: '7.1',              // numéro de build affiché dans le profil (à incrémenter à chaque mise à jour)
+  VERSION: '7.2',              // numéro de build affiché dans le profil (à incrémenter à chaque mise à jour)
   PACK_MAX: 1e9,               // pas de plafond : les boosters gratuits s'accumulent (1 toutes les 10 min) même si on ne se connecte pas
   THEME_PACK_PRICE: 150,       // paquet thématique : ses cartes légendaires viennent toutes d'une même catégorie (dictateurs, footballeurs…)
   THEME_LEGEND_MULT: 2,        // et les légendaires y sont deux fois plus fréquentes
@@ -19,6 +19,7 @@ export default {
   CATALOG_SHARE: { common: 50.25, uncommon: 20, rare: 20, super: 7, ultra: 2.5, legendary: 0.25 },
   // Poids de tirage. Par défaut = parts du catalogue, donc tirage uniforme sur tous les articles.
   GODPACK_CHANCE: 0.001,       // chance qu'un paquet soit un GODPACK (10 cartes ultra rares ou légendaires) : 1 sur 1 000
+  FAKE_GOD_CHANCE: 0.004,      // chance qu'un paquet soit un FAUX godpack (mise en scène de godpack, puis un doigt d'honneur et dix communes) : 1 sur 250
   GODPACK_LEGEND: 0.2,         // dans un godpack, part des cartes légendaires (au moins une est garantie)
   DROP: { common: 50.25, uncommon: 20, rare: 20, super: 7, ultra: 2.5, legendary: 0.25 },
 

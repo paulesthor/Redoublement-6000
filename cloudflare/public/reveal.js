@@ -31,6 +31,22 @@
     const gp = root.querySelector('.gp'); gp.classList.add('out'); await sleep(450);
   }
 
+  /** Faux godpack : après la mise en scène, un énorme doigt d'honneur, puis un paquet de communes. Un toucher passe la scène. */
+  async function fakeOut(root) {
+    buzz([120, 40, 120, 40, 300]);
+    const small = reduceNow();
+    root.className = 'r-fake';
+    root.innerHTML = `<div class="fko"><div class="fko-flash"></div><div class="fko-rain">${small ? '' : Array.from({ length: 22 }, () => `<i style="left:${rand(0, 100).toFixed(1)}%;--t:${rand(1.4, 3).toFixed(2)}s;--dl:${rand(0, 1.6).toFixed(2)}s;--s:${rand(22, 44).toFixed(0)}px">🖕</i>`).join('')}</div>
+      <div class="fko-main"><div class="fko-finger">🖕</div><h1>T'AS CRU ?</h1><p>Petit paquet de communes pour te consoler 😂</p></div><button class="plain gp-skip">Continuer</button></div>`;
+    await new Promise(res => { const t = setTimeout(res, small ? 2500 : 4200); root.querySelector('.gp-skip').onclick = () => { clearTimeout(t); res(); }; });
+    const fk = root.querySelector('.fko'); fk.classList.add('out'); await sleep(350);
+  }
+  /** Aperçu du faux godpack (console : previewFake()). */
+  window.previewFake = async () => {
+    const root = document.createElement('div'); root.id = 'reveal'; root.className = 'r-god'; document.body.append(root); document.body.classList.add('noscroll');
+    try { await godIntro(root, 10); await fakeOut(root); } finally { root.remove(); document.body.classList.remove('noscroll'); }
+  };
+
   /** Aperçu de l'animation (page Réglages). */
   window.previewGod = async () => {
     const root = document.createElement('div'); root.id = 'reveal'; root.className = 'r-god'; document.body.append(root); document.body.classList.add('noscroll');
@@ -61,7 +77,8 @@
     const seq = [...cards].sort((a, b) => o.rank[a.rarity] - o.rank[b.rarity] || (a.shiny | 0) - (b.shiny | 0)); // moins rare d'abord
     const N = seq.length;
     buzz(30);
-    if (cards.god) await godIntro(root, cards.length);                 // GODPACK : mise en scène complète avant les cartes
+    if (cards.god || cards.fake) await godIntro(root, cards.length);   // GODPACK : mise en scène complète avant les cartes (le faux godpack joue exactement la même)
+    if (cards.fake) await fakeOut(root);                                 // … puis la chute
 
     let i = -1, locked = true, drag = null, dx = 0, finished;
     const done = new Promise(r => { finished = r; });

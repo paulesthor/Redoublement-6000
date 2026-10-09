@@ -1,0 +1,21 @@
+// Faux godpack : un paquet sur 250 (animation de godpack, puis dix communes).
+import './api.mjs';
+const { call, settle, ok, DB, J, done, env } = globalThis.__T;
+const CFG = (await import('../src/config.js')).default;
+const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
+await q('UPDATE users SET coins = 5000, pack_stock = 30');
+ok('chance configurée : 1 sur 250', CFG.FAKE_GOD_CHANCE === 0.004);
+const real = Math.random; let once = 0;
+ok('par défaut (PRANK = 0 dans les tests) : jamais de faux godpack', await (async () => { Math.random = () => 0.003; [s, r] = await call(A, 'POST', '/api/packs/open', {}); Math.random = real; return s === 200 && !r.fake; })());
+delete env.PRANK;
+Math.random = () => (once++ === 0 ? 0.001 : real());
+[s, r] = await call(A, 'POST', '/api/packs/open', {}); Math.random = real;
+ok('faux godpack : réponse marquée fake, pas god, dix communes', s === 200 && r.fake === true && !r.god && r.cards.length === 10 && r.cards.every(c => c.rarity === 'common'), J([s, r.fake, r.god, r.cards?.map(c => c.rarity)]));
+ok('le paquet est bien débité et les cartes ajoutées', (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = 1'))[0].n >= 1 && +(await q('SELECT pack_stock FROM users WHERE id = 1'))[0].pack_stock === 28);
+[s, r] = await call(A, 'POST', '/api/packs/open', {}); ok('le paquet suivant est normal', s === 200 && !r.fake);
+once = 0; Math.random = () => (once++ === 0 ? 0.001 : real());
+const c0 = +(await q('SELECT coins FROM users WHERE id = 1'))[0].coins; [s, r] = await call(A, 'POST', '/api/packs/buy', {}); Math.random = real;
+ok('achat de paquet : faux godpack possible aussi (et payé)', s === 200 && r.fake === true && r.cards.every(c => c.rarity === 'common') && c0 - +(await q('SELECT coins FROM users WHERE id = 1'))[0].coins === CFG.PACK_PRICE, J([s, r.fake]));
+const hits = await q("SELECT COUNT(*) n FROM hits WHERE title = 'un GODPACK'"); ok('aucune annonce « GODPACK » pour un faux', +hits[0].n === 0);
+done();

@@ -69,7 +69,7 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
   if (ev && (ev.legend > 1 || ev.ultra > 1)) w = { ...w, legendary: w.legendary * ev.legend, ultra: w.ultra * ev.ultra };     // heure dorée
   if (theme) w = { ...w, legendary: w.legendary * CFG.THEME_LEGEND_MULT };               // paquet thématique : plus de légendaires, toutes de la catégorie
   const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE;           // très rare : tout le paquet est ultra rare ou légendaire
-  const rarities = god ? godRarities(n) : Array.from({ length: n }, () => pickRarity(ranges, 0, w));
+  const rarities = god ? godRarities(n) : ev?.allCommon ? Array.from({ length: n }, () => 'common') : Array.from({ length: n }, () => pickRarity(ranges, 0, w));   // allCommon : faux godpack
   if (theme && ev?.themeGuarantee && !rarities.includes('legendary')) rarities[Math.floor(Math.random() * n)] = 'legendary';   // festival des catégories : une légendaire garantie
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
@@ -272,7 +272,7 @@ const publicUser = u => ({
   av: u.avatar_v ?? null, title: u.title ?? null, test: testOn(u), admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
 });
 
-async function finishPack(env, ctx, user, drawn, spent = 0) {
+async function finishPack(env, ctx, user, drawn, spent = 0, fake = false) {
   // TOUT part en un seul aller-retour vers la base (une transaction) : lecture « déjà possédées », écritures, relecture des cartes et des favoris
   const ids = [...new Set(drawn.map(c => c.id))], ph = placeholders(ids.length);
   const god = drawn.some(c => c.god), hitsOf = drawn.filter(c => c.rarity === 'legendary');
@@ -300,7 +300,7 @@ async function finishPack(env, ctx, user, drawn, spent = 0) {
   if (god) ctx.waitUntil(grantTitle(env, user.id, 'godpack').then(n => n && notify(env, ctx, { t: 'notify', msg: 'Nouveau titre débloqué : « Touché par les dieux » !' }, user.id)));
   ctx.waitUntil(events.afterPack(env, ctx, user, drawn));                      // carte recherchée du jour
   bq(env, ctx, user.id, { open_pack: 1, new_cards: cards.filter(c => c.isNew).length, rare_plus: cards.filter(c => RANK[c.rarity] >= 2).length, legendary: cards.filter(c => c.rarity === 'legendary').length, spend: spent });
-  return { cards, god };
+  return { cards, god, ...(fake ? { fake: true } : {}) };
 }
 
 
@@ -739,19 +739,21 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
-  const evm = await events.drawMods(env, origin);
-  const drawn = (!evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
+  const fake = fakeGod(env), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+  const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
   ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
-  return finishPack(env, ctx, user, drawn);
+  return finishPack(env, ctx, user, drawn, 0, fake);
 });
+/** Plaisanterie rare : un paquet sur 250 est un FAUX godpack (l'animation de godpack, puis un doigt d'honneur et dix communes). PRANK = '0' la coupe (tests). */
+const fakeGod = env => env.PRANK !== '0' && Math.random() < CFG.FAKE_GOD_CHANCE;
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-  const evm = await events.drawMods(env, origin);
-  const drawn = (!evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
+  const fake = fakeGod(env), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+  const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
   ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
-  return finishPack(env, ctx, user, drawn, CFG.PACK_PRICE);
+  return finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
 });
 route('POST', '/api/cards/enrich', async ({ env, body }) => {
   const ids = (body.ids || []).map(Number).filter(Number.isFinite).slice(0, 40);

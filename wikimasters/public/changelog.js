@@ -3,6 +3,8 @@
 // RÈGLE : à chaque nouvelle version poussée (BUILD dans app.js), ajouter une entrée EN TÊTE de cette liste avec le même numéro de version.
 // v : numéro (comme BUILD) · icon : emoji · title : titre court · items : [{ t: titre, d: description, go?: onglet à ouvrir }]
 window.CHANGELOG = [
+  { v: '7.2', icon: '🎭', title: 'Attention aux godpacks…', items: [
+    { t: 'Un paquet sur 250 n\'est pas ce qu\'il semble', d: 'Il est rare, il est très convaincant, et il ne faut pas se fier aux apparences.' } ] },
   { v: '7.1', icon: '🎁', title: 'Événements surprise', items: [
     { t: 'Des événements à dates secrètes', d: 'Heure dorée (légendaires ×3 pendant 1 h), week-end shiny, festival des catégories (paquets du jour à 90 pièces avec légendaire garantie), album éphémère de 7 jours et objectif collectif. Personne ne connaît les dates : ils s\'annoncent par notification et bandeau.', go: 'events' },
     { t: 'Défi de la semaine, carte recherchée, saison', d: 'Un défi tiré au sort chaque lundi, une carte légendaire cachée à trouver chaque jour (le premier gagne gros), et des saisons de 2 semaines avec classement et récompenses.', go: 'events' },
