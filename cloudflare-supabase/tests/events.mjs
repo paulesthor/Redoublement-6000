@@ -121,8 +121,9 @@ ok('heure dorée : légendaires ×3, ultra ×1,5', m1.legend === 3 && m1.ultra =
 at(gold.end + 60000); ok('après l\'heure dorée : retour à la normale', (await __testHooks.events.mods(env)).legend === 1 || activeIn(evs(gold.end + 60000, gold.end + 60001), gold.end + 60000).some(e => e.kind === 'golden'));
 const WN = { common: 0, uncommon: 0, rare: 0, super: 0, ultra: 0, legendary: 1 };
 const legs = async (ev, w = CFG.DROP, packsN = 1500) => { let n = 0; for (let i = 0; i < packsN; i++) n += (await __testHooks.drawCards(env, origin, 10, w, null, ev)).filter(c => c.rarity === 'legendary').length; return n; };
-const base = await legs(null), gold3 = await legs({ legend: 3, ultra: 1.5, shiny: 1 });
-ok(`tirages : sans événement ≈ 0,25 % de légendaires (${base} sur 15 000), heure dorée ≈ ×3 (${gold3})`, base > 15 && base < 70 && gold3 > 80 && gold3 < 180 && gold3 > base * 2, [base, gold3]);
+const godSave = CFG.GODPACK_CHANCE; CFG.GODPACK_CHANCE = 0;   // un godpack ajouterait des légendaires au hasard et fausserait la mesure
+const base = await legs(null), gold3 = await legs({ legend: 3, ultra: 1.5, shiny: 1 }); CFG.GODPACK_CHANCE = godSave;
+ok(`tirages : sans événement ≈ 0,25 % de légendaires (${base} sur 15 000), heure dorée ≈ ×3 (${gold3})`, base > 18 && base < 62 && gold3 > 75 && gold3 < 175 && gold3 > base * 1.8, [base, gold3]);
 const sh = async ev => { let n = 0, t = 0; const save = CFG.SHINY_CHANCE; CFG.SHINY_CHANCE = 0.2; for (let i = 0; i < 60; i++) for (const c of await __testHooks.drawCards(env, origin, 10, WN, null, ev)) { t++; n += c.shiny; } CFG.SHINY_CHANCE = save; return n / t; };
 const s1 = await sh(null), s3 = await sh({ shiny: 3 }); ok(`week-end shiny : 3 fois plus de shiny (${(s1 * 100).toFixed(0)} % → ${(s3 * 100).toFixed(0)} %)`, s1 > .1 && s1 < .32 && s3 > .5 && s3 < .7, [s1, s3]);
 const real = JSON.parse((await import('node:fs')).readFileSync(new URL('../../cloudflare/public/catalog/albums.json', import.meta.url))).albums, theme = real[0];

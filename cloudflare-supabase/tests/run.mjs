@@ -445,7 +445,7 @@ console.log('— récompense quotidienne');
     [s, r] = await call(A, 'POST', '/api/me/title', { id: 'warlord' }); ok('titre non débloqué : refusé', s === 400, J([s, r]));
     [s, r] = await call(A, 'POST', '/api/me/title', { id: 's1_champion' }); ok('titre de saison : pas encore disponible', s === 400, J([s, r]));
     await q('UPDATE users SET duel_wins = 12 WHERE id = ?', alice); [s, r] = await call(A, 'GET', '/api/titles'); ok('titre débloqué par les statistiques', r.titles.find(x => x.id === 'duelist').unlocked && !r.titles.find(x => x.id === 'gladiator').unlocked);
-    const { grantTitle } = await import('../src/game.js'); ok('titre accordé par un événement (une seule fois)', (await grantTitle(env, alice, 'godpack')) === true && (await grantTitle(env, alice, 'godpack')) === false);
+    const { grantTitle } = await import('../src/game.js'); await q("DELETE FROM user_titles WHERE user_id = ? AND tid = 'godpack'", alice); ok('titre accordé par un événement (une seule fois)', (await grantTitle(env, alice, 'godpack')) === true && (await grantTitle(env, alice, 'godpack')) === false);
     [s, r] = await call(A, 'POST', '/api/me/title', { id: 'godpack' }); ok('équiper un titre', s === 200 && r.title === 'godpack', J([s, r]));
     [s, r] = await call(B, 'GET', '/api/cosmetics'); ok('titre visible par les autres', r.players.find(p => p.name === 'Alice').ti === 'godpack');
     [s, r] = await call(A, 'GET', `/api/profile/${alice}`); ok('profil : titre et photo', r.profile.title === 'godpack' && r.profile.av > 0, J(r.profile).slice(0, 200));
