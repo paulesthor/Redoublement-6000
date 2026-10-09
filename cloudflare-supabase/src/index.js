@@ -739,18 +739,25 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
-  const fake = fakeGod(env), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+  const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
   const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
   ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
   return finishPack(env, ctx, user, drawn, 0, fake);
 });
 /** Plaisanterie rare : un paquet sur 250 est un FAUX godpack (l'animation de godpack, puis un doigt d'honneur et dix communes). PRANK = '0' la coupe (tests). */
-const fakeGod = env => env.PRANK !== '0' && Math.random() < CFG.FAKE_GOD_CHANCE;
+const fakeGod = async (env, user) => {
+  if (env.PRANK === '0') return false;
+  await ensureGameSchema(env);
+  // victimes désignées : leur PROCHAIN paquet est un faux godpack (une seule fois, mémorisé en base pour ne jamais se répéter)
+  if (FAKE_NEXT.includes(String(user?.name || '').toLowerCase()) && (await run(env, 'INSERT INTO event_claims (key, user_id, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', 'fakegod:' + String(user.name).toLowerCase(), user.id, now())).meta.changes > 0) return true;
+  return Math.random() < CFG.FAKE_GOD_CHANCE;
+};
+const FAKE_NEXT = ['fourniseur2caca'];
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-  const fake = fakeGod(env), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+  const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
   const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
   ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
   return finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);

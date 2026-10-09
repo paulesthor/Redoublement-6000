@@ -175,23 +175,7 @@ console.log('— économie (interface)');
   const goBox = await p.$eval('#ex-go', e => { const r = e.getBoundingClientRect(); return r.bottom <= innerHeight; }); ok('le bouton Envoyer reste visible', goBox);
   await p.click('#ex-go'); await p.waitForTimeout(900); ok('expédition lancée', (await p.$$('.exrow')).length === 1);
 }
-console.log('— page des nouveautés (interface)');
-{
-  const mkc = async seen => { const c = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }); await c.addInitScript(([tok, sv]) => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); if (sv) localStorage.setItem('wm_seen_ver', sv); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, [A, seen]); const q = await c.newPage(); q.errs = []; q.on('pageerror', e => q.errs.push(e.message)); await q.goto('http://localhost:8768/'); await q.waitForSelector('#app:not([hidden])', { timeout: 15000 }); return q; };
-  await DB.prepare("UPDATE users SET daily_day = NULL WHERE id = 1").run();
-  const q0 = async () => (await p.evaluate(() => BUILD)); let q = await mkc('5.5'); await q.waitForSelector('.wnew', { timeout: 8000 }); await q.waitForTimeout(400); await shot(q, 'nouveautes');
-  const rels = await q.$$eval('.wnrel b.x, .wnrel .wnh small', es => es.map(e => e.textContent));
-  ok('mises à jour depuis la dernière visite (5.5 → dernière) : les 4 plus récentes, rien d\'ancien', rels.length === 4 && rels[0].startsWith('v' + (await q0()) ) && !rels.some(t => t.startsWith('v5.5')) && !rels.some(t => t.startsWith('v5.3')), rels.join());
-  ok('la plus récente est marquée « nouveau »', (await q.textContent('.wnrel.top small')).includes('nouveau'));
-  await q.click('#wn-ok'); await q.waitForSelector('.daily', { timeout: 6000 }); ok('puis la récompense du jour', true);
-  ok('version vue mémorisée', (await q.evaluate(() => localStorage.getItem('wm_seen_ver'))) === (await q.evaluate(() => BUILD)));
-  await q.close();
-  q = await mkc(null); await q.waitForSelector('.wnew', { timeout: 8000 }); ok('premier lancement : seulement la dernière version', (await q.$$('.wnrel')).length === 1); await q.close();
-  q = await mkc('99'); await q.waitForTimeout(2500); ok('rien à montrer si tout est déjà vu', await q.$('.wnew') === null); await q.close();
-  q = await mkc('6.1'); await q.waitForSelector('.wnew'); const goTo = await q.$eval('.wnrel [data-go]', b => b.dataset.go); await q.click('.wnrel [data-go]'); await q.waitForTimeout(800);
-  ok('« Voir » ferme la page et ouvre l\'écran', await q.$('.wnew') === null && (await q.evaluate(() => tab)) === goTo, goTo); await q.close();
-  q = await mkc('99'); await q.evaluate(() => { tab = 'settings'; render(); }); await q.waitForSelector('#st-news'); await q.click('#st-news'); await q.waitForSelector('.wnew'); ok('Réglages : revoir tout l\'historique', (await q.$$('.wnrel')).length >= 8); await q.close();
-}
+await DB.prepare("UPDATE users SET daily_day = NULL WHERE id = 1").run();
 console.log('— faux godpack (interface)');
 {
   await p.evaluate(() => { window.__pf = previewFake(); }); await p.waitForSelector('.gp-skip', { timeout: 6000 }); await p.click('.gp-skip');

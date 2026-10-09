@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.2';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.3';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1738,7 +1738,6 @@ views.settings = async v => {
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
     <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
-    <div class="setgrp"><h3>À propos</h3><button class="plain" id="st-news" style="width:100%">✨ Voir les nouveautés</button></div>
     <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
@@ -1748,7 +1747,6 @@ views.settings = async v => {
   $('#st-mot').onchange = e => setPref('wm_motion', e.target.checked ? '1' : '0');
   $('#st-fast').onchange = e => setPref('wm_fast', e.target.checked ? '1' : '0');
   $('#st-god').onclick = () => window.previewGod?.();
-  $('#st-news').onclick = () => whatsNew({ force: true });
   $('#st-me').onclick = () => playerSheet(me.id); $('#st-out').onclick = logout;
   $('#st-pw').onclick = safe(async () => {
     const f = await ask('Changer le mot de passe', [{ label: 'Mot de passe actuel', type: 'password' }, { label: 'Nouveau (6 caractères minimum)', type: 'password' }], { text: 'Tes autres appareils seront déconnectés.', ok: 'Changer' });
@@ -2029,23 +2027,6 @@ views.expeditions = async v => {
 };
 
 // ---------- page des nouveautés (à chaque mise à jour) ----------
-const verNum = v => String(v).split('.').reduce((t, x, i) => t + (+x || 0) / Math.pow(1000, i), 0);
-/** Affiche les nouveautés pas encore vues par ce joueur ; renvoie vrai si la page s'ouvre. force : tout l'historique (depuis Réglages). */
-function whatsNew({ force = false, then } = {}) {
-  const log = window.CHANGELOG || [];
-  const seen = pref('wm_seen_ver', ''), fresh = force ? log : seen ? log.filter(e => verNum(e.v) > verNum(seen)) : log.slice(0, 1);   // premier lancement : seulement la dernière version
-  if (!fresh.length || (!force && !$('#modal').hidden)) return false;
-  const list = fresh.slice(0, force ? 12 : 4), m = $('#modal'); m.hidden = false;
-  const done = () => { m.hidden = true; m.innerHTML = ''; try { localStorage.setItem('wm_seen_ver', BUILD); } catch { /* stockage indisponible */ } then?.(); };
-  m.innerHTML = `<div class="wnew" role="dialog" aria-label="Nouveautés"><span class="halo" aria-hidden="true"></span><p class="dk">Nouveautés</p><h2>${force ? 'Toutes les nouveautés' : fresh.length > 1 ? `${fresh.length} mises à jour depuis ta dernière visite` : 'Une mise à jour vient d\'arriver'}</h2>
-    <div class="wnlist">${list.map((e, k) => `<div class="wnrel ${k === 0 ? 'top' : ''}"><div class="wnh"><span class="wne">${e.icon || '✨'}</span><b>${esc(e.title)}</b><small>v${esc(e.v)}${k === 0 && !force ? ' · nouveau' : ''}</small></div>
-      <ul>${e.items.map(it => `<li><div><b>${esc(it.t)}</b><span>${esc(it.d)}</span></div>${it.go && views[it.go] ? `<button class="plain" data-go="${esc(it.go)}">Voir</button>` : ''}</li>`).join('')}</ul></div>`).join('')}</div>
-    <div class="row"><button id="wn-ok" class="primary big">C'est parti !</button></div></div>`;
-  $('#wn-ok').onclick = done; m.onclick = e => { if (e.target === m) done(); };
-  m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const k = b.dataset.go; done(); lastPack = null; tab = k; if (game?.view === 'end') game = null; render(); });
-  return true;
-}
-
 // ---------- combats en direct et paris ----------
 async function liveFights(v) {
   const MODES = [['quiz', 'Quiz'], ['battle', 'Combat'], ['stake', 'Mise'], ['live', '🎲 En direct']];
@@ -2137,7 +2118,7 @@ async function start() {
   setTimeout(pushStartup, 2500);
   setTimeout(() => {                                                                  // à l'ouverture : nouveautés de la mise à jour, puis récompense du jour
     const daily = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
-    if (!game && !whatsNew({ then: daily })) daily();
+    if (!game) daily();
   }, 900);
 }
 const urlCode = new URLSearchParams(location.search).get('friend');

@@ -1,6 +1,6 @@
 /* Service worker : l'appli démarre instantanément depuis le cache, puis se met à jour en arrière-plan. */
 const V = 'cw-v4';
-const SHELL = ['/', 'style.css', 'fonts.css', 'app.js', 'changelog.js', 'reveal.js', 'pack.js', 'qrcode.js', 'fonts/inter-latin.woff2', 'fonts/sora-latin.woff2'];
+const SHELL = ['/', 'style.css', 'fonts.css', 'app.js', 'reveal.js', 'pack.js', 'qrcode.js', 'fonts/inter-latin.woff2', 'fonts/sora-latin.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))).catch(() => {})).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
