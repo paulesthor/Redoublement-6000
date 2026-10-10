@@ -47,7 +47,7 @@
    * source : promesse de 10 tirages (tableaux de cartes). o = { labels, rank, fmt, cardHtml, again }. Résout 'again' si le joueur veut en rouvrir 10.
    */
   window.playTen = async function playTen(source, o) {
-    const N = 10, root = document.createElement('div');
+    let N = 10; const root = document.createElement('div');
     root.id = 'reveal'; root.className = 'r-ten'; document.body.append(root); document.body.classList.add('noscroll');
     const AURA = { common: '#a4b5a0', uncommon: '#86c4f5', rare: '#c09aec', super: '#ee91bc', ultra: '#f2a34f', legendary: '#fff1b8', shiny: '#bff5ff', god: '#ffd37a' };
     const HEIGHT = { common: 16, uncommon: 24, rare: 34, super: 46, ultra: 60, legendary: 78, shiny: 78, god: 82 };   // hauteur de la colonne de lumière (en % de l'écran)
@@ -61,6 +61,7 @@
     for (const el of packsEl) { el.style.setProperty('--a', '#ffffff55'); }
     let packs; const t0 = Date.now();
     try { packs = await source; } catch (e) { kill(); throw e; }
+    if (packs.length < N) { N = packs.length; layers.slice(N).forEach(l => l.remove()); layers.length = N; packsEl.splice(N).forEach(el => el.remove()); rowEl.style.gridTemplateColumns = `repeat(${N}, minmax(0, 60px))`; rowEl.style.justifyContent = 'center'; }   // un paquet a échoué en route : on montre ceux qui sont ouverts
     const best = cs => [...cs].sort((a, b) => o.rank[b.rarity] - o.rank[a.rarity] || (b.shiny | 0) - (a.shiny | 0))[0];
     const keyOf = cs => cs.god || cs.fake ? 'god' : cs.some(c => c.shiny) ? 'shiny' : best(cs).rarity;
     const info = packs.map(cs => ({ cs, top: best(cs), key: keyOf(cs), opened: false }));

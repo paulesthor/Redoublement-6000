@@ -203,6 +203,14 @@ console.log('— dix paquets d\'un coup (interface)');
   ok('résumé : 100 cartes et boutons Continuer / Ouvrir 10 autres', (await p.$$('#reveal .grid .card')).length === 100 && /Ouvrir 10 autres/.test(await p.textContent('#reveal .again')));
   ok('dix boosters débités', (await DB.prepare('SELECT pack_stock FROM users WHERE id = 1').all()).results[0].pack_stock <= 3);
   await p.click('#reveal .finish'); await p.waitForTimeout(800); ok('retour à l\'accueil', await p.$('#reveal') === null);
+  // un paquet échoue en route : on montre ceux qui ont été ouverts, sans bloquer
+  { await DB.prepare('UPDATE users SET pack_stock = 12 WHERE id = 1').run();
+    await p.evaluate(async () => { await refreshMe(); tab = 'packs'; render(); }); await p.waitForSelector('#open10:not([disabled])', { timeout: 8000 }); await p.waitForTimeout(500);
+    let n = 0; await p.route('**/api/packs/open', r => (++n === 4 ? r.fulfill({ status: 500, json: { error: 'Erreur serveur' } }) : r.continue()));
+    await p.click('#open10'); await p.waitForSelector('.tn-all:not([disabled])', { timeout: 40000 });
+    ok('un paquet échoue en route : seuls les 3 paquets ouverts sont proposés', (await p.$$('.tn-pack')).length === 3, String((await p.$$('.tn-pack')).length));
+    await p.click('.tn-all'); await p.waitForSelector('.tn-count', { timeout: 40000 }); ok('résumé des 30 cartes', (await p.$$('#reveal .grid .card')).length === 30);
+    await p.click('#reveal .finish'); await p.waitForTimeout(600); await p.unroute('**/api/packs/open'); }
   await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('[data-th10]', { timeout: 8000 });
   ok('paquets du jour : bouton ×10 pour chaque catégorie', (await p.$$('[data-th10]')).length === 2);
 }

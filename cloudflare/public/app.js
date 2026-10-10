@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.7';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.8';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -526,14 +526,14 @@ const views = {
     // dix paquets d'un coup : les boosters s'alignent, chacun s'allume de la couleur de sa meilleure carte, puis on les ouvre
     $('#open10').onclick = safe(async () => {
       $('#open').disabled = $('#buy').disabled = $('#open10').disabled = $('#buy10').disabled = true;
-      const again = await tenFlow('/packs/open10', {}, () => ({ ok: me.test || me.packs >= 10, label: me.test ? 'Ouvrir 10 autres paquets' : `Ouvrir 10 autres (${me.packs})` }));
+      const again = await tenFlow('/packs/open', {}, () => ({ ok: me.test || me.packs >= 10, label: me.test ? 'Ouvrir 10 autres paquets' : `Ouvrir 10 autres (${me.packs})` }));
       if (again === 'again') setTimeout(() => $('#open10')?.click(), 60);
     });
     $('#buy10').onclick = safe(async () => {
       const total = cfg.packPrice * 10;
       if (!(await ask(`Acheter et ouvrir 10 paquets ?`, [], { text: `${fmt(total)} pièces pour 10 boosters.`, ok: 'Acheter' }))) return;
       $('#open').disabled = $('#buy').disabled = $('#open10').disabled = $('#buy10').disabled = true;
-      const again = await tenFlow('/packs/buy10', {}, () => ({ ok: me.coins >= total, label: `Acheter 10 autres (${fmt(total)})` }));
+      const again = await tenFlow('/packs/buy', {}, () => ({ ok: me.coins >= total, label: `Acheter 10 autres (${fmt(total)})` }));
       if (again === 'again') setTimeout(() => $('#buy10')?.click(), 60);
     });
     $('#rates-btn').onclick = () => {
@@ -1872,11 +1872,18 @@ views.albums = async v => {
 // ---------- paquets thématiques ----------
 /** Dix paquets d'un coup (ouverture, achat ou paquets du jour) : demande au serveur, puis animation « pile de dix boosters ». again() décrit le bouton « en rouvrir dix » ; renvoie 'again' si le joueur le choisit. */
 async function tenFlow(path, body, again) {
+  // dix requêtes normales à la suite (une seule requête pour dix paquets dépasserait les limites du serveur) ; si l'une échoue en route, on montre ce qui a été ouvert
   const packsPromise = (async () => {
-    const r = await api(path, body || {});
-    schedulePrefetch(); r.packs.forEach(x => { x.cards.god = !!x.god; x.cards.fake = !!x.fake; }); lastPack = r.packs.at(-1);
+    const out = [];
+    for (let i = 0; i < 10; i++) {
+      let r;
+      try { r = await api(path, body || {}); }
+      catch (e) { if (!out.length) throw e; toast(`${e.message || 'Erreur serveur'} — ${out.length} paquet${out.length > 1 ? 's' : ''} ouvert${out.length > 1 ? 's' : ''}`); break; }
+      r.cards.god = !!r.god; r.cards.fake = !!r.fake; out.push(r.cards); lastPack = r;
+      if (i === 0) schedulePrefetch();
+    }
     refreshMe().catch(() => {});
-    return r.packs.map(x => x.cards);
+    return out;
   })();
   packsPromise.catch(() => {});
   try { return await playTen(packsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, again }); }
@@ -1911,7 +1918,7 @@ views.themepacks = async v => {
   v.querySelectorAll('[data-th10]').forEach(b => b.onclick = safe(async () => {
     const t = d.themes.find(x => x.id === b.dataset.th10), total = d.price * 10;
     if (!(await ask(`Ouvrir 10 paquets « ${t.name} » ?`, [], { text: `${fmt(total)} pièces pour 10 paquets. Les légendaires viendront toutes de cette catégorie.`, ok: 'Ouvrir ×10' }))) return;
-    const again = await tenFlow('/themepacks/buy10', { theme: t.id }, () => ({ ok: me.coins >= total, label: `Racheter 10 paquets (${fmt(total)})` }));
+    const again = await tenFlow('/themepacks/buy', { theme: t.id }, () => ({ ok: me.coins >= total, label: `Racheter 10 paquets (${fmt(total)})` }));
     if (again === 'again') setTimeout(() => $(`[data-th10="${t.id}"]`)?.click(), 60);
   }));
 };
