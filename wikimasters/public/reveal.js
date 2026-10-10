@@ -54,23 +54,39 @@
     const FEEL = { common: [20], uncommon: [25], rare: [35], super: [50, 30], ultra: [70, 40, 70], legendary: [110, 40, 110, 40, 160], shiny: [110, 40, 110, 40, 160], god: [150, 40, 150, 40, 300] };
     const kill = () => { root.remove(); document.body.classList.remove('noscroll'); };
     root.innerHTML = `<div class="bg"></div><div class="tn"><div class="tn-head"><b>10 paquets</b><small class="tn-sub">Préparation des paquets…</small></div>
-      <div class="tn-stage" aria-live="polite"></div>
-      <div class="tn-row">${Array.from({ length: N }, (_, i) => `<button class="tn-pack" data-i="${i}" style="--i:${i}" disabled aria-label="Paquet ${i + 1}"><i class="tn-beam"></i><i class="tn-halo"></i><span class="tn-art">${window.packSvg('full', { anim: false })}</span><span class="tn-mini"></span></button>`).join('')}</div>
+      <div class="tn-stage" aria-live="polite"><div class="tn-stack">${Array.from({ length: N }, (_, i) => `<div class="sl" style="--d:${i}"><div class="sl-body">${window.packSvg('body', { anim: false })}</div><div class="sl-top">${window.packSvg('top', { anim: false })}</div></div>`).join('')}</div></div>
+      <div class="tn-row">${Array.from({ length: N }, (_, i) => `<button class="tn-pack" data-i="${i}" style="--i:${i}" disabled aria-label="Paquet ${i + 1}"><i class="tn-beam"></i><i class="tn-halo"></i><span class="tn-art"><span class="tn-back"><b>W</b></span></span><span class="tn-mini"></span></button>`).join('')}</div>
       <div class="tn-actions"><button class="tn-all" disabled>Tout ouvrir</button><button class="plain tn-skip" disabled>Résumé direct</button></div></div>`;
-    const sub = root.querySelector('.tn-sub'), stage = root.querySelector('.tn-stage'), packsEl = [...root.querySelectorAll('.tn-pack')], allBtn = root.querySelector('.tn-all'), skipBtn = root.querySelector('.tn-skip');
+    const sub = root.querySelector('.tn-sub'), stage = root.querySelector('.tn-stage'), stack = root.querySelector('.tn-stack'), rowEl = root.querySelector('.tn-row'), layers = [...root.querySelectorAll('.sl')], packsEl = [...root.querySelectorAll('.tn-pack')], allBtn = root.querySelector('.tn-all'), skipBtn = root.querySelector('.tn-skip');
     for (const el of packsEl) { el.style.setProperty('--a', '#ffffff55'); }
-    let packs;
+    let packs; const t0 = Date.now();
     try { packs = await source; } catch (e) { kill(); throw e; }
     const best = cs => [...cs].sort((a, b) => o.rank[b.rarity] - o.rank[a.rarity] || (b.shiny | 0) - (a.shiny | 0))[0];
     const keyOf = cs => cs.god || cs.fake ? 'god' : cs.some(c => c.shiny) ? 'shiny' : best(cs).rarity;
     const info = packs.map(cs => ({ cs, top: best(cs), key: keyOf(cs), opened: false }));
     info.forEach(p => { if (p.top?.image) { const im = new Image(); im.src = p.top.image; } });
-    // 1) les paquets s'allument l'un après l'autre, chacun de la couleur de sa meilleure carte
-    await sleep(reduceNow() ? 0 : 500);
+    // 1) la pile de dix boosters est déchirée l'un après l'autre (languette arrachée + éclair de la couleur de la meilleure carte du paquet)
+    if (!reduceNow()) {
+      await sleep(Math.max(0, 1200 - (Date.now() - t0)));                              // la pile reste un instant, le temps de bien la voir
+      sub.textContent = 'Ouverture des paquets…';
+      for (let i = 0; i < N && root.isConnected; i++) {
+        const p = info[i], col = AURA[p.key], big = p.key === 'legendary' || p.key === 'shiny' || p.key === 'god', mid = p.key === 'ultra' || p.key === 'super';
+        layers.forEach((l, k) => l.style.setProperty('--d', Math.max(0, k - i)));
+        layers[i].classList.add('tear'); buzz(FEEL[p.key]);
+        const b = document.createElement('i'); b.className = 'tn-burst' + (big ? ' big' : mid ? ' mid' : ''); b.style.setProperty('--a', col); stack.append(b); setTimeout(() => b.remove(), 900);
+        root.style.setProperty('--flash', col); root.classList.remove('flash'); void root.offsetWidth; root.classList.add('flash');
+        await sleep(big ? 460 : mid ? 340 : 240);
+        layers[i].classList.add('gone');
+      }
+      await sleep(300); stack.classList.add('out'); await sleep(350);
+    }
+    stack.remove(); rowEl.classList.add('show');
+    // 2) les dix tas de cartes s'allument l'un après l'autre, chacun de la couleur de sa meilleure carte
+    await sleep(reduceNow() ? 0 : 450);
     for (let i = 0; i < N && root.isConnected; i++) {
       const el = packsEl[i], p = info[i];
       el.style.setProperty('--a', AURA[p.key]); el.style.setProperty('--bh', HEIGHT[p.key] + 'vh'); el.classList.add('lit', 'k-' + p.key);
-      buzz(FEEL[p.key]); if (!reduceNow()) await sleep(p.key === 'common' || p.key === 'uncommon' ? 120 : 220);
+      if (!reduceNow()) await sleep(p.key === 'common' || p.key === 'uncommon' ? 110 : 200);
     }
     if (!root.isConnected) return;
     sub.textContent = 'Touche un paquet, ou ouvre-les tous'; allBtn.disabled = skipBtn.disabled = false; packsEl.forEach(el => { el.disabled = false; });
