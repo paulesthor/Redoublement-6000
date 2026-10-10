@@ -41,6 +41,83 @@
     await new Promise(res => { const t = setTimeout(res, small ? 2500 : 4200); root.querySelector('.gp-skip').onclick = () => { clearTimeout(t); res(); }; });
     const fk = root.querySelector('.fko'); fk.classList.add('out'); await sleep(350);
   }
+  /**
+   * Ouverture de 10 paquets d'un coup, façon Pokémon TCG : les dix boosters en ligne, chacun s'allume de la couleur de sa meilleure carte
+   * (colonne de lumière plus ou moins haute selon la rareté), puis on les ouvre un par un (toucher) ou tous à la suite. Résumé des 100 cartes à la fin.
+   * source : promesse de 10 tirages (tableaux de cartes). o = { labels, rank, fmt, cardHtml, again }. Résout 'again' si le joueur veut en rouvrir 10.
+   */
+  window.playTen = async function playTen(source, o) {
+    const N = 10, root = document.createElement('div');
+    root.id = 'reveal'; root.className = 'r-ten'; document.body.append(root); document.body.classList.add('noscroll');
+    const AURA = { common: '#a4b5a0', uncommon: '#86c4f5', rare: '#c09aec', super: '#ee91bc', ultra: '#f2a34f', legendary: '#fff1b8', shiny: '#bff5ff', god: '#ffd37a' };
+    const HEIGHT = { common: 16, uncommon: 24, rare: 34, super: 46, ultra: 60, legendary: 78, shiny: 78, god: 82 };   // hauteur de la colonne de lumière (en % de l'écran)
+    const FEEL = { common: [20], uncommon: [25], rare: [35], super: [50, 30], ultra: [70, 40, 70], legendary: [110, 40, 110, 40, 160], shiny: [110, 40, 110, 40, 160], god: [150, 40, 150, 40, 300] };
+    const kill = () => { root.remove(); document.body.classList.remove('noscroll'); };
+    root.innerHTML = `<div class="bg"></div><div class="tn"><div class="tn-head"><b>10 paquets</b><small class="tn-sub">Préparation des paquets…</small></div>
+      <div class="tn-stage" aria-live="polite"></div>
+      <div class="tn-row">${Array.from({ length: N }, (_, i) => `<button class="tn-pack" data-i="${i}" style="--i:${i}" disabled aria-label="Paquet ${i + 1}"><i class="tn-beam"></i><i class="tn-halo"></i><span class="tn-art">${window.packSvg('full', { anim: false })}</span><span class="tn-mini"></span></button>`).join('')}</div>
+      <div class="tn-actions"><button class="tn-all" disabled>Tout ouvrir</button><button class="plain tn-skip" disabled>Résumé direct</button></div></div>`;
+    const sub = root.querySelector('.tn-sub'), stage = root.querySelector('.tn-stage'), packsEl = [...root.querySelectorAll('.tn-pack')], allBtn = root.querySelector('.tn-all'), skipBtn = root.querySelector('.tn-skip');
+    for (const el of packsEl) { el.style.setProperty('--a', '#ffffff55'); }
+    let packs;
+    try { packs = await source; } catch (e) { kill(); throw e; }
+    const best = cs => [...cs].sort((a, b) => o.rank[b.rarity] - o.rank[a.rarity] || (b.shiny | 0) - (a.shiny | 0))[0];
+    const keyOf = cs => cs.god || cs.fake ? 'god' : cs.some(c => c.shiny) ? 'shiny' : best(cs).rarity;
+    const info = packs.map(cs => ({ cs, top: best(cs), key: keyOf(cs), opened: false }));
+    info.forEach(p => { if (p.top?.image) { const im = new Image(); im.src = p.top.image; } });
+    // 1) les paquets s'allument l'un après l'autre, chacun de la couleur de sa meilleure carte
+    await sleep(reduceNow() ? 0 : 500);
+    for (let i = 0; i < N && root.isConnected; i++) {
+      const el = packsEl[i], p = info[i];
+      el.style.setProperty('--a', AURA[p.key]); el.style.setProperty('--bh', HEIGHT[p.key] + 'vh'); el.classList.add('lit', 'k-' + p.key);
+      buzz(FEEL[p.key]); if (!reduceNow()) await sleep(p.key === 'common' || p.key === 'uncommon' ? 120 : 220);
+    }
+    if (!root.isConnected) return;
+    sub.textContent = 'Touche un paquet, ou ouvre-les tous'; allBtn.disabled = skipBtn.disabled = false; packsEl.forEach(el => { el.disabled = false; });
+
+    let busy = false, finished;
+    const done = new Promise(r => { finished = r; });
+    const close = res => { kill(); finished(res); };
+    async function openOne(i) {
+      const p = info[i]; if (p.opened || !root.isConnected) return;
+      p.opened = true; const el = packsEl[i], c = p.top, col = AURA[p.key];
+      el.classList.add('opening'); buzz(FEEL[p.key]); await sleep(reduceNow() ? 0 : 380);
+      if (p.cs.god || p.cs.fake) {                                     // godpack (vrai ou faux) : la mise en scène complète, par-dessus
+        const ov = document.createElement('div'); ov.id = 'reveal'; document.body.append(ov);
+        try { await godIntro(ov, p.cs.length); if (p.cs.fake) await fakeOut(ov); } finally { ov.remove(); }
+      }
+      el.classList.remove('opening'); el.classList.add('opened');
+      const mini = el.querySelector('.tn-mini'); mini.textContent = (o.labels?.[p.top.rarity] || '').slice(0, 2) || '★'; mini.style.setProperty('--m', AURA[p.top.shiny ? 'shiny' : p.top.rarity]);
+      root.style.setProperty('--flash', col); root.classList.remove('flash'); void root.offsetWidth; root.classList.add('flash');
+      stage.innerHTML = `<div class="tn-card" style="--a:${col}">${o.cardHtml(c, { star: true })}<small>Paquet ${i + 1} · ${p.cs.length} cartes${p.cs.some(x => x.isNew) ? ` · ${p.cs.filter(x => x.isNew).length} nouvelle${p.cs.filter(x => x.isNew).length > 1 ? 's' : ''}` : ''}</small></div>`;
+      sub.textContent = `${info.filter(x => x.opened).length} / ${N} ouverts`;
+    }
+    const finishIfAll = async () => { if (info.every(p => p.opened)) { await sleep(reduceNow() ? 0 : 900); summary(); } };
+    async function openAll() {
+      if (busy) return; busy = true; allBtn.disabled = true; packsEl.forEach(el => { el.disabled = true; });
+      for (let i = 0; i < N && root.isConnected; i++) if (!info[i].opened) { await openOne(i); await sleep(reduceNow() ? 0 : info[i].key === 'common' || info[i].key === 'uncommon' ? 650 : 1100); }
+      busy = false; if (root.isConnected) await finishIfAll();
+    }
+    packsEl.forEach((el, i) => { el.onclick = async () => { if (busy) return; busy = true; await openOne(i); busy = false; await finishIfAll(); }; });
+    allBtn.onclick = openAll;
+    skipBtn.onclick = () => { if (busy) return; info.forEach(p => { p.opened = true; }); summary(); };
+
+    // 2) résumé des 100 cartes
+    function summary() {
+      if (!root.isConnected) return;
+      const cards = info.flatMap(p => p.cs).sort((a, b) => o.rank[b.rarity] - o.rank[a.rarity] || (b.shiny | 0) - (a.shiny | 0));
+      const count = {}; for (const c of cards) count[c.rarity] = (count[c.rarity] || 0) + 1;
+      const again = typeof o.again === 'function' ? o.again() : null;
+      root.className = ''; root.removeAttribute('style');
+      root.innerHTML = `<div class="bg"></div><div class="sum"><h2>10 paquets ouverts</h2>
+        <div class="tn-count">${Object.keys(o.rank).sort((a, b) => o.rank[b] - o.rank[a]).filter(r => count[r]).map(r => `<span class="rar ${r}">${count[r]} ${esc(o.labels?.[r] || r)}</span>`).join('')}${cards.some(c => c.shiny) ? `<span class="rar shiny">${cards.filter(c => c.shiny).length} shiny</span>` : ''}</div>
+        <div class="grid">${cards.map(c => o.cardHtml(c, { star: true })).join('')}</div>
+        <div class="sticky-bar ${again ? 'split' : ''}"><button class="finish ${again ? 'plain' : ''}">Continuer</button>${again ? `<button class="again" ${again.ok ? '' : 'disabled'}>${esc(again.label)}</button>` : ''}</div></div>`;
+      root.querySelector('.finish').onclick = () => close();
+      if (again) root.querySelector('.again').onclick = () => close('again');
+    }
+    return done;
+  };
   /** Aperçu du faux godpack (console : previewFake()). */
   window.previewFake = async () => {
     const root = document.createElement('div'); root.id = 'reveal'; root.className = 'r-god'; document.body.append(root); document.body.classList.add('noscroll');

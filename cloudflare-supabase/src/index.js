@@ -744,6 +744,31 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
   return finishPack(env, ctx, user, drawn, 0, fake);
 });
+/** Ouvre 10 boosters d'un coup (même tirage que /api/packs/open, paquet après paquet) : renvoie les 10 tirages pour l'animation « dix paquets en ligne ». */
+const OPEN_MANY = 10;
+route('POST', '/api/packs/open10', async ({ env, ctx, user, origin }) => {
+  maybeRefill(env, ctx);
+  const u = await refreshPacks(env, user);
+  if (!testOn(u)) {
+    if (u.pack_stock < OPEN_MANY) bad(`Il te faut ${OPEN_MANY} boosters (tu en as ${u.pack_stock})`);
+    const wasFull = u.pack_stock >= PACK_MAX;
+    const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - ?, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= ?', OPEN_MANY, wasFull ? 1 : 0, now(), u.id, OPEN_MANY);
+    if (!claimed.meta.changes) bad(`Il te faut ${OPEN_MANY} boosters`);
+  }
+  const packs = [];
+  try {
+    for (let k = 0; k < OPEN_MANY; k++) {
+      const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+      const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
+      packs.push(await finishPack(env, ctx, user, drawn, 0, fake));
+    }
+  } catch (e) {                                              // tirage impossible en route : les boosters non ouverts sont rendus
+    if (!testOn(u) && packs.length < OPEN_MANY) await run(env, 'UPDATE users SET pack_stock = pack_stock + ? WHERE id = ?', OPEN_MANY - packs.length, u.id).catch(() => {});
+    throw e;
+  }
+  ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : OPEN_MANY))).catch(e => console.error('prepareFor', e)));
+  return { packs };
+});
 /** Plaisanterie rare : un paquet sur 250 est un FAUX godpack (l'animation de godpack, puis un doigt d'honneur et dix communes). PRANK = '0' la coupe (tests). */
 const fakeGod = async (env, user) => {
   if (env.PRANK === '0') return false;

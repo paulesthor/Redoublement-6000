@@ -481,7 +481,7 @@ const views = {
     v.innerHTML = `<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${packSvg('full', { anim: false })}</div>
-      <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button>
+      <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
       <div class="stock"><div class="pips">${Array.from({ length: 10 }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
         <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''} · prochain dans <b id="cd"></b>`}</p></div>
       <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button></div>
@@ -521,6 +521,21 @@ const views = {
       try { again = await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg, again: () => path === '/packs/open' ? { ok: me.test || me.packs > 0, label: me.test ? 'Ouvrir un autre paquet' : `Ouvrir un autre paquet (${me.packs})` } : { ok: me.coins >= cfg.packPrice, label: `Acheter un autre (${cfg.packPrice})` } }); }
       finally { await render(); }
       if (again === 'again') setTimeout(() => $(path === '/packs/open' ? '#open' : '#buy')?.click(), 60);   // on enchaîne sans repasser par l'accueil
+    });
+    // dix paquets d'un coup : les boosters s'alignent, chacun s'allume de la couleur de sa meilleure carte, puis on les ouvre
+    $('#open10').onclick = safe(async () => {
+      $('#open').disabled = $('#buy').disabled = $('#open10').disabled = true;
+      const packsPromise = (async () => {
+        const r = await api('/packs/open10', {});
+        schedulePrefetch(); r.packs.forEach(x => { x.cards.god = !!x.god; x.cards.fake = !!x.fake; }); lastPack = r.packs.at(-1);
+        refreshMe().catch(() => {});
+        return r.packs.map(x => x.cards);
+      })();
+      packsPromise.catch(() => {});
+      let again;
+      try { again = await playTen(packsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, again: () => ({ ok: me.test || me.packs >= 10, label: me.test ? 'Ouvrir 10 autres paquets' : `Ouvrir 10 autres (${me.packs})` }) }); }
+      finally { await render(); }
+      if (again === 'again') setTimeout(() => $('#open10')?.click(), 60);
     });
     $('#rates-btn').onclick = () => {
       const m = $('#modal'); m.hidden = false;
