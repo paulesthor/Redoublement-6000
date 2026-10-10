@@ -1108,3 +1108,5 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .tn-row{opacity:0;pointer-events:none}.tn-row.show{opacity:1;pointer-events:auto}
 .tn-pack{animation:none}.tn-row.show .tn-pack{animation:tndrop .6s calc(var(--i)*60ms) cubic-bezier(.2,1.2,.4,1) both}
 .tn-back{display:grid;place-items:center;width:100%;height:100%;border-radius:clamp(3px,1vw,7px);background:linear-gradient(160deg,#3b3b4a,#15151d 60%,#0d0d12);border:1px solid #ffffff40;box-shadow:inset 0 0 0 2px #00000066;color:#d8d8e2;font-family:Sora,Inter,sans-serif;font-weight:800;font-size:clamp(10px,3.2vw,22px)}
+
+.thbtns{display:flex;gap:8px;margin-top:8px}.thbtns button{flex:1}

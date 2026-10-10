@@ -190,6 +190,22 @@ console.log('— économie (interface)');
   await p.click('#ex-go'); await p.waitForTimeout(900); ok('expédition lancée', (await p.$$('.exrow')).length === 1);
 }
 await DB.prepare("UPDATE users SET daily_day = NULL WHERE id = 1").run();
+console.log('— dix paquets d\'un coup (interface)');
+{
+  await DB.prepare('UPDATE users SET pack_stock = 12, coins = 4000 WHERE id = 1').run();
+  await p.evaluate(async () => { await refreshMe(); tab = 'packs'; render(); }); await p.waitForSelector('#open10:not([disabled])', { timeout: 8000 }); await p.waitForTimeout(600);
+  ok('boutons « Ouvrir ×10 » et « Acheter ×10 » sur l\'accueil', !(await p.$eval('#open10', b => b.disabled)) && /×10/.test(await p.textContent('#buy10')));
+  await p.click('#open10'); await p.waitForSelector('.tn-stack', { timeout: 8000 }); await p.waitForTimeout(500);
+  ok('la pile de dix boosters apparaît', (await p.$$('.tn-stack .sl')).length === 10);
+  await p.waitForSelector('.tn-all:not([disabled])', { timeout: 30000 });
+  ok('les dix tas de cartes sont allumés', (await p.$$('.tn-pack.lit')).length === 10 && (await p.$$('.tn-beam')).length === 10);
+  await p.click('.tn-all'); await p.waitForSelector('.tn-count', { timeout: 60000 }); await p.waitForTimeout(400);
+  ok('résumé : 100 cartes et boutons Continuer / Ouvrir 10 autres', (await p.$$('#reveal .grid .card')).length === 100 && /Ouvrir 10 autres/.test(await p.textContent('#reveal .again')));
+  ok('dix boosters débités', (await DB.prepare('SELECT pack_stock FROM users WHERE id = 1').all()).results[0].pack_stock <= 3);
+  await p.click('#reveal .finish'); await p.waitForTimeout(800); ok('retour à l\'accueil', await p.$('#reveal') === null);
+  await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('[data-th10]', { timeout: 8000 });
+  ok('paquets du jour : bouton ×10 pour chaque catégorie', (await p.$$('[data-th10]')).length === 2);
+}
 console.log('— faux godpack (interface)');
 {
   await p.evaluate(() => { window.__pf = previewFake(); }); await p.waitForSelector('.gp-skip', { timeout: 6000 }); await p.click('.gp-skip');

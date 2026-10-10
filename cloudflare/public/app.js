@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.7';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -484,7 +484,8 @@ const views = {
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
       <div class="stock"><div class="pips">${Array.from({ length: 10 }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
         <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''} · prochain dans <b id="cd"></b>`}</p></div>
-      <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button></div>
+      <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button>
+      <button id="buy10" class="plain buy" ${me.coins >= cfg.packPrice * 10 ? '' : 'disabled'}>Acheter ×10 · ${fmt(cfg.packPrice * 10)} pièces</button></div>
       <div class="lastpack" id="lastpack" hidden><h3 class="sec">Dernier tirage</h3><div id="out" class="grid"></div></div></div>`;
     // hauteur disponible sous l'en-tête et au-dessus de la barre du bas : les espaces de l'accueil s'en déduisent en pourcentage
     const hero = v.querySelector('.hero');
@@ -524,18 +525,16 @@ const views = {
     });
     // dix paquets d'un coup : les boosters s'alignent, chacun s'allume de la couleur de sa meilleure carte, puis on les ouvre
     $('#open10').onclick = safe(async () => {
-      $('#open').disabled = $('#buy').disabled = $('#open10').disabled = true;
-      const packsPromise = (async () => {
-        const r = await api('/packs/open10', {});
-        schedulePrefetch(); r.packs.forEach(x => { x.cards.god = !!x.god; x.cards.fake = !!x.fake; }); lastPack = r.packs.at(-1);
-        refreshMe().catch(() => {});
-        return r.packs.map(x => x.cards);
-      })();
-      packsPromise.catch(() => {});
-      let again;
-      try { again = await playTen(packsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, again: () => ({ ok: me.test || me.packs >= 10, label: me.test ? 'Ouvrir 10 autres paquets' : `Ouvrir 10 autres (${me.packs})` }) }); }
-      finally { await render(); }
+      $('#open').disabled = $('#buy').disabled = $('#open10').disabled = $('#buy10').disabled = true;
+      const again = await tenFlow('/packs/open10', {}, () => ({ ok: me.test || me.packs >= 10, label: me.test ? 'Ouvrir 10 autres paquets' : `Ouvrir 10 autres (${me.packs})` }));
       if (again === 'again') setTimeout(() => $('#open10')?.click(), 60);
+    });
+    $('#buy10').onclick = safe(async () => {
+      const total = cfg.packPrice * 10;
+      if (!(await ask(`Acheter et ouvrir 10 paquets ?`, [], { text: `${fmt(total)} pièces pour 10 boosters.`, ok: 'Acheter' }))) return;
+      $('#open').disabled = $('#buy').disabled = $('#open10').disabled = $('#buy10').disabled = true;
+      const again = await tenFlow('/packs/buy10', {}, () => ({ ok: me.coins >= total, label: `Acheter 10 autres (${fmt(total)})` }));
+      if (again === 'again') setTimeout(() => $('#buy10')?.click(), 60);
     });
     $('#rates-btn').onclick = () => {
       const m = $('#modal'); m.hidden = false;
@@ -1871,6 +1870,18 @@ views.albums = async v => {
 };
 
 // ---------- paquets thématiques ----------
+/** Dix paquets d'un coup (ouverture, achat ou paquets du jour) : demande au serveur, puis animation « pile de dix boosters ». again() décrit le bouton « en rouvrir dix » ; renvoie 'again' si le joueur le choisit. */
+async function tenFlow(path, body, again) {
+  const packsPromise = (async () => {
+    const r = await api(path, body || {});
+    schedulePrefetch(); r.packs.forEach(x => { x.cards.god = !!x.god; x.cards.fake = !!x.fake; }); lastPack = r.packs.at(-1);
+    refreshMe().catch(() => {});
+    return r.packs.map(x => x.cards);
+  })();
+  packsPromise.catch(() => {});
+  try { return await playTen(packsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, again }); }
+  finally { await render(); }
+}
 async function openThemed(id, themePrice = 150) {
   const cardsPromise = (async () => {
     const r = await api('/themepacks/buy', { theme: id });
@@ -1890,12 +1901,18 @@ views.themepacks = async v => {
   v.innerHTML = `${pageHead('Paquets du jour', `Deux catégories tirées au sort chaque jour · ${fmt(d.price)} pièces le paquet · légendaires ×${d.mult}`)}${d.festival ? `<div class="panel evfest">🎪 <b>Festival des catégories</b> : ${fmt(d.price)} pièces au lieu de ${fmt(d.normalPrice)} et <b>une légendaire garantie</b> dans chaque paquet !</div>` : ''}
     <p class="mut" style="margin:-6px 0 12px"><span class="inlclk">${ico('clock')}</span> Nouvelles catégories dans <b id="th-left">${hmLeft(d.resetIn)}</b> · tu as <b>${fmt(me.coins)}</b> pièces. Les légendaires du paquet viennent toutes de la catégorie ; les autres raretés sont tirées normalement, sans GODPACK.</p>
     <div class="thgrid">${d.themes.map(t => `<div class="thcard"><span class="ae">${esc(t.emoji || '📦')}</span><b>${esc(t.name)}</b><small>${t.count} légendaires possibles : ${t.sample.map(esc).join(', ')}…</small>
-      <button data-th="${t.id}" ${me.coins < d.price ? 'class="plain"' : ''}>${ico('coin')} ${fmt(d.price)}</button></div>`).join('')}</div>`;
+      <div class="row thbtns"><button data-th="${t.id}" ${me.coins < d.price ? 'class="plain"' : ''}>${ico('coin')} ${fmt(d.price)}</button><button data-th10="${t.id}" class="${me.coins < d.price * 10 ? 'plain' : ''}">×10 · ${fmt(d.price * 10)}</button></div></div>`).join('')}</div>`;
   { const end = Date.now() + d.resetIn; tick = setInterval(() => { const e = $('#th-left'); if (e) e.textContent = hmLeft(end - Date.now()); }, 30000); }
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = safe(async () => {
     const t = d.themes.find(x => x.id === b.dataset.th);
     if (!(await ask(`Ouvrir un paquet « ${t.name} » ?`, [], { text: `${fmt(d.price)} pièces. Toute légendaire du paquet sera l'une des ${t.count} cartes de cette catégorie.`, ok: 'Ouvrir' }))) return;
     await openThemed(t.id, d.price);
+  }));
+  v.querySelectorAll('[data-th10]').forEach(b => b.onclick = safe(async () => {
+    const t = d.themes.find(x => x.id === b.dataset.th10), total = d.price * 10;
+    if (!(await ask(`Ouvrir 10 paquets « ${t.name} » ?`, [], { text: `${fmt(total)} pièces pour 10 paquets. Les légendaires viendront toutes de cette catégorie.`, ok: 'Ouvrir ×10' }))) return;
+    const again = await tenFlow('/themepacks/buy10', { theme: t.id }, () => ({ ok: me.coins >= total, label: `Racheter 10 paquets (${fmt(total)})` }));
+    if (again === 'again') setTimeout(() => $(`[data-th10="${t.id}"]`)?.click(), 60);
   }));
 };
 

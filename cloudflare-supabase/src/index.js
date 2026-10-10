@@ -769,6 +769,26 @@ route('POST', '/api/packs/open10', async ({ env, ctx, user, origin }) => {
   ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : OPEN_MANY))).catch(e => console.error('prepareFor', e)));
   return { packs };
 });
+/** Achète et ouvre 10 boosters d'un coup (10 × le prix d'un booster). */
+route('POST', '/api/packs/buy10', async ({ env, ctx, user, origin }) => {
+  maybeRefill(env, ctx);
+  const total = CFG.PACK_PRICE * OPEN_MANY;
+  const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', total, user.id, total);
+  if (!paid.meta.changes) bad(`Pas assez de pièces (${total} requises)`);
+  const packs = [];
+  try {
+    for (let k = 0; k < OPEN_MANY; k++) {
+      const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+      const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
+      packs.push(await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake));
+    }
+  } catch (e) {                                              // tirage impossible en route : les paquets non ouverts sont remboursés
+    await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', CFG.PACK_PRICE * (OPEN_MANY - packs.length), user.id).catch(() => {});
+    throw e;
+  }
+  ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - total }, user.pack_stock).catch(e => console.error('prepareFor', e)));
+  return { packs };
+});
 /** Plaisanterie rare : un paquet sur 250 est un FAUX godpack (l'animation de godpack, puis un doigt d'honneur et dix communes). PRANK = '0' la coupe (tests). */
 const fakeGod = async (env, user) => {
   if (env.PRANK === '0') return false;
@@ -884,11 +904,16 @@ route('GET', '/api/themepacks', async ({ env, origin }) => ({
   price: (await events.mods(env)).themePrice ?? CFG.THEME_PACK_PRICE, normalPrice: CFG.THEME_PACK_PRICE, festival: !!(await events.mods(env)).themeGuarantee, mult: CFG.THEME_LEGEND_MULT, resetIn: msToMidnight(),
   themes: (await todaysThemes(env, origin)).map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, count: a.cards.length, sample: a.cards.slice(0, 3).map(c => c.t) })),
 }));
-route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) => {
-  const all_ = await albumList(env, origin), asked = all_.find(a => a.id === String(body.theme || ''));
+/** Catégorie du jour demandée par le joueur, ou erreur. */
+async function themeAsked(env, origin, id) {
+  const asked = (await albumList(env, origin)).find(a => a.id === String(id || ''));
   if (!asked) bad('Catégorie inconnue', 404);
   const theme = (await todaysThemes(env, origin)).find(a => a.id === asked.id);
   if (!theme) bad('Cette catégorie n’est pas disponible aujourd’hui : reviens demain, deux nouvelles catégories sont tirées chaque jour', 400);
+  return theme;
+}
+route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) => {
+  const theme = await themeAsked(env, origin, body.theme);
   const evm = await events.drawMods(env, origin), price = evm.themePrice ?? CFG.THEME_PACK_PRICE;
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', price, user.id, price);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${price} requises)`);
@@ -896,6 +921,24 @@ route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) =>
   try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm); }
   catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); throw e; }   // tirage impossible : remboursé
   return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
+});
+/** 10 paquets de la catégorie du jour d'un coup (10 × le prix, festival compris). */
+route('POST', '/api/themepacks/buy10', async ({ env, ctx, user, body, origin }) => {
+  const theme = await themeAsked(env, origin, body.theme);
+  const evm0 = await events.drawMods(env, origin), price = evm0.themePrice ?? CFG.THEME_PACK_PRICE, total = price * OPEN_MANY;
+  const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', total, user.id, total);
+  if (!paid.meta.changes) bad(`Pas assez de pièces (${total} requises)`);
+  const packs = [];
+  try {
+    for (let k = 0; k < OPEN_MANY; k++) {
+      const evm = k ? await events.drawMods(env, origin) : evm0;
+      packs.push(await finishPack(env, ctx, { ...user, coins: user.coins - total }, await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm), price));
+    }
+  } catch (e) {
+    await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price * (OPEN_MANY - packs.length), user.id).catch(() => {});
+    throw e;
+  }
+  return { packs };
 });
 
 // ---------- paris sur les combats en cours (les paris et les combats vivent dans le Durable Object) ----------
