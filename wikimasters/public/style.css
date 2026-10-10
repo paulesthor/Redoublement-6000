@@ -1051,3 +1051,6 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .fko-finger{font-size:clamp(120px,48vw,260px);line-height:1;filter:drop-shadow(0 0 30px #ffd54a88);animation:fkzoom .6s cubic-bezier(.2,1.6,.4,1) both,fkwag 1.1s .6s ease-in-out infinite}
 @keyframes fkzoom{from{transform:scale(.1) rotate(-30deg);opacity:0}}@keyframes fkwag{50%{transform:rotate(-8deg) scale(1.06)}}@keyframes fkpop{from{transform:scale(.3);opacity:0}}
 .fko-rain i{position:absolute;top:-60px;font-style:normal;font-size:var(--s);animation:fkfall var(--t) var(--dl) linear infinite}@keyframes fkfall{to{transform:translateY(110vh) rotate(360deg)}}
+
+/* choix de la carte shiny à la complétion d'un album */
+.albcards.choosing .albcard:not(.pickable){opacity:.45}.albcard.pickable{cursor:pointer;outline:2px dashed #e7bd5e88;border-radius:12px}.albcard.pickable.sel{outline:2px solid #e7bd5e;box-shadow:0 0 18px #e7bd5e66}.albcard.isshiny .ai{box-shadow:0 0 0 2px #7ee8ff}

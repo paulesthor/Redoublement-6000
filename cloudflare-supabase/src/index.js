@@ -893,7 +893,8 @@ const events = installEvents({ route, bad, one, all, run, st, notify, ensureGame
 export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get events() { return events; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
-const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: 150 * a.cards.length, p: a.cards.length >= 8 ? 2 : 1 });
+const ALBUM_COINS = 5000;                                    // pièces pour un album complété, + une carte de l'album au choix en shiny
+const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: ALBUM_COINS, p: a.cards.length >= 8 ? 2 : 1 });
 /** Albums éphémères (cartes + dates), lus une fois dans le catalogue statique. */
 let eventAlbumsCache = null;
 const eventAlbums = async (env, origin) => { try { return (eventAlbumsCache ??= (await assetJson(env, origin, '/catalog/albums-events.json')).albums); } catch { return []; } };
@@ -917,25 +918,41 @@ route('GET', '/api/albums', async ({ env, user, origin }) => {
     all(env, 'SELECT album FROM album_claims WHERE user_id = ?', user.id),
   ]);
   const have = new Set(own.map(r => (r.card_id >= SHINY_OFFSET ? r.card_id - SHINY_OFFSET : r.card_id))), done = new Set(claimed.map(r => r.album));
+  const haveNorm = new Set(own.filter(r => r.card_id < SHINY_OFFSET).map(r => r.card_id)), haveShiny = new Set(own.filter(r => r.card_id >= SHINY_OFFSET).map(r => r.card_id - SHINY_OFFSET));
   return { albums: albums.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, reward: albumReward(a), claimed: done.has(a.id), ...(a.ev ? { until: a.ev.until } : {}),
-    cards: a.cards.map(c => ({ id: c.id, t: c.t, own: have.has(c.id), img: have.has(c.id) ? albumImgs.m.get(c.id) ?? null : null })) })) };
+    cards: a.cards.map(c => ({ id: c.id, t: c.t, own: have.has(c.id), shiny: haveShiny.has(c.id), pick: haveNorm.has(c.id) && !haveShiny.has(c.id), img: have.has(c.id) ? albumImgs.m.get(c.id) ?? null : null })) })) };
 });
-route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, origin }) => {
+route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, body, origin }) => {
   await ensureGameSchema(env);
   const a = (await albumsAll(env, origin)).find(x => x.id === params.id);
   if (!a) bad(params.id && EVENT_ALBUMS.some(x => x.id === params.id) ? 'Cet album éphémère n\'est plus disponible' : 'Album inconnu', 404);
   const ids = a.cards.map(c => c.id);
-  const n = (await one(env, `SELECT COUNT(DISTINCT CASE WHEN card_id >= ? THEN card_id - ? ELSE card_id END) n FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, SHINY_OFFSET, SHINY_OFFSET, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET))).n;
-  if (+n < ids.length) bad(`Il te manque ${ids.length - n} carte${ids.length - n > 1 ? 's' : ''} pour terminer cet album`);
+  const inv = await all(env, `SELECT card_id FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET));
+  const n = new Set(inv.map(r => (r.card_id >= SHINY_OFFSET ? r.card_id - SHINY_OFFSET : r.card_id))).size;
+  if (n < ids.length) bad(`Il te manque ${ids.length - n} carte${ids.length - n > 1 ? 's' : ''} pour terminer cet album`);
+  // la carte transformée en shiny : uniquement une carte de l'album dont le joueur a un exemplaire normal et pas encore de version shiny
+  const norm = new Set(inv.filter(r => r.card_id < SHINY_OFFSET).map(r => r.card_id)), shin = new Set(inv.filter(r => r.card_id >= SHINY_OFFSET).map(r => r.card_id - SHINY_OFFSET));
+  const eligible = ids.filter(i => norm.has(i) && !shin.has(i)), pid = Math.floor(+body.card_id) || 0;
+  if (eligible.length && !eligible.includes(pid)) bad('Choisis une carte de cet album à transformer en shiny');
   const first = await run(env, 'INSERT INTO album_claims (user_id, album, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, a.id, now());
   if (!first.meta.changes) bad('Récompense déjà récupérée');
-  const rw = albumReward(a);
-  await run(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id);
-  notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces et ${rw.p} paquet${rw.p > 1 ? 's' : ''} !` }, user.id);
+  const rw = albumReward(a), pick = eligible.length ? await one(env, 'SELECT id, title, views, rarity FROM cards WHERE id = ?', pid) : null, sid = pick ? pid + SHINY_OFFSET : 0;
+  await env.DB.batch([
+    ...(pick ? [
+      insertCard(env, { id: sid, title: pick.title, views: pick.views, rarity: pick.rarity, shiny: 1, ...stats(pick.title, pick.rarity, true) }),
+      st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', pid, sid),
+      addCard(env, user.id, sid),
+      st(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty >= 1', user.id, pid),
+      st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', user.id, pid),
+    ] : []),
+    st(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id),
+  ]);
+  statsCache.delete(user.id); profileCache.delete(user.id);
+  notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces et ${rw.p} paquet${rw.p > 1 ? 's' : ''}${pick ? `, et « ${pick.title} » est devenue shiny` : ''} !` }, user.id);
   if (a.ev) await events.titleNotify(env, ctx, user.id, 'ev_alb_' + a.id);
   const ti = await syncTitles(env, user.id).catch(() => null);
   ti?.added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
-  return { ok: true, reward: rw };
+  return { ok: true, reward: rw, shiny: pick ? { id: sid, title: pick.title } : null };
 });
 
 // ---------- fusion de doublons : la carte monte de niveau (+ATK/+DEF) ----------

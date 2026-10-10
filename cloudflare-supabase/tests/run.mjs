@@ -409,11 +409,17 @@ console.log('— récompense quotidienne');
     [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: 'inconnu' }); ok('catégorie inconnue refusée, rien débité', s === 404 && (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins === cb);
     await q('UPDATE users SET coins = 10 WHERE id = ?', chloe); [s, r] = await call(C, 'POST', '/api/themepacks/buy', { theme: 'tb' }); ok('pas assez de pièces', s === 400 && (await q('SELECT coins FROM users WHERE id = ?', chloe))[0].coins === 10);
     // albums : complétion et récompense
-    [s, r] = await call(B, 'GET', '/api/albums'); const albB = r.albums.find(a => a.id === 'tb'); ok('albums : progression', s === 200 && r.albums.length === 2 && albB.cards.length === 4 && albB.cards.every(c => c.own === false) && albB.reward.c === 600, J(albB).slice(0, 200));
+    [s, r] = await call(B, 'GET', '/api/albums'); const albB = r.albums.find(a => a.id === 'tb'); ok('albums : progression', s === 200 && r.albums.length === 2 && albB.cards.length === 4 && albB.cards.every(c => c.own === false) && albB.reward.c === 5000, J(albB).slice(0, 200));
     [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('album incomplet : refusé', s === 400, J([s, r]));
     for (const c of fx.albums[1].cards) { const e = shard.find(x => x[0] === c.id); await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', c.id, c.t, e[2], 'legendary', 9000, 9000, 0, 'u'); await q("INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,5,0,5000000000,'x') ON CONFLICT DO NOTHING", bob, c.id); }
     const cb0 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0];
-    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); const cb1 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0]; ok('album complet : récompense versée', s === 200 && cb1.coins - cb0.coins === 600 && cb1.pack_stock - cb0.pack_stock === 1, J([s, r, cb0, cb1]));
+    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('album complet : il faut choisir la carte à transformer en shiny', s === 400 && /shiny/.test(r.error), J([s, r]));
+    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', { card_id: shard[0][0] }); ok('une carte hors album ne peut pas être transformée en shiny', s === 400, J([s, r]));
+    [s, r] = await call(B, 'GET', '/api/albums'); ok('albums : cartes proposables au shiny (exemplaire normal, pas encore shiny)', r.albums.find(a => a.id === 'tb').cards.every(c => c.pick === true && c.shiny === false));
+    const pickId = fx.albums[1].cards[1].id;
+    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', { card_id: pickId }); const cb1 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0]; ok('album complet : récompense versée', s === 200 && cb1.coins - cb0.coins === 5000 && cb1.pack_stock - cb0.pack_stock === 1 && r.shiny?.id === pickId + 100000000, J([s, r, cb0, cb1]));
+    { const sh = await q('SELECT sh, qty FROM inventory WHERE user_id = ? AND card_id = ?', bob, pickId + 100000000), nm = await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', bob, pickId), ci = await q('SELECT shiny, rarity FROM cards WHERE id = ?', pickId + 100000000);
+      ok('la carte choisie est devenue shiny (normale remplacée par la shiny)', sh.length === 1 && sh[0].sh === 1 && sh[0].qty === 1 && nm.length === 0 && ci[0]?.shiny === 1, J([sh, nm, ci])); }
     [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('récompense versée une seule fois', s === 400);
     [s, r] = await call(B, 'GET', '/api/albums'); ok('album marqué terminé', r.albums.find(a => a.id === 'tb').claimed === true && r.albums.find(a => a.id === 'tb').cards.every(c => c.own));
     [s, r] = await call(B, 'POST', '/api/albums/zz/claim', {}); ok('album inconnu', s === 404);

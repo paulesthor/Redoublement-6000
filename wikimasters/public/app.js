@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1829,13 +1829,28 @@ views.albums = async v => {
   const open = id => {
     const a = d.albums.find(x => x.id === id); if (!a) return; albumOpen = id;
     const n = prog(a), full = n === a.cards.length, m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; albumOpen = null; };
+    const eligible = a.cards.filter(c => c.pick);                 // cartes de l'album proposables en shiny : un exemplaire normal, pas encore de shiny
+    let choosing = false, sel = null;
     m.hidden = false;
-    m.innerHTML = `<div class="albsheet"><h2>${esc(a.emoji || '📚')} ${esc(a.name)}</h2><p class="mut" style="margin:0 0 10px">${esc(a.blurb || '')}</p>
-      <div class="albcards">${a.cards.map(c => `<div class="albcard ${c.own ? 'own' : ''}"><div class="ai" ${c.img ? `style="background-image:url('${esc(c.img)}')"` : ''}>${c.own ? (c.img ? '' : '✓') : '?'}</div><span>${esc(c.t)}</span></div>`).join('')}</div>
-      ${a.until ? `<p class="mut" style="margin:0 0 8px">⏳ Album éphémère : plus que <b>${cdLong(a.until - Date.now())}</b>. Ses cartes tombent bien plus souvent dans les paquets, et la récompense inclut un titre exclusif.</p>` : ''}<p class="mut" style="margin:10px 0">Récompense : ${rewardChips(a.reward)} · ${n} / ${a.cards.length} cartes (une variante shiny compte aussi)</p>
-      <div class="row">${a.claimed ? '<button class="plain" disabled style="flex:1">Récompense récupérée ✓</button>' : `<button id="al-claim" style="flex:1" ${full ? '' : 'disabled'}>${full ? 'Récupérer la récompense' : `Il manque ${a.cards.length - n} carte${a.cards.length - n > 1 ? 's' : ''}`}</button>`}<button class="plain" id="al-x" style="flex:1">Fermer</button></div></div>`;
-    $('#al-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
-    $('#al-claim')?.addEventListener('click', safe(async () => { $('#al-claim').disabled = true; const r = await api(`/albums/${a.id}/claim`, {}); sparks($('.albsheet'), 34); toast(`+${r.reward.c} pièces, +${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''} !`); await refreshMe(); setTimeout(() => { close(); render(); }, 900); }));
+    const draw = () => {
+      m.innerHTML = `<div class="albsheet"><h2>${esc(a.emoji || '📚')} ${esc(a.name)}</h2><p class="mut" style="margin:0 0 10px">${esc(a.blurb || '')}</p>
+        ${choosing ? '<p style="margin:0 0 8px"><b>Choisis la carte de cet album que tu veux transformer en shiny</b> ✨</p>' : ''}
+        <div class="albcards ${choosing ? 'choosing' : ''}">${a.cards.map(c => `<div class="albcard ${c.own ? 'own' : ''} ${c.shiny ? 'isshiny' : ''} ${choosing && c.pick ? 'pickable' : ''} ${sel === c.id ? 'sel' : ''}" data-cid="${c.id}"><div class="ai" ${c.img ? `style="background-image:url('${esc(c.img)}')"` : ''}>${c.own ? (c.img ? '' : '✓') : '?'}</div><span>${c.shiny ? '✨ ' : ''}${esc(c.t)}</span></div>`).join('')}</div>
+        ${a.until ? `<p class="mut" style="margin:0 0 8px">⏳ Album éphémère : plus que <b>${cdLong(a.until - Date.now())}</b>. Ses cartes tombent bien plus souvent dans les paquets, et la récompense inclut un titre exclusif.</p>` : ''}<p class="mut" style="margin:10px 0">Récompense : ${rewardChips(a.reward)}${eligible.length || !full ? ' + <b>une carte de l\'album en shiny, au choix</b>' : ''} · ${n} / ${a.cards.length} cartes (une variante shiny compte aussi)</p>
+        <div class="row">${a.claimed ? '<button class="plain" disabled style="flex:1">Récompense récupérée ✓</button>'
+          : !full ? `<button id="al-claim" style="flex:1" disabled>Il manque ${a.cards.length - n} carte${a.cards.length - n > 1 ? 's' : ''}</button>`
+          : choosing ? `<button id="al-claim" style="flex:1" ${sel ? '' : 'disabled'}>${sel ? 'Valider : 5 000 pièces + shiny' : 'Touche une carte'}</button>`
+          : `<button id="al-claim" style="flex:1">${eligible.length ? 'Choisir ma carte shiny' : 'Récupérer la récompense'}</button>`}<button class="plain" id="al-x" style="flex:1">${choosing ? 'Retour' : 'Fermer'}</button></div></div>`;
+      $('#al-x').onclick = () => { if (choosing) { choosing = false; sel = null; draw(); } else close(); }; m.onclick = e => { if (e.target === m) close(); };
+      m.querySelectorAll('.albcard.pickable').forEach(el => el.onclick = () => { sel = +el.dataset.cid; draw(); });
+      $('#al-claim')?.addEventListener('click', safe(async () => {
+        if (full && !a.claimed && eligible.length && !choosing) { choosing = true; draw(); return; }
+        $('#al-claim').disabled = true;
+        const r = await api(`/albums/${a.id}/claim`, sel ? { card_id: sel } : {});
+        sparks($('.albsheet'), 34); toast(`+${r.reward.c} pièces, +${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''}${r.shiny ? ` · ✨ ${r.shiny.title} est devenue shiny !` : ''}`); await refreshMe(); setTimeout(() => { close(); render(); }, 1100);
+      }));
+    };
+    draw();
   };
   v.querySelectorAll('[data-al]').forEach(b => b.onclick = () => open(b.dataset.al));
 };

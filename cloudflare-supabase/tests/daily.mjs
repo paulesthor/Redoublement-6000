@@ -135,6 +135,20 @@ console.log('— albums et paquets du jour (interface)');
   await p.click('.albtile'); await p.waitForSelector('.albsheet'); await p.waitForTimeout(300); await shot(p, 'album-detail');
   ok('détail d\'un album : cartes et récompense', (await p.$$('.albcard')).length >= 4 && (await p.textContent('.albsheet')).includes('Récompense'));
   await p.click('#al-x');
+  // complétion : choisir la carte à transformer en shiny (réponses simulées du serveur)
+  { let sent = null;
+    await p.route('**/api/albums', r => r.fulfill({ json: { albums: [{ id: 'zz', name: 'Album test', emoji: '🧪', blurb: 'x', reward: { c: 5000, p: 2 }, claimed: false, cards: [1, 2, 3, 4].map(i => ({ id: i, t: 'Carte ' + i, own: true, shiny: i === 4, pick: i !== 4, img: null })) }] } }));
+    await p.route('**/api/albums/zz/claim', async r => { sent = JSON.parse(r.request().postData() || '{}'); await r.fulfill({ json: { ok: true, reward: { c: 5000, p: 2 }, shiny: { id: 100000002, title: 'Carte 2' } } }); });
+    await p.evaluate(() => { tab = 'albums'; render(); }); await p.waitForSelector('.albtile'); await p.click('.albtile'); await p.waitForSelector('.albsheet');
+    ok('album complet : bouton « Choisir ma carte shiny »', /Choisir ma carte shiny/.test(await p.textContent('#al-claim')));
+    await p.click('#al-claim'); await p.waitForTimeout(200);
+    ok('choix : seules les cartes sans version shiny sont sélectionnables', (await p.$$('.albcard.pickable')).length === 3 && await p.$eval('#al-claim', b => b.disabled));
+    await p.click('.albcard[data-cid="2"]'); ok('carte choisie, validation possible', (await p.$$('.albcard.sel')).length === 1 && !(await p.$eval('#al-claim', b => b.disabled)));
+    await shot(p, 'album-choix-shiny');
+    await p.click('#al-claim'); await p.waitForTimeout(1500);
+    ok('la carte choisie est envoyée au serveur', sent?.card_id === 2, JSON.stringify(sent));
+    await p.unroute('**/api/albums'); await p.unroute('**/api/albums/zz/claim'); }
+  await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; });
   await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('.thcard'); await p.waitForTimeout(400); await shot(p, 'paquets-du-jour');
   ok('2 paquets du jour', (await p.$$('.thcard')).length === 2);
 }

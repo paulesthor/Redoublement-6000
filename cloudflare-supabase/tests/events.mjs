@@ -156,11 +156,11 @@ console.log('— album éphémère');
 const ae = nextOf('album', T0), al = evAl.find(a => a.id === ae.album);
 at(ae.start + 3600000);
 [s, r] = await call(A, 'GET', '/api/albums'); const ea = r.albums.find(a => a.id === ae.album);
-ok('album éphémère listé en tête avec sa date de fin et une récompense renforcée', ea && ea.until === ae.end && r.albums[0].id === ae.album && ea.reward.p === 3 && ea.reward.c === EV.album.coinsPerCard * al.cards.length, J(ea).slice(0, 200));
+ok('album éphémère listé en tête avec sa date de fin et une récompense renforcée', ea && ea.until === ae.end && r.albums[0].id === ae.album && ea.reward.p === 3 && ea.reward.c === 5000, J(ea).slice(0, 200));
 [s] = await call(A, 'POST', `/api/albums/${ae.album}/claim`, {}); ok('album incomplet : refusé', s === 400);
 for (const c of al.cards) { await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', c.id, c.t, 100, 'rare', 900, 900, 0, 'u'); await q("INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,2,0,2000000000,'x') ON CONFLICT DO NOTHING", alice, c.id); }
 const ac = await coins(alice), ap = await packs(alice);
-[s, r] = await call(A, 'POST', `/api/albums/${ae.album}/claim`, {}); ok('album éphémère complété : récompense + titre exclusif', s === 200 && (await coins(alice)) - ac === EV.album.coinsPerCard * al.cards.length && (await packs(alice)) - ap === 3 && await hasTitle(alice, 'ev_alb_' + ae.album), J([s, r]));
+[s, r] = await call(A, 'POST', `/api/albums/${ae.album}/claim`, { card_id: al.cards[0].id }); ok('album éphémère complété : 5 000 pièces + carte shiny au choix + titre exclusif', s === 200 && (await coins(alice)) - ac >= 5000 && (await q('SELECT sh FROM inventory WHERE user_id = ? AND card_id = ?', alice, al.cards[0].id + 100000000))[0]?.sh === 1 && (await packs(alice)) - ap === 3 && await hasTitle(alice, 'ev_alb_' + ae.album), J([s, r]));
 at(ae.end + 3600000); [s, r] = await call(A, 'GET', '/api/albums'); const still = evs(ae.end + 3600000, ae.end + 3600001).some(e => e.kind === 'album' && e.album === ae.album);
 ok('après l\'événement : l\'album disparaît de la liste', still || !r.albums.some(a => a.id === ae.album));
 if (!still) { [s, r] = await call(B, 'POST', `/api/albums/${ae.album}/claim`, {}); ok('album terminé : plus récupérable', s === 404 && /éphémère/.test(r.error), J([s, r])); }
