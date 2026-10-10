@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.2';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1452,7 +1452,7 @@ async function refreshMe() {
 }
 /** Bandeau des événements en cours (heure dorée, week-end shiny…) sous l'en-tête, sur tous les écrans. */
 function paintEvBar() {
-  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
+  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
   const left = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
   const list = me.ev || [];
   b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${e.emoji} <b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join(''); b.hidden = !list.length;
@@ -1985,6 +1985,7 @@ views.bourse = async v => {
   });
 };
 
+let hiloRun = 0;
 views.hilo = async v => {
   const d = await api('/hilo'); let g = d;
   if (d.blocked) { v.innerHTML = `${pageHead('Plus ou moins')}<div class="panel" style="text-align:center;padding:28px 18px"><p style="font-size:20px;margin:0">🚫</p><p style="font-size:18px;font-weight:700;margin:10px 0 0">${esc(d.message)}</p></div>`; return; }
@@ -1992,16 +1993,27 @@ views.hilo = async v => {
     v.innerHTML = `${pageHead('Plus ou moins', 'Quel article a le plus de vues ?')}
       <p class="mut qreset" style="margin:-8px 0 12px">${ico('coin')} Tu as <b>${fmt(me.coins)}</b> pièces · ${d.perDay} parties par jour</p>${flash}
       ${g.active ? `<div class="hilo"><div class="hcard a"><small>Départ</small><b>${esc(g.a.t)}</b><span>${fmt(g.a.v)} vues</span></div><div class="vs">VS</div><div class="hcard b"><small>Mystère</small><b>${esc(g.b.t)}</b><span>? vues</span></div></div>
+        ${g.left != null ? `<div class="htimer"><i id="h-bar"></i><span id="h-sec"></span></div>` : ''}
         <p class="hstat">Mise <b>${fmt(g.stake)}</b> · série <b>${g.streak}</b> · gain actuel <b>${fmt(g.cash)}</b> <span class="mut">(×${g.mult})</span> · prochain ×${g.next}</p>
         <div class="row"><button id="h-more" style="flex:1">▲ Plus de vues</button><button id="h-less" style="flex:1">▼ Moins de vues</button></div>
         <div class="row"><button class="plain" id="h-cash" style="flex:1" ${g.streak < 1 ? 'disabled' : ''}>Encaisser ${g.streak ? fmt(g.cash) : ''}</button></div>`
       : `<div class="panel"><p class="mut" style="margin:0 0 10px">On te montre un article et son nombre de vues. Devine si le suivant en a <b>plus</b> ou <b>moins</b>. Chaque bonne réponse multiplie ta mise par <b>×${d.step}</b> ; tu peux encaisser quand tu veux, une erreur fait tout perdre.</p>
         <div class="row"><input id="h-stake" type="number" inputmode="numeric" value="50" min="${d.min}" max="${d.max}" style="flex:0 0 110px;text-align:center;font-weight:700"><button id="h-go" style="flex:1" ${d.plays >= d.perDay ? 'disabled' : ''}>Jouer (${d.plays} / ${d.perDay} aujourd'hui)</button></div>
         <p class="mut" style="margin:10px 0 0;font-size:12.5px">Gains par série : ${d.table.map((x, i) => `${i + 1} → ×${x}`).join(' · ')}…</p></div>`}`;
+    // compte à rebours : à zéro, la manche est perdue (le serveur vérifie l'échéance)
+    if (g.active && g.left != null) {
+      const end = Date.now() + g.left, max = g.timeMax || 15000, bar = $('#h-bar'), sec = $('#h-sec'), my = ++hiloRun;
+      const upd = () => { if (my !== hiloRun || !bar?.isConnected) return clearInterval(tick); const left = Math.max(0, end - Date.now()); bar.style.width = (left / max * 100) + '%'; bar.classList.toggle('low', left < 5000); sec.textContent = Math.ceil(left / 1000) + ' s'; if (!left) { clearInterval(tick); lose(); } };
+      clearInterval(tick); tick = setInterval(upd, 200); upd();
+    }
+    const lose = safe(async () => {
+      const r = await api('/hilo/guess', { guess: 'timeout' }).catch(() => null); if (!r) return;
+      g = { active: false }; d.plays++; await refreshMe(); draw(`<div class="hflash ko"><b>Temps écoulé !</b> ${esc(r.reveal.t)} avait ${fmt(r.reveal.v)} vues (${esc(r.a.t)} : ${fmt(r.a.v)}). Mise perdue : ${fmt(r.lost)}.</div>`);
+    });
     $('#h-go')?.addEventListener('click', safe(async () => { g = await api('/hilo/start', { stake: +$('#h-stake').value }); await refreshMe(); draw(); }));
     for (const gs of ['more', 'less']) $('#h-' + gs)?.addEventListener('click', safe(async () => {
       const r = await api('/hilo/guess', { guess: gs });
-      if (r.right === false) { g = { active: false }; d.plays++; await refreshMe(); return draw(`<div class="hflash ko"><b>Raté !</b> ${esc(r.reveal.t)} avait ${fmt(r.reveal.v)} vues (${esc(r.a.t)} : ${fmt(r.a.v)}). Mise perdue : ${fmt(r.lost)}.</div>`); }
+      if (r.right === false) { g = { active: false }; d.plays++; await refreshMe(); return draw(`<div class="hflash ko"><b>${r.timeout ? 'Trop tard !' : 'Raté !'}</b> ${esc(r.reveal.t)} avait ${fmt(r.reveal.v)} vues (${esc(r.a.t)} : ${fmt(r.a.v)}). Mise perdue : ${fmt(r.lost)}.</div>`); }
       if (r.cashed) { g = { active: false }; d.plays++; await refreshMe(); return draw(`<div class="hflash ok"><b>Série maximale !</b> Encaissé d'office : +${fmt(r.cashed)} pièces.</div>`); }
       g = r; draw(`<div class="hflash ok"><b>Bravo !</b> ${esc(r.reveal.t)} : ${fmt(r.reveal.v)} vues (${esc(r.prev.t)} : ${fmt(r.prev.v)}).</div>`);
     }));
@@ -2126,6 +2138,16 @@ async function liveFights(v) {
   };
   tick = setInterval(liveSoft, 6000);
 }
+/** Écran plein écran réservé à un joueur sanctionné (une fois par ouverture de l'appli) ; renvoie vrai s'il s'affiche. */
+function sanctionScreen(then) {
+  const s = me?.sanction; if (!s) return false;
+  try { if (sessionStorage.getItem('wm_sanc') === String(s.until)) return false; sessionStorage.setItem('wm_sanc', String(s.until)); } catch { /* stockage indisponible */ }
+  const m = $('#modal'), date = new Date(s.until).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' });
+  m.hidden = false;
+  m.innerHTML = `<div class="sanction" role="alertdialog"><p class="sx">🚫</p><h2>${esc(s.msg)}</h2><p class="mut">Tes gains de wikibidou sont suspendus et ton épargne est gelée jusqu'au <b>${esc(date)}</b>. Le Plus ou moins t'est interdit.</p><button id="sx-ok" class="primary big">Compris</button></div>`;
+  $('#sx-ok').onclick = () => { m.hidden = true; m.innerHTML = ''; then?.(); };
+  return true;
+}
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -2173,7 +2195,7 @@ async function start() {
   setTimeout(pushStartup, 2500);
   setTimeout(() => {                                                                  // à l'ouverture : nouveautés de la mise à jour, puis récompense du jour
     const daily = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
-    if (!game) daily();
+    if (!game && !sanctionScreen(daily)) daily();
   }, 900);
 }
 const urlCode = new URLSearchParams(location.search).get('friend');

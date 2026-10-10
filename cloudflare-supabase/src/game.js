@@ -118,6 +118,16 @@ export async function ensureGameSchema(env) {
     'CREATE TABLE IF NOT EXISTS event_claims (key TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (key, user_id))',
     'CREATE TABLE IF NOT EXISTS event_hunt (day TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (day, user_id))',
     'ALTER TABLE event_progress ENABLE ROW LEVEL SECURITY', 'ALTER TABLE event_claims ENABLE ROW LEVEL SECURITY', 'ALTER TABLE event_hunt ENABLE ROW LEVEL SECURITY',
+    'ALTER TABLE hilo_games ADD COLUMN IF NOT EXISTS deadline BIGINT',
+    'CREATE TABLE IF NOT EXISTS coin_freeze (user_id BIGINT PRIMARY KEY, until BIGINT NOT NULL, held BIGINT NOT NULL DEFAULT 0, ts BIGINT NOT NULL)',
+    'ALTER TABLE coin_freeze ENABLE ROW LEVEL SECURITY',
+    // gains suspendus : toute augmentation de pièces d'un joueur sanctionné est mise de côté (coin_freeze.held) jusqu'à la fin de la sanction
+    `CREATE OR REPLACE FUNCTION coin_freeze_fn() RETURNS trigger AS $fn$ BEGIN
+       IF NEW.coins > OLD.coins AND EXISTS (SELECT 1 FROM coin_freeze f WHERE f.user_id = NEW.id AND f.until > (extract(epoch FROM clock_timestamp()) * 1000)::bigint) THEN
+         UPDATE coin_freeze SET held = held + (NEW.coins - OLD.coins) WHERE user_id = NEW.id; NEW.coins := OLD.coins;
+       END IF; RETURN NEW; END $fn$ LANGUAGE plpgsql`,
+    'DROP TRIGGER IF EXISTS coin_freeze_trg ON users',
+    'CREATE TRIGGER coin_freeze_trg BEFORE UPDATE OF coins ON users FOR EACH ROW EXECUTE FUNCTION coin_freeze_fn()',
     'CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id))',
     'ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY',
     // historique « déjà possédée un jour » : alimenté par un déclencheur, donc quel que soit le chemin d'obtention (paquet, échange, enchère, duel…)

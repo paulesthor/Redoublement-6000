@@ -244,3 +244,6 @@ CREATE TABLE IF NOT EXISTS event_progress (key TEXT NOT NULL, user_id BIGINT NOT
 CREATE TABLE IF NOT EXISTS event_claims (key TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (key, user_id));  -- récompenses d'événements déjà récupérées
 CREATE TABLE IF NOT EXISTS event_hunt (day TEXT NOT NULL, user_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (day, user_id));  -- joueurs qui ont trouvé la carte recherchée du jour
 ALTER TABLE event_progress ENABLE ROW LEVEL SECURITY; ALTER TABLE event_claims ENABLE ROW LEVEL SECURITY; ALTER TABLE event_hunt ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS coin_freeze (user_id BIGINT PRIMARY KEY, until BIGINT NOT NULL, held BIGINT NOT NULL DEFAULT 0, ts BIGINT NOT NULL);  -- sanctions : gains de pièces mis de côté jusqu'à `until` (déclencheur coin_freeze_trg sur users)
+ALTER TABLE coin_freeze ENABLE ROW LEVEL SECURITY;

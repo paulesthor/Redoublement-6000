@@ -6,6 +6,7 @@ import { handleMigrate } from './migrate.js';
 import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
 import { installEvents } from './events.js';
+import { installSanctions, SANCTION_MSG } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
@@ -612,7 +613,9 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
   const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev };
+  const frozen = await sanctions.check(env, user).catch(() => 0);                // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
+  if (frozen) ev.push({ id: 'freeze', kind: 'freeze', name: 'Gains suspendus', emoji: '⛔', end: frozen });
+  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -887,7 +890,8 @@ route('POST', '/api/fights/bet', async ({ env, user, body }) => {
 });
 
 // ---------- bourse, « plus ou moins », cours des cartes, banque, dividendes, expéditions (voir economy.js) ----------
-const economy = installEconomy({ route, bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now,
+const sanctions = installSanctions({ one, all, run, st, now });
+const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.until(env, u.id), bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now,
   albumCount: async (env, uid) => +(await one(env, 'SELECT COUNT(*) n FROM album_claims WHERE user_id = ?', uid)).n });
 
 // ---------- événements surprise (voir events.js) ----------
@@ -895,7 +899,7 @@ const events = installEvents({ route, bad, one, all, run, st, notify, ensureGame
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
-export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get events() { return events; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
+export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
 const ALBUM_COINS = 5000;                                    // pièces pour un album complété, + une carte de l'album au choix en shiny
@@ -1832,7 +1836,8 @@ export default {
       const t0 = Date.now();
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
-      await events.tick(env, ctx).catch(e => console.error('événements', e));            // annonce les événements qui viennent de commencer
+      await events.tick(env, ctx).catch(e => console.error('événements', e));
+      await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await pruneLogs(withDb(env0)).catch(() => {});
       await flushAll(withDb(env0));

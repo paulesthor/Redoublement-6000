@@ -64,6 +64,21 @@ ok('mauvaise réponse : mise perdue, partie terminée, valeurs révélées', r.r
 [s] = await call(A, 'POST', '/api/hilo/guess', { guess: 'more' }); ok('plus de partie en cours', s === 400);
 for (let i = 0; i < 1; i++) { await call(A, 'POST', '/api/hilo/start', { stake: 10 }); await q('UPDATE hilo_games SET active = 0 WHERE user_id = ?', alice); }
 [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 10 }); ok('2 parties par jour au maximum', s === 400 && /Maximum 2/.test(r.error), J([s, r]));
+{ // compte à rebours du « Plus ou moins »
+  const [, rt] = await call(null, 'POST', '/api/register', { name: 'Chrono', password: 'secret5' }); const T = rt.token; await q('UPDATE users SET coins = 5000 WHERE name = ?', 'Chrono');
+  let [s1, r1] = await call(T, 'POST', '/api/hilo/start', { stake: 50 });
+  ok('manche chronométrée : 15 secondes pour répondre', s1 === 200 && r1.timeMax === 15000 && r1.left > 14000 && r1.left <= 15000, J(r1));
+  [s1, r1] = await call(T, 'POST', '/api/hilo/guess', { guess: 'timeout' }); ok('« temps écoulé » refusé tant que le temps n\'est pas écoulé', s1 === 400, J([s1, r1]));
+  shift += 20000; [s1, r1] = await call(T, 'POST', '/api/hilo/guess', { guess: 'timeout' }); ok('temps écoulé : manche perdue, mise perdue', s1 === 200 && r1.right === false && r1.timeout === true && r1.lost === 50, J([s1, r1]));
+  [s1, r1] = await call(T, 'GET', '/api/hilo'); ok('partie terminée après le temps écoulé', r1.active === undefined || r1.active === false);
+  await q('UPDATE hilo_games SET day = ?, plays = 0 WHERE user_id = (SELECT id FROM users WHERE name = ?)', '2000-01-01', 'Chrono');
+  [s1, r1] = await call(T, 'POST', '/api/hilo/start', { stake: 50 }); shift += 30000;
+  const pr = (await q('SELECT pair FROM hilo_games WHERE user_id = (SELECT id FROM users WHERE name = ?)', 'Chrono'))[0].pair, pj = JSON.parse(pr);
+  [s1, r1] = await call(T, 'POST', '/api/hilo/guess', { guess: pj.b.v > pj.a.v ? 'more' : 'less' }); ok('bonne réponse envoyée après la fin du temps : perdue quand même', s1 === 200 && r1.right === false && r1.timeout === true, J([s1, r1]));
+  await q('UPDATE hilo_games SET day = ?, plays = 0 WHERE user_id = (SELECT id FROM users WHERE name = ?)', '2000-01-01', 'Chrono');
+  [s1, r1] = await call(T, 'POST', '/api/hilo/start', { stake: 50 }); const pj2 = JSON.parse((await q('SELECT pair FROM hilo_games WHERE user_id = (SELECT id FROM users WHERE name = ?)', 'Chrono'))[0].pair);
+  [s1, r1] = await call(T, 'POST', '/api/hilo/guess', { guess: pj2.b.v > pj2.a.v ? 'more' : 'less' }); ok('bonne réponse dans le temps : la manche suivante repart à 15 secondes', s1 === 200 && r1.right === true && r1.left > 14000, J([s1, r1]));
+}
 
 console.log('— cours des cartes, tendances, alertes');
 const card = (await q('SELECT card_id FROM inventory WHERE user_id = ? LIMIT 1', alice))[0].card_id;

@@ -214,6 +214,20 @@ console.log('— dix paquets d\'un coup (interface)');
   await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('[data-th10]', { timeout: 8000 });
   ok('paquets du jour : bouton ×10 pour chaque catégorie', (await p.$$('[data-th10]')).length === 2);
 }
+console.log('— sanction et compte à rebours (interface)');
+{
+  await p.evaluate(() => { try { sessionStorage.removeItem('wm_sanc'); } catch {} me.sanction = { until: Date.now() + 5 * 86400000, msg: "T'avais qu'à pas tricher gros sac à merde." }; sanctionScreen(); });
+  await p.waitForSelector('.sanction', { timeout: 4000 });
+  ok('écran de sanction : message plein écran avec le bouton « Compris »', /pas tricher gros sac à merde/.test(await p.textContent('.sanction')) && !!(await p.$('#sx-ok')));
+  await shot(p, 'sanction'); await p.click('#sx-ok'); await p.waitForTimeout(300);
+  ok('l\'écran se ferme et ne revient pas pendant la même ouverture', await p.$('.sanction') === null && await p.evaluate(() => sanctionScreen()) === false);
+  await p.evaluate(() => { delete me.sanction; });
+  await DB.prepare('UPDATE hilo_games SET active = 0 WHERE user_id = 1').run().catch(() => {});
+  await p.evaluate(() => { tab = 'hilo'; render(); }); await p.waitForSelector('#h-go', { timeout: 8000 });
+  await DB.prepare("UPDATE users SET coins = 5000 WHERE id = 1").run(); await p.evaluate(async () => { await refreshMe(); });
+  await p.fill('#h-stake', '50'); await p.click('#h-go'); await p.waitForSelector('#h-bar', { timeout: 8000 });
+  ok('Plus ou moins : barre de compte à rebours et secondes restantes', /\d+ s/.test(await p.textContent('#h-sec')) && parseInt(await p.textContent('#h-sec')) <= 15);
+}
 console.log('— faux godpack (interface)');
 {
   await p.evaluate(() => { window.__pf = previewFake(); }); await p.waitForSelector('.gp-skip', { timeout: 6000 }); await p.click('.gp-skip');

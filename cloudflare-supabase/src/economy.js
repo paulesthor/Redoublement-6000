@@ -3,9 +3,9 @@
 
 const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
 export const BOURSE = { slots: 12, minStake: 10, maxStake: 500, maxBets: 8, dayStake: 2000, payout: 1.8, popularRanks: 1500 };
-export const HILO = { minStake: 10, maxStake: 500, perDay: 2, step: 1.85, maxStreak: 10, gap: 0.15, ranks: 30000 };
+export const HILO = { time: 15000, grace: 2500, minStake: 10, maxStake: 500, perDay: 2, step: 1.85, maxStreak: 10, gap: 0.15, ranks: 30000 };
 /** Joueurs privés du « Plus ou moins » (pseudo comparé sans majuscules, accents ni séparateurs) et message affiché quand ils essaient d'y accéder. */
-export const HILO_BLOCKED = ['michelecestlebresil'], HILO_BLOCKED_MSG = 'T\'avais qu\'à pas tricher.';
+export const HILO_BLOCKED = ['michelleclebresil', 'michelecestlebresil'], HILO_BLOCKED_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const hiloBlocked = u => HILO_BLOCKED.includes(String(u?.name || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''));
 export const BANK = { rate: 0.006, cap: 5000, lockDays: 7, fee: 0.1 };               // 0,6 % par jour, 5 000 pièces au plus, retrait avant 7 jours : 10 % de frais
 export const DIV = { rate: [0.02, 0.1, 0.4, 1.5, 5, 20], lvl: 0.25, shiny: 2, album: 20, maxDays: 3 };   // pièces par carte et par jour, selon la rareté
@@ -29,7 +29,7 @@ export async function pageViews(title, from, to, fetchFn = fetch) {
 }
 
 export function installEconomy(d) {
-  const { route, bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now, assetOrigin, albumCount } = d;
+  const { route, bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now, assetOrigin, albumCount, savingsFrozen } = d;
   const rand = (a, b) => a + Math.random() * (b - a);
   const LIST = /^(Liste|Listes|Élections?|Championnat|Saison|Catégorie|Portail)\b|homonymie|^\d{4}\b/i;
 
@@ -119,7 +119,7 @@ export function installEconomy(d) {
     for (let i = 0; i < 25; i++) { const b = await pick(); if (a && b && b.id !== a.id && Math.abs(b.v - a.v) / Math.max(a.v, b.v) >= HILO.gap) return { a, b }; }
     return null;
   }
-  const hiloView = g => g && g.active ? { active: true, stake: g.stake, streak: g.streak, mult: hiloMult(g.streak), next: hiloMult(g.streak + 1), cash: Math.floor(g.stake * hiloMult(g.streak)), a: { t: JSON.parse(g.pair).a.t, v: JSON.parse(g.pair).a.v }, b: { t: JSON.parse(g.pair).b.t } } : { active: false };
+  const hiloView = g => g && g.active ? { active: true, stake: g.stake, streak: g.streak, mult: hiloMult(g.streak), next: hiloMult(g.streak + 1), cash: Math.floor(g.stake * hiloMult(g.streak)), timeMax: HILO.time, left: g.deadline ? Math.max(0, +g.deadline - now()) : null, a: { t: JSON.parse(g.pair).a.t, v: JSON.parse(g.pair).a.v }, b: { t: JSON.parse(g.pair).b.t } } : { active: false };
   route('GET', '/api/hilo', async ({ env, user }) => {
     if (hiloBlocked(user)) return { blocked: true, message: HILO_BLOCKED_MSG };
     await ensureGameSchema(env);
@@ -137,8 +137,8 @@ export function installEconomy(d) {
     const pair = await pickPair(env, origin); if (!pair) bad('Impossible de préparer une partie, réessaie', 503);
     const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', stake, user.id, stake);
     if (!paid.meta.changes) bad('Pas assez de pièces');
-    await run(env, `INSERT INTO hilo_games (user_id, day, plays, active, stake, streak, pair) VALUES (?,?,1,1,?,0,?)
-      ON CONFLICT (user_id) DO UPDATE SET day = excluded.day, plays = CASE WHEN hilo_games.day = excluded.day THEN hilo_games.plays + 1 ELSE 1 END, active = 1, stake = excluded.stake, streak = 0, pair = excluded.pair`, user.id, day, stake, JSON.stringify(pair));
+    await run(env, `INSERT INTO hilo_games (user_id, day, plays, active, stake, streak, pair, deadline) VALUES (?,?,1,1,?,0,?,?)
+      ON CONFLICT (user_id) DO UPDATE SET day = excluded.day, plays = CASE WHEN hilo_games.day = excluded.day THEN hilo_games.plays + 1 ELSE 1 END, active = 1, stake = excluded.stake, streak = 0, pair = excluded.pair, deadline = excluded.deadline`, user.id, day, stake, JSON.stringify(pair), now() + HILO.time);
     return hiloView(await one(env, 'SELECT * FROM hilo_games WHERE user_id = ?', user.id));
   });
   route('POST', '/api/hilo/guess', async ({ env, ctx, user, body, origin }) => {
@@ -146,12 +146,15 @@ export function installEconomy(d) {
     await ensureGameSchema(env);
     const g = await one(env, 'SELECT * FROM hilo_games WHERE user_id = ?', user.id);
     if (!g?.active) bad('Aucune partie en cours');
-    const guess = body.guess === 'less' ? 'less' : body.guess === 'more' ? 'more' : null; if (!guess) bad('Plus ou moins ?');
-    const { a, b } = JSON.parse(g.pair), right = (b.v > a.v) === (guess === 'more');
+    const timeout = body.guess === 'timeout';                                            // l'appli envoie « timeout » quand le compte à rebours arrive à zéro
+    const late = g.deadline && now() > +g.deadline + HILO.grace;                            // réponse arrivée après la fin du temps (plus un délai de grâce pour le réseau)
+    if (timeout && g.deadline && now() < +g.deadline - 1500) bad('Le temps n\'est pas écoulé');
+    const guess = body.guess === 'less' ? 'less' : body.guess === 'more' ? 'more' : null; if (!guess && !timeout) bad('Plus ou moins ?');
+    const { a, b } = JSON.parse(g.pair), right = !timeout && !late && (b.v > a.v) === (guess === 'more');
     if (!right) {
       const done = await run(env, 'UPDATE hilo_games SET active = 0 WHERE user_id = ? AND active = 1 AND streak = ?', user.id, g.streak);
       if (!done.meta.changes) bad('Réessaie');
-      return { active: false, right: false, reveal: { t: b.t, v: b.v }, a: { t: a.t, v: a.v }, lost: g.stake };
+      return { active: false, right: false, timeout: timeout || late, reveal: { t: b.t, v: b.v }, a: { t: a.t, v: a.v }, lost: g.stake };
     }
     const streak = g.streak + 1;
     if (streak >= HILO.maxStreak) {                                                     // série maximale : encaissé d'office
@@ -161,7 +164,7 @@ export function installEconomy(d) {
       return { active: false, right: true, cashed: pay, reveal: { t: b.t, v: b.v }, a: { t: a.t, v: a.v }, streak };
     }
     const pair = await pickPair(env, origin, b); if (!pair) { await run(env, 'UPDATE hilo_games SET active = 0 WHERE user_id = ?', user.id); const pay = Math.floor(g.stake * hiloMult(streak)); await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', pay, user.id); return { active: false, right: true, cashed: pay, reveal: { t: b.t, v: b.v }, a: { t: a.t, v: a.v }, streak }; }
-    const upd = await run(env, 'UPDATE hilo_games SET streak = ?, pair = ? WHERE user_id = ? AND active = 1 AND streak = ?', streak, JSON.stringify(pair), user.id, g.streak);
+    const upd = await run(env, 'UPDATE hilo_games SET streak = ?, pair = ?, deadline = ? WHERE user_id = ? AND active = 1 AND streak = ?', streak, JSON.stringify(pair), now() + HILO.time, user.id, g.streak);
     if (!upd.meta.changes) bad('Réessaie');
     return { ...hiloView(await one(env, 'SELECT * FROM hilo_games WHERE user_id = ?', user.id)), right: true, reveal: { t: b.t, v: b.v }, prev: { t: a.t, v: a.v } };
   });
@@ -225,9 +228,12 @@ export function installEconomy(d) {
   route('GET', '/api/bank', async ({ env, user }) => {
     await ensureGameSchema(env);
     const [s, dv] = await Promise.all([savings(env, user.id), dividends(env, user.id)]);
-    return { coins: user.coins, savings: { amount: s.amount, interest: s.interest, locked: s.locked, rate: BANK.rate, cap: BANK.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * BANK.rate) }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
+    const frozen = await savingsFrozen?.(env, user) || 0;
+    return { coins: user.coins, savings: { frozen, amount: s.amount, interest: s.interest, locked: s.locked, rate: BANK.rate, cap: BANK.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * BANK.rate) }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
   });
+  const frozenMsg = async (env, user) => { const u = await savingsFrozen?.(env, user); if (u) bad(`Ton épargne est gelée jusqu'au ${new Date(u).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' })}.`, 403); };
   route('POST', '/api/bank/deposit', async ({ env, user, body }) => {
+    await frozenMsg(env, user);
     await ensureGameSchema(env);
     const amount = Math.floor(+body.amount); if (!(amount >= 1)) bad('Montant invalide');
     const s = await savings(env, user.id);
@@ -238,6 +244,7 @@ export function installEconomy(d) {
     return { ok: true, amount: s.amount + amount };
   });
   route('POST', '/api/bank/withdraw', async ({ env, user, body }) => {
+    await frozenMsg(env, user);
     await ensureGameSchema(env);
     const amount = Math.floor(+body.amount), s = await savings(env, user.id);
     if (!(amount >= 1) || amount > s.amount) bad('Montant invalide');
