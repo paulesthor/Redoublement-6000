@@ -43,6 +43,10 @@ globalThis.__PV_FAIL = false; globalThis.__PV = undefined;
 
 console.log('— plus ou moins');
 [s, r] = await call(A, 'GET', '/api/hilo'); ok('état initial', s === 200 && r.active === false && r.perDay === 2 && r.table[0] === 1.85, J(r));
+{ const regs = []; for (const nm of ['MicheleCestLeBresil', 'Michele_cestlebresil']) { const [st, rr] = await call(null, 'POST', '/api/register', { name: nm, password: 'secret7' }); regs.push(rr.token); }
+  for (const T of regs) { const [s1, r1] = await call(T, 'GET', '/api/hilo'); const [s2, r2] = await call(T, 'POST', '/api/hilo/start', { stake: 50 }); const [s3] = await call(T, 'POST', '/api/hilo/guess', { guess: 'more' }); const [s4] = await call(T, 'POST', '/api/hilo/cashout', {});
+    ok('Plus ou moins bloqué pour ce pseudo (casse et séparateurs ignorés) : message « T\'avais qu\'à pas tricher »', s1 === 200 && r1.blocked === true && /pas tricher/.test(r1.message) && s2 === 403 && /pas tricher/.test(r2.error) && s3 === 403 && s4 === 403, J([s1, r1, s2, r2])); }
+  ok('les autres joueurs ne sont pas bloqués', (await call(A, 'GET', '/api/hilo'))[1].blocked === undefined); }
 [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 5 }); ok('mise trop basse', s === 400);
 const h0 = await coins(alice); [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 100 }); ok('partie lancée, mise prélevée, vues de B cachées', s === 200 && r.active && r.a.v > 0 && r.b.v === undefined && (await coins(alice)) === h0 - 100, J(r));
 [s] = await call(A, 'POST', '/api/hilo/start', { stake: 100 }); ok('une seule partie à la fois', s === 400);

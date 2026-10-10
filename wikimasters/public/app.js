@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1987,6 +1987,7 @@ views.bourse = async v => {
 
 views.hilo = async v => {
   const d = await api('/hilo'); let g = d;
+  if (d.blocked) { v.innerHTML = `${pageHead('Plus ou moins')}<div class="panel" style="text-align:center;padding:28px 18px"><p style="font-size:20px;margin:0">🚫</p><p style="font-size:18px;font-weight:700;margin:10px 0 0">${esc(d.message)}</p></div>`; return; }
   const draw = (flash = '') => {
     v.innerHTML = `${pageHead('Plus ou moins', 'Quel article a le plus de vues ?')}
       <p class="mut qreset" style="margin:-8px 0 12px">${ico('coin')} Tu as <b>${fmt(me.coins)}</b> pièces · ${d.perDay} parties par jour</p>${flash}
