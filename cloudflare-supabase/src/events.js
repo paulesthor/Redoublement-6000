@@ -12,7 +12,7 @@ export const SEASON_DAYS = 14;
 /** Réglages des événements (taux, récompenses). */
 export const EV = {
   goldenLegend: 3, goldenUltra: 1.5, shinyMult: 3, themePrice: 90,
-  albumChance: 0.08, huntChance: 0.01,                                        // part des paquets qui contiennent une carte de l'album éphémère / la carte recherchée du jour
+  albumChance: 0.08, huntChance: 0.007,                                        // part des paquets qui contiennent une carte de l'album éphémère / la carte recherchée du jour
   goldenPerDay: 38,                                                          // chance (en %) qu'une heure dorée tombe un jour donné
   weekly: { c: 400, p: 2, titleAfter: 4 },
   hunt: { first: { c: 500, p: 2 }, other: { c: 60 } },

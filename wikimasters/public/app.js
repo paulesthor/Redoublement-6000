@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '7.4';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '7.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1882,7 +1882,7 @@ views.events = async v => {
       ${w.claimed ? '<span class="evok">✓</span>' : w.progress >= w.goal ? '<button id="ev-w">Récupérer</button>' : ''}</div>` : '';
   const h = d.hunt, hBar = h ? `<div class="panel evcard hunt"><span class="ae">🔎</span><div class="grow"><b>Carte recherchée du jour</b>
       <p>${h.title ? `<b>${esc(h.title)}</b>` : `Commence par « <b>${esc(h.first)}</b> » · ${h.len} caractères${h.category ? ` · catégorie « ${esc(h.category)} »` : ''}`}</p>
-      <small>${h.found ? `Trouvée en premier par <b>${esc(h.found.by)}</b>${h.mine ? ' (c\'est toi !)' : ''}. Les suivants gagnent ${rewardChips(h.reward.other)}` : `Le premier à l'obtenir gagne ${rewardChips(h.reward.first)} et le titre « Chasseur de légendes ». Elle tombe dans environ 1 paquet sur 100.`}</small>
+      <small>${h.found ? `Trouvée en premier par <b>${esc(h.found.by)}</b>${h.mine ? ' (c\'est toi !)' : ''}. Les suivants gagnent ${rewardChips(h.reward.other)}` : `Le premier à l'obtenir gagne ${rewardChips(h.reward.first)} et le titre « Chasseur de légendes ». Elle tombe dans environ 1 paquet sur 140.`}</small>
       <br><small class="mut">Change dans ${cdLong(h.until - Date.now())}</small></div></div>` : '';
   const g = d.goal, gBar = g ? `<div class="panel evcard goal"><span class="ae">🎯</span><div class="grow"><b>Objectif collectif</b><div class="qbar"><i style="width:${Math.min(100, Math.round(g.total / g.target * 100))}%"></i></div>
       <small>${fmt(g.total)} / ${fmt(g.target)} paquets ouverts ensemble · toi : <b>${fmt(g.mine)}</b> (au moins ${g.minOpen} pour être récompensé) · récompense ${rewardChips(g.reward)}</small>
