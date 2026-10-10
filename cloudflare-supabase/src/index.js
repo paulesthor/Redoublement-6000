@@ -1780,6 +1780,8 @@ function actionDetail(r, body, out) {
   if (body?.name && /register|login/.test(r.label)) return String(body.name).slice(0, 40);
   return '';
 }
+/** Routes qui font dépenser des pièces : fermées aux joueurs sanctionnés (le déclencheur SQL coin_freeze_trg refuse aussi toute baisse de pièces en filet de sécurité). */
+const SPEND_ROUTE = /^\/api\/(packs\/buy|themepacks\/buy|auctions\/[^/]+\/bid|tournaments|tournaments\/[^/]+\/join|bourse\/bet|hilo\/start|bank\/deposit|fights\/bet)$/;
 async function api(req, env0, ctx, url) {
   const t0 = Date.now();
   const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
@@ -1793,6 +1795,10 @@ async function api(req, env0, ctx, url) {
       user = await userFromToken(env, (req.headers.get('authorization') || '').replace('Bearer ', ''));
       if (!user) bad('Non connecté', 401);
       env = meter(env0, 'R:' + label, 'U:' + user.name);
+    }
+    if (r.auth && req.method === 'POST' && SPEND_ROUTE.test(url.pathname)) {                    // sanction : aucune dépense de pièces (paquets, enchères, paris, banque…)
+      const end = await sanctions.check(env, user);
+      if (end) bad(`Tes dépenses sont suspendues jusqu'au ${new Date(end).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' })}. T'avais qu'à pas tricher.`, 403);
     }
     if (req.method === 'POST') {
       if (+req.headers.get('content-length') > 250000) bad('Requête trop volumineuse', 413);

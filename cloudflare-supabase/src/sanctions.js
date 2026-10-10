@@ -1,6 +1,7 @@
 // Sanctions : gains de pièces suspendus et épargne gelée pendant N jours pour certains pseudos.
+// - Dépenses interdites : routes fermées (SPEND_ROUTE dans index.js) et le déclencheur refuse toute baisse de pièces.
 // - Gains suspendus : un déclencheur PostgreSQL sur users met de côté (table coin_freeze.held) toute augmentation de pièces, quelle que soit son origine
-//   (quêtes, ventes, duels, banque, dividendes…) ; les dépenses restent possibles. Les pièces mises de côté sont rendues à la fin de la sanction.
+//   (quêtes, ventes, duels, banque, dividendes…) ; Les pièces mises de côté sont rendues à la fin de la sanction.
 // - Épargne gelée : ni dépôt, ni retrait, ni intérêts jusqu'à la fin.
 // La sanction est posée une seule fois (au premier passage du joueur ou de la tâche planifiée après la mise en ligne), jamais renouvelée.
 import { ensureGameSchema } from './game.js';
@@ -8,7 +9,7 @@ import { st } from './util.js';
 
 const DAY = 86400000;
 /** Pseudos sanctionnés (comparés sans majuscules, accents ni séparateurs) → durée en jours. */
-export const SANCTIONS = { michelleclebresil: { days: 5 } };
+export const SANCTIONS = { michelleclebresil: { days: 5 }, michelecestlebresil: { days: 5 }, michelcestlebresil: { days: 5 } };
 export const SANCTION_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const normName = n => String(n || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
 

@@ -125,6 +125,8 @@ export async function ensureGameSchema(env) {
     `CREATE OR REPLACE FUNCTION coin_freeze_fn() RETURNS trigger AS $fn$ BEGIN
        IF NEW.coins > OLD.coins AND EXISTS (SELECT 1 FROM coin_freeze f WHERE f.user_id = NEW.id AND f.until > (extract(epoch FROM clock_timestamp()) * 1000)::bigint) THEN
          UPDATE coin_freeze SET held = held + (NEW.coins - OLD.coins) WHERE user_id = NEW.id; NEW.coins := OLD.coins;
+       ELSIF NEW.coins < OLD.coins AND EXISTS (SELECT 1 FROM coin_freeze f WHERE f.user_id = NEW.id AND f.until > (extract(epoch FROM clock_timestamp()) * 1000)::bigint) THEN
+         RAISE EXCEPTION 'Depenses suspendues (sanction)';
        END IF; RETURN NEW; END $fn$ LANGUAGE plpgsql`,
     'DROP TRIGGER IF EXISTS coin_freeze_trg ON users',
     'CREATE TRIGGER coin_freeze_trg BEFORE UPDATE OF coins ON users FOR EACH ROW EXECUTE FUNCTION coin_freeze_fn()',
