@@ -97,6 +97,7 @@ export function supabaseTransport(url, key) {
       if (r.ok) return JSON.parse(t);
       if (readOnly && attempt < 3 && (r.status === 429 || r.status >= 500)) { await wait(150 * attempt); continue; }
       let j; try { j = JSON.parse(t); } catch { j = { message: t }; }
+      if ((j.code === '40P01' || j.code === '40001') && attempt < 5) { await wait(40 * attempt + Math.random() * 120); continue; }   // blocage mutuel entre deux transactions : PostgreSQL a tout annulé, on peut rejouer sans risque
       const e = new Error(`Supabase ${r.status} ${j.code || ''} ${j.message || t}`.trim());
       e.status = r.status; throw e;
     }

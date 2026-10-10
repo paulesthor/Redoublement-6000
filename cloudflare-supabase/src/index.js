@@ -499,6 +499,7 @@ async function botTick(env, ctx, force = false) {
     }
     (auctionsCache.t = 0, notify(env, ctx, { t: 'refresh', what: 'auctions' }));
   }
+  return due.length;
 }
 
 /** Alertes de prix : prévient les joueurs dont le seuil est franchi par une vente (« ≥ » pour une hausse, « ≤ » pour une baisse), puis retire l'alerte. */
@@ -512,7 +513,7 @@ async function checkAlerts(env, ctx, cid, price, title) {
 
 // ---------- enchères : règlement à la demande (pas de minuteur côté Workers) ----------
 async function settleAuctions(env, ctx) {
-  const due = await all(env, "SELECT * FROM auctions WHERE status = 'open' AND ends_at <= ? LIMIT 5", now());
+  const due = await all(env, "SELECT * FROM auctions WHERE status = 'open' AND ends_at <= ? LIMIT 2", now());   // peu de lots par requête : chaque lot coûte une dizaine d'appels à la base (limite de ~50 par requête)
   for (const a of due) {
     const claimed = await run(env, "UPDATE auctions SET status = ? WHERE id = ? AND status = 'open'", a.bidder_id ? 'sold' : 'expired', a.id);
     if (!claimed.meta.changes) continue; // déjà réglée par une autre requête
@@ -742,10 +743,15 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
-  const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-  const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
-  ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
-  return finishPack(env, ctx, user, drawn, 0, fake);
+  try {
+    const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+    const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
+    ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
+    return await finishPack(env, ctx, user, drawn, 0, fake);
+  } catch (e) {                                            // échec après avoir pris le paquet : on le rend (jamais de paquet perdu), l'appli peut réessayer
+    if (!testOn(u)) await run(env, 'UPDATE users SET pack_stock = pack_stock + 1 WHERE id = ?', u.id).catch(() => {});
+    throw e;
+  }
 });
 /** Plaisanterie rare : un paquet sur 250 est un FAUX godpack (l'animation de godpack, puis un doigt d'honneur et dix communes). PRANK = '0' la coupe (tests). */
 const fakeGod = async (env, user) => {
@@ -760,10 +766,15 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
-  const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-  const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
-  ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
-  return finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
+  try {
+    const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+    const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
+    ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
+    return await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
+  } catch (e) {                                            // échec après paiement : les pièces sont rendues
+    await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', CFG.PACK_PRICE, user.id).catch(() => {});
+    throw e;
+  }
 });
 route('POST', '/api/cards/enrich', async ({ env, body }) => {
   const ids = (body.ids || []).map(Number).filter(Number.isFinite).slice(0, 40);
@@ -1157,9 +1168,9 @@ route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 &
 
 let auctionsCache = { t: 0, rows: null };                         // la liste est la même pour tous (hors drapeaux « à moi / en tête ») : lue au plus toutes les 8 s
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
-  ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée
   maybeRefill(env, ctx);
-  await settleAuctions(env, ctx);
+  const settled = await settleAuctions(env, ctx);
+  if (!settled) ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée (pas dans la même requête qu'un règlement : limite d'appels à la base)
   if (now() - auctionsCache.t > 8000 || !auctionsCache.rows) {
     auctionsCache = { t: now(), rows: await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
     c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
@@ -1226,10 +1237,14 @@ route('POST', '/api/auctions/:id/bid', async ({ env, ctx, user, params, body }) 
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', amount, user.id, amount);
   if (!paid.meta.changes) bad('Pas assez de pièces');
   const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at; // anti-snipe
-  const won = await run(env, "UPDATE auctions SET bid = ?, bidder_id = ?, ends_at = ? WHERE id = ? AND bid = ? AND status = 'open'", amount, user.id, ends, a.id, a.bid);
+  // une seule transaction : nouvelle offre, historique et remboursement de l'ancien meilleur enchérisseur (jamais de pièces perdues si la requête s'interrompt en route)
+  const mine = 'EXISTS (SELECT 1 FROM auctions WHERE id = ? AND bidder_id = ? AND bid = ?)';
+  const [won] = await env.DB.batch([
+    st(env, "UPDATE auctions SET bid = ?, bidder_id = ?, ends_at = ? WHERE id = ? AND bid = ? AND status = 'open'", amount, user.id, ends, a.id, a.bid),
+    st(env, `INSERT INTO bids (auction_id, user_id, amount, ts) SELECT ?, ?, ?, ? WHERE ${mine}`, a.id, user.id, amount, now(), a.id, user.id, amount),
+    ...(a.bidder_id ? [st(env, `UPDATE users SET coins = coins + ? WHERE id = ? AND ${mine}`, a.bid, a.bidder_id, a.id, user.id, amount)] : []),
+  ]);
   if (!won.meta.changes) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', amount, user.id); bad('Quelqu’un a surenchéri entre-temps, réessaie'); }
-  await run(env, 'INSERT INTO bids (auction_id, user_id, amount, ts) VALUES (?,?,?,?)', a.id, user.id, amount, now());
-  if (a.bidder_id) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.bidder_id);
   const title = (await one(env, 'SELECT title FROM cards WHERE id = ?', a.card_id)).title;
   const others = new Set((await all(env, 'SELECT DISTINCT user_id FROM bids WHERE auction_id = ?', a.id)).map(r => r.user_id));
   others.add(a.seller_id);
@@ -1806,7 +1821,10 @@ async function api(req, env0, ctx, url) {
     }
     out = await r.fn({ env, ctx, user, params, body, req, query: url.searchParams, origin: url.origin });
     return out instanceof Response ? out : json(out);
-  } catch (e) { err = e; status = e instanceof HttpError ? e.code : 500; throw e; }
+  } catch (e) {
+    if (e?.message === 'Paramètre numérique invalide') e = new HttpError(400, 'Valeur invalide');   // un nombre absent ou absurde envoyé par un client : refus propre, pas une erreur serveur
+    err = e; status = e instanceof HttpError ? e.code : 500; throw e;
+  }
   finally {
     const ms = Date.now() - t0, who = user?.name ?? (label.includes('/login') || label.includes('/register') ? String(body?.name ?? '').slice(0, 40) : null);
     recHttp(['R:' + label, user && 'U:' + user.name], ms, status);

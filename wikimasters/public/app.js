@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.2';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.3';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1878,7 +1878,10 @@ async function tenFlow(path, body, again) {
     for (let i = 0; i < 10; i++) {
       let r;
       try { r = await api(path, body || {}); }
-      catch (e) { if (!out.length) throw e; toast(`${e.message || 'Erreur serveur'} — ${out.length} paquet${out.length > 1 ? 's' : ''} ouvert${out.length > 1 ? 's' : ''}`); break; }
+      catch (e) {
+        if (!/pièces|booster|Non connecté|sanction|suspendues/i.test(e.message || '')) { await new Promise(res => setTimeout(res, 700)); try { r = await api(path, body || {}); } catch (e2) { e = e2; } }   // erreur passagère du serveur : un seul nouvel essai
+        if (r) { /* le nouvel essai a réussi */ } else {
+        if (!out.length) throw e; toast(`${e.message || 'Erreur serveur'} — ${out.length} paquet${out.length > 1 ? 's' : ''} ouvert${out.length > 1 ? 's' : ''}`); break; } }
       r.cards.god = !!r.god; r.cards.fake = !!r.fake; out.push(r.cards); lastPack = r;
       if (i === 0) schedulePrefetch();
     }
