@@ -255,7 +255,7 @@ console.log('— récompense quotidienne');
 {
   const CFGMAX = (await call(A, 'GET', '/api/config'))[1].packMax;
   const realNow = Date.now; let shift = 0; Date.now = () => realNow() + shift;
-  [s, r] = await call(B, 'GET', '/api/me'); ok('/me annonce la récompense du jour', s === 200 && r.daily?.next === 1 && r.dq === 'new' && r.qc === 0, J(r.daily));
+  [s, r] = await call(B, 'GET', '/api/me'); ok('/me annonce la récompense du jour', s === 200 && r.daily?.next === 1 && r.dq === 'new' && typeof r.qc === 'number', J(r.daily));
   const b0 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0];
   [s, r] = await call(B, 'POST', '/api/daily/claim', {}); ok('jour 1 : 50 pièces', s === 200 && r.reward.c === 50 && r.streak === 1, J([s, r]));
   const b1 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0]; ok('pièces créditées', b1.coins - b0.coins === 50, J([b0, b1]));

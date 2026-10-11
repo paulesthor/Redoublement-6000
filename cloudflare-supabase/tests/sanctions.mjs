@@ -60,4 +60,22 @@ await __testHooks.sanctions.tick(env); [s, r] = await call(M, 'GET', '/api/me');
   ok('épargne : intérêts repartent d\'aujourd\'hui', +(await q('SELECT acc_day FROM savings WHERE user_id = ?', mid))[0].acc_day === dayNo);
   [s, r] = await call(M, 'GET', '/api/hilo'); ok('Plus ou moins toujours bloqué', r.blocked === true, J(r));
   ok('opération unique : relancée, elle ne fait plus rien', (await __testHooks.sanctions.lift(env)) === 0); }
+// malus de chance silencieux : légendaires et godpack ÷3 (paquets normaux et paquets du jour), jamais annoncé
+{ const { userWeights } = await import('../src/index.js'); const CFG = (await import('../src/config.js')).default, origin = 'http://x';
+  const wm = userWeights({ name: 'Michelleclebresil' }), wo = userWeights({ name: 'Bob' }), wc = userWeights({ name: 'MICHELLE-cle-bresil', drop_w: JSON.stringify({ common: 50, uncommon: 20, rare: 20, super: 7, ultra: 2.5, legendary: 3 }) });
+  ok('taux : légendaire ÷3 pour ce joueur, normal pour les autres', Math.abs(wm.legendary - CFG.DROP.legendary / 3) < 1e-9 && wo.legendary === CFG.DROP.legendary && wo._god === undefined, J([wm, wo]));
+  ok('taux personnalisés eux aussi divisés par 3 (même pseudo écrit autrement)', Math.abs(wc.legendary - 1) < 1e-9, J(wc));
+  const saveL = CFG.DROP.legendary, saveG = CFG.GODPACK_CHANCE; CFG.DROP.legendary = 60; CFG.GODPACK_CHANCE = 0;
+  const legs = async w => { let n = 0; for (let i = 0; i < 250; i++) n += (await __testHooks.drawCards(env, origin, 10, w, null, null)).filter(c => c.rarity === 'legendary').length; return n; };
+  const a = await legs(userWeights({ name: 'Bob' })), b = await legs(userWeights({ name: 'Michelleclebresil' }));
+  CFG.DROP.legendary = saveL; CFG.GODPACK_CHANCE = 0.3;
+  const gods = async w => { let n = 0; for (let i = 0; i < 400; i++) if ((await __testHooks.drawCards(env, origin, 10, w, null, null))[0].god) n++; return n; };
+  const ga = await gods(userWeights({ name: 'Bob' })), gb = await gods(userWeights({ name: 'Michelleclebresil' })); CFG.GODPACK_CHANCE = saveG;
+  ok('légendaires en paquet normal : environ 3 fois moins', a / b > 2 && a / b < 4.2, J([a, b]));
+  ok('godpack : environ 3 fois moins', ga / Math.max(1, gb) > 2 && ga / Math.max(1, gb) < 4.5, J([ga, gb]));
+  const theme = { cards: Array.from({ length: 40 }, (_, i) => ({ r: 10 + i })) }; CFG.DROP.legendary = 60;
+  const tl = async w => { let n = 0; for (let i = 0; i < 150; i++) n += (await __testHooks.drawCards(env, origin, 10, w, theme, null)).filter(c => c.rarity === 'legendary').length; return n; };
+  const ta = await tl(userWeights({ name: 'Bob' })), tb = await tl(userWeights({ name: 'Michelleclebresil' })); CFG.DROP.legendary = saveL;
+  ok('paquets du jour : légendaires nettement moins nombreuses', ta / Math.max(1, tb) > 1.8, J([ta, tb]));
+  [s, r] = await call(M, 'GET', '/api/me'); ok('rien n\'est annoncé au joueur', !JSON.stringify(r).match(/chance|malus|handicap/i)); }
 done();

@@ -6,7 +6,7 @@ import { handleMigrate } from './migrate.js';
 import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
 import { installEvents } from './events.js';
-import { installSanctions, SANCTION_MSG } from './sanctions.js';
+import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
@@ -54,8 +54,13 @@ function pickRarity(ranges, min = 0, w = CFG.DROP) {
 }
 /** Taux de drop personnalisés d'un joueur (réglés par l'admin), ou les taux normaux. */
 function userWeights(u) {
-  try { const w = u?.drop_w && JSON.parse(u.drop_w); return w && RARITIES.some(r => w[r] > 0) ? Object.fromEntries(RARITIES.map(r => [r, Math.max(0, +w[r] || 0)])) : CFG.DROP; } catch { return CFG.DROP; }
+  let w = CFG.DROP;
+  try { const c = u?.drop_w && JSON.parse(u.drop_w); if (c && RARITIES.some(r => c[r] > 0)) w = Object.fromEntries(RARITIES.map(r => [r, Math.max(0, +c[r] || 0)])); } catch { /* taux normaux */ }
+  const h = handicapOf(u);
+  return h ? { ...w, legendary: w.legendary / h.legend, _leg: 1 / h.legend, _god: 1 / h.god } : w;   // _leg / _god : multiplicateurs lus par drawCards (légendaire garantie, chance de godpack)
 }
+/** Empreinte des taux d'un joueur : un paquet préparé avec d'autres taux est jeté. */
+const weightKey = u => (u?.drop_w ?? '') + (handicapOf(u) ? '|h' : '');
 /** Raretés d'un GODPACK : uniquement des ultra rares et des légendaires, au moins une légendaire. */
 const godRarities = n => { const r = Array.from({ length: n }, () => Math.random() < CFG.GODPACK_LEGEND ? 'legendary' : 'ultra'); if (!r.includes('legendary')) r[Math.floor(Math.random() * n)] = 'legendary'; return r; };
 /** Raretés dont les cartes de la réserve sont réutilisées (lecture seule) : elles ne coûtent presque aucune écriture. */
@@ -69,9 +74,9 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
   const { ranges } = await getMeta(env, origin);
   if (ev && (ev.legend > 1 || ev.ultra > 1)) w = { ...w, legendary: w.legendary * ev.legend, ultra: w.ultra * ev.ultra };     // heure dorée
   if (theme) w = { ...w, legendary: w.legendary * CFG.THEME_LEGEND_MULT };               // paquet thématique : plus de légendaires, toutes de la catégorie
-  const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE;           // très rare : tout le paquet est ultra rare ou légendaire
+  const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE * (w._god ?? 1);           // très rare : tout le paquet est ultra rare ou légendaire
   const rarities = god ? godRarities(n) : ev?.allCommon ? Array.from({ length: n }, () => 'common') : Array.from({ length: n }, () => pickRarity(ranges, 0, w));   // allCommon : faux godpack
-  if (theme && ev?.themeGuarantee && !rarities.includes('legendary')) rarities[Math.floor(Math.random() * n)] = 'legendary';   // festival des catégories : une légendaire garantie
+  if (theme && ev?.themeGuarantee && !rarities.includes('legendary') && Math.random() < (w._leg ?? 1)) rarities[Math.floor(Math.random() * n)] = 'legendary';   // festival des catégories : une légendaire garantie
   // 1) cartes déjà prêtes dans la réserve (une requête groupée) ; 2) sinon tirage direct dans le catalogue
   let claimed = rarities.map(() => null);
   try {
@@ -352,7 +357,7 @@ async function prepareFor(env, ctx, user, stock) {
   if (want < 1) return;
   preparing.add(user.id);
   try {
-    const wk = user.drop_w ?? '';                       // empreinte des taux de drop : un paquet préparé avec d'autres taux est jeté
+    const wk = weightKey(user);                       // empreinte des taux de drop : un paquet préparé avec d'autres taux est jeté
     await run(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ?', user.id, wk);
     const have = (await one(env, 'SELECT COUNT(*) n FROM prepared WHERE user_id = ?', user.id)).n;
     for (let k = have; k < want; k++) {
@@ -752,7 +757,7 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   }
   try {
     const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-    const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, u.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
+    const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
     ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
     return await finishPack(env, ctx, user, drawn, 0, fake);
   } catch (e) {                                            // échec après avoir pris le paquet : on le rend (jamais de paquet perdu), l'appli peut réessayer
@@ -775,7 +780,7 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
   try {
     const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-    const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, user.drop_w ?? '')) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
+    const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
     ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
     return await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
   } catch (e) {                                            // échec après paiement : les pièces sont rendues
