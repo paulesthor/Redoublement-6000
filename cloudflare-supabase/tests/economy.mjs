@@ -135,6 +135,12 @@ shift += 2 * 3600000; [s, r] = await call(A, 'GET', '/api/me'); ok('/me : pastil
 const x0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('retour : pièces créditées et exemplaires rendus', s === 200 && r.cards === 2 && (await coins(alice)) === x0 + r.coins && (await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', alice, c1.id))[0].qty === q0, J(r));
 [s] = await call(A, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('récupérable une seule fois', s === 404 || s === 400);
 [s] = await call(B, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('expédition d\'un autre joueur : introuvable', s === 404);
+// fin immédiate de toutes les expéditions en cours (opération unique) : prêtes tout de suite, gains versés à la récupération
+{ [s, r] = await call(A, 'GET', '/api/expeditions'); const long = r.active.find(x => x.hours === 8); ok('avant : l\'expédition de 8 h est encore en cours', !!long && !long.ready, J(r.active));
+  await q("DELETE FROM event_claims WHERE key = 'exped-finish-1'");
+  [s, r] = await call(A, 'GET', '/api/expeditions'); const done8 = r.active.find(x => x.id === long.id); ok('opération unique : l\'expédition est prête tout de suite avec son gain', done8.ready && done8.rc >= 0, J(done8));
+  const k0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/${long.id}/collect`, {}); ok('le joueur touche bien son gain', s === 200 && (await coins(alice)) === k0 + r.coins, J([s, r]));
+  [s] = await call(A, 'POST', '/api/expeditions/start', { hours: 8, cards: [{ id: sp[1].id, n: 1 }] }); [s, r] = await call(A, 'GET', '/api/expeditions'); ok('une seule fois : les nouvelles expéditions ne sont pas touchées', r.active.length === 1 && !r.active[0].ready, J(r.active)); }
 { const cid = (await q('SELECT id FROM cards ORDER BY id DESC LIMIT 1'))[0].id;
   await q('DELETE FROM inventory WHERE user_id = ? AND card_id = ?', alice, cid);
   await DB.prepare("INSERT INTO inventory (user_id, card_id, qty, acquired) VALUES (?,?,1,?)").bind(alice, cid, 1700000000000).run();

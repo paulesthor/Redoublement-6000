@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.3';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.4';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1876,12 +1876,18 @@ async function tenFlow(path, body, again) {
   const packsPromise = (async () => {
     const out = [];
     for (let i = 0; i < 10; i++) {
-      let r;
-      try { r = await api(path, body || {}); }
-      catch (e) {
-        if (!/pièces|booster|Non connecté|sanction|suspendues/i.test(e.message || '')) { await new Promise(res => setTimeout(res, 700)); try { r = await api(path, body || {}); } catch (e2) { e = e2; } }   // erreur passagère du serveur : un seul nouvel essai
-        if (r) { /* le nouvel essai a réussi */ } else {
-        if (!out.length) throw e; toast(`${e.message || 'Erreur serveur'} — ${out.length} paquet${out.length > 1 ? 's' : ''} ouvert${out.length > 1 ? 's' : ''}`); break; } }
+      let r, err;
+      for (let t = 0; t < 4 && !r; t++) {                                           // coupure réseau passagère (iPhone) : jusqu'à 3 nouveaux essais espacés
+        try { r = await api(path, body || {}); }
+        catch (e) {
+          err = e; jlog(`×10 : paquet ${i + 1}, essai ${t + 1} raté (${String(e.message).slice(0, 60)})`);
+          if (e.status && e.status < 500 && e.status !== 429) break;               // refus normal du serveur (pas assez de pièces, plus de paquet, sanction…) : inutile de réessayer
+          await new Promise(res => setTimeout(res, 500 * (t + 1) ** 2));
+        }
+      }
+      if (!r) {
+        if (!out.length) throw err; toast(`${err?.message || 'Erreur serveur'} — ${out.length} paquet${out.length > 1 ? 's' : ''} ouvert${out.length > 1 ? 's' : ''}`); break;
+      }
       r.cards.god = !!r.god; r.cards.fake = !!r.fake; out.push(r.cards); lastPack = r;
       if (i === 0) schedulePrefetch();
     }
@@ -2082,7 +2088,7 @@ views.expeditions = async v => {
       m.querySelectorAll('.exitem').forEach(el => { const n = pick.get(+el.dataset.id) || 0; el.classList.toggle('sel', n > 0); el.querySelector('[data-n]').textContent = n; el.querySelector('[data-m]').style.visibility = n ? 'visible' : 'hidden'; });
     };
     m.innerHTML = `<div class="exsheet"><h2>Nouvelle expédition</h2><div class="chips" id="ex-h">${d.options.map(o => `<button data-h="${o.hours}" class="${o.hours === hours ? 'on' : ''}">${o.hours} h · ×${o.mult}</button>`).join('')}</div>
-      <div class="exquick"><button class="plain" id="ex-auto">Remplir automatiquement</button><button class="plain" id="ex-clear">Vider</button></div>
+      <div class="exquick"><button class="plain" id="ex-auto">Choisir les meilleures cartes</button><button class="plain" id="ex-clear">Vider</button></div>
       <div class="exlist">${sp.map(c => `<div class="exitem" data-id="${c.id}" style="--c:var(--${c.rarity})"><span class="rar ${c.rarity}">${ABBR[c.rarity]}</span><span class="t">${esc(c.title)}<small>${c.spare} en double</small></span><span class="ctr"><button class="plain" data-m="${c.id}" aria-label="Retirer">−</button><b data-n="${c.id}">0</b><button class="plain" data-p="${c.id}" aria-label="Ajouter">+</button></span></div>`).join('')}</div>
       <div class="exfoot"><p class="mut" id="ex-sum"></p><div class="row"><button id="ex-go" style="flex:2">Envoyer</button><button class="plain" id="ex-x" style="flex:1">Annuler</button></div></div></div>`;
     const close = () => { m.hidden = true; m.innerHTML = ''; }; $('#ex-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
@@ -2090,7 +2096,7 @@ views.expeditions = async v => {
     const add = (id, delta) => { const c = sp.find(x => x.id === id), cur = pick.get(id) || 0; if (delta > 0 && (cur >= c.spare || total() >= d.maxCards)) return; if (delta < 0 && !cur) return; pick.set(id, cur + delta); paint(); };
     m.querySelector('.exlist').onclick = e => { const row = e.target.closest('.exitem'); if (!row) return; const id = +row.dataset.id; if (e.target.closest('[data-m]')) add(id, -1); else add(id, 1); };   // toucher une ligne = ajouter un exemplaire
     $('#ex-clear').onclick = () => { pick.clear(); paint(); };
-    $('#ex-auto').onclick = () => { pick.clear(); let left = d.maxCards; for (const c of [...sp].reverse()) { const n = Math.min(c.spare, left); if (n > 0) { pick.set(c.id, n); left -= n; } if (!left) break; } paint(); };   // les cartes les moins rares d'abord
+    $('#ex-auto').onclick = () => { pick.clear(); let left = d.maxCards; for (const c of sp) { const n = Math.min(c.spare, left); if (n > 0) { pick.set(c.id, n); left -= n; } if (!left) break; } paint(); };   // les meilleures cartes (les plus rares) d'abord, la liste du serveur est déjà triée ainsi
     $('#ex-go').onclick = safe(async () => { await api('/expeditions/start', { hours, cards: [...pick].filter(([, n]) => n > 0).map(([id, n]) => ({ id, n })) }); close(); toast('Expédition lancée !'); await refreshMe(); render(); });
     paint();
   });

@@ -185,6 +185,7 @@ console.log('— économie (interface)');
   const btn = await p.$eval('.exitem [data-p]', e => { const r = e.getBoundingClientRect(); return r.right <= innerWidth && r.left >= 0; }); ok('le bouton + est visible sans défiler', btn);
   await p.click('.exitem'); await p.click('.exitem'); ok('toucher la ligne ajoute un exemplaire', (await p.textContent('.exitem [data-n]')) === '2' || (await p.textContent('.exitem [data-n]')) === '1');
   await p.click('#ex-auto'); await p.waitForTimeout(200); ok('remplissage automatique', (await p.$$('.exitem.sel')).length >= 1 && (await p.textContent('#ex-sum')).includes('gain estimé'));
+  { const sel = await p.$$eval('.exitem', els => els.map(e => e.classList.contains('sel'))); const first = sel.indexOf(true), last = sel.lastIndexOf(true); ok('remplissage automatique : les meilleures cartes d\'abord (sélection collée en haut de liste)', first === 0 && sel.slice(first, last + 1).every((x, k, a) => x || k === a.length - 1), J(sel)); }
   await p.click('#ex-clear'); ok('vider', (await p.$$('.exitem.sel')).length === 0 && await p.$eval('#ex-go', b => b.disabled)); await p.click('.exitem'); await shot(p, 'eco-exped-new');
   const goBox = await p.$eval('#ex-go', e => { const r = e.getBoundingClientRect(); return r.bottom <= innerHeight; }); ok('le bouton Envoyer reste visible', goBox);
   await p.click('#ex-go'); await p.waitForTimeout(900); ok('expédition lancée', (await p.$$('.exrow')).length === 1);
@@ -203,10 +204,10 @@ console.log('— dix paquets d\'un coup (interface)');
   ok('résumé : 100 cartes et boutons Continuer / Ouvrir 10 autres', (await p.$$('#reveal .grid .card')).length === 100 && /Ouvrir 10 autres/.test(await p.textContent('#reveal .again')));
   ok('dix boosters débités', (await DB.prepare('SELECT pack_stock FROM users WHERE id = 1').all()).results[0].pack_stock <= 3);
   await p.click('#reveal .finish'); await p.waitForTimeout(800); ok('retour à l\'accueil', await p.$('#reveal') === null);
-  // un paquet échoue en route (même après le nouvel essai) : on montre ceux qui ont été ouverts, sans bloquer
+  // un paquet échoue en route (même après les nouveaux essais) : on montre ceux qui ont été ouverts, sans bloquer
   { await DB.prepare('UPDATE users SET pack_stock = 12 WHERE id = 1').run();
     await p.evaluate(async () => { await refreshMe(); tab = 'packs'; render(); }); await p.waitForSelector('#open10:not([disabled])', { timeout: 8000 }); await p.waitForTimeout(500);
-    let n = 0; await p.route('**/api/packs/open', r => (++n === 4 || n === 5 ? r.fulfill({ status: 500, json: { error: 'Erreur serveur' } }) : r.continue()));
+    let n = 0; await p.route('**/api/packs/open', r => (++n >= 4 ? r.fulfill({ status: 500, json: { error: 'Erreur serveur' } }) : r.continue()));
     await p.click('#open10'); await p.waitForSelector('.tn-all:not([disabled])', { timeout: 40000 });
     ok('un paquet échoue en route : seuls les 3 paquets ouverts sont proposés', (await p.$$('.tn-pack')).length === 3, String((await p.$$('.tn-pack')).length));
     await p.click('.tn-all'); await p.waitForSelector('.tn-count', { timeout: 40000 }); ok('résumé des 30 cartes', (await p.$$('#reveal .grid .card')).length === 30);

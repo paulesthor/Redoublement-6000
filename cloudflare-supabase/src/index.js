@@ -612,6 +612,7 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
   ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {}));
   if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
+  if (!expedDone) { expedDone = true; ctx.waitUntil(economy.finishExpeditionsOnce(env, ctx).catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
   const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
   const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
   const frozen = await sanctions.check(env, user).catch(() => 0);                // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
@@ -1166,6 +1167,7 @@ route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 &
     FROM users u LEFT JOIN inventory i ON i.user_id = u.id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 } }).v);
 
+let expedDone = false;
 let auctionsCache = { t: 0, rows: null };                         // la liste est la même pour tous (hors drapeaux « à moi / en tête ») : lue au plus toutes les 8 s
 route('GET', '/api/auctions', async ({ env, ctx, user }) => {
   maybeRefill(env, ctx);
@@ -1861,6 +1863,7 @@ export default {
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
       await events.tick(env, ctx).catch(e => console.error('événements', e));
+      await economy.finishExpeditionsOnce(env, ctx).catch(e => console.error('expéditions', e));
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await pruneLogs(withDb(env0)).catch(() => {});

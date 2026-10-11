@@ -265,8 +265,9 @@ export function installEconomy(d) {
   });
 
   // ======================= EXPÉDITIONS =======================
-  route('GET', '/api/expeditions', async ({ env, user }) => {
+  route('GET', '/api/expeditions', async ({ env, ctx, user }) => {
     await ensureGameSchema(env);
+    await finishExpeditionsOnce(env, ctx);
     const rows = await all(env, "SELECT id, cards, hours, started, ends, rc, rp FROM expeditions WHERE user_id = ? AND status = 'out' ORDER BY ends", user.id);
     return { slots: EXPED.slots, maxCards: EXPED.maxCards, options: EXPED.hours.map(([h, m]) => ({ hours: h, mult: m })), base: EXPED.base,
       active: rows.map(r => ({ id: r.id, hours: r.hours, ends: r.ends, ready: r.ends <= now(), n: JSON.parse(r.cards).reduce((t, c) => t + c.n, 0), cards: JSON.parse(r.cards), rc: r.ends <= now() ? r.rc : null, rp: r.ends <= now() ? r.rp : null })) };
@@ -306,5 +307,15 @@ export function installEconomy(d) {
     return { ok: true, coins: e.rc, packs: e.rp, cards: cards.reduce((t, c) => t + c.n, 0) };
   });
 
-  return { settleBourse };
+  /** Opération unique : toutes les expéditions en cours se terminent tout de suite (les gains étaient déjà fixés au départ ; les joueurs les touchent en récupérant l'expédition). */
+  async function finishExpeditionsOnce(env, ctx) {
+    await ensureGameSchema(env);
+    const first = await run(env, 'INSERT INTO event_claims (key, user_id, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', 'exped-finish-1', 0, now());
+    if (!first.meta.changes) return 0;
+    const out = await all(env, "SELECT DISTINCT user_id FROM expeditions WHERE status = 'out' AND ends > ?", now());
+    await run(env, "UPDATE expeditions SET ends = ? WHERE status = 'out' AND ends > ?", now(), now());
+    for (const r of out) notify(env, ctx, { t: 'notify', msg: 'Tes explorateurs sont rentrés : récupère ton butin !' }, r.user_id);
+    return out.length;
+  }
+  return { settleBourse, finishExpeditionsOnce };
 }
