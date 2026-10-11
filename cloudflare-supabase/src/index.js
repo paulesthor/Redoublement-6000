@@ -735,6 +735,11 @@ route('POST', '/api/me/test-mode', async ({ env, user, body }) => {
   await run(env, 'UPDATE users SET test_mode = ? WHERE id = ?', body.on ? 1 : 0, user.id);
   return { ok: true };
 });
+/** Rapport d'incident envoyé par l'appli (ex. un ×10 interrompu) : va dans le journal pour qu'on voie le vrai message d'erreur côté joueur. */
+route('POST', '/api/clientlog', async ({ user, body }) => {
+  logEvent({ level: 'warn', kind: 'client', user: user.name, route: String(body.where || '').slice(0, 60), status: Math.floor(+body.status) || 0, ms: 0, detail: String(body.msg || '').slice(0, 300) });
+  return { ok: true };
+});
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const u = await refreshPacks(env, user);

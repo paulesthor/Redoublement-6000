@@ -19,10 +19,12 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.4';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
+/** Signale un incident au serveur (sans bloquer ni échouer) : permet de retrouver la cause d'un ×10 interrompu. */
+function report(where, e, extra = '') { try { fetch('/api/clientlog', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ where, status: e?.status || 0, msg: `build ${BUILD} · ${navigator.onLine ? 'en ligne' : 'hors ligne'} · ${e?.name || ''} ${String(e?.message || e).slice(0, 120)} ${extra}` }), keepalive: true }).catch(() => {}); } catch { /* sans importance */ } }
 function jlog(txt) { try { const l = JSON.parse(localStorage.getItem('wm_log') || '[]'); l.push([Date.now(), txt]); localStorage.setItem('wm_log', JSON.stringify(l.slice(-40))); } catch { /* stockage indisponible */ } }
 { const nav = performance.getEntriesByType?.('navigation')?.[0]; jlog(`chargement de la page (${nav?.type || '?'}${nav?.transferSize === 0 ? ', depuis le cache' : ''}) — build ${BUILD}`); }
 window.addEventListener('error', e => jlog('erreur : ' + String(e.message).slice(0, 90)));
@@ -1880,7 +1882,7 @@ async function tenFlow(path, body, again) {
       for (let t = 0; t < 4 && !r; t++) {                                           // coupure réseau passagère (iPhone) : jusqu'à 3 nouveaux essais espacés
         try { r = await api(path, body || {}); }
         catch (e) {
-          err = e; jlog(`×10 : paquet ${i + 1}, essai ${t + 1} raté (${String(e.message).slice(0, 60)})`);
+          err = e; jlog(`×10 : paquet ${i + 1}, essai ${t + 1} raté (${String(e.message).slice(0, 60)})`); report('x10 ' + path, e, `paquet ${i + 1}/10, essai ${t + 1}`);
           if (e.status && e.status < 500 && e.status !== 429) break;               // refus normal du serveur (pas assez de pièces, plus de paquet, sanction…) : inutile de réessayer
           await new Promise(res => setTimeout(res, 500 * (t + 1) ** 2));
         }
@@ -1896,6 +1898,7 @@ async function tenFlow(path, body, again) {
   })();
   packsPromise.catch(() => {});
   try { return await playTen(packsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, again }); }
+  catch (e) { report('x10 affichage', e); throw e; }
   finally { await render(); }
 }
 async function openThemed(id, themePrice = 150) {

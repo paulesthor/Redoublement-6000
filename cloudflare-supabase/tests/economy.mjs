@@ -147,5 +147,7 @@ const x0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/
   await DB.prepare('DELETE FROM inventory WHERE user_id = ? AND card_id = ?').bind(alice, cid).run();
   ok('historique : carte vendue = toujours « déjà possédée »', (await q('SELECT ts FROM card_seen WHERE user_id = ? AND card_id = ?', alice, cid)).length === 1);
   [s, r] = await call(A, 'GET', '/api/leaderboard'); ok('classement sans pièces', s === 200 && r.players.every(p => p.coins === undefined), J(r.players?.[0])); }
+[s, r] = await call(A, 'POST', '/api/clientlog', { where: 'x10 /packs/open', status: 503, msg: 'test' }); ok('rapport d\'incident de l\'appli accepté', s === 200 && r.ok === true, J([s, r]));
+[s] = await call(null, 'POST', '/api/clientlog', { msg: 'x' }); ok('rapport : connexion requise', s === 401);
 Date.now = realNow;
 done();
