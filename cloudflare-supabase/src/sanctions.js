@@ -9,7 +9,7 @@ import { st } from './util.js';
 
 const DAY = 86400000;
 /** Pseudos sanctionnés (comparés sans majuscules, accents ni séparateurs) → durée en jours. */
-export const SANCTIONS = { michelleclebresil: { days: 5 }, michelecestlebresil: { days: 5 }, michelcestlebresil: { days: 5 } };
+export const SANCTIONS = {};   // aucune sanction de pièces en cours (ex. { pseudo: { days: 5 } }) ; le blocage du Plus ou moins est dans economy.js (HILO_BLOCKED)
 export const SANCTION_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const normName = n => String(n || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
 
@@ -51,6 +51,18 @@ export function installSanctions(d) {
     }
     cache.t = 0; return rows.length;                                            // le tableau des sanctions en cours sera relu
   }
+  /** Opération unique : lève toutes les sanctions de pièces en cours (gains mis de côté rendus, épargne dégelée, dépenses de nouveau possibles). */
+  async function lift(env) {
+    await ensureGameSchema(env);
+    const first = await run(env, 'INSERT INTO event_claims (key, user_id, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', 'sanction-lift-1', 0, now());
+    if (!first.meta.changes) return 0;
+    const rows = await all(env, 'SELECT user_id FROM coin_freeze WHERE until > ?', now());
+    await run(env, 'UPDATE coin_freeze SET until = ? WHERE until > ?', now() - 5000, now());
+    for (const r of rows) await run(env, 'UPDATE savings SET acc_day = ? WHERE user_id = ?', Math.floor(now() / DAY), r.user_id).catch(() => {});   // les intérêts reprennent aujourd'hui
+    cache.t = 0;
+    await release(env);
+    return rows.length;
+  }
   /** Tâche planifiée : pose les sanctions des pseudos listés (même s'ils ne se connectent pas) et libère celles qui sont finies. */
   async function tick(env) {
     await ensureGameSchema(env);
@@ -58,5 +70,5 @@ export function installSanctions(d) {
     for (const u of users) if (SANCTIONS[normName(u.name)]) await check(env, u);
     return release(env);
   }
-  return { until, check, release, tick, heldOf: async (env, uid) => +((await one(env, 'SELECT held FROM coin_freeze WHERE user_id = ?', uid))?.held || 0) };
+  return { until, check, release, tick, lift, heldOf: async (env, uid) => +((await one(env, 'SELECT held FROM coin_freeze WHERE user_id = ?', uid))?.held || 0) };
 }

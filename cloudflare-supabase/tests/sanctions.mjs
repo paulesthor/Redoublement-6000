@@ -2,6 +2,7 @@
 import './api.mjs';
 const { call, settle, ok, DB, J, done, env, ctx } = globalThis.__T;
 const { __testHooks } = await import('../src/index.js');
+const { SANCTIONS } = await import('../src/sanctions.js'); SANCTIONS.michelleclebresil = { days: 5 };   // la liste réelle est vide : on la remplit pour ces tests
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 let [s, r] = await call(null, 'POST', '/api/register', { name: 'Michelleclebresil', password: 'secret1' }); const M = r.token;
 [s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
@@ -46,4 +47,17 @@ await __testHooks.sanctions.tick(env); [s, r] = await call(M, 'GET', '/api/me');
 [s, r] = await call(M, 'POST', '/api/bank/withdraw', { amount: 500 }); ok('épargne : retrait de nouveau possible', s === 200, J([s, r]));
 // Plus ou moins : bloqué pour ce pseudo
 [s, r] = await call(M, 'GET', '/api/hilo'); ok('Plus ou moins bloqué (pseudo Michelleclebresil)', r.blocked === true && /pas tricher/.test(r.message), J(r));
+// levée des sanctions (opération unique) : gains rendus, épargne et dépenses libérés, Plus ou moins toujours bloqué
+{ await q('DELETE FROM coin_freeze'); await q("DELETE FROM event_claims WHERE key = 'sanction-lift-1'"); await q('UPDATE savings SET acc_day = ? WHERE user_id = ?', dayNo + 5, mid);
+  [s, r] = await call(M, 'GET', '/api/me'); await settle(); ok('nouvelle sanction posée pour le test de levée', !!r.sanction && !!(await q('SELECT 1 x FROM coin_freeze WHERE user_id = ?', mid))[0]);
+  const before = await coins(mid); await q('UPDATE users SET coins = coins + 400 WHERE id = ?', mid); ok('gain mis de côté pendant la sanction', (await coins(mid)) === before && (await held()) === 400);
+  delete SANCTIONS.michelleclebresil; const n = await __testHooks.sanctions.lift(env); await settle();
+  ok('levée : 1 sanction levée, gains rendus', n === 1 && (await coins(mid)) === before + 400 && (await held()) === 0, J([n, await coins(mid), before, await held()]));
+  [s, r] = await call(M, 'GET', '/api/me'); ok('plus d\'écran ni de bandeau de sanction', !r.sanction && !r.ev.some(e => e.kind === 'freeze'), J([r.sanction, r.ev]));
+  await q('UPDATE users SET coins = coins + 100 WHERE id = ?', mid); ok('les gains sont de nouveau immédiats', (await coins(mid)) === before + 500);
+  [s, r] = await call(M, 'POST', '/api/packs/buy', {}); ok('les dépenses sont de nouveau possibles', s !== 403, J([s, r]));
+  [s, r] = await call(M, 'GET', '/api/bank'); ok('épargne dégelée', !r.savings.frozen || r.savings.frozen < Date.now(), J(r.savings));
+  ok('épargne : intérêts repartent d\'aujourd\'hui', +(await q('SELECT acc_day FROM savings WHERE user_id = ?', mid))[0].acc_day === dayNo);
+  [s, r] = await call(M, 'GET', '/api/hilo'); ok('Plus ou moins toujours bloqué', r.blocked === true, J(r));
+  ok('opération unique : relancée, elle ne fait plus rien', (await __testHooks.sanctions.lift(env)) === 0); }
 done();
