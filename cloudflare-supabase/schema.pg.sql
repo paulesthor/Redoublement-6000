@@ -250,3 +250,5 @@ ALTER TABLE coin_freeze ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE IF NOT EXISTS reset_choices (user_id BIGINT PRIMARY KEY, picks TEXT NOT NULL, ts BIGINT NOT NULL);  -- remise à zéro : jusqu'à 3 cartes légendaires proposées par chaque joueur (une sera tirée au sort)
 ALTER TABLE reset_choices ENABLE ROW LEVEL SECURITY;
+CREATE TABLE IF NOT EXISTS legend_taken (card_id BIGINT PRIMARY KEY, ts BIGINT NOT NULL);  -- légendaires uniques : cartes légendaires (normales et shiny) qui existent déjà dans le jeu
+ALTER TABLE legend_taken ENABLE ROW LEVEL SECURITY;

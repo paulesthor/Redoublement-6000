@@ -7,6 +7,7 @@ import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
 import { installEvents } from './events.js';
 import { installReset, RESET_AT } from './reset.js';
+import { uniqueOn, claimLegend, releaseLegends } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
@@ -71,8 +72,9 @@ async function reserveCounts(env) {
   if (now() - reserveCountsCache.t > 300000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n, MIN(id) lo, MAX(id) hi FROM reserve GROUP BY rarity')).map(r => [r.rarity, r])); reserveCountsCache.t = now(); }
   return reserveCountsCache.v;
 }
-async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) {
+async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null, uid = null) {
   const { ranges } = await getMeta(env, origin);
+  const uniq = !!uid && await uniqueOn(env);                                   // légendaires uniques : chaque légendaire tirée est réservée (une seule par article, une seule shiny)
   if (ev && (ev.legend > 1 || ev.ultra > 1)) w = { ...w, legendary: w.legendary * ev.legend, ultra: w.ultra * ev.ultra };     // heure dorée
   if (theme) w = { ...w, legendary: w.legendary * CFG.THEME_LEGEND_MULT };               // paquet thématique : plus de légendaires, toutes de la catégorie
   const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE * (w._god ?? 1);           // très rare : tout le paquet est ultra rare ou légendaire
@@ -84,7 +86,7 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
     // raretés basses : la carte est relue sans être retirée (aucune écriture), et seulement renouvelée une fois sur REUSE_RENEW ; autres raretés : retirée à chaque tirage
     const counts = await reserveCounts(env);
     // carte au hasard sans parcourir la table : on part d'un identifiant tiré entre le plus petit et le plus grand (une seule ligne lue)
-    const reads = rarities.map(r => theme && r === 'legendary' ? st(env, 'SELECT id FROM reserve WHERE false') : REUSE[r] && counts[r]?.n > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? AND id >= ? LIMIT 1', r, counts[r].lo + Math.floor(Math.random() * (counts[r].hi - counts[r].lo + 1))) : null);
+    const reads = rarities.map(r => (theme || uniq) && r === 'legendary' ? st(env, 'SELECT id FROM reserve WHERE false') : REUSE[r] && counts[r]?.n > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? AND id >= ? LIMIT 1', r, counts[r].lo + Math.floor(Math.random() * (counts[r].hi - counts[r].lo + 1))) : null);
     const res = await env.DB.batch(rarities.map((r, i) => reads[i] ?? st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? LIMIT 1) RETURNING id', r)));
     claimed = res.map(x => x.results?.[0]?.id ?? null);
     const renew = claimed.filter((id, i) => id && reads[i] && Math.random() < REUSE_RENEW);
@@ -95,9 +97,24 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
   const taken = new Set();
   const used = new Set();                                                       // jamais deux fois la même carte dans un paquet
   const themed = theme ? theme.cards.slice() : null;
+  /** Réserve une légendaire précise (shiny avec la chance habituelle, sinon normale) : { rank, entry, shiny } ou null si elle existe déjà. */
+  const legendOf = async rank => {
+    const e = await entryAt(env, origin, rank), shinyRoll = Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
+    if (shinyRoll && await claimLegend(env, e[0] + SHINY_OFFSET)) return { rank, entry: e, shiny: 1 };
+    return (await claimLegend(env, e[0])) ? { rank, entry: e, shiny: 0 } : null;
+  };
+  const fixed = new Map();
+  if (uniq) for (let i = 0; i < rarities.length; i++) {
+    if (rarities[i] !== 'legendary') continue;
+    let got = null;
+    if (themed) { while (!got && themed.length) { const [c] = themed.splice(Math.floor(Math.random() * themed.length), 1); got = await legendOf(c.r); } }
+    else { const [a, b] = ranges.legendary; for (let tries = 0; !got && tries < 40; tries++) { const rank = a + Math.floor(Math.random() * (b - a)); if (!taken.has(rank)) { got = await legendOf(rank); if (got) taken.add(rank); } } }
+    if (got) fixed.set(i, got); else rarities[i] = 'ultra';                    // plus aucune légendaire disponible (catégorie épuisée) : une ultra rare à la place
+  }
   const picks = rarities.map((rarity0, i) => {
     let rarity = rarity0;
-    if (themed && rarity === 'legendary') {                                     // carte légendaire de la catégorie, jamais deux fois la même dans le paquet
+    if (fixed.has(i)) { const f = fixed.get(i); return { rarity: 'legendary', rank: f.rank, entry: f.entry, shiny: f.shiny }; }
+    if (themed && !uniq && rarity === 'legendary') {                                     // carte légendaire de la catégorie, jamais deux fois la même dans le paquet
       if (themed.length) { const [c] = themed.splice(Math.floor(Math.random() * themed.length), 1); return { rarity, rank: c.r }; }
       rarity = 'ultra';                                                           // toutes les cartes de la catégorie sont déjà dans ce paquet : la suivante est une ultra rare
     }
@@ -112,12 +129,15 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
   for (const c of theme ? [] : [ev?.hunt && { r: ev.hunt.r }, ev?.album?.length && { r: ev.album[Math.floor(Math.random() * ev.album.length)].r }].filter(Boolean)) {
     if (picks.some(p => p.rank === c.r)) continue;
     const slot = picks.findIndex(p => !p.ready && (p.rarity === 'common' || p.rarity === 'uncommon')), i = slot >= 0 ? slot : picks.findIndex(p => p.rarity !== 'legendary');
-    if (i >= 0) picks[i] = { rarity: RARITIES.find(r => c.r >= ranges[r][0] && c.r < ranges[r][1]) ?? 'common', rank: c.r };
+    if (i < 0) continue;
+    const rarity = RARITIES.find(r => c.r >= ranges[r][0] && c.r < ranges[r][1]) ?? 'common';
+    if (uniq && rarity === 'legendary') { const f = await legendOf(c.r); if (f) picks[i] = { rarity, rank: c.r, entry: f.entry, shiny: f.shiny }; continue; }   // carte recherchée légendaire : seulement si elle n'existe pas encore
+    picks[i] = { rarity, rank: c.r };
   }
-  const entries = await Promise.all(picks.map(p => p.ready ? null : entryAt(env, origin, p.rank)));
+  const entries = await Promise.all(picks.map(p => p.ready ? null : p.entry ?? entryAt(env, origin, p.rank)));
   return picks.map((p, i) => {
     const [page, title, views] = p.ready ? [p.ready.id, p.ready.title, p.ready.views] : entries[i];
-    const shiny = p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
+    const shiny = p.shiny !== undefined ? !!p.shiny : p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
     return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...(god ? { god: 1 } : {}), ...stats(title, p.rarity, shiny) };
   });
 }
@@ -359,10 +379,10 @@ async function prepareFor(env, ctx, user, stock) {
   preparing.add(user.id);
   try {
     const wk = weightKey(user);                       // empreinte des taux de drop : un paquet préparé avec d'autres taux est jeté
-    await run(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ?', user.id, wk);
+    await dropStale(env, user.id, wk);
     const have = (await one(env, 'SELECT COUNT(*) n FROM prepared WHERE user_id = ?', user.id)).n;
     for (let k = have; k < want; k++) {
-      const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE, userWeights(user));
+      const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE, userWeights(user), null, null, user.id);
       const ids = [...new Set(drawn.map(c => c.id))];
       await env.DB.batch(drawn.map(c => insertCard(env, c)));
       await enrich(env, ids);
@@ -374,11 +394,17 @@ async function prepareFor(env, ctx, user, stock) {
   } finally { preparing.delete(user.id); }
 }
 /** Le plus ancien paquet préparé du joueur (ou null). */
+/** Jette les paquets préparés avec d'autres taux (leurs légendaires uniques retournent dans la réserve). */
+async function dropStale(env, uid, wk) {
+  const gone = await all(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ? RETURNING cards', uid, wk);
+  for (const r of gone) { try { await releaseLegends(env, JSON.parse(r.cards)); } catch { /* paquet illisible : ignoré */ } }
+}
 async function takePrepared(env, uid, wk = '') {
   const res = await env.DB.batch([                                         // un seul aller-retour : on jette les paquets aux anciens taux, puis on prend le plus ancien
-    st(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ?', uid, wk),
+    st(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ? RETURNING cards', uid, wk),
     st(env, 'DELETE FROM prepared WHERE id = (SELECT id FROM prepared WHERE user_id = ? ORDER BY id LIMIT 1) RETURNING cards', uid),
   ]).catch(() => null);
+  for (const r of res?.[0]?.results ?? []) { try { await releaseLegends(env, JSON.parse(r.cards)); } catch { /* paquet illisible : ignoré */ } }
   const row = res?.[1]?.results?.[0];
   try { return row ? JSON.parse(row.cards) : null; } catch { return null; }
 }
@@ -387,7 +413,7 @@ async function takePrepared(env, uid, wk = '') {
 const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan', 'Zoé_Wiki', 'Hugo_Collect', 'Manon', 'Théo_Lyon', 'Sarah.M', 'Ethan_FR', 'Jade_Cartes',
   'Lucas_Bdx', 'Chloé.R', 'Maël', 'Anaïs_34', 'Romain_Wiki', 'Lina', 'Axel_Lille', 'Eva.D', 'Tom_Collec', 'Louise_59', 'Noah', 'Clara_Nice'];
 const BOT_PRICE = { common: [2, 6], uncommon: [5, 14], rare: [12, 36], super: [40, 110], ultra: [120, 320], legendary: [350, 900] };
-const BOT_MIX = [['common', .30], ['uncommon', .27], ['rare', .23], ['super', .12], ['ultra', .06], ['legendary', .02]];
+const BOT_MIX = [['common', .30], ['uncommon', .27], ['rare', .23], ['super', .12], ['ultra', .08]];   // jamais de légendaire : elles sont uniques, le marché des légendaires est entre joueurs
 const BOT_MINUTES = [[60, .3], [360, .3], [720, .2], [1440, .2]];
 const BOT_LISTINGS = 30;                 // ventes simulées ouvertes en permanence
 const BOT_NEW_PER_TICK = 5;
@@ -398,7 +424,7 @@ const demand = views => Math.min(1, Math.max(.2, Math.log10(Math.max(1, views)) 
 let lastBot = 0;
 
 /** Chance qu'une carte cherchée soit mise en vente par un joueur simulé : plus la carte est rare, moins c'est probable (la recherche ne garantit plus rien). */
-const WISH_CHANCE = { common: .40, uncommon: .30, rare: .22, super: .14, ultra: .08, legendary: .04 };
+const WISH_CHANCE = { common: .40, uncommon: .30, rare: .22, super: .14, ultra: .08, legendary: 0 };   // une légendaire cherchée n'est jamais mise en vente par un joueur simulé
 /** Tirage décidé une fois par heure pour un même joueur et une même carte : chercher 20 fois la même carte ne change pas le résultat. */
 const wishRoll = (uid, c) => hash(`${uid}:${c.id}:${Math.floor(now() / 3600e3)}`) / 4294967296 < (WISH_CHANCE[c.rarity] ?? .1);
 /** Une carte cherchée par un joueur peut (parfois) être mise en vente par un joueur simulé, à un moment aléatoire dans l'heure. */
@@ -481,6 +507,7 @@ async function botTick(env, ctx, force = false) {
   let bidsLeft = 4;
   for (const a of open.sort(() => Math.random() - .5)) {
     if (bidsLeft <= 0) break;
+    if (a.rarity === 'legendary') continue;                         // les joueurs simulés n'enchérissent jamais sur une légendaire (unique)
     const d = demand(a.views), humanSeller = !botName.has(a.seller_id), humanLeads = a.bidder_id && !botName.has(a.bidder_id);
     const value = botValue(a.rarity, a.views, a.avg_price), cap = botCap(value);   // jamais au-dessus du prix du marché (à 3 % près)
     const maxBids = 2 + Math.round(4 * d);
@@ -763,13 +790,15 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
+  let drawn = null;
   try {
     const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-    const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
+    drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm, u.id);
     ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
     return await finishPack(env, ctx, user, drawn, 0, fake);
   } catch (e) {                                            // échec après avoir pris le paquet : on le rend (jamais de paquet perdu), l'appli peut réessayer
     if (!testOn(u)) await run(env, 'UPDATE users SET pack_stock = pack_stock + 1 WHERE id = ?', u.id).catch(() => {});
+    if (drawn) await releaseLegends(env, drawn);
     throw e;
   }
 });
@@ -786,13 +815,15 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
+  let drawn = null;
   try {
     const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-    const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
+    drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm, user.id);
     ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
     return await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
   } catch (e) {                                            // échec après paiement : les pièces sont rendues
     await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', CFG.PACK_PRICE, user.id).catch(() => {});
+    if (drawn) await releaseLegends(env, drawn);
     throw e;
   }
 });
@@ -913,7 +944,7 @@ route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) =>
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', price, user.id, price);
   if (!paid.meta.changes) { await release(); bad(`Pas assez de pièces (${price} requises)`); }
   let drawn;
-  try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm); }
+  try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm, user.id); }
   catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); await release(); throw e; }   // tirage impossible : remboursé
   return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
 });
@@ -1028,6 +1059,7 @@ route('POST', '/api/discard', async ({ env, ctx, user, body }) => {
   const cid = +body.card_id, want = Math.max(1, Math.floor(+body.qty || 1));
   const c = await one(env, 'SELECT c.rarity, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.card_id = ?', user.id, cid);
   if (!c) bad('Tu ne possèdes pas cette carte');
+  if (c.rarity === 'legendary' && await uniqueOn(env)) bad('Une légendaire est unique : vends-la aux enchères ou échange-la, elle ne peut pas être défaussée');
   const qty = Math.min(want, c.qty), price = SELL[c.rarity] * qty;
   const taken = await run(env, 'UPDATE inventory SET qty = qty - ? WHERE user_id = ? AND card_id = ? AND qty >= ?', qty, user.id, cid, qty);
   if (!taken.meta.changes) bad('Tu ne possèdes pas cette carte');
@@ -1045,6 +1077,7 @@ route('POST', '/api/discard-many', async ({ env, ctx, user, body }) => {
   if (!ids.length) bad('Aucune carte choisie');
   const rows = await all(env, `SELECT card_id, qty, rar FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(ids.length)}) AND qty >= 1`, user.id, ...ids);
   if (!rows.length) bad('Tu ne possèdes plus ces cartes');
+  if (rows.some(r => r.rar === 5) && await uniqueOn(env)) bad('Une légendaire est unique : elle ne peut pas être défaussée (vends-la aux enchères ou échange-la)');
   const price = rows.reduce((t, r) => t + SELL[RARITIES[r.rar]], 0), got = rows.map(r => r.card_id);
   await env.DB.batch([
     ...got.map(id => st(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty >= 1', user.id, id)),
@@ -1708,6 +1741,7 @@ route('POST', '/api/admin/lot', admin(async ({ env, ctx, origin, body }) => {
   const title = String(body.title || '').trim(); if (!title) bad('Choisis une carte');
   const rank = await rankOf(env, origin, title); if (rank == null) bad('Cette page n’est pas dans le catalogue', 404);
   const { ranges } = await getMeta(env, origin), rarity = RARITIES.find(r => rank >= ranges[r][0] && rank < ranges[r][1]);
+  if (rarity === 'legendary' && await uniqueOn(env)) bad('Les légendaires sont uniques : elles ne se mettent pas en vente sous le nom d\'un joueur simulé', 400);
   const [id, t, views] = await entryAt(env, origin, rank);
   if (await one(env, "SELECT 1 x FROM auctions WHERE card_id = ? AND status = 'open'", id)) bad('Cette carte est déjà en vente');
   const bots = await getBots(env), seller = body.seller_id ? bots.find(b => b.id === +body.seller_id) : bots[Math.floor(Math.random() * bots.length)];
@@ -1723,6 +1757,7 @@ route('POST', '/api/admin/lot', admin(async ({ env, ctx, origin, body }) => {
 }));
 route('POST', '/api/admin/lots-random', admin(async ({ env, ctx, origin, body }) => {
   const n = Math.min(30, Math.max(1, Math.trunc(+body.count) || 1)), want = RARITIES.includes(body.rarity) ? body.rarity : null;
+  if (want === 'legendary' && await uniqueOn(env)) bad('Les légendaires sont uniques : pas de ventes simulées de légendaires', 400);
   const mins = body.minutes ? Math.min(1440, Math.max(5, Math.trunc(+body.minutes))) : null;
   const bots = await getBots(env), { ranges } = await getMeta(env, origin);
   const open = new Set((await all(env, "SELECT card_id FROM auctions WHERE status = 'open'")).map(r => r.card_id));
