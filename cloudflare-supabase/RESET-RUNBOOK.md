@@ -16,7 +16,7 @@ Un seul appel d'administration (`POST /api/admin/reset-run`, bouton **Outils →
 - Soir : plus aucun changement de code. Vérifier que tout le monde a choisi (les joueurs sans choix recevront une carte au hasard).
 
 **Mercredi, juste après minuit (heure de Paris)** — les choix sont verrouillés à 00 h 00.
-1. Déployer la branche de test (`test/equilibrage`) sur la branche de production (voir plus bas).
+1. Mettre en ligne l'état de la branche de test : sur la branche de production, `git checkout test/equilibrage -- .` puis un commit et un push (aucun conflit : vérifié, 24 fichiers). Le déploiement prend environ une minute.
 2. Ouvrir l'appli → Administration → Outils → **Prévisualiser** : vérifier la liste (joueur → carte, source, nombre de pièces/cartes avant). Rien n'est modifié.
 3. **Lancer**, taper exactement `REMETTRE A ZERO`.
 4. Vérifier : chaque joueur n'a plus que sa carte fondateur ; `GET /api/admin/logs` sans erreur ; ouvrir un paquet avec un compte de test.
