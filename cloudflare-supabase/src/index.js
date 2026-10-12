@@ -8,7 +8,8 @@ import { installEconomy } from './economy.js';
 import { installEvents } from './events.js';
 import { installReset, RESET_AT } from './reset.js';
 import { installMarket, MARKET } from './market.js';
-import { uniqueOn, claimLegend, releaseLegends } from './unique.js';
+import { installSeasonZero } from './seasonzero.js';
+import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
@@ -661,7 +662,8 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   if (frozen) ev.push({ id: 'freeze', kind: 'freeze', name: 'Gains suspendus', emoji: '⛔', end: frozen });
   const resetOn = env.RESET !== '0' && now() < RESET_AT, resetChosen = resetOn ? await reset.chosen(env, user.id).catch(() => false) : false;   // remise à zéro annoncée
   if (resetOn) ev.push({ id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: RESET_AT });
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}) };
+  const recap = !resetOn && now() >= RESET_AT ? await one(env, 'SELECT seen FROM season0_recap WHERE user_id = ?', user.id).catch(() => null) : null;   // bilan de la saison 0 à montrer une fois
+  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -968,6 +970,9 @@ const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.unt
 // ---------- événements surprise (voir events.js) ----------
 const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, placeholders });
 const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
+const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
+const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
+  afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
 const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN,
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
@@ -1671,6 +1676,19 @@ route('POST', '/api/push/pull', async ({ env, body }) => ({ msgs: await pull(env
 // ---------- administration (réservée aux comptes is_admin) ----------
 const admin = fn => async ctx => { if (!ctx.user.is_admin) bad('Réservé à l’administrateur', 403); return fn(ctx); };
 const onlineIds = async env => { try { return (await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids; } catch { return []; } };
+// ---------- remise à zéro (saison 0) : opération d'administration + bilan du joueur ----------
+route('POST', '/api/admin/reset-run', admin(async ({ env, body }) => {
+  if (!body.dry && body.confirm !== 'REMETTRE A ZERO') bad('Confirmation manquante : écris REMETTRE A ZERO', 400);
+  try { return await seasonZero.reset(env, { dry: !!body.dry }); } catch (e) { if (e.status) bad(e.message, e.status); throw e; }
+}));
+route('GET', '/api/recap', async ({ env, user }) => {
+  await ensureGameSchema(env);
+  const r = await seasonZero.recapOf(env, user.id); if (!r) bad('Pas de bilan', 404);
+  const founder = JSON.parse(r.founder), card = await one(env, 'SELECT * FROM cards WHERE id = ?', founder.id);
+  if (card && !card.image) ctx_enrich(env, [founder.id]);
+  return { recap: JSON.parse(r.data), founder: { ...founder, card }, seen: !!r.seen };
+});
+route('POST', '/api/recap/seen', async ({ env, user }) => { await seasonZero.markSeen(env, user.id); return { ok: true }; });
 route('GET', '/api/admin/overview', admin(async ({ env }) => {
   const day = new Date(); day.setUTCHours(0, 0, 0, 0);
   const n = async (sql, ...p) => (await one(env, sql, ...p)).n;
