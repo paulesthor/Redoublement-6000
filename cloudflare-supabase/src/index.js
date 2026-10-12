@@ -419,8 +419,14 @@ async function getBots(env) {
   }
   return bots;
 }
-/** Prix de départ d'une vente simulée : prix moyen du marché s'il existe, sinon fourchette de la rareté ; une page très visitée coûte un peu plus. */
-const botPrice = (rarity, views, avg) => { const [lo, hi] = BOT_PRICE[rarity], d = demand(views); return Math.max(1, Math.round((avg ?? rand(lo, hi)) * rand(.8, 1.3) * (.85 + .5 * d))); };
+/** Valeur de référence d'une carte pour les joueurs simulés : fixée par la rareté et la popularité de la page, indépendante des ventes (donc impossible à gonfler par des ventes truquées). */
+const botRef = (rarity, views) => { const [lo, hi] = BOT_PRICE[rarity]; return (lo + hi) / 2 * (.85 + .5 * demand(views)); };
+/** Prix du marché vu par les joueurs simulés : la moyenne des dernières ventes, bornée entre la moitié et une fois et demie la valeur de référence. */
+const botValue = (rarity, views, avg) => { const ref = botRef(rarity, views); return avg == null ? ref : Math.max(ref * .5, Math.min(avg, ref * 1.5)); };
+/** Offre maximale d'un joueur simulé : au plus 3 % au-dessus du prix du marché. */
+const botCap = value => Math.floor(value * 1.03) + 1;
+/** Prix de départ d'une vente simulée : autour du prix du marché. */
+const botPrice = (rarity, views, avg) => Math.max(1, Math.round(botValue(rarity, views, avg) * rand(.8, 1.2)));
 
 async function botTick(env, ctx, force = false) {
   if (!force && now() - lastBot < 150000) return;
@@ -459,8 +465,7 @@ async function botTick(env, ctx, force = false) {
     const avgRows = await all(env, `SELECT card_id, CAST(ROUND(AVG(price)) AS INTEGER) p FROM sales WHERE card_id IN (${placeholders(ids.length)}) GROUP BY card_id`, ...ids);
     const avg = new Map(avgRows.map(r => [r.card_id, r.p]));
     for (const l of listings) {
-      const [lo, hi] = BOT_PRICE[l.rarity], d = demand(l.views);
-      const price = Math.max(1, Math.round((avg.get(l.cardId) ?? rand(lo, hi)) * rand(.8, 1.3) * (.85 + .5 * d)));   // une page très visitée se vend un peu plus cher
+      const price = botPrice(l.rarity, l.views, avg.get(l.cardId) ?? null);
       const seller = bots[Math.floor(Math.random() * bots.length)];
       stmts.push(st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', seller.id, l.cardId, price, now() + Math.round(pickW(BOT_MINUTES) * 60000 * rand(.2, 1))));
     }
@@ -476,7 +481,7 @@ async function botTick(env, ctx, force = false) {
   for (const a of open.sort(() => Math.random() - .5)) {
     if (bidsLeft <= 0) break;
     const d = demand(a.views), humanSeller = !botName.has(a.seller_id), humanLeads = a.bidder_id && !botName.has(a.bidder_id);
-    const value = a.avg_price ?? (BOT_PRICE[a.rarity][0] + BOT_PRICE[a.rarity][1]) / 2;
+    const value = botValue(a.rarity, a.views, a.avg_price), cap = botCap(value);   // jamais au-dessus du prix du marché (à 3 % près)
     const maxBids = 2 + Math.round(4 * d);
     let p;
     if (humanSeller) p = a.nb === 0 ? .04 + .30 * d * d : a.nb < maxBids ? .02 + .16 * d * d : 0;   // une vente de joueur reçoit des offres selon la demande
@@ -484,8 +489,8 @@ async function botTick(env, ctx, force = false) {
     else p = a.nb < maxBids ? .02 + .08 * d : 0;                    // les ventes entre simulés montent doucement
     if (Math.random() >= p) continue;
     const min = Math.max(a.start_price, a.bid + 1);
-    const amount = a.bid ? min + Math.max(0, Math.round(a.bid * rand(.03, .12 + .08 * d))) : min;
-    if (amount > value * (1.2 + 1.2 * d) + 3) continue;             // plafond selon l'envie : on surpaye plus pour une page populaire
+    if (min > cap) continue;                                        // l'offre minimale dépasse déjà le prix du marché : ils passent
+    const amount = Math.min(cap, a.bid ? min + Math.max(0, Math.round(a.bid * rand(.03, .12 + .08 * d))) : min);
     const bot = bots.filter(b => b.id !== a.seller_id && b.id !== a.bidder_id)[Math.floor(Math.random() * (bots.length - 1))];
     if (!bot) continue;
     const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at;
@@ -1885,4 +1890,4 @@ export default {
   },
   async fetch(req, env, ctx) { return secure(await handle(req, env, ctx)); },
 };
-export { pickRarity, userWeights, wishRoll, WISH_CHANCE };   // exportés pour les tests
+export { pickRarity, userWeights, wishRoll, WISH_CHANCE, botRef, botValue, botCap, botPrice };   // exportés pour les tests
