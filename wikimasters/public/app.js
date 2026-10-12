@@ -1845,25 +1845,25 @@ views.albums = async v => {
   const open = id => {
     const a = d.albums.find(x => x.id === id); if (!a) return; albumOpen = id;
     const n = prog(a), full = n === a.cards.length, m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; albumOpen = null; };
-    const eligible = a.cards.filter(c => c.pick);                 // cartes de l'album proposables en shiny : un exemplaire normal, pas encore de shiny
+    const eligible = [];                                           // plus de carte shiny offerte : la complétion rapporte seulement des wikibidou
     let choosing = false, sel = null;
     m.hidden = false;
     const draw = () => {
       m.innerHTML = `<div class="albsheet"><h2>${esc(a.emoji || '📚')} ${esc(a.name)}</h2><p class="mut" style="margin:0 0 10px">${esc(a.blurb || '')}</p>
         ${choosing ? '<p style="margin:0 0 8px"><b>Choisis la carte de cet album que tu veux transformer en shiny</b> ✨</p>' : ''}
         <div class="albcards ${choosing ? 'choosing' : ''}">${a.cards.map(c => `<div class="albcard ${c.own ? 'own' : ''} ${c.shiny ? 'isshiny' : ''} ${choosing && c.pick ? 'pickable' : ''} ${sel === c.id ? 'sel' : ''}" data-cid="${c.id}"><div class="ai" ${c.img ? `style="background-image:url('${esc(c.img)}')"` : ''}>${c.own ? (c.img ? '' : '✓') : '?'}</div><span>${c.shiny ? '✨ ' : ''}${esc(c.t)}</span></div>`).join('')}</div>
-        ${a.until ? `<p class="mut" style="margin:0 0 8px">⏳ Album éphémère : plus que <b>${cdLong(a.until - Date.now())}</b>. Ses cartes tombent bien plus souvent dans les paquets, et la récompense inclut un titre exclusif.</p>` : ''}<p class="mut" style="margin:10px 0">Récompense : ${rewardChips(a.reward)}${eligible.length || !full ? ' + <b>une carte de l\'album en shiny, au choix</b>' : ''} · ${n} / ${a.cards.length} cartes (une variante shiny compte aussi)</p>
+        ${a.until ? `<p class="mut" style="margin:0 0 8px">⏳ Album éphémère : plus que <b>${cdLong(a.until - Date.now())}</b>. Ses cartes tombent bien plus souvent dans les paquets, et la récompense inclut un titre exclusif.</p>` : ''}<p class="mut" style="margin:10px 0">Récompense : ${rewardChips(a.reward)} · ${n} / ${a.cards.length} cartes (une variante shiny compte aussi)</p>
         <div class="row">${a.claimed ? '<button class="plain" disabled style="flex:1">Récompense récupérée ✓</button>'
           : !full ? `<button id="al-claim" style="flex:1" disabled>Il manque ${a.cards.length - n} carte${a.cards.length - n > 1 ? 's' : ''}</button>`
           : choosing ? `<button id="al-claim" style="flex:1" ${sel ? '' : 'disabled'}>${sel ? 'Valider : 5 000 pièces + shiny' : 'Touche une carte'}</button>`
-          : `<button id="al-claim" style="flex:1">${eligible.length ? 'Choisir ma carte shiny' : 'Récupérer la récompense'}</button>`}<button class="plain" id="al-x" style="flex:1">${choosing ? 'Retour' : 'Fermer'}</button></div></div>`;
+          : `<button id="al-claim" style="flex:1">Récupérer la récompense</button>`}<button class="plain" id="al-x" style="flex:1">${choosing ? 'Retour' : 'Fermer'}</button></div></div>`;
       $('#al-x').onclick = () => { if (choosing) { choosing = false; sel = null; draw(); } else close(); }; m.onclick = e => { if (e.target === m) close(); };
       m.querySelectorAll('.albcard.pickable').forEach(el => el.onclick = () => { sel = +el.dataset.cid; draw(); });
       $('#al-claim')?.addEventListener('click', safe(async () => {
         if (full && !a.claimed && eligible.length && !choosing) { choosing = true; draw(); return; }
         $('#al-claim').disabled = true;
         const r = await api(`/albums/${a.id}/claim`, sel ? { card_id: sel } : {});
-        sparks($('.albsheet'), 34); toast(`+${r.reward.c} pièces, +${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''}${r.shiny ? ` · ✨ ${r.shiny.title} est devenue shiny !` : ''}`); await refreshMe(); setTimeout(() => { close(); render(); }, 1100);
+        sparks($('.albsheet'), 34); toast(`+${r.reward.c} pièces${r.reward.p ? `, +${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''}` : ''}`); await refreshMe(); setTimeout(() => { close(); render(); }, 1100);
       }));
     };
     draw();
@@ -1918,9 +1918,9 @@ views.themepacks = async v => {
   const d = await api('/themepacks');
   if (!d.themes.length) { v.innerHTML = `${pageHead('Paquets du jour', 'Bientôt disponibles')}<div class="empty">Les paquets par catégorie arrivent très vite.</div>`; return; }
   v.innerHTML = `${pageHead('Paquets du jour', `Deux catégories tirées au sort chaque jour · ${fmt(d.price)} pièces le paquet · légendaires ×${d.mult}`)}${d.festival ? `<div class="panel evfest">🎪 <b>Festival des catégories</b> : ${fmt(d.price)} pièces au lieu de ${fmt(d.normalPrice)} et <b>une légendaire garantie</b> dans chaque paquet !</div>` : ''}
-    <p class="mut" style="margin:-6px 0 12px"><span class="inlclk">${ico('clock')}</span> Nouvelles catégories dans <b id="th-left">${hmLeft(d.resetIn)}</b> · tu as <b>${fmt(me.coins)}</b> pièces. Les légendaires du paquet viennent toutes de la catégorie ; les autres raretés sont tirées normalement, sans GODPACK.</p>
+    <p class="mut" style="margin:-6px 0 12px"><span class="inlclk">${ico('clock')}</span> Nouvelles catégories dans <b id="th-left">${hmLeft(d.resetIn)}</b> · tu as <b>${fmt(me.coins)}</b> pièces · <b>${d.daily.left}</b> / ${d.daily.max} paquets du jour restants aujourd'hui. Les légendaires du paquet viennent toutes de la catégorie ; les autres raretés sont tirées normalement, sans GODPACK.</p>
     <div class="thgrid">${d.themes.map(t => `<div class="thcard"><span class="ae">${esc(t.emoji || '📦')}</span><b>${esc(t.name)}</b><small>${t.count} légendaires possibles : ${t.sample.map(esc).join(', ')}…</small>
-      <div class="row thbtns"><button data-th="${t.id}" ${me.coins < d.price ? 'class="plain"' : ''}>${ico('coin')} ${fmt(d.price)}</button><button data-th10="${t.id}" class="${me.coins < d.price * 10 ? 'plain' : ''}">×10 · ${fmt(d.price * 10)}</button></div></div>`).join('')}</div>`;
+      <div class="row thbtns"><button data-th="${t.id}" ${d.daily.left < 1 ? 'disabled' : me.coins < d.price ? 'class="plain"' : ''}>${ico('coin')} ${fmt(d.price)}</button><button data-th10="${t.id}" ${d.daily.left < 10 ? 'disabled' : ''} class="${me.coins < d.price * 10 ? 'plain' : ''}">×10 · ${fmt(d.price * 10)}</button></div></div>`).join('')}</div>`;
   { const end = Date.now() + d.resetIn; tick = setInterval(() => { const e = $('#th-left'); if (e) e.textContent = hmLeft(end - Date.now()); }, 30000); }
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = safe(async () => {
     const t = d.themes.find(x => x.id === b.dataset.th);

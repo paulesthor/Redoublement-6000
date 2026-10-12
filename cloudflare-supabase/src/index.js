@@ -889,7 +889,9 @@ async function todaysThemes(env, origin) {
   // on garde les deux albums à l'empreinte la plus petite pour ce jour : ajouter ou retirer un album ne change presque jamais les catégories du jour (seulement si le nouveau est tiré)
   return all_.map(a => [hash(day + ':' + a.id), a]).sort((x, y) => x[0] - y[0] || (x[1].id < y[1].id ? -1 : 1)).slice(0, 2).map(x => x[1]);
 }
-route('GET', '/api/themepacks', async ({ env, origin }) => ({
+const themeKey = () => 'tp:' + dayKey();
+route('GET', '/api/themepacks', async ({ env, user, origin }) => ({
+  daily: await (async () => { await ensureGameSchema(env); const used = +((await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', themeKey(), user.id))?.n || 0); return { max: CFG.THEME_PACK_DAILY, used, left: Math.max(0, CFG.THEME_PACK_DAILY - used) }; })(),
   price: (await events.mods(env)).themePrice ?? CFG.THEME_PACK_PRICE, normalPrice: CFG.THEME_PACK_PRICE, festival: !!(await events.mods(env)).themeGuarantee, mult: CFG.THEME_LEGEND_MULT, resetIn: msToMidnight(),
   themes: (await todaysThemes(env, origin)).map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, count: a.cards.length, sample: a.cards.slice(0, 3).map(c => c.t) })),
 }));
@@ -904,11 +906,15 @@ async function themeAsked(env, origin, id) {
 route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) => {
   const theme = await themeAsked(env, origin, body.theme);
   const evm = await events.drawMods(env, origin), price = evm.themePrice ?? CFG.THEME_PACK_PRICE;
+  await ensureGameSchema(env);
+  const release = () => run(env, 'UPDATE event_progress SET n = GREATEST(0, n - 1) WHERE key = ? AND user_id = ?', themeKey(), user.id).catch(() => {});
+  const slot = await run(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,1) ON CONFLICT (key, user_id) DO UPDATE SET n = event_progress.n + 1 WHERE event_progress.n < ?', themeKey(), user.id, CFG.THEME_PACK_DAILY);
+  if (!slot.meta.changes) bad(`Limite atteinte : ${CFG.THEME_PACK_DAILY} paquets du jour par jour, reviens demain`);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', price, user.id, price);
-  if (!paid.meta.changes) bad(`Pas assez de pièces (${price} requises)`);
+  if (!paid.meta.changes) { await release(); bad(`Pas assez de pièces (${price} requises)`); }
   let drawn;
   try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm); }
-  catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); throw e; }   // tirage impossible : remboursé
+  catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); await release(); throw e; }   // tirage impossible : remboursé
   return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
 });
 
@@ -934,8 +940,8 @@ const events = installEvents({ route, bad, one, all, run, st, notify, ensureGame
 export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
-const ALBUM_COINS = 5000;                                    // pièces pour un album complété, + une carte de l'album au choix en shiny
-const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: ALBUM_COINS, p: a.cards.length >= 8 ? 2 : 1 });
+const ALBUM_COINS = 5000;                                    // pièces pour un album complété (rien d'autre : ni paquets, ni shiny)
+const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: ALBUM_COINS, p: 0 });
 /** Albums éphémères (cartes + dates), lus une fois dans le catalogue statique. */
 let eventAlbumsCache = null;
 const eventAlbums = async (env, origin) => { try { return (eventAlbumsCache ??= (await assetJson(env, origin, '/catalog/albums-events.json')).albums); } catch { return []; } };
@@ -971,29 +977,16 @@ route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, body, or
   const inv = await all(env, `SELECT card_id FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET));
   const n = new Set(inv.map(r => (r.card_id >= SHINY_OFFSET ? r.card_id - SHINY_OFFSET : r.card_id))).size;
   if (n < ids.length) bad(`Il te manque ${ids.length - n} carte${ids.length - n > 1 ? 's' : ''} pour terminer cet album`);
-  // la carte transformée en shiny : uniquement une carte de l'album dont le joueur a un exemplaire normal et pas encore de version shiny
-  const norm = new Set(inv.filter(r => r.card_id < SHINY_OFFSET).map(r => r.card_id)), shin = new Set(inv.filter(r => r.card_id >= SHINY_OFFSET).map(r => r.card_id - SHINY_OFFSET));
-  const eligible = ids.filter(i => norm.has(i) && !shin.has(i)), pid = Math.floor(+body.card_id) || 0;
-  if (eligible.length && !eligible.includes(pid)) bad('Choisis une carte de cet album à transformer en shiny');
   const first = await run(env, 'INSERT INTO album_claims (user_id, album, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, a.id, now());
   if (!first.meta.changes) bad('Récompense déjà récupérée');
-  const rw = albumReward(a), pick = eligible.length ? await one(env, 'SELECT id, title, views, rarity FROM cards WHERE id = ?', pid) : null, sid = pick ? pid + SHINY_OFFSET : 0;
-  await env.DB.batch([
-    ...(pick ? [
-      insertCard(env, { id: sid, title: pick.title, views: pick.views, rarity: pick.rarity, shiny: 1, ...stats(pick.title, pick.rarity, true) }),
-      st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', pid, sid),
-      addCard(env, user.id, sid),
-      st(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty >= 1', user.id, pid),
-      st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', user.id, pid),
-    ] : []),
-    st(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id),
-  ]);
+  const rw = albumReward(a);
+  await run(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id);
   statsCache.delete(user.id); profileCache.delete(user.id);
-  notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces et ${rw.p} paquet${rw.p > 1 ? 's' : ''}${pick ? `, et « ${pick.title} » est devenue shiny` : ''} !` }, user.id);
+  notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces${rw.p ? ` et ${rw.p} paquet${rw.p > 1 ? 's' : ''}` : ''} !` }, user.id);
   if (a.ev) await events.titleNotify(env, ctx, user.id, 'ev_alb_' + a.id);
   const ti = await syncTitles(env, user.id).catch(() => null);
   ti?.added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
-  return { ok: true, reward: rw, shiny: pick ? { id: sid, title: pick.title } : null };
+  return { ok: true, reward: rw, shiny: null };
 });
 
 // ---------- fusion de doublons : la carte monte de niveau (+ATK/+DEF) ----------

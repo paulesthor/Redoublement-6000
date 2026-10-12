@@ -48,8 +48,9 @@ console.log('— plus ou moins');
     ok('Plus ou moins bloqué pour ce pseudo (casse et séparateurs ignorés) : message « T\'avais qu\'à pas tricher »', s1 === 200 && r1.blocked === true && /pas tricher/.test(r1.message) && s2 === 403 && /pas tricher/.test(r2.error) && s3 === 403 && s4 === 403, J([s1, r1, s2, r2])); }
   ok('les autres joueurs ne sont pas bloqués', (await call(A, 'GET', '/api/hilo'))[1].blocked === undefined); }
 [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 5 }); ok('mise trop basse', s === 400);
-const h0 = await coins(alice); [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 100 }); ok('partie lancée, mise prélevée, vues de B cachées', s === 200 && r.active && r.a.v > 0 && r.b.v === undefined && (await coins(alice)) === h0 - 100, J(r));
-[s] = await call(A, 'POST', '/api/hilo/start', { stake: 100 }); ok('une seule partie à la fois', s === 400);
+const h0 = await coins(alice); [s, r] = await call(A, 'POST', '/api/hilo/start', { stake: 50 }); ok('partie lancée, mise prélevée, vues de B cachées', s === 200 && r.active && r.a.v > 0 && r.b.v === undefined && (await coins(alice)) === h0 - 50, J(r));
+[s] = await call(A, 'POST', '/api/hilo/start', { stake: 50 }); ok('une seule partie à la fois', s === 400);
+[s, r] = await call(B, 'POST', '/api/hilo/start', { stake: 51 }); ok('mise maximale : 50', s === 400 && /entre 10 et 50/.test(r.error), J([s, r]));
 [s] = await call(A, 'POST', '/api/hilo/cashout', {}); ok('encaisser sans avoir répondu : refusé', s === 400);
 // on triche côté test : la paire est lue en base pour deviner juste
 let wins = 0;
@@ -57,8 +58,8 @@ for (let i = 0; i < 3; i++) {
   const g = (await q('SELECT pair FROM hilo_games WHERE user_id = ?', alice))[0], p = JSON.parse(g.pair);
   [s, r] = await call(A, 'POST', '/api/hilo/guess', { guess: p.b.v > p.a.v ? 'more' : 'less' }); if (s === 200 && r.right) wins++;
 }
-ok('3 bonnes réponses : série de 3, multiplicateur ×1,85³', wins === 3 && r.streak === 3 && r.mult === 6.33 && r.cash === 633, J(r));
-const cb = await coins(alice); [s, r] = await call(A, 'POST', '/api/hilo/cashout', {}); ok('encaissement : 633', s === 200 && r.cashed === 633 && (await coins(alice)) === cb + 633, J([s, r]));
+ok('3 bonnes réponses : série de 3, multiplicateur ×1,85³', wins === 3 && r.streak === 3 && r.mult === 6.33 && r.cash === 316, J(r));
+const cb = await coins(alice); [s, r] = await call(A, 'POST', '/api/hilo/cashout', {}); ok('encaissement : 316', s === 200 && r.cashed === 316 && (await coins(alice)) === cb + 316, J([s, r]));
 await call(A, 'POST', '/api/hilo/start', { stake: 50 }); { const p = JSON.parse((await q('SELECT pair FROM hilo_games WHERE user_id = ?', alice))[0].pair); [s, r] = await call(A, 'POST', '/api/hilo/guess', { guess: p.b.v > p.a.v ? 'less' : 'more' }); }
 ok('mauvaise réponse : mise perdue, partie terminée, valeurs révélées', r.right === false && r.reveal.v > 0 && (await q('SELECT active FROM hilo_games WHERE user_id = ?', alice))[0].active === 0, J(r));
 [s] = await call(A, 'POST', '/api/hilo/guess', { guess: 'more' }); ok('plus de partie en cours', s === 400);

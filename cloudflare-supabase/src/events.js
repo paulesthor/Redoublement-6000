@@ -17,7 +17,7 @@ export const EV = {
   weekly: { c: 400, p: 2, titleAfter: 4 },
   hunt: { first: { c: 500, p: 2 }, other: { c: 60 } },
   goal: { minPlayers: 10, perPlayer: 40, min: 150, c: 250, p: 2, minOpen: 10 }, // objectif = 40 paquets par joueur (150 au minimum) ; il faut avoir ouvert 10 paquets pour être récompensé
-  album: { coins: 5000, p: 3 },
+  album: { coins: 5000, p: 0 },
   season: { pts: { open_pack: 1, legendary: 8, battle_win: 6, battle_play: 2, duel_win: 5, quiz_daily: 5, quiz_correct: 1, trade_done: 4, sale_done: 3, win_auction: 4, fuse: 3, expedition: 3, bourse_bet: 1 },
     rewards: [{ c: 1000, p: 3 }, { c: 600, p: 2 }, { c: 400, p: 1 }], part: { min: 50, c: 150, p: 1 }, tiny: { c: 50 } },
 };
