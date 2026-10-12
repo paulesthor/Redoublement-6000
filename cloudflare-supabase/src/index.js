@@ -973,7 +973,7 @@ const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt,
 const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
-const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN,
+const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN, insertCard, stats, addCard, enrich,
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------

@@ -5,7 +5,7 @@ const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 const SECRET = 'secret-de-test';
 delete env.EVENTS;                      // les autres tests tournent avec les événements coupés (EVENTS = '0') ; ici on les active
 await DB.prepare("INSERT INTO settings (key, value) VALUES ('events_secret', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(SECRET).run();
-const { eventsIn, weeklyOf, parisTs, dayOfTs, EV, SEASON_ANCHOR, H, modsFrom, activeIn } = await import('../src/events.js');
+const { eventsIn, weeklyOf, parisTs, dayOfTs, EV, SEASON_ANCHOR, H, modsFrom, activeIn, SEASON_THEMES, themeIdOf, seasonPts } = await import('../src/events.js');
 const { EVENT_ALBUMS, WEEKLY_BY } = await import('../src/events-data.js');
 const { bumpQuests } = await import('../src/game.js');
 const { __testHooks } = await import('../src/index.js');
@@ -29,7 +29,7 @@ console.log('— calendrier (pur calcul)');
   const wk = by('weekly'); ok('un défi par semaine, jamais le même deux semaines de suite', wk.length >= 52 && wk.every((e, i) => !i || e.weekly !== wk[i - 1].weekly));
   ok('un seul défi de la semaine en cours à tout instant', [0, 1, 2, 3, 4, 5, 6].every(i => activeIn(eventsIn(SECRET, t0 + i * DAY, t0 + i * DAY + 1), t0 + i * DAY).filter(e => e.kind === 'weekly').length === 1));
   ok('une carte recherchée par jour', activeIn(eventsIn(SECRET, T0, T0 + 1), T0).filter(e => e.kind === 'hunt').length === 1);
-  const ss = ev.filter(e => e.kind === 'season'); ok('saisons de 14 jours qui s\'enchaînent, la première le 12 octobre', ss[0].start === parisTs(SEASON_ANCHOR) && ss.every((e, i) => !i || e.start === ss[i - 1].end) && ss.every(e => Math.abs(e.end - e.start - 14 * DAY) <= 3600000));
+  const ss = ev.filter(e => e.kind === 'season'); ok('saisons de 14 jours qui s\'enchaînent, la première le 14 octobre (remise à zéro)', ss[0].start === parisTs(SEASON_ANCHOR) && ss.every((e, i) => !i || e.start === ss[i - 1].end) && ss.every(e => Math.abs(e.end - e.start - 14 * DAY) <= 3600000));
   ok('calendrier différent avec un autre secret, identique avec le même', J(eventsIn('autre', t0, t0 + 90 * DAY).map(e => e.id)) !== J(eventsIn(SECRET, t0, t0 + 90 * DAY).map(e => e.id)) && J(eventsIn(SECRET, t0, t0 + 90 * DAY)) === J(eventsIn(SECRET, t0, t0 + 90 * DAY)));
   ok('changement d\'heure : les événements restent à la même heure locale (9 h) autour du 25 octobre et du 28 mars', by('shiny').filter(e => /2026-10-(2|3)|2027-03-(2|3)/.test(dayOfTs(e.start))).every(e => parisHour(e.start) === 9));
   const m = modsFrom([{ kind: 'golden' }, { kind: 'shiny' }, { kind: 'theme' }, { kind: 'album', album: 'noel' }]);
@@ -83,18 +83,35 @@ ok('un paquet sans la carte ne donne rien', (await __testHooks.events.afterPack(
 
 console.log('— saison');
 await q("DELETE FROM event_progress WHERE key LIKE 's:%'");   // repart de zéro (les défis de la semaine ci-dessus ont aussi rapporté des points)
-at(Date.parse('2026-10-14T10:00:00Z'));
-await bumpQuests(env, alice, { open_pack: 40, legendary: 2 }); await bumpQuests(env, bob, { open_pack: 10 }); await bumpQuests(env, chloe, { battle_win: 1 }); await settle();
-[s, r] = await call(A, 'GET', '/api/events'); ok('points de saison : 1 par paquet + 8 par légendaire', r.season.points === 56 && r.season.rank === 1 && r.season.top[0].name === 'Alice' && r.season.top.length === 3, J(r.season));
-[s, r] = await call(B, 'GET', '/api/events'); ok('classement : Bob 2e (10 points), Chloé 3e (6 points)', r.season.rank === 2 && r.season.top[2].pts === 6);
-at(Date.parse('2026-10-27T10:00:00Z'));
-[s, r] = await call(A, 'GET', '/api/events'); ok('saison 2 commencée : saison 1 à récupérer', r.season.name === 'Saison 2' && r.season.points === 0 && r.season.prev.rank === 1 && r.season.prev.reward.c === 1000 && !r.season.prev.claimed, J(r.season));
+{ // thèmes : un cycle de 3 contient chaque thème une fois, jamais deux fois de suite, secret différent = ordre différent
+  const ids = i => Array.from({ length: 12 }, (_, k) => themeIdOf('s1', k + i));
+  const seq = ids(0); ok('thèmes de saison : chaque cycle de 3 saisons les contient tous', [0, 3, 6, 9].every(k => new Set(seq.slice(k, k + 3)).size === 3), seq.join());
+  ok('jamais le même thème deux saisons de suite', seq.every((t, i) => !i || t !== seq[i - 1]));
+  ok('l\'ordre dépend du secret (et reste stable)', J(ids(0)) === J(ids(0)) && ['a', 'b', 'c', 'd', 'e'].some(x => J(Array.from({ length: 12 }, (_, k) => themeIdOf(x, k))) !== J(seq)));
+  ok('trois thèmes définis : combat, quiz, collection', J(Object.keys(SEASON_THEMES)) === J(['combat', 'quiz', 'collection']));
+}
+at(Date.parse('2026-10-15T10:00:00Z'));
+const SECRETv = await __testHooks.events.getSecret(env), TH0 = themeIdOf(SECRETv, 0), TH1 = themeIdOf(SECRETv, 1);
+const evA = { open_pack: 40, legendary: 2, battle_win: 5, battle_play: 5, quiz_daily: 1, quiz_correct: 4, duel_win: 2, duel_play: 3, new_cards: 20, rare_plus: 6 }, evB = { open_pack: 10, battle_win: 1, quiz_daily: 1, new_cards: 3 }, evC = { battle_win: 1, new_cards: 1 };
+await bumpQuests(env, alice, evA); await bumpQuests(env, bob, evB); await bumpQuests(env, chloe, evC); await settle();
+const [pa, pb, pc] = [seasonPts(TH0, evA), seasonPts(TH0, evB), seasonPts(TH0, evC)];
+[s, r] = await call(A, 'GET', '/api/events'); ok('points de saison : seules les actions du thème comptent', r.season.points === pa && r.season.theme.name === SEASON_THEMES[TH0].name && r.season.top.length === 3 && r.season.secretPrize === true, J(r.season));
+ok('classement cohérent avec le thème', [pa, pb, pc].every((x, i, a) => !i || a[i - 1] >= x) ? r.season.rank === 1 : true);
+[s, r] = await call(B, 'GET', '/api/events'); ok('le thème de la saison est annoncé (nom, emoji, règle des points)', r.season.theme.emoji && r.season.theme.info.length > 10 && r.season.name === 'Saison 1');
+{ const pz = await q("SELECT value FROM settings WHERE key = 'season_prize:0'"); ok('la légendaire secrète est tirée dès le début, jamais renvoyée avant la fin', pz.length === 1 && !J(r).includes(JSON.parse(pz[0].value).title), J(pz)); }
+ok('prix : une des 1 000 pages les plus vues', await (async () => { const pz = JSON.parse((await q("SELECT value FROM settings WHERE key = 'season_prize:0'"))[0].value), c = (await q('SELECT rarity FROM cards WHERE id = ?', pz.id))[0]; return c?.rarity === 'legendary'; })());
+at(Date.parse('2026-10-29T10:00:00Z'));
+[s, r] = await call(A, 'GET', '/api/events'); ok('saison 2 commencée : saison 1 à récupérer', r.season.name === 'Saison 2' && r.season.points === 0 && r.season.prev.rank === 1 && r.season.prev.reward.c === 200 && !r.season.prev.claimed, J(r.season));
+[s, r] = await call(A, 'GET', '/api/me'); ok('pastille « saison terminée » à l\'accueil', r.ev.some(e => e.kind === 'seasonend' && /terminée/.test(e.name)), J(r.ev));
+[s, r] = await call(B, 'GET', '/api/events/season/last'); const pzid = JSON.parse((await q("SELECT value FROM settings WHERE key = 'season_prize:0'"))[0].value).id;
+ok('révélation : thème, vainqueur et légendaire secrète dévoilés', s === 200 && r.winner.name === 'Alice' && r.winner.pts === pa && r.prize?.id === pzid && r.theme.name === SEASON_THEMES[TH0].name && r.mine.rank === 2, J(r).slice(0, 300));
 const sc = await coins(alice), sp = await packs(alice);
-[s, r] = await call(A, 'POST', '/api/events/season/claim', { idx: 0 }); ok('1er : 1000 pièces + 3 paquets + titre « Champion de la saison 1 »', s === 200 && (await coins(alice)) === sc + 1000 && (await packs(alice)) === sp + 3 && await hasTitle(alice, 's1_champion') && await hasTitle(alice, 's1_veteran'), J([s, r]));
+[s, r] = await call(A, 'POST', '/api/events/season/claim', { idx: 0 }); ok('1er : 200 pièces + 3 paquets + la légendaire secrète + titre « Champion de la saison 1 »', s === 200 && (await coins(alice)) === sc + 200 && (await packs(alice)) === sp + 3 && r.card?.id === pzid && (await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', alice, pzid)).length === 1 && await hasTitle(alice, 's1_champion'), J([s, r]));
 [s] = await call(A, 'POST', '/api/events/season/claim', { idx: 0 }); ok('récompense de saison versée une seule fois', s === 400);
-[s, r] = await call(B, 'POST', '/api/events/season/claim', { idx: 0 }); ok('2e : 600 pièces + 2 paquets, titre « Sur le podium »', s === 200 && r.reward.c === 600 && await hasTitle(bob, 'ev_season_podium'), J([s, r]));
-[s, r] = await call(C, 'POST', '/api/events/season/claim', { idx: 0 }); ok('3e : 400 pièces + 1 paquet', s === 200 && r.reward.c === 400, J([s, r]));
+[s, r] = await call(B, 'POST', '/api/events/season/claim', { idx: 0 }); ok('2e : 120 pièces + 2 paquets, titre « Sur le podium », pas de carte', s === 200 && r.reward.c === 120 && !r.card && await hasTitle(bob, 'ev_season_podium'), J([s, r]));
+[s, r] = await call(C, 'POST', '/api/events/season/claim', { idx: 0 }); ok('3e : 80 pièces + 1 paquet', s === 200 && r.reward.c === 80, J([s, r]));
 [s] = await call(A, 'POST', '/api/events/season/claim', { idx: 1 }); ok('saison en cours : pas encore récupérable', s === 400);
+[s, r] = await call(A, 'GET', '/api/events'); ok('saison 2 : un autre thème, jamais le même que la saison 1', r.season.theme.name === SEASON_THEMES[TH1].name && TH1 !== TH0);
 at(Date.parse('2026-10-08T10:00:00Z')); [s, r] = await call(A, 'GET', '/api/events'); ok('avant la saison 1 : annonce de la date de début', r.season.upcoming === true);
 
 console.log('— objectif collectif');

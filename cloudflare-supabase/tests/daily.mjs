@@ -258,6 +258,24 @@ console.log('— bilan de la saison 0 et pack fondateur (interface)');
   ok('« Commencer la saison 1 » : écran fermé, bilan marqué comme vu', seen === 1 && await p.$('.recapsheet') === null && !(await p.evaluate(() => me.recap)));
   await p.unroute('**/api/recap'); await p.unroute('**/api/recap/seen');
 }
+console.log('— fin de saison : révélation du vainqueur (interface)');
+{
+  let claimed = 0;
+  await p.route('**/api/events/season/last', r => r.fulfill({ json: { idx: 0, name: 'Saison 1', theme: { name: 'Combat', emoji: '⚔️' }, winner: { id: 1, name: 'Clodo033', pts: 120 }, prize: { id: 7001, title: 'Napoléon', rarity: 'legendary', atk: 9000, def: 9000, views: 9000, shiny: 0, image: null }, mine: { idx: 0, name: 'Saison 1', points: 120, rank: 1, reward: { c: 200, p: 3 }, claimed: false, winner: true }, me: 1 } }));
+  await p.route('**/api/events/season/claim', async r => { claimed++; await r.fulfill({ json: { ok: true, reward: { c: 200, p: 3 }, rank: 1, card: { id: 7001, title: 'Napoléon' } } }); });
+  await p.evaluate(() => { try { localStorage.removeItem('wm_sr'); } catch {} me.ev = [...(me.ev || []), { id: 'seasonend:0', kind: 'seasonend', name: 'Saison 1 terminée : le vainqueur !', emoji: '🏆', end: Date.now() + 86400000 }]; paintEvBar(); });
+  ok('pastille « saison terminée » à l\'accueil', (await p.$$('.evchip.seasonend')).length === 1);
+  await p.evaluate(() => seasonReveal(null)); await p.waitForSelector('#sr-go', { timeout: 6000 });
+  ok('suspense : le nom du vainqueur n\'est pas encore affiché', /Combat/.test(await p.textContent('.recapsheet')) && !/Clodo033/.test(await p.$eval('#sr-a', e => e.textContent)) && await p.$eval('#sr-c', e => e.hidden));
+  await p.click('#sr-go'); await p.waitForSelector('#sr-c:not([hidden])', { timeout: 6000 });
+  ok('le vainqueur et sa légendaire secrète sont révélés', /C'est toi/.test(await p.textContent('#sr-c')) && /Napoléon/.test(await p.textContent('#sr-c')) && !!(await p.$('#sr-c .card')));
+  await shot(p, 'fin-de-saison'); await p.click('#sr-claim'); await p.waitForTimeout(500);
+  ok('récupération de la récompense', claimed === 1 && await p.$('#sr-claim') === null);
+  await p.click('#sr-end'); await p.waitForTimeout(300);
+  ok('déjà vu : pas de réouverture automatique', await p.evaluate(() => seasonReveal(null)) === false && await p.$('.recapsheet') === null);
+  await p.unroute('**/api/events/season/last'); await p.unroute('**/api/events/season/claim');
+  await p.evaluate(() => { me.ev = me.ev.filter(e => e.kind !== 'seasonend'); paintEvBar(); });
+}
 console.log('— sanction et compte à rebours (interface)');
 {
   await p.evaluate(() => { try { sessionStorage.removeItem('wm_sanc'); } catch {} me.sanction = { until: Date.now() + 5 * 86400000, msg: "T'avais qu'à pas tricher gros sac à merde." }; sanctionScreen(); });

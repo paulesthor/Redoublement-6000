@@ -1457,7 +1457,7 @@ async function refreshMe() {
 }
 /** Bandeau des événements en cours (heure dorée, week-end shiny…) sous l'en-tête, sur tous les écrans. */
 function paintEvBar() {
-  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip.reset')) return resetScreen(null, true); if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
+  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip.reset')) return resetScreen(null, true); if (e.target.closest('.evchip.seasonend')) return seasonReveal(null, true); if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
   const left = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
   const list = me.ev || [];
   b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${e.emoji} <b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join(''); b.hidden = !list.length;
@@ -1785,7 +1785,7 @@ views.customize = async v => {
   const d = await api('/titles'); await loadCosmetics(true);
   const cur = d.current;
   const card = t => `<button class="titlecard ${t.unlocked ? 'ok' : ''} ${t.season ? 'season' : ''} ${cur === t.id ? 'on' : ''}" data-ti="${t.id}" ${t.unlocked ? '' : 'disabled'}>
-    <b>${esc(t.label)}</b><small>${t.season ? 'Saison 1 · bientôt' : esc(t.desc)}</small>
+    <b>${esc(t.label)}</b><small>${t.season && !t.unlocked ? 'Saison 1 · bientôt' : esc(t.desc)}</small>
     ${t.unlocked ? (cur === t.id ? '<em>Équipé</em>' : '<em>Débloqué</em>') : t.prog ? `<div class="qbar"><i style="width:${Math.min(100, Math.round(t.prog[0] / t.prog[1] * 100))}%"></i></div><small>${fmt(Math.min(t.prog[0], t.prog[1]))} / ${fmt(t.prog[1])}</small>` : `<em class="lock">Verrouillé</em>`}</button>`;
   const n = d.titles.filter(t => t.unlocked).length;
   v.innerHTML = `${pageHead('Mon profil', 'Photo et titre affichés partout dans le jeu')}
@@ -1958,11 +1958,12 @@ views.events = async v => {
       <br><small class="mut">${g.ended ? (g.reached ? 'Objectif atteint !' : 'Objectif manqué cette fois…') : `Se termine dans ${cdLong(g.until - Date.now())}`}</small></div>
       ${g.claimed ? '<span class="evok">✓</span>' : g.claimable ? '<button id="ev-g">Récupérer</button>' : ''}</div>` : '';
   const s = d.season;
-  const sBar = !s ? '' : s.upcoming ? `<div class="panel evcard season"><span class="ae">🏆</span><div class="grow"><b>${esc(s.name)}</b><p class="mut">La première saison commence ${dayFmt(s.start)}. Chaque action rapporte des points ; les meilleurs gagnent des paquets, des pièces et des titres.</p></div></div>`
+  const sBar = !s ? '' : s.upcoming ? `<div class="panel evcard season"><span class="ae">🏆</span><div class="grow"><b>${esc(s.name)}</b><p class="mut">La première saison commence ${dayFmt(s.start)}. Chaque saison a un thème différent, révélé à son début : combat, quiz ou collection. Le vainqueur remporte une légendaire secrète.</p></div></div>`
     : `<div class="panel evcard season"><span class="ae">🏆</span><div class="grow"><b>${esc(s.name)}</b> <small class="mut">· se termine dans ${cdLong(s.until - Date.now())}</small>
       <p>Tes points : <b>${fmt(s.points)}</b>${s.rank ? ` · ${s.rank}${s.rank === 1 ? 'er' : 'e'}` : ''}</p>
       ${s.top.length ? `<ol class="evtop">${s.top.map(t => `<li class="${t.id === me.id ? 'me' : ''}"><span>${esc(t.name)}</span><b>${fmt(t.pts)}</b></li>`).join('')}</ol>` : '<p class="mut">Personne n\'a encore de points : lance-toi !</p>'}
-      <small class="mut">Points : 1 par paquet, 8 par légendaire, 5 par victoire en duel ou quiz du jour, 6 par combat gagné, 3 à 4 par échange, vente, fusion ou expédition…</small><br>
+      <p style="margin:6px 0">${s.theme.emoji} Thème : <b>${esc(s.theme.name)}</b> — ${esc(s.theme.desc)}</p><small class="mut">${esc(s.theme.info)}</small><br>
+      <small class="mut">🎁 À la fin, le vainqueur remporte <b>une légendaire secrète</b> parmi les 1 000 pages les plus vues de Wikipédia, dévoilée en direct. Aucun indice avant.</small><br>
       <small class="mut">Récompenses : 1er ${rewardChips(s.rewards[0])} · 2e ${rewardChips(s.rewards[1])} · 3e ${rewardChips(s.rewards[2])} · dès ${s.part.min} points ${rewardChips({ c: s.part.c, p: s.part.p })}</small>
       ${s.prev && s.prev.reward ? `<div class="evprev"><b>${esc(s.prev.name)} terminée</b> : ${fmt(s.prev.points)} points, ${s.prev.rank}${s.prev.rank === 1 ? 'er' : 'e'} · ${rewardChips(s.prev.reward)} ${s.prev.claimed ? '<span class="evok">✓</span>' : `<button id="ev-s" data-idx="${s.prev.idx}">Récupérer</button>`}</div>` : ''}</div></div>`;
   v.innerHTML = `${pageHead('Événements', 'Des surprises à tout moment : reste attentif !')}<h3 class="sec">En ce moment</h3>${bursts}<h3 class="sec">Toujours en cours</h3>${wBar}${hBar}${gBar}${sBar}`;
@@ -2208,6 +2209,32 @@ function resetScreen(then, force = false) {
   })();
   return true;
 }
+/** Révélation de fin de saison : suspense, puis le vainqueur et sa légendaire secrète. S'ouvre tout seul une fois (par appareil) pendant les 3 jours qui suivent la fin d'une saison. */
+function seasonReveal(then, force = false) {
+  const chip = (me?.ev || []).find(e => e.kind === 'seasonend'); if (!chip) return false;
+  const idx = +chip.id.split(':')[1];
+  if (!force) { try { if (localStorage.getItem('wm_sr') === String(idx)) return false; } catch { /* stockage indisponible */ } }
+  const m = $('#modal'); m.hidden = false; m.innerHTML = '<div class="recapsheet"><p class="mut" style="text-align:center">Chargement…</p></div>';
+  (async () => {
+    let d; try { d = await api('/events/season/last'); } catch { m.hidden = true; m.innerHTML = ''; then?.(); return; }
+    const mark = () => { try { localStorage.setItem('wm_sr', String(d.idx)); } catch { /* stockage indisponible */ } };
+    const close = () => { mark(); m.hidden = true; m.innerHTML = ''; then?.(); };
+    const mine = d.mine, win = d.winner, itsMe = win && win.id === d.me;
+    m.innerHTML = `<div class="recapsheet" role="dialog" aria-label="Fin de saison"><div id="sr-a"><p class="rsx">🏆</p><h2>${esc(d.name)} terminée !</h2><p style="text-align:center">Thème : <b>${d.theme.emoji} ${esc(d.theme.name)}</b></p><p class="mut" style="text-align:center">Le vainqueur remporte une légendaire secrète, tirée au début de la saison et gardée cachée jusqu'à maintenant.</p><button id="sr-go" style="width:100%">Révéler le vainqueur</button><button class="plain" id="sr-x" style="width:100%;margin-top:8px">Plus tard</button></div>
+      <div id="sr-b" hidden><p class="rsx srdrum">🥁</p><h2>Et le vainqueur est…</h2></div>
+      <div id="sr-c" hidden><h2>${win ? (itsMe ? '🎉 C\'est toi !' : `🏆 ${esc(win.name)}`) : 'Personne cette fois…'}</h2>${win ? `<p style="text-align:center" class="mut">${fmt(win.pts)} points</p>` : '<p class="mut" style="text-align:center">Personne n\'a marqué de points cette saison : la légendaire retourne dans la réserve.</p>'}
+        ${win && d.prize ? `<div class="rcwrap">${cardHtml({ ...d.prize, beta: 0 })}</div><p style="text-align:center">remporte <b>${esc(d.prize.title)}</b>, une légendaire unique.</p>` : ''}
+        ${mine ? `<p class="mut" style="text-align:center">Ta place : <b>${mine.rank}${mine.rank === 1 ? 'er' : 'e'}</b> avec ${fmt(mine.points)} points${mine.reward ? ` · récompense ${rewardChips(mine.reward)}` : ''}</p>${mine.reward && !mine.claimed ? '<button id="sr-claim" style="width:100%;margin-bottom:8px">Récupérer ma récompense</button>' : ''}` : ''}
+        <button class="plain" id="sr-end" style="width:100%">Fermer</button></div></div>`;
+    $('#sr-x').onclick = close; $('#sr-end').onclick = close;
+    $('#sr-go').onclick = async () => {
+      $('#sr-a').hidden = true; $('#sr-b').hidden = false; try { navigator.vibrate?.([40, 60, 40, 60, 120]); } catch { /* sans vibreur */ }
+      await new Promise(r => setTimeout(r, 2200)); $('#sr-b').hidden = true; $('#sr-c').hidden = false; $('.rcwrap .card')?.classList.add('rcreveal'); mark(); sparks?.($('.recapsheet'), 40);
+    };
+    $('#sr-claim')?.addEventListener('click', safe(async () => { $('#sr-claim').disabled = true; const r = await api('/events/season/claim', { idx: d.idx }); toast(r.card ? `🏆 « ${r.card.title} » rejoint ta collection !` : `+${r.reward.c || 0} pièces${r.reward.p ? `, +${r.reward.p} paquet${r.reward.p > 1 ? 's' : ''}` : ''}`); await refreshMe(); $('#sr-claim').remove(); }));
+  })();
+  return true;
+}
 /** Bilan de la saison 0 + ouverture du Pack Fondateur (une seule fois, juste après la remise à zéro). */
 function recapScreen(then) {
   if (!me?.recap) return false;
@@ -2275,7 +2302,7 @@ async function start() {
   setTimeout(pushStartup, 2500);
   setTimeout(() => {                                                                  // à l'ouverture : nouveautés de la mise à jour, puis récompense du jour
     const daily = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
-    const next = () => { if (!recapScreen(daily) && !resetScreen(daily)) daily(); };
+    const next = () => { if (!recapScreen(daily) && !resetScreen(daily) && !seasonReveal(daily)) daily(); };
     if (!game && !sanctionScreen(next)) next();
   }, 900);
 }
