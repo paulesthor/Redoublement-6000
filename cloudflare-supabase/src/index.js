@@ -7,6 +7,7 @@ import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
 import { installEvents } from './events.js';
 import { installReset, RESET_AT } from './reset.js';
+import { installMarket, MARKET } from './market.js';
 import { uniqueOn, claimLegend, releaseLegends } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
@@ -439,10 +440,10 @@ async function wishListing(env, c) {
 
 /** Joueurs simulés (créés au besoin) : ils vendent et enchérissent à la place de vrais joueurs. */
 async function getBots(env) {
-  let bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
+  let bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1 AND name <> ?', MARKET.seller);
   if (bots.length < BOT_NAMES.length) {
     await env.DB.batch(BOT_NAMES.map(n => st(env, "INSERT OR IGNORE INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, is_bot) VALUES (?,?,?,?,?,?,?,1)", n, 'bot', '!', 1e9, 0, now(), now())));
-    bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
+    bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1 AND name <> ?', MARKET.seller);
   }
   return bots;
 }
@@ -555,7 +556,7 @@ async function settleAuctions(env, ctx) {
   for (const a of due) {
     const claimed = await run(env, "UPDATE auctions SET status = ? WHERE id = ? AND status = 'open'", a.bidder_id ? 'sold' : 'expired', a.id);
     if (!claimed.meta.changes) continue; // déjà réglée par une autre requête
-    const card = await one(env, 'SELECT title FROM cards WHERE id = ?', a.card_id);
+    const card = await one(env, 'SELECT title, rarity FROM cards WHERE id = ?', a.card_id);
     const flags = new Map((await all(env, 'SELECT id, is_bot FROM users WHERE id IN (?, ?)', a.seller_id, a.bidder_id ?? a.seller_id)).map(r => [r.id, r.is_bot]));
     const sellerBot = !!flags.get(a.seller_id), bidderBot = !!(a.bidder_id && flags.get(a.bidder_id)); // les joueurs simulés ne gardent pas de cartes
     if (a.bidder_id) {
@@ -569,6 +570,8 @@ async function settleAuctions(env, ctx) {
       if (!sellerBot) bq(env, ctx, a.seller_id, { sale_done: 1 });
       if (!bidderBot) notify(env, ctx, { t: 'notify', msg: `Tu as remporté « ${card.title} » pour ${a.bid} pièces` }, a.bidder_id);
       if (!sellerBot) notify(env, ctx, { t: 'notify', msg: `« ${card.title} » vendu ${a.bid} pièces` }, a.seller_id);
+    } else if (sellerBot) {
+      if (card?.rarity === 'legendary') await releaseLegends(env, [{ id: a.card_id, rarity: 'legendary' }]);   // lot du Marché sans offre : la légendaire retourne dans la réserve
     } else if (!sellerBot) {
       await addCard(env, a.seller_id, a.card_id).run();
       notify(env, ctx, { t: 'notify', msg: `Enchère sans offre : « ${card.title} » t'est rendue.` }, a.seller_id);
@@ -964,11 +967,12 @@ const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.unt
 
 // ---------- événements surprise (voir events.js) ----------
 const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, placeholders });
+const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
 const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN,
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
-export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
+export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, get market() { return market; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
 const ALBUM_COINS = 5000;                                    // pièces pour un album complété (rien d'autre : ni paquets, ni shiny)
@@ -1215,9 +1219,10 @@ route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 &
 
 let expedDone = false, liftDone = false;
 let auctionsCache = { t: 0, rows: null };                         // la liste est la même pour tous (hors drapeaux « à moi / en tête ») : lue au plus toutes les 8 s
-route('GET', '/api/auctions', async ({ env, ctx, user }) => {
+route('GET', '/api/auctions', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const settled = await settleAuctions(env, ctx);
+  await market.tick(env, ctx, origin).catch(e => console.error('market', e));
   if (!settled) ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée (pas dans la même requête qu'un règlement : limite d'appels à la base)
   if (now() - auctionsCache.t > 8000 || !auctionsCache.rows) {
     auctionsCache = { t: now(), rows: await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
@@ -1914,6 +1919,7 @@ export default {
       await economy.capExpeditionsOnce(env).catch(e => console.error('expéditions', e));
       await economy.finishExpeditionsOnce(env, ctx).catch(e => console.error('expéditions', e));
       await sanctions.lift(env).catch(e => console.error('sanctions', e));
+      await market.tick(env, ctx).catch(e => console.error('market', e));
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await pruneLogs(withDb(env0)).catch(() => {});

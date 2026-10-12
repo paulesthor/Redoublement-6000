@@ -1,0 +1,40 @@
+// Marché animé : 2 légendaires par jour tirées au hasard, vendues aux enchères pendant 12 h par le « Marché ».
+import './api.mjs';
+const { call, settle, ok, DB, J, done, env, ctx } = globalThis.__T;
+const { parisTs } = await import('../src/events.js');
+const { MARKET } = await import('../src/market.js');
+const { __testHooks } = await import('../src/index.js');
+const { refreshUnique } = await import('../src/unique.js');
+const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
+[s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
+const [alice, bob] = (await q('SELECT id FROM users ORDER BY id')).map(x => x.id);
+const realNow = Date.now; let at = null; Date.now = () => at ?? realNow();
+const mk = () => __testHooks.market;
+const dayStr = new Date(realNow()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+const lots = () => q("SELECT a.id, a.card_id, a.start_price, a.ends_at, a.status, a.bidder_id, a.bid, u.name seller, c.rarity FROM auctions a JOIN users u ON u.id = a.seller_id JOIN cards c ON c.id = a.card_id WHERE u.name = ? ORDER BY a.id", MARKET.seller);
+at = parisTs(dayStr, 10);
+ok('légendaires uniques coupées : aucun lot du Marché', (await mk().tick(env, ctx, 'http://x')) === 0 && (await lots()).length === 0);
+await q("INSERT INTO settings (key, value) VALUES ('unique_on', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"); refreshUnique();
+ok('10 h : le lot du matin est créé', (await mk().tick(env, ctx, 'http://x')) === 1);
+let L = await lots(); ok('lot : légendaire, vendue par le Marché, mise de départ 300, 12 h', L.length === 1 && L[0].rarity === 'legendary' && L[0].start_price === MARKET.start && L[0].ends_at === parisTs(dayStr, 9) + 12 * 3600000 && L[0].seller === 'Marché', J(L));
+ok('la carte du lot est réservée (unique)', (await q('SELECT 1 x FROM legend_taken WHERE card_id = ?', L[0].card_id)).length === 1);
+ok('appel répété : pas de deuxième lot', (await mk().tick(env, ctx, 'http://x')) === 0 && (await lots()).length === 1);
+[s, r] = await call(A, 'GET', '/api/auctions'); ok('le lot est dans la liste des enchères, vendeur « Marché »', r.auctions.some(a => a.id === L[0].id && a.seller === 'Marché'), J(r.auctions.slice(0, 2)));
+const bots = await q("SELECT COUNT(*) n FROM users WHERE is_bot = 1 AND name = ?", MARKET.seller); ok('le Marché est un compte système unique', +bots[0].n === 1);
+// enchère d'un joueur, puis fin : le gagnant reçoit la carte, l'argent disparaît
+await q('UPDATE users SET coins = 2000 WHERE id IN (?,?)', alice, bob);
+[s, r] = await call(A, 'POST', `/api/auctions/${L[0].id}/bid`, { amount: 350 }); ok('un joueur enchérit sur le lot', s === 200, J([s, r]));
+[s, r] = await call(B, 'POST', `/api/auctions/${L[0].id}/bid`, { amount: 420 }); ok('surenchère : le premier est remboursé', s === 200 && (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins === 2000, J([s, r]));
+const sellerCoins = (await q('SELECT coins FROM users WHERE name = ?', MARKET.seller))[0].coins;
+at = parisTs(dayStr, 21) + 60000; for (let i = 0; i < 8; i++) await call(A, 'GET', '/api/auctions'); await settle();
+ok('fin : le gagnant a la légendaire', (await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', bob, L[0].card_id)).length === 1 && (await lots())[0].status === 'sold', J([await q('SELECT * FROM inventory WHERE card_id = ?', L[0].card_id), await lots()]));
+ok('l\'argent disparaît : le Marché n\'est pas payé, le gagnant a payé', (await q('SELECT coins FROM users WHERE name = ?', MARKET.seller))[0].coins === sellerCoins && (await q('SELECT coins FROM users WHERE id = ?', bob))[0].coins === 2000 - 420);
+ok('la carte reste réservée (elle existe, chez le gagnant)', (await q('SELECT 1 x FROM legend_taken WHERE card_id = ?', L[0].card_id)).length === 1);
+// 21 h : deuxième lot ; sans offre il expire et la carte retourne dans la réserve
+ok('21 h : le lot du soir est créé (par la liste des enchères ou le Marché)', (await mk().tick(env, ctx, 'http://x')) >= 0 && (await lots()).length === 2);
+L = await lots(); const evening = L[1]; ok('deuxième lot : fin à 9 h le lendemain', evening && evening.ends_at === parisTs(dayStr, 21) + 12 * 3600000, J(evening));
+at = evening.ends_at + 60000; for (let i = 0; i < 8; i++) await call(A, 'GET', '/api/auctions'); await settle();
+ok('lot sans offre : expiré, la légendaire retourne dans la réserve', (await lots())[1].status === 'expired' && (await q('SELECT 1 x FROM legend_taken WHERE card_id = ?', evening.card_id)).length === 0);
+Date.now = realNow;
+done();
