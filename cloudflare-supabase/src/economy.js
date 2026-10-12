@@ -8,9 +8,8 @@ export const HILO = { time: 15000, grace: 2500, minStake: 10, maxStake: 500, per
 export const HILO_BLOCKED = ['michelleclebresil', 'michelecestlebresil'], HILO_BLOCKED_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const hiloBlocked = u => HILO_BLOCKED.includes(String(u?.name || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''));
 export const BANK = { rate: 0.006, cap: 5000, lockDays: 7, fee: 0.1 };               // 0,6 % par jour, 5 000 pièces au plus, retrait avant 7 jours : 10 % de frais
-export const DIV = { rate: [0.02, 0.1, 0.4, 1.5, 5, 20], lvl: 0.25, shiny: 2, album: 20, maxDays: 2, cap: 100 };   // plafond : au plus 100 pièces par jour, quelle que soit la taille de la collection   // pièces par carte et par jour, selon la rareté
-// Équilibrage : une expédition rapporte à peu près autant qu'un autre mini-jeu (quelques dizaines à ~150 pièces). Gain = valeur des cartes × durée × k, plafonné par durée.
-export const EXPED = { slots: 2, maxCards: 12, hours: [[1, 1], [4, 3.2], [8, 6]], base: [3, 6, 15, 40, 120, 400], pack: { 1: 0.005, 4: 0.03, 8: 0.08 }, k: 0.02, cap: { 1: 30, 4: 80, 8: 150 } };
+export const DIV = { rate: [0.02, 0.1, 0.4, 1.5, 5, 20], lvl: 0.25, shiny: 2, album: 20, maxDays: 3 };   // pièces par carte et par jour, selon la rareté
+export const EXPED = { slots: 2, maxCards: 12, hours: [[1, 1], [4, 3.2], [8, 6]], base: [3, 6, 15, 40, 120, 400], pack: { 1: 0.01, 4: 0.06, 8: 0.15 } };
 const DAY = 86400000;
 const ymd = d => d.replace(/-/g, '');
 const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * DAY).toISOString().slice(0, 10);
@@ -223,8 +222,8 @@ export function installEconomy(d) {
     for (const r of rows) { const v = (r.n + r.l * DIV.lvl) * DIV.rate[r.rar] * (r.sh ? DIV.shiny : 1); by[r.rar] += v; daily += v; }
     const bonus = albums * DIV.album; daily += bonus;
     const today = dayKey(), last = u?.div_day, gap = !last ? 1 : Math.max(0, Math.round((Date.parse(today + 'T12:00:00Z') - Date.parse(last + 'T12:00:00Z')) / DAY));
-    const days = Math.min(DIV.maxDays, gap), raw = Math.floor(daily), capped = Math.min(DIV.cap, raw);
-    return { daily: capped, raw, cap: DIV.cap, byRarity: by.map(Math.floor), albums, bonus, days, maxDays: DIV.maxDays, claimable: capped * days, today };
+    const days = Math.min(DIV.maxDays, gap);
+    return { daily: Math.floor(daily), byRarity: by.map(Math.floor), albums, bonus, days, claimable: Math.floor(daily) * days, today };
   }
   route('GET', '/api/bank', async ({ env, user }) => {
     await ensureGameSchema(env);
@@ -268,11 +267,10 @@ export function installEconomy(d) {
   // ======================= EXPÉDITIONS =======================
   route('GET', '/api/expeditions', async ({ env, ctx, user }) => {
     await ensureGameSchema(env);
-    await capExpeditionsOnce(env);
     await finishExpeditionsOnce(env, ctx);
     const rows = await all(env, "SELECT id, cards, hours, started, ends, rc, rp FROM expeditions WHERE user_id = ? AND status = 'out' ORDER BY ends", user.id);
-    return { slots: EXPED.slots, maxCards: EXPED.maxCards, options: EXPED.hours.map(([h, m]) => ({ hours: h, mult: m, cap: EXPED.cap[h] })), base: EXPED.base, k: EXPED.k,
-      active: rows.map(r => ({ id: r.id, hours: r.hours, ends: r.ends, ready: r.ends <= now(), n: JSON.parse(r.cards).reduce((t, c) => t + c.n, 0), cards: JSON.parse(r.cards), rc: r.ends <= now() ? Math.min(r.rc, EXPED.cap[r.hours] ?? r.rc) : null, rp: r.ends <= now() ? r.rp : null })) };
+    return { slots: EXPED.slots, maxCards: EXPED.maxCards, options: EXPED.hours.map(([h, m]) => ({ hours: h, mult: m })), base: EXPED.base,
+      active: rows.map(r => ({ id: r.id, hours: r.hours, ends: r.ends, ready: r.ends <= now(), n: JSON.parse(r.cards).reduce((t, c) => t + c.n, 0), cards: JSON.parse(r.cards), rc: r.ends <= now() ? r.rc : null, rp: r.ends <= now() ? r.rp : null })) };
   });
   route('GET', '/api/expeditions/spare', async ({ env, user }) => ({
     cards: await all(env, 'SELECT c.id, c.title, c.rarity, c.image, i.qty - 1 spare FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.qty > 1 AND i.sh = 0 ORDER BY i.rar DESC, i.skey DESC, i.qty DESC LIMIT 300', user.id),
@@ -289,7 +287,7 @@ export function installEconomy(d) {
     for (const c of asked) { const r = info.get(c.id); if (!r || r.sh || r.qty - 1 < c.n) bad('Seuls les exemplaires en double peuvent partir (un exemplaire reste toujours à la maison)'); }
     const res = await env.DB.batch(asked.map(c => st(env, 'UPDATE inventory SET qty = qty - ? WHERE user_id = ? AND card_id = ? AND qty - ? >= 1', c.n, user.id, c.id, c.n)));
     if (res.some(r => !r.meta.changes)) { for (const [i, c] of asked.entries()) if (res[i].meta.changes) await addCard(env, user.id, c.id, c.n).run(); bad('Une carte a changé entre-temps, réessaie'); }
-    const base = asked.reduce((t, c) => t + c.n * EXPED.base[info.get(c.id).rar], 0), rc = Math.min(EXPED.cap[opt[0]], Math.floor(base * opt[1] * EXPED.k * rand(0.7, 1.4)));
+    const base = asked.reduce((t, c) => t + c.n * EXPED.base[info.get(c.id).rar], 0), rc = Math.floor(base * opt[1] * rand(0.7, 1.4));
     const rp = Math.random() < EXPED.pack[opt[0]] * (1 + total / EXPED.maxCards) ? 1 : 0;
     await run(env, "INSERT INTO expeditions (user_id, cards, hours, started, ends, rc, rp, status) VALUES (?,?,?,?,?,?,?,'out')", user.id, JSON.stringify(asked), opt[0], now(), now() + opt[0] * 3600000, rc, rp);
     statsCache.delete(user.id);
@@ -303,20 +301,12 @@ export function installEconomy(d) {
     if (e.ends > now()) bad('Les explorateurs ne sont pas encore rentrés');
     const claim = await run(env, "UPDATE expeditions SET status = 'done' WHERE id = ? AND status = 'out'", e.id);
     if (!claim.meta.changes) bad('Déjà récupérée');
-    const cards = JSON.parse(e.cards), rc = Math.min(e.rc, EXPED.cap[e.hours] ?? e.rc);   // jamais plus que le plafond actuel, même pour une expédition partie avant le rééquilibrage
-    await env.DB.batch([...cards.map(c => addCard(env, user.id, c.id, c.n)), st(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rc, e.rp, user.id)]);
+    const cards = JSON.parse(e.cards);
+    await env.DB.batch([...cards.map(c => addCard(env, user.id, c.id, c.n)), st(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', e.rc, e.rp, user.id)]);
     statsCache.delete(user.id);
-    return { ok: true, coins: rc, packs: e.rp, cards: cards.reduce((t, c) => t + c.n, 0) };
+    return { ok: true, coins: e.rc, packs: e.rp, cards: cards.reduce((t, c) => t + c.n, 0) };
   });
 
-  /** Opération unique : les expéditions déjà parties voient leur gain ramené au nouveau plafond (leurs gains avaient été fixés au départ, avant le rééquilibrage). */
-  async function capExpeditionsOnce(env) {
-    await ensureGameSchema(env);
-    const first = await run(env, 'INSERT INTO event_claims (key, user_id, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', 'exped-cap-1', 0, now());
-    if (!first.meta.changes) return 0;
-    const r = await run(env, "UPDATE expeditions SET rc = LEAST(rc, CASE hours WHEN 1 THEN ? WHEN 4 THEN ? ELSE ? END) WHERE status = 'out'", EXPED.cap[1], EXPED.cap[4], EXPED.cap[8]);
-    return r.meta.changes;
-  }
   /** Opération unique : toutes les expéditions en cours se terminent tout de suite (les gains étaient déjà fixés au départ ; les joueurs les touchent en récupérant l'expédition). */
   async function finishExpeditionsOnce(env, ctx) {
     await ensureGameSchema(env);
@@ -327,5 +317,5 @@ export function installEconomy(d) {
     for (const r of out) notify(env, ctx, { t: 'notify', msg: 'Tes explorateurs sont rentrés : récupère ton butin !' }, r.user_id);
     return out.length;
   }
-  return { settleBourse, finishExpeditionsOnce, capExpeditionsOnce };
+  return { settleBourse, finishExpeditionsOnce };
 }

@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2062,7 +2062,7 @@ views.bank = async v => {
   v.innerHTML = `${pageHead('Banque', 'Épargne et dividendes de ta collection')}
     <div class="panel minesum"><div><small>Épargne</small><b>${ico('coin')}${fmt(s.amount)}</b></div><p class="mut">+${(s.rate * 100).toFixed(1)} % par jour (≈ ${fmt(s.perDay)} pièces/jour) · plafond ${fmt(s.cap)} · retrait avant ${s.lockDays} jours après le dernier dépôt : ${Math.round(s.fee * 100)} % de frais${s.interest ? ` · dont ${fmt(s.interest)} d'intérêts à venir` : ''}.${s.locked > Date.now() ? ` Libre sans frais dans ${cdTxt(s.locked - Date.now())}.` : ''}</p>
       <div class="row"><button id="bk-in" style="flex:1">Déposer</button><button class="plain" id="bk-out" style="flex:1" ${s.amount ? '' : 'disabled'}>Retirer</button></div></div>
-    <div class="panel"><h3 style="margin:0 0 6px">Dividendes de collection</h3><p class="mut" style="margin:0 0 8px">Ta collection te rapporte <b>${fmt(dv.daily)} pièces par jour</b>${dv.raw > dv.cap ? ` (plafonné à ${fmt(dv.cap)} par jour)` : ''}. Tu peux cumuler jusqu'à ${dv.maxDays} jours.</p>
+    <div class="panel"><h3 style="margin:0 0 6px">Dividendes de collection</h3><p class="mut" style="margin:0 0 8px">Ta collection te rapporte <b>${fmt(dv.daily)} pièces par jour</b> (fusion et albums complétés augmentent le revenu). Tu peux cumuler jusqu'à 3 jours.</p>
       <div class="divlist">${dv.byRarity.map((x, i) => x ? `<div><span class="rar ${cfg.rarities[i]}">${rn[i]}</span><b>${fmt(x)}</b></div>` : '').join('')}${dv.bonus ? `<div><span>Albums complétés (${dv.albums})</span><b>${fmt(dv.bonus)}</b></div>` : ''}</div>
       <div class="row"><button id="dv-go" style="flex:1" ${dv.claimable ? '' : 'disabled'}>${dv.claimable ? `Récupérer ${fmt(dv.claimable)} pièces (${dv.days} jour${dv.days > 1 ? 's' : ''})` : 'Déjà récupérés aujourd\'hui'}</button></div></div>`;
   $('#bk-in').onclick = safe(async () => { const f = await ask('Déposer à la banque', [{ label: `Montant (marge restante : ${fmt(s.cap - s.amount)})`, type: 'number', value: Math.min(me.coins, s.cap - s.amount, 500) }], { ok: 'Déposer' }); if (!f) return; await api('/bank/deposit', { amount: +f[0] }); toast('Dépôt effectué'); await refreshMe(); render(); });
@@ -2084,7 +2084,7 @@ views.expeditions = async v => {
     if (!sp.length) return toast('Tu n\'as aucun doublon à envoyer pour le moment');
     m.hidden = false;
     const total = () => [...pick.values()].reduce((t, x) => t + x, 0);
-    const est = () => { const opt = d.options.find(o => o.hours === hours), base = sp.reduce((t, c) => t + (pick.get(c.id) || 0) * d.base[cfg.rarities.indexOf(c.rarity)], 0); return { n: total(), lo: Math.min(opt.cap, Math.floor(base * opt.mult * d.k * 0.7)), hi: Math.min(opt.cap, Math.floor(base * opt.mult * d.k * 1.4)) }; };
+    const est = () => { const opt = d.options.find(o => o.hours === hours), base = sp.reduce((t, c) => t + (pick.get(c.id) || 0) * d.base[cfg.rarities.indexOf(c.rarity)], 0); return { n: total(), lo: Math.floor(base * opt.mult * 0.7), hi: Math.floor(base * opt.mult * 1.4) }; };
     const paint = () => {
       const e = est(); $('#ex-sum').innerHTML = e.n ? `<b>${e.n}</b> / ${d.maxCards} carte${e.n > 1 ? 's' : ''} · gain estimé <b>${fmt(e.lo)} – ${fmt(e.hi)}</b> pièces` : `Touche une carte pour l'ajouter (${d.maxCards} au maximum)`;
       $('#ex-go').disabled = !e.n; $('#ex-go').textContent = e.n ? `Envoyer (${e.n})` : 'Envoyer';
