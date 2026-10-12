@@ -281,8 +281,8 @@ const TOPICS = [
 const topic = c => { const t = (c.extract || '').slice(0, 240); for (const [k, re] of TOPICS) if (re.test(t)) return k; return 'spark'; };
 const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" data-id="${c.id}">
-  <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span></div>
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${c.beta ? 'beta' : ''} ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" data-id="${c.id}">
+  <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span>${c.beta ? '<span class="betatag">BÊTA</span>' : ''}</div>
   <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/><path class="st" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/></svg></button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}${c.lvl ? `<span class="tag lvl">★${c.lvl}</span>` : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
     <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div>${extra}</div>
@@ -1371,7 +1371,10 @@ views.admin = async v => {
       box.innerHTML = `<div class="panel"><b>Marché</b><p class="mut">Fait agir les joueurs simulés tout de suite (ventes, enchères).</p><button id="t-bots">Animer le marché</button></div>
         <div class="panel"><b>Réserve de cartes</b><p class="mut">Prépare des cartes complétées (texte + photo) pour que les paquets s'ouvrent sans attente.</p><button id="t-res">Remplir la réserve</button></div>
         <div class="panel"><b>Journal des combats</b><p class="mut">Début, pauses, reprises, fin et erreurs des derniers combats (pour comprendre pourquoi l'un s'arrête).</p><button class="plain" id="t-fights">Afficher</button></div>
-        <div class="panel"><b>Journal de l'appli</b><p class="mut">Les 40 derniers évènements sur cet appareil.</p><button class="plain" id="t-log">Afficher</button></div>`;
+        <div class="panel"><b>Journal de l'appli</b><p class="mut">Les 40 derniers évènements sur cet appareil.</p><button class="plain" id="t-log">Afficher</button></div>
+        <div class="panel"><b>🔄 Remise à zéro (saison 0)</b><p class="mut">Prévisualise les cartes fondateur, puis lance l'opération : sauvegarde de toutes les tables, une seule transaction, une seule fois. <b>Irréversible depuis l'appli.</b></p><div class="row"><button class="plain" id="t-rz-dry" style="flex:1">Prévisualiser</button><button id="t-rz-go" style="flex:1">Lancer</button></div><div id="t-rz-out"></div></div>`;
+      $('#t-rz-dry').onclick = safe(async () => { const r = await api('/admin/reset-run', { dry: true }); $('#t-rz-out').innerHTML = `<div class="jlog" style="margin-top:10px">${r.plan.map(p => `<div><b>${esc(p.user)}</b> → ${esc(p.title || p.card)} <span class="mut">(${esc(p.source)}${p.asked ? `, ${p.asked} proposée${p.asked > 1 ? 's' : ''}` : ''}) · ${fmt(p.coins)} pièces, ${fmt(p.cards)} cartes</span></div>`).join('')}</div>`; });
+      $('#t-rz-go').onclick = safe(async () => { const t = window.prompt('Dernière vérification. Écris exactement : REMETTRE A ZERO'); if (t !== 'REMETTRE A ZERO') return toast('Annulé'); const r = await api('/admin/reset-run', { confirm: t }); toast(`Remise à zéro faite pour ${r.players} joueurs`); await refreshMe(); });
       const act = (id, action, msg) => { $(id).onclick = safe(async () => { $(id).disabled = true; try { await api('/admin/run', { action }); toast(msg); } finally { $(id).disabled = false; } }); };
       act('#t-bots', 'bots', 'Marché animé'); act('#t-res', 'reserve', 'Réserve remplie');
       $('#t-fights').onclick = safe(async () => {
@@ -2205,6 +2208,26 @@ function resetScreen(then, force = false) {
   })();
   return true;
 }
+/** Bilan de la saison 0 + ouverture du Pack Fondateur (une seule fois, juste après la remise à zéro). */
+function recapScreen(then) {
+  if (!me?.recap) return false;
+  const m = $('#modal'); m.hidden = false; m.innerHTML = '<div class="recapsheet"><p class="mut" style="text-align:center">Chargement…</p></div>';
+  (async () => {
+    let d; try { d = await api('/recap'); } catch { m.hidden = true; m.innerHTML = ''; then?.(); return; }
+    const r = d.recap, f = d.founder, c = { ...f.card, beta: 1 }, n = x => fmt(x);
+    const why = f.source === 'choix' ? `Tirée au sort parmi tes ${f.asked} carte${f.asked > 1 ? 's' : ''} choisie${f.asked > 1 ? 's' : ''}.` : f.source === 'collection' ? 'Tes cartes proposées étaient déjà prises (ou tu n\'en avais pas proposé) : une autre de tes légendaires t\'a été attribuée.' : 'Tu n\'avais pas de légendaire : une carte au hasard t\'est offerte, comme à tout le monde.';
+    const close = async () => { try { await api('/recap/seen', {}); } catch { /* sera redemandé */ } me.recap = false; m.hidden = true; m.innerHTML = ''; await refreshMe().catch(() => {}); render(); then?.(); };
+    const stats = [['Paquets ouverts', n(r.packs)], ['Cartes collectionnées', n(r.cards)], ['Cartes différentes', n(r.uniques)], ['Légendaires', n(r.legendary)], ['Wikibidou', n(r.coins)], ['Rang final', `${r.rank} / ${r.players}`], ['Ventes réalisées', `${n(r.sold)} (${n(r.soldCoins)} pièces)`], ['Enchères remportées', n(r.bought)], ['Duels', `${r.wins} V · ${r.losses} D`], ['Jours de jeu', n(r.days)]];
+    m.innerHTML = `<div class="recapsheet" role="dialog" aria-label="Remise à zéro effectuée"><div id="rc-gift"><p class="rsx">🎁</p><h2>Le jeu repart de zéro !</h2><p>Voici ton <b>Pack Fondateur</b> : une carte légendaire, unique, qui te suit dans la nouvelle saison.</p><button id="rc-open" style="width:100%">Ouvrir mon Pack Fondateur</button></div>
+      <div id="rc-card" hidden><h2>Ta carte fondateur</h2><div class="rcwrap">${cardHtml(c)}</div><p class="mut" style="text-align:center">${esc(why)}<br>Elle reste utilisable partout et garde son halo « Bêta » à vie.</p>
+        <h3 style="margin:14px 0 6px">🏅 Pionnier · Saison 0</h3><p class="mut" style="margin:0 0 10px">Ce titre exclusif est à toi (Personnaliser → Titres). Ton point de départ : <b>500 wikibidou</b> et <b>10 paquets</b>.</p>
+        <h3 style="margin:14px 0 6px">Ton bilan de la saison 0</h3><div class="rcgrid">${stats.map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('')}</div>${r.best ? `<p class="mut" style="text-align:center;margin:10px 0 0">Ta plus belle carte : <b>${esc(r.best.title)}</b></p>` : ''}
+        <button id="rc-go" style="width:100%;margin-top:16px">Commencer la saison 1</button></div></div>`;
+    $('#rc-open').onclick = () => { $('#rc-gift').hidden = true; $('#rc-card').hidden = false; $('.recapsheet').scrollTop = 0; $('.rcwrap .card')?.classList.add('rcreveal'); try { navigator.vibrate?.([30, 40, 60]); } catch { /* sans vibreur */ } };
+    $('#rc-go').onclick = close;
+  })();
+  return true;
+}
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -2252,7 +2275,7 @@ async function start() {
   setTimeout(pushStartup, 2500);
   setTimeout(() => {                                                                  // à l'ouverture : nouveautés de la mise à jour, puis récompense du jour
     const daily = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
-    const next = () => { if (!resetScreen(daily)) daily(); };
+    const next = () => { if (!recapScreen(daily) && !resetScreen(daily)) daily(); };
     if (!game && !sanctionScreen(next)) next();
   }, 900);
 }

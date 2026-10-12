@@ -140,7 +140,7 @@ console.log('— albums et paquets du jour (interface)');
     await p.route('**/api/albums', r => r.fulfill({ json: { albums: [{ id: 'zz', name: 'Album test', emoji: '🧪', blurb: 'x', reward: { c: 5000, p: 0 }, claimed: false, cards: [1, 2, 3, 4].map(i => ({ id: i, t: 'Carte ' + i, own: true, shiny: false, pick: true, img: null })) }] } }));
     await p.route('**/api/albums/zz/claim', async r => { sent = JSON.parse(r.request().postData() || '{}'); await r.fulfill({ json: { ok: true, reward: { c: 5000, p: 0 }, shiny: null } }); });
     await p.evaluate(() => { tab = 'albums'; render(); }); await p.waitForSelector('.albtile'); await p.click('.albtile'); await p.waitForSelector('.albsheet');
-    ok('album complet : bouton « Récupérer la récompense », plus de choix shiny', /Récupérer la récompense/.test(await p.textContent('#al-claim')) && !/shiny/i.test(await p.textContent('.albsheet')));
+    ok('album complet : bouton « Récupérer la récompense », plus de choix shiny', /Récupérer la récompense/.test(await p.textContent('#al-claim')) && !/transformer|au choix/i.test(await p.textContent('.albsheet')));
     await p.click('#al-claim'); await p.waitForTimeout(1500);
     ok('la récupération est envoyée au serveur sans carte à transformer', sent !== null && sent.card_id === undefined, JSON.stringify(sent));
     await p.unroute('**/api/albums'); await p.unroute('**/api/albums/zz/claim'); }
@@ -242,6 +242,21 @@ console.log('— annonce de la remise à zéro (interface)');
   ok('la pastille rouvre l\'écran avec mon choix', (await p.$$('.rsrow.sel')).length === 3);
   await p.click('#rs-later'); await p.waitForTimeout(300);
   await p.evaluate(() => { delete me.reset; me.ev = me.ev.filter(e => e.kind !== 'reset'); paintEvBar(); });
+}
+console.log('— bilan de la saison 0 et pack fondateur (interface)');
+{
+  let seen = 0;
+  await p.route('**/api/recap', r => r.fulfill({ json: { recap: { coins: 123456, packs: 999, cards: 4000, uniques: 3000, legendary: 40, best: { title: 'Napoléon', rarity: 'legendary', views: 9 }, rank: 2, players: 12, score: 5, sold: 7, soldCoins: 900, bought: 3, wins: 8, losses: 4, days: 9 }, founder: { id: 7001, title: 'Légende A', source: 'choix', asked: 3, card: { id: 7001, title: 'Légende A', rarity: 'legendary', atk: 9000, def: 9000, views: 9000, shiny: 0, image: null, beta: 1 } }, seen: false } }));
+  await p.route('**/api/recap/seen', async r => { seen++; await r.fulfill({ json: { ok: true } }); });
+  await p.evaluate(() => { me.recap = true; recapScreen(null); }); await p.waitForSelector('.recapsheet #rc-open', { timeout: 6000 });
+  ok('pack fondateur : écran d\'ouverture', /Pack Fondateur/.test(await p.textContent('.recapsheet')) && await p.$('#rc-card[hidden]') !== null);
+  await p.click('#rc-open'); await p.waitForSelector('.recapsheet .card.beta', { timeout: 4000 });
+  ok('la carte fondateur apparaît avec son halo bêta', !!(await p.$('.recapsheet .card.beta .betatag')) && /Tirée au sort parmi tes 3 cartes/.test(await p.textContent('.recapsheet')));
+  const txt = await p.textContent('.recapsheet');
+  ok('bilan : chiffres, titre Pionnier et point de départ', /999/.test(txt) && /2 \/ 12/.test(txt) && /Pionnier/.test(txt) && /500 wikibidou/.test(txt) && /Napoléon/.test(txt), txt.slice(0, 200));
+  await shot(p, 'bilan-saison0'); await p.click('#rc-go'); await p.waitForTimeout(500);
+  ok('« Commencer la saison 1 » : écran fermé, bilan marqué comme vu', seen === 1 && await p.$('.recapsheet') === null && !(await p.evaluate(() => me.recap)));
+  await p.unroute('**/api/recap'); await p.unroute('**/api/recap/seen');
 }
 console.log('— sanction et compte à rebours (interface)');
 {
