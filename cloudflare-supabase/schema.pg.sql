@@ -247,3 +247,6 @@ ALTER TABLE event_progress ENABLE ROW LEVEL SECURITY; ALTER TABLE event_claims E
 
 CREATE TABLE IF NOT EXISTS coin_freeze (user_id BIGINT PRIMARY KEY, until BIGINT NOT NULL, held BIGINT NOT NULL DEFAULT 0, ts BIGINT NOT NULL);  -- sanctions : gains de pièces mis de côté jusqu'à `until` (déclencheur coin_freeze_trg sur users)
 ALTER TABLE coin_freeze ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS reset_choices (user_id BIGINT PRIMARY KEY, picks TEXT NOT NULL, ts BIGINT NOT NULL);  -- remise à zéro : jusqu'à 3 cartes légendaires proposées par chaque joueur (une sera tirée au sort)
+ALTER TABLE reset_choices ENABLE ROW LEVEL SECURITY;

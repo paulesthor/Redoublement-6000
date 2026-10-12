@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1454,7 +1454,7 @@ async function refreshMe() {
 }
 /** Bandeau des événements en cours (heure dorée, week-end shiny…) sous l'en-tête, sur tous les écrans. */
 function paintEvBar() {
-  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
+  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip.reset')) return resetScreen(null, true); if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
   const left = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
   const list = me.ev || [];
   b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${e.emoji} <b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join(''); b.hidden = !list.length;
@@ -2160,6 +2160,51 @@ function sanctionScreen(then) {
   $('#sx-ok').onclick = () => { m.hidden = true; m.innerHTML = ''; then?.(); };
   return true;
 }
+/** Écran d'annonce de la remise à zéro : explications complètes + choix des 3 cartes légendaires (carte fondateur). Affiché à l'arrivée tant que le joueur n'a pas choisi ; ensuite accessible depuis la pastille de l'accueil. */
+function resetScreen(then, force = false) {
+  const r = me?.reset; if (!r || Date.now() >= r.at) return false;
+  if (!force) { if (r.chosen) return false; try { if (sessionStorage.getItem('wm_reset')) return false; sessionStorage.setItem('wm_reset', '1'); } catch { /* stockage indisponible */ } }
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; then?.(); };
+  m.hidden = false; m.innerHTML = '<div class="resetsheet"><p class="mut" style="text-align:center">Chargement…</p></div>';
+  (async () => {
+    let d; try { d = await api('/reset'); } catch { close(); return; }
+    const pick = new Set(d.picks), cards = d.legendaries, none = !cards.length;
+    const paint = () => {
+      const q = ($('#rs-q')?.value || '').toLowerCase().trim();
+      const list = cards.filter(c => !q || c.title.toLowerCase().includes(q)).slice(0, 120);
+      $('#rs-list').innerHTML = list.map(c => `<button class="rsrow ${pick.has(c.id) ? 'sel' : ''}" data-id="${c.id}">${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : '<span class="rsph">★</span>'}<span class="t">${esc(c.title)}</span><b>${pick.has(c.id) ? '✓' : '+'}</b></button>`).join('') || '<p class="mut" style="padding:8px">Aucune carte ne correspond.</p>';
+      $('#rs-count').textContent = none ? 'Tu n\'as aucune légendaire : une carte au hasard te sera attribuée.' : `${pick.size} / ${d.max} carte${pick.size > 1 ? 's' : ''} choisie${pick.size > 1 ? 's' : ''}`;
+      $('#rs-ok').disabled = !none && !pick.size; $('#rs-ok').textContent = d.chosen || me.reset.chosen ? 'Mettre à jour mon choix' : 'Valider mes cartes';
+    };
+    m.innerHTML = `<div class="resetsheet" role="dialog" aria-label="Remise à zéro"><p class="rsx">🔄</p><h2>Remise à zéro le mercredi 14 octobre</h2>
+      <p>Le jeu s'est déséquilibré : trop de wikibidou en circulation, des paquets ouverts à la chaîne et des abus sur le marché. Pour repartir sur de bonnes bases, <b>tout est remis à zéro</b> et le jeu repart avec de nouvelles règles.</p>
+      <div class="rsbox"><h3>Remis à zéro</h3><p>Wikibidou, paquets, cartes, titres, albums, succès, expéditions, ventes, enchères et échanges en cours, classements.</p>
+        <h3>Conservé</h3><p>Ton pseudo, ton compte, tes amis, ton avatar et tes messages.</p>
+        <h3>Ton point de départ</h3><p><b>500 wikibidou</b> et <b>10 paquets</b>, plus ta <b>carte fondateur</b> (voir plus bas).</p></div>
+      <div class="rsbox"><h3>Nouvelles règles</h3><ul>
+        <li><b>Chaque carte légendaire est unique.</b> Il n'en existera qu'un seul exemplaire normal et un seul exemplaire shiny dans tout le jeu : pour l'avoir, il faudra la tirer, l'acheter aux enchères ou l'échanger.</li>
+        <li><b>Un marché plus vivant :</b> chaque jour, 2 cartes légendaires tirées au hasard sont vendues aux enchères pendant 12 h.</li>
+        <li><b>Saisons à thème mystère :</b> chaque saison a un objectif différent. À la fin, le vainqueur remporte une légendaire secrète parmi les 1 000 pages les plus vues de Wikipédia, révélée en direct.</li>
+        <li><b>Paquets du jour :</b> 10 par jour au maximum.</li>
+        <li><b>Plus ou moins :</b> mise maximale de 50 wikibidou.</li>
+        <li><b>Albums :</b> 5 000 wikibidou à la complétion.</li>
+        <li><b>Joueurs simulés :</b> ils n'enchérissent plus au-dessus du prix du marché.</li>
+        <li><b>Souvenir :</b> un titre et un badge « Saison 0 » pour tous, et un bilan de ta saison.</li></ul></div>
+      <div class="rsbox"><h3>🏅 Ta carte fondateur</h3>
+        <p>Choisis jusqu'à <b>${d.max} de tes cartes légendaires</b> (hors shiny). Lors de la remise à zéro, <b>une seule des trois est tirée au sort</b> : tu la gardes, elle reste <b>utilisable</b> (combat, jeux, expéditions) et porte un <b>halo « Bêta »</b> qui prouve que tu étais là dès le début. Les autres sont détruites avec le reste de ta collection.</p>
+        <p class="mut">Si plusieurs joueurs ont choisi la même carte, le hasard tranche. Si toutes tes cartes sont prises, ou si tu ne choisis rien, une autre légendaire te sera attribuée au hasard. Choix modifiable jusqu'à la fin de mardi 13 octobre.</p>
+        <input id="rs-q" type="search" placeholder="Chercher dans mes légendaires (${cards.length})" ${none ? 'hidden' : ''}>
+        <div id="rs-list" class="rslist" ${none ? 'hidden' : ''}></div>
+        <p class="mut" id="rs-count" style="text-align:center;margin:8px 0 0"></p></div>
+      <div class="row"><button id="rs-ok" style="flex:2">Valider mes cartes</button><button class="plain" id="rs-later" style="flex:1">Fermer</button></div></div>`;
+    paint();
+    $('#rs-q').oninput = paint;
+    $('#rs-list').onclick = e => { const b = e.target.closest('.rsrow'); if (!b) return; const id = +b.dataset.id; if (pick.has(id)) pick.delete(id); else if (pick.size < d.max) pick.add(id); else return toast(`${d.max} cartes au maximum`); paint(); };
+    $('#rs-later').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    $('#rs-ok').onclick = safe(async () => { await api('/reset/choose', { cards: [...pick] }); me.reset.chosen = true; d.chosen = true; toast(none ? 'C\'est noté !' : 'Tes cartes sont enregistrées !'); close(); });
+  })();
+  return true;
+}
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -2207,7 +2252,8 @@ async function start() {
   setTimeout(pushStartup, 2500);
   setTimeout(() => {                                                                  // à l'ouverture : nouveautés de la mise à jour, puis récompense du jour
     const daily = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
-    if (!game && !sanctionScreen(daily)) daily();
+    const next = () => { if (!resetScreen(daily)) daily(); };
+    if (!game && !sanctionScreen(next)) next();
   }, 900);
 }
 const urlCode = new URLSearchParams(location.search).get('friend');

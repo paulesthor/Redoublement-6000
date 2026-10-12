@@ -2,7 +2,7 @@
 import './api.mjs';
 const { call, settle, ok, DB, J, done, env, ctx } = globalThis.__T;
 const { __testHooks } = await import('../src/index.js');
-const { SANCTIONS } = await import('../src/sanctions.js'); SANCTIONS.michelleclebresil = { days: 5 };   // la liste réelle est vide : on la remplit pour ces tests
+const { SANCTIONS, HANDICAPS } = await import('../src/sanctions.js'); SANCTIONS.michelleclebresil = { days: 5 }; HANDICAPS.michelleclebresil = { legend: 3, god: 3 };   // la liste réelle est vide : on la remplit pour ces tests
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 let [s, r] = await call(null, 'POST', '/api/register', { name: 'Michelleclebresil', password: 'secret1' }); const M = r.token;
 [s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
