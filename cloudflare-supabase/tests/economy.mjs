@@ -115,7 +115,9 @@ await q('UPDATE inventory SET lvl = 3 WHERE user_id = ? AND rar = (SELECT MAX(ra
 [s, r] = await call(A, 'GET', '/api/bank'); ok('la fusion augmente les dividendes', r.dividends.daily >= dv.daily, [dv.daily, r.dividends.daily]);
 const d0 = await coins(alice); [s, r] = await call(A, 'POST', '/api/bank/dividends/claim', {}); ok('dividendes récupérés', s === 200 && r.got > 0 && (await coins(alice)) === d0 + r.got, J(r));
 [s] = await call(A, 'POST', '/api/bank/dividends/claim', {}); ok('une seule fois par jour', s === 400);
-shift += 5 * 86400000; [s, r] = await call(A, 'GET', '/api/bank'); ok('jours manqués cumulés (3 au maximum)', r.dividends.days === 3 && r.dividends.claimable === r.dividends.daily * 3, J(r.dividends));
+shift += 5 * 86400000; [s, r] = await call(A, 'GET', '/api/bank'); ok('jours manqués cumulés (2 au maximum)', r.dividends.days === 2 && r.dividends.claimable === r.dividends.daily * 2, J(r.dividends));
+{ const { DIV } = await import('../src/economy.js'), save = DIV.cap; DIV.cap = 1; [s, r] = await call(A, 'GET', '/api/bank'); DIV.cap = save;
+  ok('dividendes plafonnés par jour', r.dividends.daily === 1 && r.dividends.raw > 1 && r.dividends.claimable === 2, J(r.dividends)); [s, r] = await call(A, 'GET', '/api/bank'); ok('plafond réel : 100 pièces par jour au plus', r.dividends.daily <= 100 && r.dividends.cap === 100, J(r.dividends)); }
 
 console.log('— expéditions');
 const spare = (await call(A, 'GET', '/api/expeditions/spare'))[1].cards; 
@@ -135,6 +137,21 @@ shift += 2 * 3600000; [s, r] = await call(A, 'GET', '/api/me'); ok('/me : pastil
 const x0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('retour : pièces créditées et exemplaires rendus', s === 200 && r.cards === 2 && (await coins(alice)) === x0 + r.coins && (await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', alice, c1.id))[0].qty === q0, J(r));
 [s] = await call(A, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('récupérable une seule fois', s === 404 || s === 400);
 [s] = await call(B, 'POST', `/api/expeditions/${ex.id}/collect`, {}); ok('expédition d\'un autre joueur : introuvable', s === 404);
+// rééquilibrage : gains d'expédition plafonnés (même pour une expédition déjà partie)
+{ const { EXPED } = await import('../src/economy.js'); ok('plafonds d\'expédition : 30 / 80 / 150 pièces', EXPED.cap[1] === 30 && EXPED.cap[4] === 80 && EXPED.cap[8] === 150);
+  [s, r] = await call(A, 'GET', '/api/expeditions'); ok('options d\'expédition : plafond et coefficient exposés', r.options.every(o => o.cap > 0) && r.k === 0.02, J(r.options));
+  const hi = [{ id: sp[0].id, n: 1 }]; const ids = (await q('SELECT id FROM expeditions WHERE user_id = ?', alice)).length;
+  await q("INSERT INTO expeditions (user_id, cards, hours, started, ends, rc, rp, status) VALUES (?,?,?,?,?,?,?,'out')", alice, J(hi), 8, Date.now(), Date.now() + 1000, 20000, 0);
+  const id = (await q("SELECT id FROM expeditions WHERE user_id = ? AND rc = 20000", alice))[0].id; shift += 5000;
+  [s, r] = await call(A, 'GET', '/api/expeditions'); ok('expédition déjà partie : gain affiché plafonné', r.active.find(x => x.id === id).rc === 150, J(r.active.find(x => x.id === id)));
+  const k0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/${id}/collect`, {}); ok('récupération plafonnée à 150 pièces', s === 200 && r.coins === 150 && (await coins(alice)) === k0 + 150, J([s, r]));
+  await q("DELETE FROM event_claims WHERE key = 'exped-cap-1'"); await q("INSERT INTO expeditions (user_id, cards, hours, started, ends, rc, rp, status) VALUES (?,?,?,?,?,?,?,'out')", alice, J(hi), 1, Date.now(), Date.now() + 99999999, 5000, 0);
+  await call(A, 'GET', '/api/expeditions'); ok('opération unique : gain enregistré ramené au plafond', (await q("SELECT rc FROM expeditions WHERE user_id = ? AND hours = 1 AND status = 'out' ORDER BY id DESC LIMIT 1", alice))[0].rc === 30);
+  await q("DELETE FROM expeditions WHERE user_id = ? AND hours = 1 AND status = 'out' AND ends > ?", alice, Date.now() + 90000000);
+  // meilleure combinaison possible : 12 légendaires en 8 h ne dépassent jamais le plafond
+  await q('UPDATE inventory SET qty = 40 WHERE user_id = ? AND card_id = ?', alice, sp[0].id);
+  [s, r] = await call(A, 'POST', '/api/expeditions/start', { hours: 4, cards: [{ id: sp[0].id, n: 12 }] }); const last = (await q("SELECT id, rc FROM expeditions WHERE user_id = ? AND status = 'out' ORDER BY id DESC LIMIT 1", alice))[0];
+  ok('12 cartes en 4 h : gain jamais au-dessus de 80', s === 200 && last.rc <= 80 && last.rc > 0, J([s, last])); await q("UPDATE expeditions SET status = 'done' WHERE id = ?", last.id); }
 // fin immédiate de toutes les expéditions en cours (opération unique) : prêtes tout de suite, gains versés à la récupération
 { [s, r] = await call(A, 'GET', '/api/expeditions'); const long = r.active.find(x => x.hours === 8); ok('avant : l\'expédition de 8 h est encore en cours', !!long && !long.ready, J(r.active));
   await q("DELETE FROM event_claims WHERE key = 'exped-finish-1'");

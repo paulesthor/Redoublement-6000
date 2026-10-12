@@ -618,7 +618,7 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {}));
   if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   if (!liftDone) { liftDone = true; ctx.waitUntil(sanctions.lift(env).catch(() => { liftDone = false; })); }   // opération unique : fin des sanctions de pièces
-  if (!expedDone) { expedDone = true; ctx.waitUntil(economy.finishExpeditionsOnce(env, ctx).catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
+  if (!expedDone) { expedDone = true; ctx.waitUntil((async () => { await economy.capExpeditionsOnce(env); await economy.finishExpeditionsOnce(env, ctx); })().catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
   const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
   const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
   const frozen = await sanctions.check(env, user).catch(() => 0);                // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
@@ -1874,6 +1874,7 @@ export default {
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
       await events.tick(env, ctx).catch(e => console.error('événements', e));
+      await economy.capExpeditionsOnce(env).catch(e => console.error('expéditions', e));
       await economy.finishExpeditionsOnce(env, ctx).catch(e => console.error('expéditions', e));
       await sanctions.lift(env).catch(e => console.error('sanctions', e));
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
