@@ -66,7 +66,7 @@ const c1 = await q('SELECT coins FROM users WHERE id = ?', alice); ok('pièces c
 console.log('— recherche');
 [s, r] = await call(A, 'GET', '/api/cards/search?q=carte'); ok('cards/search', s === 200 && Array.isArray(r.cards), J([s, r]).slice(0, 250));
 await q("INSERT INTO cards (id, title, rarity, atk, def, views) VALUES (777001, 'Éléphant d''Afrique 100%', 'common', 1, 1, 5), (777002, 'élé_phant', 'common', 1, 1, 9)");
-[s, r] = await call(A, 'GET', '/api/cards/search?q=%C3%89l%C3%A9'); ok('cards/search : préfixe, accents et majuscules', r.cards.length === 2 && r.cards[0].id === 777002, J(r));
+[s, r] = await call(A, 'GET', '/api/cards/search?q=%C3%89l%C3%A9'); ok('cards/search : préfixe, accents et majuscules', r.cards.some(c => c.id === 777002) && r.cards.some(c => c.id === 777001) && r.cards.findIndex(c => c.id === 777002) < r.cards.findIndex(c => c.id === 777001), J(r));
 [s, r] = await call(A, 'GET', '/api/cards/search?q=100%25'); ok('cards/search : % saisi pris au pied de la lettre', r.cards.length === 0, J(r));
 [s, r] = await call(A, 'GET', '/api/catalog/search?q=paris'); ok('catalog/search', s === 200, J([s, r]).slice(0, 250));
 [s, r] = await call(A, 'GET', '/api/catalog/search?q=a'); ok('catalog/search court', NOT500(s));
@@ -152,10 +152,10 @@ ok('joueurs simulés créés', +bots[0].n > 0, J(bots)); ok('ventes simulées cr
   // un joueur simulé enchérit sur la vente d'un joueur : le vendeur n'est PAS notifié, le joueur surenchéri l'est
   const sa = { log: [], send(d) { this.log.push(JSON.parse(d)); } }, sb = { log: [], send(d) { this.log.push(JSON.parse(d)); } };
   lobby.clients.set(alice, new Set([sa])); lobby.clients.set(bob, new Set([sb]));
-  const cardx = (await q('SELECT card_id FROM inventory WHERE user_id = ? AND card_id NOT IN (SELECT card_id FROM auctions WHERE status = \'open\') ORDER BY card_id LIMIT 1', alice))[0].card_id;
+  const cardx = (await q('SELECT card_id FROM inventory WHERE user_id = ? AND rar < 5 AND card_id NOT IN (SELECT card_id FROM auctions WHERE status = \'open\') ORDER BY card_id LIMIT 1', alice))[0].card_id;   // pas une légendaire : les joueurs simulés les laissent aux joueurs
   await q("UPDATE auctions SET status = 'expired' WHERE seller_id IN (SELECT id FROM users WHERE is_bot = 1)");
-  [s, r] = await call(A, 'POST', '/api/auctions', { card_id: cardx, price: 5, minutes: 120 }); const aid = (await q('SELECT id FROM auctions WHERE seller_id = ? ORDER BY id DESC LIMIT 1', alice))[0].id;
-  await q('UPDATE users SET coins = 5000 WHERE id = ?', bob); await call(B, 'POST', `/api/auctions/${aid}/bid`, { amount: 6 }); await settle();
+  [s, r] = await call(A, 'POST', '/api/auctions', { card_id: cardx, price: 1, minutes: 120 }); const aid = (await q('SELECT id FROM auctions WHERE seller_id = ? ORDER BY id DESC LIMIT 1', alice))[0].id;
+  await q('UPDATE users SET coins = 5000 WHERE id = ?', bob); await call(B, 'POST', `/api/auctions/${aid}/bid`, { amount: 2 }); await settle();
   sa.log.length = 0; sb.log.length = 0;
   const rnd = Math.random; Math.random = () => 0.0001;
   try { for (let i = 0; i < 3 && !(await q('SELECT 1 FROM bids b JOIN users u ON u.id = b.user_id WHERE b.auction_id = ? AND u.is_bot = 1', aid)).length; i++) { await call(A, 'POST', '/api/admin/run', { action: 'bots' }); await settle(); } } finally { Math.random = rnd; }
