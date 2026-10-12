@@ -130,6 +130,7 @@ export async function ensureGameSchema(env) {
        END IF; RETURN NEW; END $fn$ LANGUAGE plpgsql`,
     'DROP TRIGGER IF EXISTS coin_freeze_trg ON users',
     'CREATE TRIGGER coin_freeze_trg BEFORE UPDATE OF coins ON users FOR EACH ROW EXECUTE FUNCTION coin_freeze_fn()',
+    'CREATE TABLE IF NOT EXISTS reset_choices (user_id BIGINT PRIMARY KEY, picks TEXT NOT NULL, ts BIGINT NOT NULL)', 'ALTER TABLE reset_choices ENABLE ROW LEVEL SECURITY',   // remise à zéro : cartes légendaires proposées par chaque joueur
     'CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id))',
     'ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY',
     // historique « déjà possédée un jour » : alimenté par un déclencheur, donc quel que soit le chemin d'obtention (paquet, échange, enchère, duel…)

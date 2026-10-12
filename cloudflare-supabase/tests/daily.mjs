@@ -223,6 +223,30 @@ console.log('— dix paquets d\'un coup (interface)');
   await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('[data-th10]', { timeout: 8000 });
   ok('paquets du jour : bouton ×10 pour chaque catégorie', (await p.$$('[data-th10]')).length === 2);
 }
+console.log('— annonce de la remise à zéro (interface)');
+{
+  for (const [id, t, v] of [[7001, 'Légende A', 9000], [7002, 'Légende B', 8000], [7003, 'Légende C', 7000], [7004, 'Légende D', 6000]]) {
+    await DB.prepare("INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,'legendary',5,5,0,'u') ON CONFLICT DO NOTHING").bind(id, t, v).run();
+    await DB.prepare('INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav) VALUES (1,?,1,?,5,0,5000000000,?,0) ON CONFLICT DO NOTHING').bind(id, Date.now(), 'l' + id).run();
+  }
+  await p.evaluate(() => { try { sessionStorage.removeItem('wm_reset'); } catch {} me.reset = { at: Date.now() + 86400000, chosen: false }; me.ev = [...(me.ev || []), { id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: Date.now() + 86400000 }]; paintEvBar(); });
+  ok('pastille « Remise à zéro » sur l\'accueil', (await p.$$('.evchip.reset')).length === 1);
+  await p.evaluate(() => resetScreen(null)); await p.waitForSelector('.resetsheet .rsrow', { timeout: 6000 });
+  const txt = await p.textContent('.resetsheet');
+  ok('écran d\'annonce : explications complètes', /remis à zéro/i.test(txt) && /500 wikibidou/.test(txt) && /unique/.test(txt) && /carte fondateur/i.test(txt) && /halo/.test(txt) && /10 par jour/.test(txt) && /50 wikibidou/.test(txt) && /5 000/.test(txt) && /saison/i.test(txt), txt.slice(0, 200));
+  ok('mes légendaires sont listées (non shiny)', (await p.$$('.rsrow')).length >= 4);
+  for (let i = 0; i < 4; i++) await p.click(`.rsrow:nth-child(${i + 1})`);
+  ok('3 cartes au maximum', (await p.$$('.rsrow.sel')).length === 3 && /3 \/ 3/.test(await p.textContent('#rs-count')));
+  await shot(p, 'reset-annonce');
+  await p.click('#rs-ok'); await p.waitForTimeout(700);
+  const saved = (await DB.prepare('SELECT picks FROM reset_choices WHERE user_id = 1').all()).results[0];
+  ok('choix enregistré et écran fermé', saved && JSON.parse(saved.picks).length === 3 && await p.$('.resetsheet') === null, J(saved));
+  ok('déjà choisi : l\'écran ne revient pas tout seul', await p.evaluate(() => resetScreen(null)) === false);
+  await p.click('.evchip.reset'); await p.waitForSelector('.resetsheet .rsrow.sel', { timeout: 6000 });
+  ok('la pastille rouvre l\'écran avec mon choix', (await p.$$('.rsrow.sel')).length === 3);
+  await p.click('#rs-later'); await p.waitForTimeout(300);
+  await p.evaluate(() => { delete me.reset; me.ev = me.ev.filter(e => e.kind !== 'reset'); paintEvBar(); });
+}
 console.log('— sanction et compte à rebours (interface)');
 {
   await p.evaluate(() => { try { sessionStorage.removeItem('wm_sanc'); } catch {} me.sanction = { until: Date.now() + 5 * 86400000, msg: "T'avais qu'à pas tricher gros sac à merde." }; sanctionScreen(); });

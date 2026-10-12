@@ -12,7 +12,7 @@ const DAY = 86400000;
 export const SANCTIONS = {};   // aucune sanction de pièces en cours (ex. { pseudo: { days: 5 } }) ; le blocage du Plus ou moins est dans economy.js (HILO_BLOCKED)
 export const SANCTION_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 /** Malus de chance (jamais annoncé aux joueurs) : légendaires et godpack divisés dans les paquets normaux et les paquets du jour. */
-export const HANDICAPS = { michelleclebresil: { legend: 3, god: 3 }, michelecestlebresil: { legend: 3, god: 3 }, michelcestlebresil: { legend: 3, god: 3 } };
+export const HANDICAPS = {};   // aucun malus de chance en cours (ex. { pseudo: { legend: 3, god: 3 } })
 export const normName = n => String(n || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
 
 export const handicapOf = u => HANDICAPS[normName(u?.name)] || null;

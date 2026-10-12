@@ -6,6 +6,7 @@ import { handleMigrate } from './migrate.js';
 import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
 import { installEvents } from './events.js';
+import { installReset, RESET_AT } from './reset.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
@@ -628,7 +629,9 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
   const frozen = await sanctions.check(env, user).catch(() => 0);                // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
   if (frozen) ev.push({ id: 'freeze', kind: 'freeze', name: 'Gains suspendus', emoji: '⛔', end: frozen });
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}) };
+  const resetOn = env.RESET !== '0' && now() < RESET_AT, resetChosen = resetOn ? await reset.chosen(env, user.id).catch(() => false) : false;   // remise à zéro annoncée
+  if (resetOn) ev.push({ id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: RESET_AT });
+  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -923,6 +926,7 @@ const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.unt
   albumCount: async (env, uid) => +(await one(env, 'SELECT COUNT(*) n FROM album_claims WHERE user_id = ?', uid)).n });
 
 // ---------- événements surprise (voir events.js) ----------
+const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, placeholders });
 const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN,
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
