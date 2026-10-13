@@ -1381,7 +1381,13 @@ views.admin = async v => {
         <div class="panel"><b>Journal de l'appli</b><p class="mut">Les 40 derniers évènements sur cet appareil.</p><button class="plain" id="t-log">Afficher</button></div>
         <div class="panel"><b>🔄 Remise à zéro (saison 0)</b><p class="mut">Prévisualise les cartes fondateur, puis lance l'opération : sauvegarde de toutes les tables, une seule transaction, une seule fois. <b>Irréversible depuis l'appli.</b></p><div class="row"><button class="plain" id="t-rz-dry" style="flex:1">Prévisualiser</button><button id="t-rz-go" style="flex:1">Lancer</button></div><div id="t-rz-out"></div></div>`;
       $('#t-rz-dry').onclick = async () => { const out = $('#t-rz-out'); out.innerHTML = '<p class="mut">Calcul en cours…</p>'; let r; try { r = await api('/admin/reset-run', { dry: true }); } catch (e) { out.innerHTML = `<p style="color:#f87171">Échec : ${esc(e.message)}</p>`; return; } if (!r.plan?.length) { out.innerHTML = '<p class="mut">Aucun joueur dans le plan.</p>'; return; } out.innerHTML = `<div class="jlog" style="margin-top:10px">${r.plan.map(p => `<div><b>${esc(p.user)}</b> → ${esc(p.title || p.card)} <span class="mut">(${esc(p.source)}${p.asked ? `, ${p.asked} proposée${p.asked > 1 ? 's' : ''}` : ''}) · ${fmt(p.coins)} pièces, ${fmt(p.cards)} cartes</span></div>`).join('')}</div>`; };
-      $('#t-rz-go').onclick = safe(async () => { const t = window.prompt('Dernière vérification. Écris exactement : REMETTRE A ZERO'); if (t !== 'REMETTRE A ZERO') return toast('Annulé'); const r = await api('/admin/reset-run', { confirm: t }); toast(`Remise à zéro faite pour ${r.players} joueurs`); await refreshMe(); });
+      $('#t-rz-go').onclick = async () => {
+        const out = $('#t-rz-out'), t = ($('#t-rz-word')?.value || '').trim();
+        if (t !== 'REMETTRE A ZERO') { out.innerHTML = '<p class="mut" style="margin-top:10px">Pour confirmer, écris exactement <b>REMETTRE A ZERO</b> ci-dessous puis rappuie sur « Lancer ».</p><input id="t-rz-word" placeholder="REMETTRE A ZERO" autocapitalize="characters" style="width:100%">'; return; }
+        out.innerHTML = '<p>⏳ Remise à zéro en cours… ne ferme pas l\'appli.</p>'; $('#t-rz-go').disabled = true;
+        try { const r = await api('/admin/reset-run', { confirm: t }); out.innerHTML = `<p>✅ Remise à zéro faite pour ${r.players} joueurs.</p>`; await refreshMe(); }
+        catch (e) { out.innerHTML = `<p style="color:#f87171">Échec : ${esc(e.message)}</p><p class="mut">Appuie sur « Prévisualiser » pour savoir si elle a eu lieu (message « déjà eu lieu »).</p>`; $('#t-rz-go').disabled = false; }
+      };
       const act = (id, action, msg) => { $(id).onclick = safe(async () => { $(id).disabled = true; try { await api('/admin/run', { action }); toast(msg); } finally { $(id).disabled = false; } }); };
       act('#t-bots', 'bots', 'Marché animé'); act('#t-res', 'reserve', 'Réserve remplie');
       $('#t-fights').onclick = safe(async () => {
