@@ -55,5 +55,22 @@ const owner = (await q('SELECT user_id FROM inventory WHERE card_id = ?', leg))[
 const rnd = Math.random; Math.random = () => 0.0001; try { for (let i = 0; i < 8; i++) await call(A, 'POST', '/api/admin/run', { action: 'bots' }); } finally { Math.random = rnd; } await settle();
 ok('aucun joueur simulé n\'enchérit sur une légendaire', (await q('SELECT COUNT(*) n FROM bids b JOIN auctions a ON a.id = b.auction_id JOIN users u ON u.id = b.user_id WHERE a.card_id = ? AND u.is_bot = 1', leg))[0].n === 0);
 [s, r] = await call(A, 'POST', '/api/admin/lot', { title: 'Paris' }); ok('l\'administration ne crée pas de vente simulée de légendaire', s !== 200 || r.rarity !== 'legendary', J([s, r]));
+// 9) « qui possède cette carte ? »
+{ const SHo = 100000000, ownerName = (await q('SELECT name FROM users WHERE id = ?', owner))[0].name;
+  [s, r] = await call(B, 'GET', `/api/cards/${leg}/owners`); ok('légendaire en vente : état « enchère », vendeur et prix indiqués', s === 200 && r.unique && r.state === 'enchère' && r.auction?.seller === ownerName && r.auction.price === 1, J(r));
+  ok('l\'autre version (shiny) est signalée', r.other && r.other.id === leg + SHo && r.other.shiny === true, J(r.other));
+  await q("UPDATE auctions SET status = 'expired' WHERE card_id = ?", leg); await q('INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav) VALUES (?,?,1,1,5,0,1,?,0) ON CONFLICT DO NOTHING', owner, leg, 'x');
+  [s, r] = await call(B, 'GET', `/api/cards/${leg}/owners`); ok('légendaire en collection : état « collection » et propriétaire', r.state === 'collection' && r.owners.length === 1 && r.owners[0].name === ownerName && r.total === 1, J(r));
+  const freeId = 8800001; await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', freeId, 'Libre', 5, 'legendary', 5, 5, 0, 'u');
+  [s, r] = await call(B, 'GET', `/api/cards/${freeId}/owners`); ok('légendaire que personne n\'a : « libre »', r.state === 'libre' && r.owners.length === 0, J(r));
+  await q('INSERT INTO legend_taken (card_id, ts) VALUES (?,1) ON CONFLICT DO NOTHING', freeId); [s, r] = await call(B, 'GET', `/api/cards/${freeId}/owners`); ok('réservée mais chez personne : « en jeu »', r.state === 'en jeu', J(r));
+  const common = (await q("SELECT c.id FROM cards c JOIN inventory i ON i.card_id = c.id WHERE c.rarity = 'common' LIMIT 1"))[0]?.id;
+  if (common) { [s, r] = await call(B, 'GET', `/api/cards/${common}/owners`); ok('carte non légendaire : pas unique, nombre de propriétaires et d\'exemplaires', s === 200 && r.unique === false && r.state === null && r.total >= 1 && r.players >= 1, J(r)); }
+  [s] = await call(B, 'GET', '/api/cards/999999999/owners'); ok('carte inconnue : 404', s === 404);
+  [s] = await call(null, 'GET', `/api/cards/${leg}/owners`); ok('connexion requise', s === 401); }
+// 10) tableau de bord de l'économie : administrateur seulement
+{ 
+  await q('UPDATE users SET is_admin = 0 WHERE id <> ?', alice); [s] = await call(B, 'GET', '/api/admin/economy'); ok('économie : refusée à un joueur non administrateur', s === 403, s);
+  [s, r] = await call(A, 'GET', '/api/admin/economy'); ok('économie : chiffres pour l\'administrateur', s === 200 && r.players >= 2 && r.coins > 0 && r.legendaries.existing > 0 && Array.isArray(r.top), J([s, r])); }
 CFG.DROP.legendary = saveL; CFG.GODPACK_CHANCE = saveG; CFG.SHINY_CHANCE = saveS;
 done();

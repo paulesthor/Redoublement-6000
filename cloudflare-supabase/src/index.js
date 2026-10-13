@@ -1158,6 +1158,28 @@ route('POST', '/api/dm/:peer', async ({ env, ctx, user, params, body }) => {
   notify(env, ctx, { t: 'dm', from: user.id, name: user.name, body: preview, ts }, peer.id);
   return { ok: true, message: { id: res[0].meta.last_row_id, mine: true, body: text, ts } };
 });
+/** Qui possède cette carte ? Propriétaires, vente en cours, et pour une légendaire unique : libre / en jeu, avec l'autre version (normale ↔ shiny). */
+route('GET', '/api/cards/:id/owners', async ({ env, params, origin }) => {
+  await ensureGameSchema(env);
+  const id = Math.floor(+params.id); if (!Number.isFinite(id) || id < 1) bad('Carte inconnue', 404);
+  const info = async cid => {
+    const [card, owners, auction, taken] = await Promise.all([
+      one(env, 'SELECT id, title, rarity, shiny FROM cards WHERE id = ?', cid),
+      all(env, 'SELECT u.id, u.name, i.qty FROM inventory i JOIN users u ON u.id = i.user_id WHERE i.card_id = ? AND i.qty > 0 AND u.is_bot = 0 ORDER BY i.qty DESC, u.name LIMIT 20', cid),
+      one(env, "SELECT a.id, a.bid, a.start_price, a.ends_at, s.name seller, s.is_bot seller_bot FROM auctions a JOIN users s ON s.id = a.seller_id WHERE a.card_id = ? AND a.status = 'open' ORDER BY a.ends_at LIMIT 1", cid),
+      one(env, 'SELECT 1 x FROM legend_taken WHERE card_id = ?', cid)]);
+    return { card, owners, auction, taken: !!taken };
+  };
+  const me = await info(id);
+  if (!me.card) bad('Carte inconnue', 404);
+  const unique = me.card.rarity === 'legendary' && await uniqueOn(env);
+  const total = me.owners.reduce((t, o) => t + +o.qty, 0);
+  const state = !unique ? null : me.owners.length ? 'collection' : me.auction ? 'enchère' : me.taken ? 'en jeu' : 'libre';
+  let other = null;                                                             // l'autre version (shiny ↔ normale) d'une légendaire
+  if (unique) { const oid = id >= SHINY_OFFSET ? id - SHINY_OFFSET : id + SHINY_OFFSET, o = await info(oid); other = { id: oid, shiny: oid >= SHINY_OFFSET, state: o.owners.length ? 'collection' : o.auction ? 'enchère' : o.taken ? 'en jeu' : 'libre', owner: o.owners[0]?.name ?? o.auction?.seller ?? null }; }
+  return { id, title: me.card.title, rarity: me.card.rarity, shiny: !!me.card.shiny, unique, state, owners: me.owners.map(o => ({ id: o.id, name: o.name, qty: +o.qty })), total, players: me.owners.length,
+    auction: me.auction ? { id: me.auction.id, price: me.auction.bid || me.auction.start_price, ends_at: me.auction.ends_at, seller: me.auction.seller } : null, other };
+});
 route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) => {
   const q = (query.get('q') || '').trim().slice(0, 80);
   if (q.length < 2) return { cards: [] };
@@ -1823,6 +1845,23 @@ route('GET', '/api/admin/stats', admin(async ({ env, query }) => {
   const pick = p => items.filter(([k]) => k.startsWith(p)).map(([k, x]) => ({ k: k.slice(p.length), ...x }));
   const month = days.filter(d => d.day.slice(0, 7) === day.slice(0, 7)).reduce((t, d) => t + (sum(d.items).by || 0), 0);
   return { day, perDay, total: perDay.find(d => d.day === day) ?? {}, hours: pick('T:'), routes: pick('R:'), users: pick('U:'), queries: pick('Q:').sort((a, b) => ((b.nr || 0) + (b.nw || 0)) - ((a.nr || 0) + (a.nw || 0))).slice(0, 60), monthBytes: month };
+}));
+/** Santé de l'économie : réservée à l'administrateur (garde `admin`). Quelques agrégats seulement. */
+route('GET', '/api/admin/economy', admin(async ({ env }) => {
+  await ensureGameSchema(env);
+  const t = now(), day = 864e5;
+  const [pl, top, sold, daily, legend, albums, open] = await Promise.all([
+    one(env, 'SELECT COUNT(*) n, COALESCE(SUM(coins),0) coins, COALESCE(SUM(pack_stock),0) stock, COALESCE(SUM(packs_opened),0) opened, COALESCE(MAX(coins),0) max FROM users WHERE is_bot = 0'),
+    all(env, 'SELECT name, coins FROM users WHERE is_bot = 0 ORDER BY coins DESC LIMIT 5'),
+    one(env, "SELECT COUNT(*) n, COALESCE(SUM(a.bid),0) vol, COALESCE(SUM(CASE WHEN u.is_bot = 1 THEN 1 ELSE 0 END),0) bots, COALESCE(SUM(CASE WHEN u.is_bot = 1 THEN a.bid ELSE 0 END),0) botvol FROM auctions a JOIN users u ON u.id = a.bidder_id WHERE a.status = 'sold' AND a.ends_at > ?", t - day),
+    all(env, 'SELECT (ts / 86400000) d, COUNT(*) n, SUM(price) vol FROM sales WHERE ts > ? GROUP BY 1 ORDER BY 1', t - 7 * day),
+    one(env, 'SELECT (SELECT COUNT(*) FROM legend_taken) taken, (SELECT COUNT(*) FROM cards WHERE rarity = ? AND shiny = 0) pool'.replace('?', "'legendary'")),
+    one(env, 'SELECT COUNT(*) n FROM album_claims WHERE ts > ?', t - day),
+    one(env, "SELECT COUNT(*) n FROM auctions WHERE status = 'open'")]);
+  const share = pl.coins ? Math.round(100 * top.reduce((a, x) => a + +x.coins, 0) / pl.coins) : 0;
+  return { players: +pl.n, coins: +pl.coins, avg: pl.n ? Math.round(pl.coins / pl.n) : 0, packsStock: +pl.stock, packsOpened: +pl.opened, top: top.map(x => ({ name: x.name, coins: +x.coins })), topShare: share,
+    sold24: { n: +sold.n, volume: +sold.vol, toBots: +sold.bots, botVolume: +sold.botvol }, sales7: daily.map(x => ({ day: new Date(+x.d * day).toISOString().slice(0, 10), n: +x.n, volume: +x.vol })),
+    legendaries: { existing: +legend.taken, pool: +legend.pool * 2 }, albums24: +albums.n, openAuctions: +open.n, unique: await uniqueOn(env) };
 }));
 /** Journal de log et de contrôle (table logs de Supabase, 14 jours). */
 route('GET', '/api/admin/logs', admin(async ({ env, query }) => { await flushLogs(env, true); return readLogs(env, { level: query.get('level') || '', kind: query.get('kind') || '', q: (query.get('q') || '').slice(0, 60), before: +query.get('before') || 0, limit: +query.get('limit') || 100 }); }));

@@ -335,10 +335,11 @@ function showCard(id) {
         <div class="meta"><span class="rar ${c.rarity}">${RAR[c.rarity]}${c.shiny ? ' · Shiny' : ''}</span><span>ATK <b>${fmt(c.atk)}</b></span><span>DEF <b>${fmt(c.def)}</b></span></div></div></div>
     ${fuseBox(c)}<p class="extract">${c.extract ? esc(c.extract) : '<span class="mut">Description en cours de chargement…</span>'}</p>
     <p class="mut">Défausse : ${sellValue(c)} pièces${c.avg_price != null ? ` · prix moyen au marché : ${c.avg_price}` : ''}</p>
-    <div class="row"><a class="btn" href="https://fr.wikipedia.org/wiki/${encodeURIComponent(c.title.replace(/ /g, '_'))}" target="_blank" rel="noopener">Lire sur Wikipédia</a><button class="plain" id="det-prices">Cours</button><button class="plain" id="det-close">Fermer</button></div></div>`;
+    <div class="row"><a class="btn" href="https://fr.wikipedia.org/wiki/${encodeURIComponent(c.title.replace(/ /g, '_'))}" target="_blank" rel="noopener">Lire sur Wikipédia</a><button class="plain" id="det-prices">Cours</button><button class="plain" id="det-owners">Qui l'a ?</button><button class="plain" id="det-close">Fermer</button></div></div>`;
   $('#det-close').onclick = () => { m.hidden = true; m.innerHTML = ''; };
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
   $('#det-prices').onclick = () => priceSheet(c.id, c.title);
+  $('#det-owners').onclick = safe(() => ownersSheet(c.id));
   const fb = $('#fuse-go');
   if (fb) fb.onclick = safe(async () => {
     fb.disabled = true;
@@ -1241,7 +1242,7 @@ let adminTab = 'overview';   // l'onglet « Joueurs » (pièces, paquets, cartes
 views.admin = async v => {
   jlog('ouverture de l\'administration');
   if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
-  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
+  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['eco', 'Économie'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
   v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips wrap" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
   const adminBody = async () => {
@@ -1314,6 +1315,12 @@ views.admin = async v => {
         }
       });
     } else if (adminTab === 'stats') await adminStats(box);
+    else if (adminTab === 'eco') {
+      const e = await api('/admin/economy'), k = (a, b) => `<div><span>${a}</span><b>${b}</b></div>`;
+      box.innerHTML = `<div class="panel"><div class="stats">${k('Joueurs', fmt(e.players))}${k('Pièces en circulation', fmt(e.coins))}${k('Moyenne / joueur', fmt(e.avg))}${k('Part du top 5', e.topShare + ' %')}${k('Paquets ouverts (total)', fmt(e.packsOpened))}${k('Paquets en stock', fmt(e.packsStock))}${k('Ventes 24 h', fmt(e.sold24.n) + ' · ' + fmt(e.sold24.volume))}${k('Dont achats par bots', fmt(e.sold24.toBots) + ' · ' + fmt(e.sold24.botVolume))}${k('Légendaires existantes', fmt(e.legendaries.existing) + ' / ' + fmt(e.legendaries.pool))}${k('Albums réclamés 24 h', fmt(e.albums24))}${k('Enchères ouvertes', fmt(e.openAuctions))}${k('Unicité', e.unique ? 'active' : 'coupée')}</div>
+        <h3 class="sec">Plus riches</h3><div class="list">${e.top.map(x => `<div class="item row1"><div class="grow"><div class="nm">${esc(x.name)}</div></div><b>${fmt(x.coins)}</b></div>`).join('')}</div>
+        <h3 class="sec">Ventes sur 7 jours</h3><div class="list">${e.sales7.map(x => `<div class="item row1"><div class="grow"><div class="nm">${x.day}</div></div><span class="mut">${fmt(x.n)} ventes</span> <b>${fmt(x.volume)}</b></div>`).join('') || '<p class="mut">Aucune vente.</p>'}</div></div>`;
+    }
     else if (adminTab === 'logs') await adminLogs(box);
     else if (adminTab === 'market') {
       const m = await api('/admin/market'); let pick = null, mins = 360, rmins = 0;
@@ -2039,6 +2046,17 @@ views.hilo = async v => {
 };
 
 /** Fiche de prix d'une carte : courbe des 30 dernières ventes et alerte de prix. */
+async function ownersSheet(id) {
+  const d = await api(`/cards/${id}/owners`), m = $('#modal'); m.hidden = false;
+  const STATE = { collection: 'dans une collection', 'enchère': 'mise aux enchères', 'en jeu': 'déjà tirée (en jeu)', libre: 'encore libre — personne ne l\'a tirée' };
+  const twin = d.other ? `<p class="mut" style="margin:6px 0">Version ${d.other.shiny ? 'shiny' : 'normale'} : ${STATE[d.other.state]}${d.other.owner ? ` · ${esc(d.other.owner)}` : ''}</p>` : '';
+  m.innerHTML = `<div class="betsheet"><h2>Qui possède ${esc(d.title)} ?</h2>
+    ${d.unique ? `<p>⭐ Carte <b>unique</b> : un seul exemplaire existe. Elle est ${STATE[d.state]}.</p>` : `<p class="mut">${d.players ? `${fmt(d.total)} exemplaire${d.total > 1 ? 's' : ''} chez ${fmt(d.players)} joueur${d.players > 1 ? 's' : ''}` : 'Personne ne la possède pour l\'instant.'}</p>`}
+    ${d.owners.length ? `<div class="list">${d.owners.map(o => `<div class="item row1"><div class="grow"><div class="nm">${esc(o.name)}</div></div><b>×${o.qty}</b></div>`).join('')}</div>` : ''}
+    ${d.auction ? `<p style="margin-top:8px">🔨 En vente par <b>${esc(d.auction.seller)}</b> à <b>${fmt(d.auction.price)}</b> pièces.</p>` : ''}${twin}
+    <div class="row"><button class="plain" id="ow-x" style="flex:1">Fermer</button></div></div>`;
+  const close = () => { m.hidden = true; m.innerHTML = ''; }; $('#ow-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+}
 async function priceSheet(id, title) {
   const d = await api(`/cards/${id}/prices`), m = $('#modal'); m.hidden = false;
   m.innerHTML = `<div class="betsheet"><h2>Cours · ${esc(title)}</h2>${d.sales.length ? `<div class="bigspark">${sparkline(d.sales.map(x => x.price), 300, 70)}</div>
