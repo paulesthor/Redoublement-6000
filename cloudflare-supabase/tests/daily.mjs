@@ -230,6 +230,7 @@ console.log('— maintenance (interface)');
 }
 console.log('— annonce de la remise à zéro (interface)');
 {
+  const { RESET_AT } = await import('../src/reset.js'), clockR = Date.now; Date.now = () => RESET_AT - 3600000;   // côté serveur : avant minuit (l'horloge réelle a dépassé la date)
   for (const [id, t, v] of [[7001, 'Légende A', 9000], [7002, 'Légende B', 8000], [7003, 'Légende C', 7000], [7004, 'Légende D', 6000]]) {
     await DB.prepare("INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,'legendary',5,5,0,'u') ON CONFLICT DO NOTHING").bind(id, t, v).run();
     await DB.prepare('INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav) VALUES (1,?,1,?,5,0,5000000000,?,0) ON CONFLICT DO NOTHING').bind(id, Date.now(), 'l' + id).run();
@@ -251,6 +252,7 @@ console.log('— annonce de la remise à zéro (interface)');
   ok('la pastille rouvre l\'écran avec mon choix', (await p.$$('.rsrow.sel')).length === 3);
   await p.click('#rs-later'); await p.waitForTimeout(300);
   await p.evaluate(() => { delete me.reset; me.ev = me.ev.filter(e => e.kind !== 'reset'); paintEvBar(); });
+  Date.now = clockR;
 }
 console.log('— bilan de la saison 0 et pack fondateur (interface)');
 {

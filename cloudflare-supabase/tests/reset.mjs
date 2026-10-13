@@ -3,6 +3,7 @@ import './api.mjs';
 const { call, settle, ok, DB, J, done, env } = globalThis.__T;
 const { RESET_AT } = await import('../src/reset.js');
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+const clock0 = Date.now; Date.now = () => RESET_AT - 3600000;   // l'horloge réelle a dépassé la date : on se place une heure avant minuit
 let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
 [s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
 const [alice, bob] = (await q('SELECT id FROM users ORDER BY id')).map(x => x.id);
@@ -48,6 +49,6 @@ try {
   await q("INSERT INTO settings (key, value) VALUES ('reset_done', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"); tt += 11000;
   [s, r] = await call(B, 'GET', '/api/me'); ok('remise à zéro faite : la maintenance se termine toute seule', !r.maintenance);
 } finally { Date.now = realNow; await q("DELETE FROM settings WHERE key IN ('reset_done', 'maintenance_off')"); }
-env.RESET = '0';
+Date.now = clock0; env.RESET = '0';
 [s, r] = await call(A, 'GET', '/api/me'); ok('annonce coupable (tests des autres fichiers)', !r.reset && !r.maintenance);
 done();
