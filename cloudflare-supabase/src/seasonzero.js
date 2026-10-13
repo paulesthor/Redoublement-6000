@@ -44,14 +44,15 @@ export function installSeasonZero(d) {
     const users = new Map((await all(env, 'SELECT id, name, coins, packs_opened, duel_wins, duel_losses, created FROM users WHERE is_bot = 0')).map(u => [u.id, u]));
     const score = new Map(); for (const u of humans) score.set(u, (users.get(u).duel_wins || 0) * 10);
     for (const r of inv) if (score.has(r.user_id)) score.set(r.user_id, score.get(r.user_id) + (CFG.POINTS[RARITIES[r.rar]] || 0) * r.n);
-    const order = [...score.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]), out = new Map();
+    const order = [...score.entries()].sort((x, y) => y[1] - x[1]).map(e => e[0]), out = new Map();
+    // trois requêtes groupées pour tous les joueurs (la limite gratuite est d'environ 50 appels par requête : jamais une requête par joueur)
+    const bestBy = new Map((await all(env, 'SELECT DISTINCT ON (i.user_id) i.user_id, c.title, c.rarity, c.views FROM inventory i JOIN cards c ON c.id = i.card_id ORDER BY i.user_id, i.rar DESC, c.views DESC')).map(r => [+r.user_id, r]));
+    const soldBy = new Map((await all(env, "SELECT seller_id uid, COUNT(*) n, COALESCE(SUM(bid), 0) s FROM auctions WHERE status = 'sold' GROUP BY seller_id")).map(r => [+r.uid, r]));
+    const boughtBy = new Map((await all(env, "SELECT bidder_id uid, COUNT(*) n FROM auctions WHERE status = 'sold' AND bidder_id IS NOT NULL GROUP BY bidder_id")).map(r => [+r.uid, r]));
     for (const uid of humans) {
-      const u = users.get(uid), mine = inv.filter(r => r.user_id === uid);
-      const best = await one(env, 'SELECT c.title, c.rarity, c.views FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? ORDER BY i.rar DESC, c.views DESC LIMIT 1', uid);
-      const sold = await one(env, "SELECT COUNT(*) n, COALESCE(SUM(bid), 0) s FROM auctions WHERE seller_id = ? AND status = 'sold'", uid);
-      const bought = await one(env, "SELECT COUNT(*) n FROM auctions WHERE bidder_id = ? AND status = 'sold'", uid);
+      const u = users.get(uid), mine = inv.filter(r => r.user_id === uid), best = bestBy.get(uid), sold = soldBy.get(uid), bought = boughtBy.get(uid);
       out.set(uid, { coins: +u.coins, packs: +u.packs_opened, cards: mine.reduce((t, r) => t + +r.q, 0), uniques: mine.reduce((t, r) => t + +r.n, 0), legendary: +(mine.find(r => r.rar === 5)?.n || 0),
-        best: best ? { title: best.title, rarity: best.rarity, views: +best.views } : null, rank: order.indexOf(uid) + 1, players: humans.length, score: score.get(uid), sold: +sold.n, soldCoins: +sold.s, bought: +bought.n,
+        best: best ? { title: best.title, rarity: best.rarity, views: +best.views } : null, rank: order.indexOf(uid) + 1, players: humans.length, score: score.get(uid), sold: +(sold?.n || 0), soldCoins: +(sold?.s || 0), bought: +(bought?.n || 0),
         wins: +u.duel_wins, losses: +u.duel_losses, days: Math.max(1, Math.round((now() - u.created) / DAY)) });
     }
     return out;
