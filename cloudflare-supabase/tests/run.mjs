@@ -133,7 +133,7 @@ const sc = (await q('SELECT card_id FROM inventory WHERE user_id = ? LIMIT 2', a
 
 console.log('— administration');
 await q('UPDATE users SET is_admin = 1 WHERE id = ?', alice);
-for (const [m, p, b] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/market'], ['POST', '/api/admin/lot', { title: 'Paris' }], ['POST', '/api/admin/lots-random', { count: 3 }], ['GET', '/api/admin/stats'], ['GET', '/api/admin/economy'], ['GET', '/api/admin/logs'], ['GET', '/api/admin/fights'], ['POST', '/api/admin/announce', { text: 'Test', push: false }], ['POST', '/api/admin/run', { action: 'bots' }], ['POST', '/api/admin/run', { action: 'reserve' }], ['POST', '/api/admin/test-mode', { user_id: alice, on: true }]]) {
+for (const [m, p, b] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/market'], ['POST', '/api/admin/lot', { title: 'Paris' }], ['POST', '/api/admin/lots-random', { count: 3 }], ['GET', '/api/admin/stats'], ['GET', '/api/admin/economy'], ['GET', '/api/admin/logs'], ['GET', '/api/admin/fights'], ['POST', '/api/admin/announce', { text: 'Test', push: false }], ['POST', '/api/admin/run', { action: 'bots' }], ['POST', '/api/admin/run', { action: 'reserve' }]]) {
   [s, r] = await call(A, m, p, b); ok(`admin ${m} ${p}`, s === 200, J([s, r]).slice(0, 300));
 }
 [s, r] = await call(B, 'GET', '/api/admin/overview'); ok('admin refusé aux autres', s === 403);
@@ -207,7 +207,7 @@ console.log('— chemins moins fréquents');
   await call(C, 'POST', '/api/friends/request', { name: 'Bob' }); const inc = (await call(B, 'GET', '/api/friends'))[1].incoming;
   [s, r] = await call(B, 'POST', `/api/friends/respond/${inc[0].id}`, { accept: false }); ok('demande d\'ami refusée', s === 200, J(r));
   // mode test réservé à l'admin (Alice l'est ici)
-  [s, r] = await call(A, 'POST', '/api/me/test-mode', { on: true }); ok('mode test (admin)', s === 200, J([s, r]));
+  [s, r] = await call(A, 'POST', '/api/me/test-mode', { on: true }); ok('mode test retiré (même admin)', s === 403, J([s, r]));
   [s, r] = await call(A, 'POST', '/api/me/test-mode', { on: false });
   // joueurs simulés : carte « cherchée » mise en vente à l'heure prévue
   const words = ['paris', 'france', 'lyon', 'pomme', 'chien', 'soleil', 'musique', 'rome', 'marseille', 'eau']; for (const w of words) for (const tk of [A, B, C]) await call(tk, 'GET', '/api/catalog/search?q=' + w);
