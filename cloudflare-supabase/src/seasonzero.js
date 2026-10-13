@@ -43,13 +43,13 @@ export function installSeasonZero(d) {
   }
   /** Bilan de la saison 0 de chaque joueur, calculé avant l'effacement. */
   async function recaps(env, humans) {
-    const inv = await all(env, 'SELECT user_id, rar, COUNT(*) n, SUM(qty) q FROM inventory GROUP BY user_id, rar');
+    const inv = await all(env, 'SELECT i.user_id, i.rar, COUNT(*) n, SUM(i.qty) q FROM inventory i JOIN users u ON u.id = i.user_id AND u.is_bot = 0 GROUP BY i.user_id, i.rar');
     const users = new Map((await all(env, 'SELECT id, name, coins, packs_opened, duel_wins, duel_losses, created FROM users WHERE is_bot = 0')).map(u => [u.id, u]));
     const score = new Map(); for (const u of humans) score.set(u, (users.get(u).duel_wins || 0) * 10);
     for (const r of inv) if (score.has(r.user_id)) score.set(r.user_id, score.get(r.user_id) + (CFG.POINTS[RARITIES[r.rar]] || 0) * r.n);
     const order = [...score.entries()].sort((x, y) => y[1] - x[1]).map(e => e[0]), out = new Map();
     // trois requêtes groupées pour tous les joueurs (la limite gratuite est d'environ 50 appels par requête : jamais une requête par joueur)
-    const bestBy = new Map((await all(env, 'SELECT DISTINCT ON (i.user_id) i.user_id, c.title, c.rarity, c.views FROM inventory i JOIN cards c ON c.id = i.card_id ORDER BY i.user_id, i.rar DESC, c.views DESC')).map(r => [+r.user_id, r]));
+    const bestBy = new Map((await all(env, 'SELECT DISTINCT ON (i.user_id) i.user_id, c.title, c.rarity, c.views FROM inventory i JOIN users u ON u.id = i.user_id AND u.is_bot = 0 JOIN cards c ON c.id = i.card_id ORDER BY i.user_id, i.rar DESC, c.views DESC')).map(r => [+r.user_id, r]));
     const soldBy = new Map((await all(env, "SELECT seller_id uid, COUNT(*) n, COALESCE(SUM(bid), 0) s FROM auctions WHERE status = 'sold' GROUP BY seller_id")).map(r => [+r.uid, r]));
     const boughtBy = new Map((await all(env, "SELECT bidder_id uid, COUNT(*) n FROM auctions WHERE status = 'sold' AND bidder_id IS NOT NULL GROUP BY bidder_id")).map(r => [+r.uid, r]));
     for (const uid of humans) {
