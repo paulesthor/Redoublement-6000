@@ -295,7 +295,7 @@ async function refreshPacks(env, u) {
   return u;
 }
 /** Le mode test (paquets illimités) n'existe que pour un administrateur, même si la colonne a été activée autrement. */
-const testOn = u => !!(u.test_mode && u.is_admin);
+const testOn = () => false;   // le mode test (paquets illimités) est retiré : aucun compte, administrateur compris, n'ouvre de paquets sans les posséder
 const publicUser = u => ({
   id: u.id, name: u.name, coins: u.coins, packs: u.pack_stock, wins: u.duel_wins, losses: u.duel_losses,
   av: u.avatar_v ?? null, title: u.title ?? null, test: testOn(u), admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
@@ -417,6 +417,7 @@ const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan',
 const BOT_PRICE = { common: [2, 6], uncommon: [5, 14], rare: [12, 36], super: [40, 110], ultra: [120, 320], legendary: [350, 900] };
 const BOT_MIX = [['common', .30], ['uncommon', .27], ['rare', .23], ['super', .12], ['ultra', .08]];   // jamais de légendaire : elles sont uniques, le marché des légendaires est entre joueurs
 const BOT_MINUTES = [[60, .3], [360, .3], [720, .2], [1440, .2]];
+const BOT_SALES_PER_DAY = 5;             // ventes à des joueurs simulés autorisées par joueur et par jour
 const BOT_LISTINGS = 30;                 // ventes simulées ouvertes en permanence
 const BOT_NEW_PER_TICK = 5;
 const pickW = list => { let r = Math.random() * list.reduce((t, x) => t + x[1], 0); for (const [v, w] of list) if ((r -= w) < 0) return v; return list.at(-1)[0]; };
@@ -506,10 +507,14 @@ async function botTick(env, ctx, force = false) {
   if (bare.length) ctx?.waitUntil(enrich(env, bare).catch(() => {}));
 
   // 4) enchères des joueurs simulés (au plus 4 par passage). Plus la page est visitée, plus on se l'arrache.
+  // Un joueur ne vend qu'un nombre limité de cartes par jour aux joueurs simulés (ventes réglées aujourd'hui + ventes en cours dont un simulé mène) : ils ne sont pas une source d'argent illimitée.
+  const botIds = bots.map(b => b.id), dayStart = now() - (86400000 - msToMidnight());
+  const quota = new Map((await all(env, `SELECT a.seller_id, COUNT(*) n FROM auctions a WHERE a.bidder_id IN (${placeholders(botIds.length)}) AND a.seller_id NOT IN (${placeholders(botIds.length)}) AND ((a.status = 'sold' AND a.ends_at >= ?) OR a.status = 'open') GROUP BY a.seller_id`, ...botIds, ...botIds, dayStart)).map(r => [r.seller_id, +r.n]));
   let bidsLeft = 4;
   for (const a of open.sort(() => Math.random() - .5)) {
     if (bidsLeft <= 0) break;
     if (a.rarity === 'legendary') continue;                         // les joueurs simulés n'enchérissent jamais sur une légendaire (unique)
+    if (!botName.has(a.seller_id) && !(a.bidder_id && botName.has(a.bidder_id)) && (quota.get(a.seller_id) || 0) >= BOT_SALES_PER_DAY) continue;   // ce joueur a déjà vendu son quota du jour aux joueurs simulés
     const d = demand(a.views), humanSeller = !botName.has(a.seller_id), humanLeads = a.bidder_id && !botName.has(a.bidder_id);
     const value = botValue(a.rarity, a.views, a.avg_price), cap = botCap(value);   // jamais au-dessus du prix du marché (à 3 % près)
     const maxBids = 2 + Math.round(4 * d);
@@ -526,7 +531,7 @@ async function botTick(env, ctx, force = false) {
     const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at;
     const won = await run(env, "UPDATE auctions SET bid = ?, bidder_id = ?, ends_at = ? WHERE id = ? AND bid = ? AND status = 'open'", amount, bot.id, ends, a.id, a.bid);
     if (!won.meta.changes) continue;
-    bidsLeft--;
+    bidsLeft--; if (!botName.has(a.seller_id) && !(a.bidder_id && botName.has(a.bidder_id))) quota.set(a.seller_id, (quota.get(a.seller_id) || 0) + 1);
     await run(env, 'INSERT INTO bids (auction_id, user_id, amount, ts) VALUES (?,?,?,?)', a.id, bot.id, amount, now());
     if (humanLeads) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.bidder_id);   // l'humain surenchéri est remboursé
     const others = new Set((await all(env, 'SELECT DISTINCT user_id FROM bids WHERE auction_id = ?', a.id)).map(r => r.user_id));
@@ -777,11 +782,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
   };
 }, false);
 
-route('POST', '/api/me/test-mode', async ({ env, user, body }) => {
-  if (!user.is_admin) bad('Le mode test est réservé à l’administrateur', 403);
-  await run(env, 'UPDATE users SET test_mode = ? WHERE id = ?', body.on ? 1 : 0, user.id);
-  return { ok: true };
-});
+route('POST', '/api/me/test-mode', async () => bad('Le mode test a été retiré', 403));
 /** Rapport d'incident envoyé par l'appli (ex. un ×10 interrompu) : va dans le journal pour qu'on voie le vrai message d'erreur côté joueur. */
 route('POST', '/api/clientlog', async ({ user, body }) => {
   logEvent({ level: 'warn', kind: 'client', user: user.name, route: String(body.where || '').slice(0, 60), status: Math.floor(+body.status) || 0, ms: 0, detail: String(body.msg || '').slice(0, 300) });
@@ -1724,7 +1725,7 @@ route('POST', '/api/admin/give', admin(async ({ env, ctx, body }) => {
   if (parts.length && (coins > 0 || packs > 0)) notify(env, ctx, { t: 'notify', msg: `Cadeau de l'admin : ${parts.join(' et ')}` }, id);
   return { ok: true, name: u.name };
 }));
-route('POST', '/api/admin/test-mode', admin(async ({ env, body }) => { await run(env, 'UPDATE users SET test_mode = ? WHERE id = ? AND is_bot = 0 AND is_admin = 1', body.on ? 1 : 0, +body.user_id); return { ok: true }; }));   // jamais pour un joueur ordinaire
+route('POST', '/api/admin/test-mode', admin(async () => bad('Le mode test a été retiré', 403)));
 route('POST', '/api/admin/password', admin(async ({ env, body }) => {
   const pw = String(body.password || ''); if (pw.length < 4) bad('Mot de passe trop court (4 min.)');
   const u = await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', +body.user_id); if (!u) bad('Joueur introuvable', 404);

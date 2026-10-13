@@ -42,4 +42,15 @@ const c1 = cards[5], capOk = botCap(botValue(c1.rarity, c1.views, null));
 m = await market(c1, 0, Math.max(1, Math.floor(capOk / 2)));      // prix raisonnable : les bots peuvent acheter, mais jamais au-dessus du plafond
 ok('prix raisonnable : si un bot enchérit, c\'est au plus au prix du marché', !m.bot || m.bid <= capOk, J([m, capOk]));
 ok('les bots restent actifs : au moins une offre dans les scénarios', botBids >= 2, botBids);
+// quota : au plus 5 ventes par jour à des joueurs simulés pour un même joueur
+{ await q("UPDATE auctions SET status = 'expired' WHERE status = 'open'"); await q('DELETE FROM bids');
+  const cheap = (await q('SELECT i.card_id FROM inventory i WHERE i.user_id = ? AND i.rar < 5 ORDER BY i.card_id', alice)).map(x => x.card_id).slice(0, 8); const mine = [];
+  for (const id of cheap) { await q('DELETE FROM sales WHERE card_id = ?', id); [s] = await call(A, 'POST', '/api/auctions', { card_id: id, price: 1, minutes: 600 }); if (s === 200) mine.push(id); }
+  Math.random = () => 0.0001; try { for (let i = 0; i < 40; i++) await call(A, 'POST', '/api/admin/run', { action: 'bots' }); } finally { Math.random = rnd; } await settle();
+  const led = (await q('SELECT COUNT(*) n FROM auctions a JOIN users u ON u.id = a.bidder_id WHERE a.seller_id = ? AND u.is_bot = 1 AND a.status = \'open\'', alice))[0].n;
+  ok(`${mine.length} cartes en vente : les joueurs simulés n'en prennent que 5 au plus`, mine.length >= 6 && +led >= 3 && +led <= 5, J([mine.length, led]));
+  // le lendemain : les ventes d'hier ne comptent plus, le quota est renouvelé
+  await q("UPDATE auctions SET status = 'sold', ends_at = ? WHERE seller_id = ? AND bidder_id IN (SELECT id FROM users WHERE is_bot = 1)", Date.now() - 26 * 3600000, alice);
+  Math.random = () => 0.0001; try { for (let i = 0; i < 30; i++) await call(A, 'POST', '/api/admin/run', { action: 'bots' }); } finally { Math.random = rnd; }
+  await settle(); ok('le jour suivant : le quota est renouvelé', +(await q('SELECT COUNT(*) n FROM auctions a JOIN users u ON u.id = a.bidder_id WHERE a.seller_id = ? AND u.is_bot = 1 AND a.status = \'open\'', alice))[0].n >= 1); }
 done();

@@ -1262,7 +1262,7 @@ views.admin = async v => {
         <div class="admrow"><input type="number" inputmode="numeric" min="0" placeholder="pièces" class="a-c"><input type="number" inputmode="numeric" min="0" placeholder="paquets" class="a-p"></div>
         <div class="admrow"><button class="a-give">Donner</button><button class="plain a-take">Retirer</button></div>
         <div class="admrow"><button class="plain a-cards">Cartes…</button><button class="plain a-drop">Taux de drop…</button></div>
-        <div class="admrow">${u.admin ? `<button class="plain a-test">Mode test : ${u.test ? 'oui' : 'non'}</button>` : ''}<button class="plain a-pw">Mot de passe</button></div>
+        <div class="admrow"><button class="plain a-pw">Mot de passe</button></div>
         <div class="admpanel" hidden></div></div>`).join('');
       const panel = (card, kind) => { const p = card.querySelector('.admpanel'), same = p.dataset.kind === kind && !p.hidden; p.hidden = same; p.dataset.kind = same ? '' : kind; return same ? null : p; };
       const cardList = async (p, id) => {
@@ -1278,8 +1278,7 @@ views.admin = async v => {
           if (!coins && !packs) return toast('Indique des pièces et/ou des paquets');
           if (sign < 0 && !confirm(`Retirer ${num('.a-c') ? num('.a-c') + ' pièces ' : ''}${num('.a-p') ? num('.a-p') + ' paquets ' : ''}à ${u.name} ?`)) return;
           await api('/admin/give', { user_id: id, coins, packs }); toast(`${u.name} : mis à jour`); adminBody();
-        } else if (e.target.closest('.a-test')) { await api('/admin/test-mode', { user_id: id, on: !u.test }); adminBody(); }
-        else if (e.target.closest('.a-pw')) {
+        } else if (e.target.closest('.a-pw')) {
           const pw = prompt(`Nouveau mot de passe pour ${u.name} (il sera déconnecté) :`); if (!pw) return;
           await api('/admin/password', { user_id: id, password: pw }); toast('Mot de passe changé');
         } else if (e.target.closest('.a-cards')) {
@@ -1568,7 +1567,7 @@ function profileSheet() {
   m.hidden = false;
   m.innerHTML = `<div><div class="profile tapp" id="pf-head" role="button" tabindex="0">${avatar(me.name)}<div><b>${esc(me.name)}</b><div class="mut">${me.wins} victoire${me.wins > 1 ? 's' : ''} · ${me.losses} défaite${me.losses > 1 ? 's' : ''}</div></div><span class="chev" aria-hidden="true">Voir ma page ›</span></div>
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
-    ${me.admin ? `<label class="switch"><span>Mode test<small>Ouvrir des paquets à l'infini</small></span><input type="checkbox" id="pf-test" ${me.test ? 'checked' : ''}></label>` : ''}
+    
     <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
     <label class="switch" id="pf-pushrow"><span>Notifications<small id="pf-pushtxt">Vérification…</small></span><input type="checkbox" id="pf-push" disabled></label>
     ${me.admin ? '<button class="plain" id="pf-admin" style="width:100%;margin-top:16px">Administration</button>' : ''}
@@ -1591,7 +1590,6 @@ function profileSheet() {
     c.onchange = async () => { c.disabled = true; try { if (c.checked) { await enablePush(); toast('Notifications activées'); api('/push/test', {}).catch(() => {}); } else { await disablePush(); toast('Notifications désactivées'); } } catch (e) { c.checked = !c.checked; toast(e.message); } c.disabled = false; };
   });
   $('#pf-snd').onchange = e => { try { localStorage.setItem('wm_sound', e.target.checked ? '1' : '0'); } catch { /* stockage indisponible */ } };
-  if (me.admin) $('#pf-test').onchange = safe(async e => { await api('/me/test-mode', { on: e.target.checked }); await refreshMe(); toast(e.target.checked ? 'Mode test activé' : 'Mode test désactivé'); if (tab === 'packs') render(); });
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
 }
 // ---------- récompense quotidienne, quêtes, quiz du jour ----------
@@ -2017,7 +2015,7 @@ views.hilo = async v => {
         <div class="row"><button class="plain" id="h-cash" style="flex:1" ${g.streak < 1 ? 'disabled' : ''}>Encaisser ${g.streak ? fmt(g.cash) : ''}</button></div>`
       : `<div class="panel"><p class="mut" style="margin:0 0 10px">On te montre un article et son nombre de vues. Devine si le suivant en a <b>plus</b> ou <b>moins</b>. Chaque bonne réponse multiplie ta mise par <b>×${d.step}</b> ; tu peux encaisser quand tu veux, une erreur fait tout perdre.</p>
         <div class="row"><input id="h-stake" type="number" inputmode="numeric" value="50" min="${d.min}" max="${d.max}" style="flex:0 0 110px;text-align:center;font-weight:700"><button id="h-go" style="flex:1" ${d.plays >= d.perDay ? 'disabled' : ''}>Jouer (${d.plays} / ${d.perDay} aujourd'hui)</button></div>
-        <p class="mut" style="margin:10px 0 0;font-size:12.5px">Gains par série : ${d.table.map((x, i) => `${i + 1} → ×${x}`).join(' · ')}…</p></div>`}`;
+        <p class="mut" style="margin:10px 0 0;font-size:12.5px">Gains par série : ${d.table.map((x, i) => `${i + 1} → ×${x}`).join(' · ')} · série maximale : ${d.maxStreak}, encaissée d'office.</p></div>`}`;
     // compte à rebours : à zéro, la manche est perdue (le serveur vérifie l'échéance)
     if (g.active && g.left != null) {
       const end = Date.now() + g.left, max = g.timeMax || 15000, bar = $('#h-bar'), sec = $('#h-sec'), my = ++hiloRun;

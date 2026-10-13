@@ -15,6 +15,18 @@ const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
   ok('sans proposition : une légendaire de sa collection', out.get(3).source === 'collection' && out.get(3).id === 30, J(out.get(3)));
   ok('proposition invalide (pas à lui) : retombe sur sa collection', out.get(4).source === 'collection' && out.get(4).id === 40, J(out.get(4)));
   const none = await planFounders({ players: [5], picks: new Map(), owned: new Map(), randomCard: async () => 777, rnd }); ok('aucune légendaire : carte tirée au hasard', none.get(5).source === 'hasard' && none.get(5).id === 777);
+  // trois joueurs proposent exactement la même carte : un seul l'obtient, les autres reçoivent une autre légendaire, jamais de doublon ; la consolation évite les cartes proposées par d'autres
+  { let dup = 0, gotIt = new Set(), lost = 0;
+    for (let i = 0; i < 300; i++) {
+      const r3 = await planFounders({ players: [1, 2, 3], picks: new Map([[1, [10]], [2, [10]], [3, [10]]]), owned: new Map([[1, [10, 11, 14]], [2, [10, 12]], [3, [10, 13]]]), randomCard: async () => 99 });
+      const ids3 = [...r3.values()].map(f => f.id); if (new Set(ids3).size !== 3) dup++;
+      const winner = [...r3].filter(([, f]) => f.id === 10); gotIt.add(winner[0][0]); if (winner.length !== 1) lost++;
+    }
+    ok('trois joueurs, même carte : un seul exemplaire attribué, aucun doublon (300 tirages)', dup === 0 && lost === 0 && gotIt.size === 3, J([dup, lost, [...gotIt]]));
+    const proposed = await planFounders({ players: [1, 2], picks: new Map([[1, [20]], [2, [10]]]), owned: new Map([[1, [10, 11]], [2, [10, 20]]]), randomCard: async () => 99, rnd: () => 0.0001 });
+    ok('lot de consolation : jamais la carte proposée par un autre quand une autre est possible', [...proposed.values()].every(f => f.source !== 'collection' || f.id !== 10) || proposed.get(1).id !== 10, J([...proposed]));
+    const noLeg = await planFounders({ players: [1, 2, 3], picks: new Map([[1, [7]]]), owned: new Map([[1, [7]]]), randomCard: async used => { let n = 7; while (used.has(n)) n++; return n; } });
+    ok('sans légendaire : la carte au hasard n\'est jamais une carte déjà attribuée', new Set([...noLeg.values()].map(f => f.id)).size === 3, J([...noLeg])); }
   let clashes = 0; for (let i = 0; i < 200; i++) { const r = await planFounders({ players: [1, 2], picks: new Map([[1, [10]], [2, [10]]]), owned: new Map([[1, [10, 11]], [2, [10, 12]]]), randomCard: async () => 5 }); const a = r.get(1), b = r.get(2); if (a.id === b.id) clashes++; }
   ok('deux joueurs, même carte : jamais en double (le hasard tranche)', clashes === 0);
 }
@@ -42,6 +54,7 @@ ok('prévisualisation : Dora (sans légendaire) reçoit une carte au hasard', pl
 [s, r] = await call(A, 'POST', '/api/admin/reset-run', { confirm: 'REMETTRE A ZERO' }); ok('remise à zéro lancée', s === 200 && r.ok && r.players === 4, J([s, r]).slice(0, 300));
 const inv = await q('SELECT user_id, card_id, qty, rar FROM inventory WHERE user_id IN (?,?,?,?)', ids.Alice, ids.Bob, ids.Carl, ids.Dora);
 ok('chaque joueur n\'a plus que sa carte fondateur (légendaire, 1 exemplaire)', inv.length === 4 && inv.every(i => i.rar === 5 && +i.qty === 1) && new Set(inv.map(i => i.card_id)).size === 4, J(inv));
+ok('une seule légendaire par article dans tout le jeu, chacune réservée', +(await q('SELECT COUNT(*) n FROM (SELECT card_id FROM inventory WHERE rar = 5 GROUP BY card_id HAVING SUM(qty) > 1) x'))[0].n === 0 && +(await q('SELECT COUNT(*) n FROM inventory i WHERE i.rar = 5 AND NOT EXISTS (SELECT 1 FROM legend_taken t WHERE t.card_id = i.card_id)'))[0].n === 0);
 ok('elles portent le halo bêta', (await q('SELECT COUNT(*) n FROM cards WHERE beta = 1'))[0].n === 4);
 ok('Alice garde une de ses 3 propositions, pas la shiny', [7001, 7002, 7003].includes(+inv.find(i => i.user_id === ids.Alice).card_id));
 const u = await q('SELECT coins, pack_stock, packs_opened, duel_wins, title FROM users WHERE id = ?', ids.Alice);

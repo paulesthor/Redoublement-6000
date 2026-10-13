@@ -17,11 +17,14 @@ const shuffle = (a, rnd = Math.random) => { const x = [...a]; for (let i = x.len
  * players: [id] ; picks: Map(id → [cartes proposées]) ; owned: Map(id → [légendaires non shiny possédées]).
  */
 export async function planFounders({ players, picks, owned, randomCard, rnd = Math.random }) {
-  const used = new Set(), out = new Map();
+  const used = new Set(), out = new Map(), wanted = new Set([...picks.values()].flat());   // cartes proposées par quelqu'un : on évite de les donner en « lot de consolation » à un autre
   for (const uid of shuffle(players, rnd)) {
     const mine = new Set(owned.get(uid) ?? []), asked = shuffle((picks.get(uid) ?? []).filter(id => mine.has(id)), rnd);
     let id = asked.find(c => !used.has(c)), source = 'choix';
-    if (id === undefined) { id = shuffle([...mine].filter(c => !used.has(c) && !asked.includes(c)), rnd)[0]; source = 'collection'; }
+    if (id === undefined) {
+      const rest = [...mine].filter(c => !used.has(c) && !asked.includes(c)), free = rest.filter(c => !wanted.has(c));
+      id = shuffle(free.length ? free : rest, rnd)[0]; source = 'collection';
+    }
     if (id === undefined) { id = await randomCard(used); source = 'hasard'; }
     used.add(id); out.set(uid, { id, source, asked: (picks.get(uid) ?? []).length });
   }
@@ -69,6 +72,7 @@ export function installSeasonZero(d) {
     const recapOf = await recaps(env, humans);
     const names = new Map((await all(env, 'SELECT id, name FROM users WHERE is_bot = 0')).map(u => [+u.id, u.name]));
     const cardRows = new Map((await all(env, `SELECT id, title, views, rarity FROM cards WHERE id IN (${[...new Set([...founders.values()].map(f => f.id))].map(() => '?').join(',')})`, ...[...new Set([...founders.values()].map(f => f.id))])).map(c => [+c.id, c]));
+    if (new Set([...founders.values()].map(f => f.id)).size !== humans.length) throw new Error('Cartes fondateur en double : opération annulée (rien n\'a été modifié)');   // garde-fou : une légendaire = un seul exemplaire
     const plan = humans.map(uid => { const f = founders.get(uid), c = cardRows.get(f.id) ?? (d.fresh.get(f.id) ? { id: f.id, title: d.fresh.get(f.id)[1], views: d.fresh.get(f.id)[2], rarity: 'legendary' } : null); return { user: names.get(uid), id: uid, card: f.id, title: c?.title, source: f.source, asked: f.asked, coins: recapOf.get(uid).coins, cards: recapOf.get(uid).cards, legendary: recapOf.get(uid).legendary }; });
     if (dry) return { dry: true, players: plan.length, plan, wipe: WIPE, backup: BACKUP.map(t => 'bk_s0_' + t) };
     const t = now(), stmts = [];

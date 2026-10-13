@@ -3,7 +3,7 @@
 
 const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
 export const BOURSE = { slots: 12, minStake: 10, maxStake: 500, maxBets: 8, dayStake: 2000, payout: 1.8, popularRanks: 1500 };
-export const HILO = { time: 15000, grace: 2500, minStake: 10, maxStake: 50, perDay: 2, step: 1.85, maxStreak: 10, gap: 0.15, ranks: 30000 };
+export const HILO = { time: 15000, grace: 2500, minStake: 10, maxStake: 50, perDay: 2, step: 1.85, maxStreak: 5, gap: 0.15, ranks: 30000 };
 /** Joueurs privés du « Plus ou moins » (pseudo comparé sans majuscules, accents ni séparateurs) et message affiché quand ils essaient d'y accéder. */
 export const HILO_BLOCKED = ['michelleclebresil', 'michelecestlebresil'], HILO_BLOCKED_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const hiloBlocked = u => HILO_BLOCKED.includes(String(u?.name || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''));
@@ -125,7 +125,7 @@ export function installEconomy(d) {
     if (hiloBlocked(user)) return { blocked: true, message: HILO_BLOCKED_MSG };
     await ensureGameSchema(env);
     const g = await one(env, 'SELECT * FROM hilo_games WHERE user_id = ?', user.id), day = dayKey();
-    return { ...hiloView(g), plays: g && g.day === day ? g.plays : 0, perDay: HILO.perDay, min: HILO.minStake, max: HILO.maxStake, step: HILO.step, table: Array.from({ length: 6 }, (_, i) => hiloMult(i + 1)) };
+    return { ...hiloView(g), plays: g && g.day === day ? g.plays : 0, perDay: HILO.perDay, min: HILO.minStake, max: HILO.maxStake, step: HILO.step, maxStreak: HILO.maxStreak, table: Array.from({ length: HILO.maxStreak }, (_, i) => hiloMult(i + 1)) };
   });
   route('POST', '/api/hilo/start', async ({ env, user, body, origin }) => {
     if (hiloBlocked(user)) bad(HILO_BLOCKED_MSG, 403);
