@@ -1703,7 +1703,7 @@ const onlineIds = async env => { try { return (await (await env.LOBBY.get(env.LO
 // ---------- remise à zéro (saison 0) : opération d'administration + bilan du joueur ----------
 route('POST', '/api/admin/reset-run', admin(async ({ env, body }) => {
   if (!body.dry && body.confirm !== 'REMETTRE A ZERO') bad('Confirmation manquante : écris REMETTRE A ZERO', 400);
-  try { return await seasonZero.reset(env, { dry: !!body.dry }); } catch (e) { if (e.status) bad(e.message, e.status); bad('Échec (rien n\'a été modifié si la base a refusé) : ' + String(e.message || e).slice(0, 300), 500); }
+  try { return await seasonZero.reset(env, { dry: !!body.dry }); } catch (e) { if (e.status) bad(String(e.message).slice(0, 300), e.status); bad('Échec (rien n\'a été modifié si la base a refusé) : ' + String(e.message || e).slice(0, 300), 500); }
 }));
 route('GET', '/api/recap', async ({ env, user }) => {
   await ensureGameSchema(env);
