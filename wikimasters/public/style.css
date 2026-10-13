@@ -1139,3 +1139,9 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 
 .recapsheet .srdrum{animation:srShake .25s linear infinite}@keyframes srShake{0%{transform:rotate(-8deg) scale(1.05)}50%{transform:rotate(8deg) scale(.95)}100%{transform:rotate(-8deg) scale(1.05)}}
 .evchip.seasonend{background:#2b2210;border-color:#ffd37a99}
+/* maintenance */
+#maint{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 30%,#1b2440,#0b0d16 70%)}
+#maint .maintbox{max-width:380px;text-align:center;padding:28px 22px;border-radius:20px;border:1px solid #6aa9ff55;background:#12182a}
+#maint .mx{font-size:56px;margin:0;animation:mtSpin 4s linear infinite}@keyframes mtSpin{50%{transform:rotate(20deg)}}
+#maint h2{margin:8px 0 12px}#maint p{line-height:1.5}#maint button{width:100%;margin-top:14px}
+.evchip.maint{background:#3a2a10;border-color:#ffb84d99}

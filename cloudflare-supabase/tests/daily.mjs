@@ -219,6 +219,15 @@ console.log('— dix paquets d\'un coup (interface)');
   await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('[data-th10]', { timeout: 8000 });
   ok('paquets du jour : bouton ×10 pour chaque catégorie', (await p.$$('[data-th10]')).length === 2);
 }
+console.log('— maintenance (interface)');
+{
+  await p.evaluate(() => maintenanceScreen()); await p.waitForSelector('#maint', { timeout: 4000 });
+  const t = await p.textContent('#maint');
+  ok('écran de maintenance : message clair, choix enregistrés, bouton de vérification', /Maintenance en cours/.test(t) && /saison 1/.test(t) && /enregistrées/.test(t) && !!(await p.$('#mt-r')));
+  ok('l\'écran couvre tout le jeu', await p.$eval('#maint', e => { const r = e.getBoundingClientRect(); return getComputedStyle(e).position === 'fixed' && r.width >= innerWidth - 1 && r.height >= innerHeight - 1; }));
+  await shot(p, 'maintenance');
+  await p.evaluate(() => { clearInterval(maintTimer); document.getElementById('maint').remove(); document.body.classList.remove('noscroll'); });
+}
 console.log('— annonce de la remise à zéro (interface)');
 {
   for (const [id, t, v] of [[7001, 'Légende A', 9000], [7002, 'Légende B', 8000], [7003, 'Légende C', 7000], [7004, 'Légende D', 6000]]) {

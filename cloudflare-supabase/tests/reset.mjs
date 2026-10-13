@@ -32,6 +32,22 @@ try {
   [s, r] = await call(A, 'GET', '/api/me'); ok('après la date : plus d\'annonce ni de pastille', !r.reset && !r.ev.some(e => e.kind === 'reset'), J([r.reset, r.ev]));
   [s, r] = await call(A, 'GET', '/api/reset'); ok('après la date : verrouillé, choix conservés', r.locked === true && J(r.picks) === '[7001,7002,7004]', J(r));
 } finally { Date.now = realNow; }
+// maintenance : de minuit jusqu'à la fin de la remise à zéro (ou levée à la main), joueurs bloqués, administrateurs libres
+await q('UPDATE users SET is_admin = 1 WHERE id = ?', alice); let tt = RESET_AT - 60000; Date.now = () => tt;
+try {
+  [s, r] = await call(B, 'GET', '/api/me'); ok('avant minuit : pas de maintenance', !r.maintenance && r.reset);
+  tt = RESET_AT + 1000;
+  [s, r] = await call(B, 'GET', '/api/me'); ok('après minuit : /me annonce la maintenance au joueur', s === 200 && r.maintenance === true, J(r.maintenance));
+  [s, r] = await call(B, 'POST', '/api/packs/open', {}); ok('joueur : le jeu est bloqué (503 « Maintenance »)', s === 503 && /Maintenance/.test(r.error), J([s, r]));
+  [s, r] = await call(B, 'GET', '/api/auctions'); ok('joueur : même les lectures sont bloquées', s === 503);
+  [s] = await call(null, 'GET', '/api/version'); ok('la version reste lisible', s === 200);
+  [s, r] = await call(A, 'GET', '/api/me'); ok('administrateur : bandeau seulement, jeu libre', s === 200 && r.maintenance === 'admin', J(r.maintenance));
+  [s] = await call(A, 'GET', '/api/auctions'); ok('administrateur : peut jouer et préparer', s === 200);
+  [s, r] = await call(A, 'POST', '/api/admin/maintenance', { off: true }); tt += 11000; [s, r] = await call(B, 'GET', '/api/me'); ok('maintenance levée à la main : le joueur rejoue', !r.maintenance && (await call(B, 'GET', '/api/auctions'))[0] === 200);
+  await call(A, 'POST', '/api/admin/maintenance', { off: false }); tt += 11000; [s, r] = await call(B, 'GET', '/api/me'); ok('maintenance rétablie', r.maintenance === true);
+  await q("INSERT INTO settings (key, value) VALUES ('reset_done', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"); tt += 11000;
+  [s, r] = await call(B, 'GET', '/api/me'); ok('remise à zéro faite : la maintenance se termine toute seule', !r.maintenance);
+} finally { Date.now = realNow; await q("DELETE FROM settings WHERE key IN ('reset_done', 'maintenance_off')"); }
 env.RESET = '0';
-[s, r] = await call(A, 'GET', '/api/me'); ok('annonce coupable (tests des autres fichiers)', !r.reset);
+[s, r] = await call(A, 'GET', '/api/me'); ok('annonce coupable (tests des autres fichiers)', !r.reset && !r.maintenance);
 done();
