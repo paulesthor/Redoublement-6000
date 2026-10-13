@@ -84,10 +84,8 @@ export function installSeasonZero(d) {
     if (dry) return { dry: true, players: plan.length, plan, wipe: WIPE, backup: BACKUP.map(t => 'bk_s0_' + t) };
     const t = now(), stmts = [];
     // Sauvegardes d'abord, par petits groupes (chaque appel a sa propre limite de temps côté Supabase ; CREATE … IF NOT EXISTS : on peut recommencer sans écraser une sauvegarde déjà faite)
-    for (let i = 0; i < BACKUP.length; i += 6) {
-      const part = []; for (const tb of BACKUP.slice(i, i + 6)) part.push(st(env, `CREATE TABLE IF NOT EXISTS bk_s0_${tb} AS SELECT * FROM ${tb}`), st(env, `ALTER TABLE bk_s0_${tb} ENABLE ROW LEVEL SECURITY`));   // RLS : jamais lisibles par l'API publique
-      await env.DB.batch(part);
-    }
+    const step = async (label, fn) => { try { return await fn(); } catch (e) { throw Object.assign(new Error(`${label} : ${e.message}`), { status: 500 }); } };   // l'erreur dit quelle étape a échoué
+    for (const tb of BACKUP) await step(`sauvegarde de ${tb}`, () => env.DB.batch([st(env, `CREATE TABLE IF NOT EXISTS bk_s0_${tb} AS SELECT * FROM ${tb}`), st(env, `ALTER TABLE bk_s0_${tb} ENABLE ROW LEVEL SECURITY`)]));   // RLS : jamais lisibles par l'API publique
     stmts.push(st(env, `TRUNCATE ${WIPE.join(', ')}`));                          // instantané (un DELETE sur de grosses tables dépassait la limite de temps)
     stmts.push(st(env, `DELETE FROM event_claims WHERE NOT (${KEEP_CLAIMS})`));
     stmts.push(st(env, `UPDATE users SET coins = ?, pack_stock = ?, pack_ts = ?, packs_opened = 0, test_mode = 0, showcase = NULL, drop_w = NULL, duel_wins = 0, duel_losses = 0, daily_day = NULL, daily_streak = 0, div_day = NULL, title = ? WHERE is_bot = 0`, START.coins, START.packs, t, FOUNDER_TITLE));
@@ -101,7 +99,7 @@ export function installSeasonZero(d) {
         uid, JSON.stringify(recapOf.get(uid)), JSON.stringify({ id: f.id, title, source: f.source, asked: f.asked }), t));
     }
     stmts.push(st(env, "INSERT INTO settings (key, value) VALUES ('unique_on', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"), st(env, "INSERT INTO settings (key, value) VALUES ('reset_done', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", String(t)));
-    await env.DB.batch(stmts);                                                   // une seule transaction : tout ou rien
+    await step('transaction de remise à zéro', () => env.DB.batch(stmts));      // une seule transaction : tout ou rien
     uniqueRefresh?.(); afterReset?.();
     return { ok: true, players: plan.length, plan };
   }
