@@ -1,6 +1,8 @@
 // Remise à zéro de la saison 0 : cartes fondateur (une légendaire gardée par joueur, avec un halo « bêta »), état de départ, bilan, titre « Pionnier ».
 // Une opération d'administration, déclenchée à la main après vérification : sauvegarde des tables, puis tout dans UNE transaction.
 export const START = { coins: 500, packs: 10 };
+/** Décisions de l'administrateur : « Mia Khalifa » (rang 650 du catalogue) pour lui, « Patrick Pouyanné » interdit à un joueur précis. */
+export const GIFT = { id: 9105390, rank: 650 }, BAN_ID = 8420956;
 export const FOUNDER_TITLE = 'saison0';
 /** Tables vidées (comptes, amis, avatars, messages, sessions et catalogue de cartes sont conservés). */
 export const WIPE = ['inventory', 'favorites', 'card_seen', 'auctions', 'bids', 'sales', 'trades', 'expeditions', 'savings', 'quests', 'daily_quiz_runs', 'event_progress', 'event_hunt', 'price_alerts',
@@ -16,16 +18,17 @@ const shuffle = (a, rnd = Math.random) => { const x = [...a]; for (let i = x.len
  * sinon une autre de ses légendaires libre ; sinon une légendaire au hasard (randomCard(prises) → identifiant). Aucune carte n'est donnée deux fois.
  * players: [id] ; picks: Map(id → [cartes proposées]) ; owned: Map(id → [légendaires non shiny possédées]).
  */
-export async function planFounders({ players, picks, owned, randomCard, rnd = Math.random }) {
+export async function planFounders({ players, picks, owned, randomCard, rnd = Math.random, forced = new Map(), banned = new Map() }) {
   const used = new Set(), out = new Map(), wanted = new Set([...picks.values()].flat());   // cartes proposées par quelqu'un : on évite de les donner en « lot de consolation » à un autre
-  for (const uid of shuffle(players, rnd)) {
-    const mine = new Set(owned.get(uid) ?? []), asked = shuffle((picks.get(uid) ?? []).filter(id => mine.has(id)), rnd);
+  for (const [uid, id] of forced) { used.add(id); out.set(uid, { id, source: 'offerte', asked: (picks.get(uid) ?? []).length }); }   // cartes imposées d'abord
+  for (const uid of shuffle(players.filter(u => !forced.has(u)), rnd)) {
+    const ban = banned.get(uid) ?? new Set(), mine = new Set(owned.get(uid) ?? []), asked = shuffle((picks.get(uid) ?? []).filter(id => mine.has(id) && !ban.has(id)), rnd);
     let id = asked.find(c => !used.has(c)), source = 'choix';
     if (id === undefined) {
-      const rest = [...mine].filter(c => !used.has(c) && !asked.includes(c)), free = rest.filter(c => !wanted.has(c));
+      const rest = [...mine].filter(c => !used.has(c) && !ban.has(c) && !asked.includes(c)), free = rest.filter(c => !wanted.has(c));
       id = shuffle(free.length ? free : rest, rnd)[0]; source = 'collection';
     }
-    if (id === undefined) { id = await randomCard(used); source = 'hasard'; }
+    if (id === undefined) { id = await randomCard(new Set([...used, ...ban])); source = 'hasard'; }
     used.add(id); out.set(uid, { id, source, asked: (picks.get(uid) ?? []).length });
   }
   return out;
@@ -68,16 +71,24 @@ export function installSeasonZero(d) {
     const picks = new Map((await all(env, 'SELECT user_id, picks FROM reset_choices')).map(r => { let p = []; try { p = JSON.parse(r.picks); } catch { /* ignoré */ } return [+r.user_id, p]; }));
     const owned = new Map(); for (const r of await all(env, 'SELECT user_id, card_id FROM inventory WHERE rar = 5 AND sh = 0')) { (owned.get(+r.user_id) ?? owned.set(+r.user_id, []).get(+r.user_id)).push(+r.card_id); }
     d.fresh = new Map();
-    const founders = await planFounders({ players: humans, picks, owned, randomCard: used => randomCard(env, used) });
+    const userRows = await all(env, 'SELECT id, name, is_admin FROM users WHERE is_bot = 0 ORDER BY id'), names = new Map(userRows.map(u => [+u.id, u.name]));
+    // décisions de l'administrateur : sa carte fondateur est imposée, et un joueur précis ne peut pas recevoir une carte précise
+    const forced = new Map(), banned = new Map(), boss = userRows.find(u => +u.is_admin), michel = userRows.find(u => /michel/i.test(u.name) && /bresil/i.test(u.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+    if (boss) { forced.set(+boss.id, GIFT.id); d.fresh.set(GIFT.id, await entryAt(env, assetOrigin, GIFT.rank)); }
+    if (michel && +michel.id !== +boss?.id) banned.set(+michel.id, new Set([BAN_ID]));
+    const founders = await planFounders({ players: humans, picks, owned, randomCard: used => randomCard(env, used), forced, banned });
     const recapOf = await recaps(env, humans);
-    const names = new Map((await all(env, 'SELECT id, name FROM users WHERE is_bot = 0')).map(u => [+u.id, u.name]));
     const cardRows = new Map((await all(env, `SELECT id, title, views, rarity FROM cards WHERE id IN (${[...new Set([...founders.values()].map(f => f.id))].map(() => '?').join(',')})`, ...[...new Set([...founders.values()].map(f => f.id))])).map(c => [+c.id, c]));
     if (new Set([...founders.values()].map(f => f.id)).size !== humans.length) throw new Error('Cartes fondateur en double : opération annulée (rien n\'a été modifié)');   // garde-fou : une légendaire = un seul exemplaire
     const plan = humans.map(uid => { const f = founders.get(uid), c = cardRows.get(f.id) ?? (d.fresh.get(f.id) ? { id: f.id, title: d.fresh.get(f.id)[1], views: d.fresh.get(f.id)[2], rarity: 'legendary' } : null); return { user: names.get(uid), id: uid, card: f.id, title: c?.title, source: f.source, asked: f.asked, coins: recapOf.get(uid).coins, cards: recapOf.get(uid).cards, legendary: recapOf.get(uid).legendary }; });
     if (dry) return { dry: true, players: plan.length, plan, wipe: WIPE, backup: BACKUP.map(t => 'bk_s0_' + t) };
     const t = now(), stmts = [];
-    for (const tb of BACKUP) stmts.push(st(env, `CREATE TABLE IF NOT EXISTS bk_s0_${tb} AS SELECT * FROM ${tb}`), st(env, `ALTER TABLE bk_s0_${tb} ENABLE ROW LEVEL SECURITY`));   // RLS : les sauvegardes ne sont jamais lisibles par l'API publique
-    for (const tb of WIPE) stmts.push(st(env, `DELETE FROM ${tb}`));
+    // Sauvegardes d'abord, par petits groupes (chaque appel a sa propre limite de temps côté Supabase ; CREATE … IF NOT EXISTS : on peut recommencer sans écraser une sauvegarde déjà faite)
+    for (let i = 0; i < BACKUP.length; i += 6) {
+      const part = []; for (const tb of BACKUP.slice(i, i + 6)) part.push(st(env, `CREATE TABLE IF NOT EXISTS bk_s0_${tb} AS SELECT * FROM ${tb}`), st(env, `ALTER TABLE bk_s0_${tb} ENABLE ROW LEVEL SECURITY`));   // RLS : jamais lisibles par l'API publique
+      await env.DB.batch(part);
+    }
+    stmts.push(st(env, `TRUNCATE ${WIPE.join(', ')}`));                          // instantané (un DELETE sur de grosses tables dépassait la limite de temps)
     stmts.push(st(env, `DELETE FROM event_claims WHERE NOT (${KEEP_CLAIMS})`));
     stmts.push(st(env, `UPDATE users SET coins = ?, pack_stock = ?, pack_ts = ?, packs_opened = 0, test_mode = 0, showcase = NULL, drop_w = NULL, duel_wins = 0, duel_losses = 0, daily_day = NULL, daily_streak = 0, div_day = NULL, title = ? WHERE is_bot = 0`, START.coins, START.packs, t, FOUNDER_TITLE));
     for (const uid of humans) {
