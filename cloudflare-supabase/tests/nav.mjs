@@ -61,7 +61,7 @@ console.log('— joueur ordinaire (non admin)');
   await q.evaluate(() => { tab = 'admin'; render(); }); await q.waitForTimeout(900);
   ok('écran admin forcé à la main : refusé', await q.$('#adm-tabs') === null);
   const bad = [];
-  for (const [m, p] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/stats'], ['GET', '/api/admin/logs'], ['POST', '/api/admin/run'], ['POST', '/api/admin/lot'], ['POST', '/api/admin/announce'], ['GET', '/api/admin/fights'], ['GET', '/api/admin/market']]) {
+  for (const [m, p] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/stats'], ['GET', '/api/admin/economy'], ['GET', '/api/admin/logs'], ['POST', '/api/admin/run'], ['POST', '/api/admin/lot'], ['POST', '/api/admin/announce'], ['GET', '/api/admin/fights'], ['GET', '/api/admin/market']]) {
     const r = await q.evaluate(async ([m, p, tok]) => (await fetch(p, { method: m, headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' }, body: m === 'POST' ? '{}' : undefined })).status, [m, p, B]);
     if (r !== 403) bad.push(m + ' ' + p + ' -> ' + r);
   }

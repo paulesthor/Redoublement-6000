@@ -4,13 +4,14 @@ export default {
   RARITIES,
   LABELS: { common: 'Commune', uncommon: 'Peu commune', rare: 'Rare', super: 'Super rare', ultra: 'Ultra rare', legendary: 'Légendaire' },
 
-  START_COINS: 200,
+  START_COINS: 500,
   START_PACKS: 10,
 
   PACK_SIZE: 10,               // cartes par booster
   PACK_EVERY: 10 * 60 * 1000,  // un booster gratuit toutes les 10 min
   VERSION: '8.7',              // numéro de build affiché dans le profil (à incrémenter à chaque mise à jour)
   PACK_MAX: 1e9,               // pas de plafond : les boosters gratuits s'accumulent (1 toutes les 10 min) même si on ne se connecte pas
+  THEME_PACK_DAILY: 10,        // paquets du jour (thématiques) achetables par joueur et par jour
   THEME_PACK_PRICE: 150,       // paquet thématique : ses cartes légendaires viennent toutes d'une même catégorie (dictateurs, footballeurs…)
   THEME_LEGEND_MULT: 2,        // et les légendaires y sont deux fois plus fréquentes
   PACK_PRICE: 60,              // prix d'un booster acheté (ouvert immédiatement)

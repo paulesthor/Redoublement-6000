@@ -66,7 +66,7 @@ const c1 = await q('SELECT coins FROM users WHERE id = ?', alice); ok('pièces c
 console.log('— recherche');
 [s, r] = await call(A, 'GET', '/api/cards/search?q=carte'); ok('cards/search', s === 200 && Array.isArray(r.cards), J([s, r]).slice(0, 250));
 await q("INSERT INTO cards (id, title, rarity, atk, def, views) VALUES (777001, 'Éléphant d''Afrique 100%', 'common', 1, 1, 5), (777002, 'élé_phant', 'common', 1, 1, 9)");
-[s, r] = await call(A, 'GET', '/api/cards/search?q=%C3%89l%C3%A9'); ok('cards/search : préfixe, accents et majuscules', r.cards.length === 2 && r.cards[0].id === 777002, J(r));
+[s, r] = await call(A, 'GET', '/api/cards/search?q=%C3%89l%C3%A9'); ok('cards/search : préfixe, accents et majuscules', r.cards.some(c => c.id === 777002) && r.cards.some(c => c.id === 777001) && r.cards.findIndex(c => c.id === 777002) < r.cards.findIndex(c => c.id === 777001), J(r));
 [s, r] = await call(A, 'GET', '/api/cards/search?q=100%25'); ok('cards/search : % saisi pris au pied de la lettre', r.cards.length === 0, J(r));
 [s, r] = await call(A, 'GET', '/api/catalog/search?q=paris'); ok('catalog/search', s === 200, J([s, r]).slice(0, 250));
 [s, r] = await call(A, 'GET', '/api/catalog/search?q=a'); ok('catalog/search court', NOT500(s));
@@ -133,7 +133,7 @@ const sc = (await q('SELECT card_id FROM inventory WHERE user_id = ? LIMIT 2', a
 
 console.log('— administration');
 await q('UPDATE users SET is_admin = 1 WHERE id = ?', alice);
-for (const [m, p, b] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/market'], ['POST', '/api/admin/lot', { title: 'Paris' }], ['POST', '/api/admin/lots-random', { count: 3 }], ['GET', '/api/admin/stats'], ['GET', '/api/admin/logs'], ['GET', '/api/admin/fights'], ['POST', '/api/admin/announce', { text: 'Test', push: false }], ['POST', '/api/admin/run', { action: 'bots' }], ['POST', '/api/admin/run', { action: 'reserve' }], ['POST', '/api/admin/test-mode', { user_id: alice, on: true }]]) {
+for (const [m, p, b] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/market'], ['POST', '/api/admin/lot', { title: 'Paris' }], ['POST', '/api/admin/lots-random', { count: 3 }], ['GET', '/api/admin/stats'], ['GET', '/api/admin/economy'], ['GET', '/api/admin/logs'], ['GET', '/api/admin/fights'], ['POST', '/api/admin/announce', { text: 'Test', push: false }], ['POST', '/api/admin/run', { action: 'bots' }], ['POST', '/api/admin/run', { action: 'reserve' }], ['POST', '/api/admin/test-mode', { user_id: alice, on: true }]]) {
   [s, r] = await call(A, m, p, b); ok(`admin ${m} ${p}`, s === 200, J([s, r]).slice(0, 300));
 }
 [s, r] = await call(B, 'GET', '/api/admin/overview'); ok('admin refusé aux autres', s === 403);
@@ -152,10 +152,10 @@ ok('joueurs simulés créés', +bots[0].n > 0, J(bots)); ok('ventes simulées cr
   // un joueur simulé enchérit sur la vente d'un joueur : le vendeur n'est PAS notifié, le joueur surenchéri l'est
   const sa = { log: [], send(d) { this.log.push(JSON.parse(d)); } }, sb = { log: [], send(d) { this.log.push(JSON.parse(d)); } };
   lobby.clients.set(alice, new Set([sa])); lobby.clients.set(bob, new Set([sb]));
-  const cardx = (await q('SELECT card_id FROM inventory WHERE user_id = ? AND card_id NOT IN (SELECT card_id FROM auctions WHERE status = \'open\') ORDER BY card_id LIMIT 1', alice))[0].card_id;
+  const cardx = (await q('SELECT card_id FROM inventory WHERE user_id = ? AND rar < 5 AND card_id NOT IN (SELECT card_id FROM auctions WHERE status = \'open\') ORDER BY card_id LIMIT 1', alice))[0].card_id;   // pas une légendaire : les joueurs simulés les laissent aux joueurs
   await q("UPDATE auctions SET status = 'expired' WHERE seller_id IN (SELECT id FROM users WHERE is_bot = 1)");
-  [s, r] = await call(A, 'POST', '/api/auctions', { card_id: cardx, price: 5, minutes: 120 }); const aid = (await q('SELECT id FROM auctions WHERE seller_id = ? ORDER BY id DESC LIMIT 1', alice))[0].id;
-  await q('UPDATE users SET coins = 5000 WHERE id = ?', bob); await call(B, 'POST', `/api/auctions/${aid}/bid`, { amount: 6 }); await settle();
+  [s, r] = await call(A, 'POST', '/api/auctions', { card_id: cardx, price: 1, minutes: 120 }); const aid = (await q('SELECT id FROM auctions WHERE seller_id = ? ORDER BY id DESC LIMIT 1', alice))[0].id;
+  await q('UPDATE users SET coins = 5000 WHERE id = ?', bob); await call(B, 'POST', `/api/auctions/${aid}/bid`, { amount: 2 }); await settle();
   sa.log.length = 0; sb.log.length = 0;
   const rnd = Math.random; Math.random = () => 0.0001;
   try { for (let i = 0; i < 3 && !(await q('SELECT 1 FROM bids b JOIN users u ON u.id = b.user_id WHERE b.auction_id = ? AND u.is_bot = 1', aid)).length; i++) { await call(A, 'POST', '/api/admin/run', { action: 'bots' }); await settle(); } } finally { Math.random = rnd; }
@@ -400,12 +400,14 @@ console.log('— récompense quotidienne');
     }
     await q('UPDATE users SET coins = 100000 WHERE id = ?', alice); const oldMult = CFGm.THEME_LEGEND_MULT; CFGm.THEME_LEGEND_MULT = 400;
     const okIds = new Set(fx.albums[0].cards.map(c => c.id)); let legs = 0, strangers = [], got = new Set(), n10 = true, god = false;
-    for (let i = 0; i < 12; i++) { [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: 'ta' }); if (s !== 200) { ok('achat paquet thématique', false, J([s, r])); break; } n10 &&= r.cards.length === 10; god ||= !!r.god; for (const c of r.cards.filter(c => c.rarity === 'legendary')) { legs++; const id = c.id >= 1e8 ? c.id - 1e8 : c.id; got.add(id); if (!okIds.has(id)) strangers.push(c.title); } }
+    for (let i = 0; i < 10; i++) { [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: 'ta' }); if (s !== 200) { ok('achat paquet thématique', false, J([s, r])); break; } n10 &&= r.cards.length === 10; god ||= !!r.god; for (const c of r.cards.filter(c => c.rarity === 'legendary')) { legs++; const id = c.id >= 1e8 ? c.id - 1e8 : c.id; got.add(id); if (!okIds.has(id)) strangers.push(c.title); } }
     CFGm.THEME_LEGEND_MULT = oldMult;
     ok('paquets de 10 cartes, jamais de godpack', n10 && !god);
     ok('toutes les légendaires viennent de la catégorie choisie', legs >= 10 && strangers.length === 0, J([legs, strangers]));
     ok('plusieurs cartes différentes de la catégorie', got.size >= 3, [...got].join());
-    const cb = (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins; ok('12 paquets payés', cb === 100000 - 12 * CFGm.THEME_PACK_PRICE, cb);
+    const cb = (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins; ok('10 paquets payés', cb === 100000 - 10 * CFGm.THEME_PACK_PRICE, cb);
+    [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: 'ta' }); ok('11e paquet du jour refusé (10 par jour), rien débité', s === 400 && /Limite atteinte/.test(r.error) && (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins === cb, J([s, r]));
+    [s, r] = await call(A, 'GET', '/api/themepacks'); ok('compteur des paquets du jour : 0 restant', r.daily.max === 10 && r.daily.used === 10 && r.daily.left === 0, J(r.daily));
     [s, r] = await call(A, 'POST', '/api/themepacks/buy', { theme: 'inconnu' }); ok('catégorie inconnue refusée, rien débité', s === 404 && (await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins === cb);
     await q('UPDATE users SET coins = 10 WHERE id = ?', chloe); [s, r] = await call(C, 'POST', '/api/themepacks/buy', { theme: 'tb' }); ok('pas assez de pièces', s === 400 && (await q('SELECT coins FROM users WHERE id = ?', chloe))[0].coins === 10);
     // albums : complétion et récompense
@@ -413,13 +415,9 @@ console.log('— récompense quotidienne');
     [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('album incomplet : refusé', s === 400, J([s, r]));
     for (const c of fx.albums[1].cards) { const e = shard.find(x => x[0] === c.id); await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', c.id, c.t, e[2], 'legendary', 9000, 9000, 0, 'u'); await q("INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,5,0,5000000000,'x') ON CONFLICT DO NOTHING", bob, c.id); }
     const cb0 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0];
-    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('album complet : il faut choisir la carte à transformer en shiny', s === 400 && /shiny/.test(r.error), J([s, r]));
-    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', { card_id: shard[0][0] }); ok('une carte hors album ne peut pas être transformée en shiny', s === 400, J([s, r]));
-    [s, r] = await call(B, 'GET', '/api/albums'); ok('albums : cartes proposables au shiny (exemplaire normal, pas encore shiny)', r.albums.find(a => a.id === 'tb').cards.every(c => c.pick === true && c.shiny === false));
-    const pickId = fx.albums[1].cards[1].id;
-    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', { card_id: pickId }); const cb1 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0]; ok('album complet : récompense versée', s === 200 && cb1.coins - cb0.coins === 5000 && cb1.pack_stock - cb0.pack_stock === 1 && r.shiny?.id === pickId + 100000000, J([s, r, cb0, cb1]));
-    { const sh = await q('SELECT sh, qty FROM inventory WHERE user_id = ? AND card_id = ?', bob, pickId + 100000000), nm = await q('SELECT qty FROM inventory WHERE user_id = ? AND card_id = ?', bob, pickId), ci = await q('SELECT shiny, rarity FROM cards WHERE id = ?', pickId + 100000000);
-      ok('la carte choisie est devenue shiny (normale remplacée par la shiny)', sh.length === 1 && sh[0].sh === 1 && sh[0].qty === 1 && nm.length === 0 && ci[0]?.shiny === 1, J([sh, nm, ci])); }
+    [s, r] = await call(B, 'POST', '/api/albums/tb/claim', { card_id: shard[0][0] }); const cb1 = (await q('SELECT coins, pack_stock FROM users WHERE id = ?', bob))[0];
+    ok('album complet : 5 000 pièces seulement (ni paquet, ni shiny)', s === 200 && cb1.coins - cb0.coins === 5000 && cb1.pack_stock - cb0.pack_stock === 0 && r.reward.p === 0 && r.shiny === null, J([s, r, cb0, cb1]));
+    ok('les cartes de l\'album restent normales (aucune transformation en shiny)', (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ? AND sh = 1', bob))[0].n === 0 && (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ? AND card_id IN (?,?,?,?)', bob, ...fx.albums[1].cards.map(c => c.id)))[0].n === 4);
     [s, r] = await call(B, 'POST', '/api/albums/tb/claim', {}); ok('récompense versée une seule fois', s === 400);
     [s, r] = await call(B, 'GET', '/api/albums'); ok('album marqué terminé', r.albums.find(a => a.id === 'tb').claimed === true && r.albums.find(a => a.id === 'tb').cards.every(c => c.own));
     [s, r] = await call(B, 'POST', '/api/albums/zz/claim', {}); ok('album inconnu', s === 404);

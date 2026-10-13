@@ -131,6 +131,9 @@ export async function ensureGameSchema(env) {
     'DROP TRIGGER IF EXISTS coin_freeze_trg ON users',
     'CREATE TRIGGER coin_freeze_trg BEFORE UPDATE OF coins ON users FOR EACH ROW EXECUTE FUNCTION coin_freeze_fn()',
     'CREATE TABLE IF NOT EXISTS reset_choices (user_id BIGINT PRIMARY KEY, picks TEXT NOT NULL, ts BIGINT NOT NULL)', 'ALTER TABLE reset_choices ENABLE ROW LEVEL SECURITY',   // remise à zéro : cartes légendaires proposées par chaque joueur
+    'CREATE TABLE IF NOT EXISTS season0_recap (user_id BIGINT PRIMARY KEY, data TEXT NOT NULL, founder TEXT NOT NULL, seen BIGINT NOT NULL DEFAULT 0, ts BIGINT NOT NULL)', 'ALTER TABLE season0_recap ENABLE ROW LEVEL SECURITY',   // bilan de la saison 0 et carte fondateur de chaque joueur
+    'ALTER TABLE cards ADD COLUMN IF NOT EXISTS beta INTEGER NOT NULL DEFAULT 0',   // 1 = carte fondateur (halo « bêta »)
+    'CREATE TABLE IF NOT EXISTS legend_taken (card_id BIGINT PRIMARY KEY, ts BIGINT NOT NULL)', 'ALTER TABLE legend_taken ENABLE ROW LEVEL SECURITY',   // légendaires uniques : cartes légendaires qui existent déjà
     'CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id))',
     'ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY',
     // historique « déjà possédée un jour » : alimenté par un déclencheur, donc quel que soit le chemin d'obtention (paquet, échange, enchère, duel…)
@@ -207,6 +210,7 @@ export const TITLES = [
   TI('ev_season_podium', 'evenements', 'Sur le podium', 'Termine 2e ou 3e d\'une saison'),
   TI('ev_season_vet', 'evenements', 'Vétéran de saison', 'Marque 50 points de saison'),
   ...EVENT_ALBUMS.map(a => TI('ev_alb_' + a.id, 'evenements', `${a.emoji} ${a.name}`, `Complète l'album éphémère « ${a.name} »`)),
+  { id: 'saison0', cat: 'saison', label: '🏅 Pionnier · Saison 0', desc: 'Titre exclusif : tu étais là dès la bêta', season: true },
   { id: 's1_champion', cat: 'saison', label: 'Champion de la saison 1', desc: 'Titre exclusif de la saison 1', season: true },
   { id: 's1_veteran', cat: 'saison', label: 'Vétéran de la saison 1', desc: 'Titre exclusif de la saison 1', season: true },
 ];

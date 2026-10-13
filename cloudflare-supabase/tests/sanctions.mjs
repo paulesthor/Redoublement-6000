@@ -73,8 +73,8 @@ await __testHooks.sanctions.tick(env); [s, r] = await call(M, 'GET', '/api/me');
   const ga = await gods(userWeights({ name: 'Bob' })), gb = await gods(userWeights({ name: 'Michelleclebresil' })); CFG.GODPACK_CHANCE = saveG;
   ok('légendaires en paquet normal : environ 3 fois moins', a / b > 2 && a / b < 4.2, J([a, b]));
   ok('godpack : environ 3 fois moins', ga / Math.max(1, gb) > 2 && ga / Math.max(1, gb) < 4.5, J([ga, gb]));
-  const theme = { cards: Array.from({ length: 40 }, (_, i) => ({ r: 10 + i })) }; CFG.DROP.legendary = 60;
-  const tl = async w => { let n = 0; for (let i = 0; i < 150; i++) n += (await __testHooks.drawCards(env, origin, 10, w, theme, null)).filter(c => c.rarity === 'legendary').length; return n; };
+  const theme = { cards: Array.from({ length: 40 }, (_, i) => ({ r: 10 + i })) }; CFG.DROP.legendary = 8;   // assez bas pour que la catégorie ne soit jamais épuisée dans un paquet
+  const tl = async w => { let n = 0; for (let i = 0; i < 400; i++) n += (await __testHooks.drawCards(env, origin, 10, w, theme, null)).filter(c => c.rarity === 'legendary').length; return n; };
   const ta = await tl(userWeights({ name: 'Bob' })), tb = await tl(userWeights({ name: 'Michelleclebresil' })); CFG.DROP.legendary = saveL;
   ok('paquets du jour : légendaires nettement moins nombreuses', ta / Math.max(1, tb) > 1.8, J([ta, tb]));
   [s, r] = await call(M, 'GET', '/api/me'); ok('rien n\'est annoncé au joueur', !JSON.stringify(r).match(/chance|malus|handicap/i)); }

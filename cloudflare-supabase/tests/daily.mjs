@@ -135,18 +135,14 @@ console.log('— albums et paquets du jour (interface)');
   await p.click('.albtile'); await p.waitForSelector('.albsheet'); await p.waitForTimeout(300); await shot(p, 'album-detail');
   ok('détail d\'un album : cartes et récompense', (await p.$$('.albcard')).length >= 4 && (await p.textContent('.albsheet')).includes('Récompense'));
   await p.click('#al-x');
-  // complétion : choisir la carte à transformer en shiny (réponses simulées du serveur)
+  // complétion : seulement des wikibidou (réponses simulées du serveur)
   { let sent = null;
-    await p.route('**/api/albums', r => r.fulfill({ json: { albums: [{ id: 'zz', name: 'Album test', emoji: '🧪', blurb: 'x', reward: { c: 5000, p: 2 }, claimed: false, cards: [1, 2, 3, 4].map(i => ({ id: i, t: 'Carte ' + i, own: true, shiny: i === 4, pick: i !== 4, img: null })) }] } }));
-    await p.route('**/api/albums/zz/claim', async r => { sent = JSON.parse(r.request().postData() || '{}'); await r.fulfill({ json: { ok: true, reward: { c: 5000, p: 2 }, shiny: { id: 100000002, title: 'Carte 2' } } }); });
+    await p.route('**/api/albums', r => r.fulfill({ json: { albums: [{ id: 'zz', name: 'Album test', emoji: '🧪', blurb: 'x', reward: { c: 5000, p: 0 }, claimed: false, cards: [1, 2, 3, 4].map(i => ({ id: i, t: 'Carte ' + i, own: true, shiny: false, pick: true, img: null })) }] } }));
+    await p.route('**/api/albums/zz/claim', async r => { sent = JSON.parse(r.request().postData() || '{}'); await r.fulfill({ json: { ok: true, reward: { c: 5000, p: 0 }, shiny: null } }); });
     await p.evaluate(() => { tab = 'albums'; render(); }); await p.waitForSelector('.albtile'); await p.click('.albtile'); await p.waitForSelector('.albsheet');
-    ok('album complet : bouton « Choisir ma carte shiny »', /Choisir ma carte shiny/.test(await p.textContent('#al-claim')));
-    await p.click('#al-claim'); await p.waitForTimeout(200);
-    ok('choix : seules les cartes sans version shiny sont sélectionnables', (await p.$$('.albcard.pickable')).length === 3 && await p.$eval('#al-claim', b => b.disabled));
-    await p.click('.albcard[data-cid="2"]'); ok('carte choisie, validation possible', (await p.$$('.albcard.sel')).length === 1 && !(await p.$eval('#al-claim', b => b.disabled)));
-    await shot(p, 'album-choix-shiny');
+    ok('album complet : bouton « Récupérer la récompense », plus de choix shiny', /Récupérer la récompense/.test(await p.textContent('#al-claim')) && !/transformer|au choix/i.test(await p.textContent('.albsheet')));
     await p.click('#al-claim'); await p.waitForTimeout(1500);
-    ok('la carte choisie est envoyée au serveur', sent?.card_id === 2, JSON.stringify(sent));
+    ok('la récupération est envoyée au serveur sans carte à transformer', sent !== null && sent.card_id === undefined, JSON.stringify(sent));
     await p.unroute('**/api/albums'); await p.unroute('**/api/albums/zz/claim'); }
   await p.evaluate(() => { $('#modal').hidden = true; $('#modal').innerHTML = ''; });
   await p.evaluate(() => { tab = 'themepacks'; render(); }); await p.waitForSelector('.thcard'); await p.waitForTimeout(400); await shot(p, 'paquets-du-jour');
@@ -234,6 +230,7 @@ console.log('— maintenance (interface)');
 }
 console.log('— annonce de la remise à zéro (interface)');
 {
+  const { RESET_AT } = await import('../src/reset.js'), clockR = Date.now; Date.now = () => RESET_AT - 3600000;   // côté serveur : avant minuit (l'horloge réelle a dépassé la date)
   for (const [id, t, v] of [[7001, 'Légende A', 9000], [7002, 'Légende B', 8000], [7003, 'Légende C', 7000], [7004, 'Légende D', 6000]]) {
     await DB.prepare("INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,'legendary',5,5,0,'u') ON CONFLICT DO NOTHING").bind(id, t, v).run();
     await DB.prepare('INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav) VALUES (1,?,1,?,5,0,5000000000,?,0) ON CONFLICT DO NOTHING').bind(id, Date.now(), 'l' + id).run();
@@ -255,6 +252,40 @@ console.log('— annonce de la remise à zéro (interface)');
   ok('la pastille rouvre l\'écran avec mon choix', (await p.$$('.rsrow.sel')).length === 3);
   await p.click('#rs-later'); await p.waitForTimeout(300);
   await p.evaluate(() => { delete me.reset; me.ev = me.ev.filter(e => e.kind !== 'reset'); paintEvBar(); });
+  Date.now = clockR;
+}
+console.log('— bilan de la saison 0 et pack fondateur (interface)');
+{
+  let seen = 0;
+  await p.route('**/api/recap', r => r.fulfill({ json: { recap: { coins: 123456, packs: 999, cards: 4000, uniques: 3000, legendary: 40, best: { title: 'Napoléon', rarity: 'legendary', views: 9 }, rank: 2, players: 12, score: 5, sold: 7, soldCoins: 900, bought: 3, wins: 8, losses: 4, days: 9 }, founder: { id: 7001, title: 'Légende A', source: 'choix', asked: 3, card: { id: 7001, title: 'Légende A', rarity: 'legendary', atk: 9000, def: 9000, views: 9000, shiny: 0, image: null, beta: 1 } }, seen: false } }));
+  await p.route('**/api/recap/seen', async r => { seen++; await r.fulfill({ json: { ok: true } }); });
+  await p.evaluate(() => { me.recap = true; recapScreen(null); }); await p.waitForSelector('.recapsheet #rc-open', { timeout: 6000 });
+  ok('pack fondateur : écran d\'ouverture', /Pack Fondateur/.test(await p.textContent('.recapsheet')) && await p.$('#rc-card[hidden]') !== null);
+  await p.click('#rc-open'); await p.waitForSelector('.recapsheet .card.beta', { timeout: 4000 });
+  ok('la carte fondateur apparaît avec son halo bêta', !!(await p.$('.recapsheet .card.beta .betatag')) && /Tirée au sort parmi tes 3 cartes/.test(await p.textContent('.recapsheet')));
+  const txt = await p.textContent('.recapsheet');
+  ok('bilan : chiffres, titre Pionnier et point de départ', /999/.test(txt) && /2 \/ 12/.test(txt) && /Pionnier/.test(txt) && /500 wikibidou/.test(txt) && /Napoléon/.test(txt), txt.slice(0, 200));
+  await shot(p, 'bilan-saison0'); await p.click('#rc-go'); await p.waitForTimeout(500);
+  ok('« Commencer la saison 1 » : écran fermé, bilan marqué comme vu', seen === 1 && await p.$('.recapsheet') === null && !(await p.evaluate(() => me.recap)));
+  await p.unroute('**/api/recap'); await p.unroute('**/api/recap/seen');
+}
+console.log('— fin de saison : révélation du vainqueur (interface)');
+{
+  let claimed = 0;
+  await p.route('**/api/events/season/last', r => r.fulfill({ json: { idx: 0, name: 'Saison 1', theme: { name: 'Combat', emoji: '⚔️' }, winner: { id: 1, name: 'Clodo033', pts: 120 }, prize: { id: 7001, title: 'Napoléon', rarity: 'legendary', atk: 9000, def: 9000, views: 9000, shiny: 0, image: null }, mine: { idx: 0, name: 'Saison 1', points: 120, rank: 1, reward: { c: 200, p: 3 }, claimed: false, winner: true }, me: 1 } }));
+  await p.route('**/api/events/season/claim', async r => { claimed++; await r.fulfill({ json: { ok: true, reward: { c: 200, p: 3 }, rank: 1, card: { id: 7001, title: 'Napoléon' } } }); });
+  await p.evaluate(() => { try { localStorage.removeItem('wm_sr'); } catch {} me.ev = [...(me.ev || []), { id: 'seasonend:0', kind: 'seasonend', name: 'Saison 1 terminée : le vainqueur !', emoji: '🏆', end: Date.now() + 86400000 }]; paintEvBar(); });
+  ok('pastille « saison terminée » à l\'accueil', (await p.$$('.evchip.seasonend')).length === 1);
+  await p.evaluate(() => seasonReveal(null)); await p.waitForSelector('#sr-go', { timeout: 6000 });
+  ok('suspense : le nom du vainqueur n\'est pas encore affiché', /Combat/.test(await p.textContent('.recapsheet')) && !/Clodo033/.test(await p.$eval('#sr-a', e => e.textContent)) && await p.$eval('#sr-c', e => e.hidden));
+  await p.click('#sr-go'); await p.waitForSelector('#sr-c:not([hidden])', { timeout: 6000 });
+  ok('le vainqueur et sa légendaire secrète sont révélés', /C'est toi/.test(await p.textContent('#sr-c')) && /Napoléon/.test(await p.textContent('#sr-c')) && !!(await p.$('#sr-c .card')));
+  await shot(p, 'fin-de-saison'); await p.click('#sr-claim'); await p.waitForTimeout(500);
+  ok('récupération de la récompense', claimed === 1 && await p.$('#sr-claim') === null);
+  await p.click('#sr-end'); await p.waitForTimeout(300);
+  ok('déjà vu : pas de réouverture automatique', await p.evaluate(() => seasonReveal(null)) === false && await p.$('.recapsheet') === null);
+  await p.unroute('**/api/events/season/last'); await p.unroute('**/api/events/season/claim');
+  await p.evaluate(() => { me.ev = me.ev.filter(e => e.kind !== 'seasonend'); paintEvBar(); });
 }
 console.log('— sanction et compte à rebours (interface)');
 {

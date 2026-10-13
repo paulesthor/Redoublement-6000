@@ -7,6 +7,9 @@ import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
 import { installEvents } from './events.js';
 import { installReset, RESET_AT } from './reset.js';
+import { installMarket, MARKET } from './market.js';
+import { installSeasonZero } from './seasonzero.js';
+import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
@@ -71,8 +74,9 @@ async function reserveCounts(env) {
   if (now() - reserveCountsCache.t > 300000) { reserveCountsCache.v = Object.fromEntries((await all(env, 'SELECT rarity, COUNT(*) n, MIN(id) lo, MAX(id) hi FROM reserve GROUP BY rarity')).map(r => [r.rarity, r])); reserveCountsCache.t = now(); }
   return reserveCountsCache.v;
 }
-async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) {
+async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null, uid = null) {
   const { ranges } = await getMeta(env, origin);
+  const uniq = !!uid && await uniqueOn(env);                                   // légendaires uniques : chaque légendaire tirée est réservée (une seule par article, une seule shiny)
   if (ev && (ev.legend > 1 || ev.ultra > 1)) w = { ...w, legendary: w.legendary * ev.legend, ultra: w.ultra * ev.ultra };     // heure dorée
   if (theme) w = { ...w, legendary: w.legendary * CFG.THEME_LEGEND_MULT };               // paquet thématique : plus de légendaires, toutes de la catégorie
   const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE * (w._god ?? 1);           // très rare : tout le paquet est ultra rare ou légendaire
@@ -84,7 +88,7 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
     // raretés basses : la carte est relue sans être retirée (aucune écriture), et seulement renouvelée une fois sur REUSE_RENEW ; autres raretés : retirée à chaque tirage
     const counts = await reserveCounts(env);
     // carte au hasard sans parcourir la table : on part d'un identifiant tiré entre le plus petit et le plus grand (une seule ligne lue)
-    const reads = rarities.map(r => theme && r === 'legendary' ? st(env, 'SELECT id FROM reserve WHERE false') : REUSE[r] && counts[r]?.n > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? AND id >= ? LIMIT 1', r, counts[r].lo + Math.floor(Math.random() * (counts[r].hi - counts[r].lo + 1))) : null);
+    const reads = rarities.map(r => (theme || uniq) && r === 'legendary' ? st(env, 'SELECT id FROM reserve WHERE false') : REUSE[r] && counts[r]?.n > 0 ? st(env, 'SELECT id FROM reserve WHERE rarity = ? AND id >= ? LIMIT 1', r, counts[r].lo + Math.floor(Math.random() * (counts[r].hi - counts[r].lo + 1))) : null);
     const res = await env.DB.batch(rarities.map((r, i) => reads[i] ?? st(env, 'DELETE FROM reserve WHERE id = (SELECT id FROM reserve WHERE rarity = ? LIMIT 1) RETURNING id', r)));
     claimed = res.map(x => x.results?.[0]?.id ?? null);
     const renew = claimed.filter((id, i) => id && reads[i] && Math.random() < REUSE_RENEW);
@@ -95,9 +99,24 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
   const taken = new Set();
   const used = new Set();                                                       // jamais deux fois la même carte dans un paquet
   const themed = theme ? theme.cards.slice() : null;
+  /** Réserve une légendaire précise (shiny avec la chance habituelle, sinon normale) : { rank, entry, shiny } ou null si elle existe déjà. */
+  const legendOf = async rank => {
+    const e = await entryAt(env, origin, rank), shinyRoll = Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
+    if (shinyRoll && await claimLegend(env, e[0] + SHINY_OFFSET)) return { rank, entry: e, shiny: 1 };
+    return (await claimLegend(env, e[0])) ? { rank, entry: e, shiny: 0 } : null;
+  };
+  const fixed = new Map();
+  if (uniq) for (let i = 0; i < rarities.length; i++) {
+    if (rarities[i] !== 'legendary') continue;
+    let got = null;
+    if (themed) { while (!got && themed.length) { const [c] = themed.splice(Math.floor(Math.random() * themed.length), 1); got = await legendOf(c.r); } }
+    else { const [a, b] = ranges.legendary; for (let tries = 0; !got && tries < 40; tries++) { const rank = a + Math.floor(Math.random() * (b - a)); if (!taken.has(rank)) { got = await legendOf(rank); if (got) taken.add(rank); } } }
+    if (got) fixed.set(i, got); else rarities[i] = 'ultra';                    // plus aucune légendaire disponible (catégorie épuisée) : une ultra rare à la place
+  }
   const picks = rarities.map((rarity0, i) => {
     let rarity = rarity0;
-    if (themed && rarity === 'legendary') {                                     // carte légendaire de la catégorie, jamais deux fois la même dans le paquet
+    if (fixed.has(i)) { const f = fixed.get(i); return { rarity: 'legendary', rank: f.rank, entry: f.entry, shiny: f.shiny }; }
+    if (themed && !uniq && rarity === 'legendary') {                                     // carte légendaire de la catégorie, jamais deux fois la même dans le paquet
       if (themed.length) { const [c] = themed.splice(Math.floor(Math.random() * themed.length), 1); return { rarity, rank: c.r }; }
       rarity = 'ultra';                                                           // toutes les cartes de la catégorie sont déjà dans ce paquet : la suivante est une ultra rare
     }
@@ -112,12 +131,15 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null) 
   for (const c of theme ? [] : [ev?.hunt && { r: ev.hunt.r }, ev?.album?.length && { r: ev.album[Math.floor(Math.random() * ev.album.length)].r }].filter(Boolean)) {
     if (picks.some(p => p.rank === c.r)) continue;
     const slot = picks.findIndex(p => !p.ready && (p.rarity === 'common' || p.rarity === 'uncommon')), i = slot >= 0 ? slot : picks.findIndex(p => p.rarity !== 'legendary');
-    if (i >= 0) picks[i] = { rarity: RARITIES.find(r => c.r >= ranges[r][0] && c.r < ranges[r][1]) ?? 'common', rank: c.r };
+    if (i < 0) continue;
+    const rarity = RARITIES.find(r => c.r >= ranges[r][0] && c.r < ranges[r][1]) ?? 'common';
+    if (uniq && rarity === 'legendary') { const f = await legendOf(c.r); if (f) picks[i] = { rarity, rank: c.r, entry: f.entry, shiny: f.shiny }; continue; }   // carte recherchée légendaire : seulement si elle n'existe pas encore
+    picks[i] = { rarity, rank: c.r };
   }
-  const entries = await Promise.all(picks.map(p => p.ready ? null : entryAt(env, origin, p.rank)));
+  const entries = await Promise.all(picks.map(p => p.ready ? null : p.entry ?? entryAt(env, origin, p.rank)));
   return picks.map((p, i) => {
     const [page, title, views] = p.ready ? [p.ready.id, p.ready.title, p.ready.views] : entries[i];
-    const shiny = p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
+    const shiny = p.shiny !== undefined ? !!p.shiny : p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
     return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...(god ? { god: 1 } : {}), ...stats(title, p.rarity, shiny) };
   });
 }
@@ -273,7 +295,7 @@ async function refreshPacks(env, u) {
   return u;
 }
 /** Le mode test (paquets illimités) n'existe que pour un administrateur, même si la colonne a été activée autrement. */
-const testOn = u => !!(u.test_mode && u.is_admin);
+const testOn = () => false;   // le mode test (paquets illimités) est retiré : aucun compte, administrateur compris, n'ouvre de paquets sans les posséder
 const publicUser = u => ({
   id: u.id, name: u.name, coins: u.coins, packs: u.pack_stock, wins: u.duel_wins, losses: u.duel_losses,
   av: u.avatar_v ?? null, title: u.title ?? null, test: testOn(u), admin: !!u.is_admin, nextPackIn: u.pack_stock >= PACK_MAX ? 0 : Math.max(0, u.pack_ts + PACK_EVERY - now()),
@@ -359,10 +381,10 @@ async function prepareFor(env, ctx, user, stock) {
   preparing.add(user.id);
   try {
     const wk = weightKey(user);                       // empreinte des taux de drop : un paquet préparé avec d'autres taux est jeté
-    await run(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ?', user.id, wk);
+    await dropStale(env, user.id, wk);
     const have = (await one(env, 'SELECT COUNT(*) n FROM prepared WHERE user_id = ?', user.id)).n;
     for (let k = have; k < want; k++) {
-      const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE, userWeights(user));
+      const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE, userWeights(user), null, null, user.id);
       const ids = [...new Set(drawn.map(c => c.id))];
       await env.DB.batch(drawn.map(c => insertCard(env, c)));
       await enrich(env, ids);
@@ -374,11 +396,17 @@ async function prepareFor(env, ctx, user, stock) {
   } finally { preparing.delete(user.id); }
 }
 /** Le plus ancien paquet préparé du joueur (ou null). */
+/** Jette les paquets préparés avec d'autres taux (leurs légendaires uniques retournent dans la réserve). */
+async function dropStale(env, uid, wk) {
+  const gone = await all(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ? RETURNING cards', uid, wk);
+  for (const r of gone) { try { await releaseLegends(env, JSON.parse(r.cards)); } catch { /* paquet illisible : ignoré */ } }
+}
 async function takePrepared(env, uid, wk = '') {
   const res = await env.DB.batch([                                         // un seul aller-retour : on jette les paquets aux anciens taux, puis on prend le plus ancien
-    st(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ?', uid, wk),
+    st(env, 'DELETE FROM prepared WHERE user_id = ? AND w != ? RETURNING cards', uid, wk),
     st(env, 'DELETE FROM prepared WHERE id = (SELECT id FROM prepared WHERE user_id = ? ORDER BY id LIMIT 1) RETURNING cards', uid),
   ]).catch(() => null);
+  for (const r of res?.[0]?.results ?? []) { try { await releaseLegends(env, JSON.parse(r.cards)); } catch { /* paquet illisible : ignoré */ } }
   const row = res?.[1]?.results?.[0];
   try { return row ? JSON.parse(row.cards) : null; } catch { return null; }
 }
@@ -387,8 +415,9 @@ async function takePrepared(env, uid, wk = '') {
 const BOT_NAMES = ['Camille_75', 'Mathis.B', 'LéoDu13', 'Inès_Cards', 'Nolan', 'Zoé_Wiki', 'Hugo_Collect', 'Manon', 'Théo_Lyon', 'Sarah.M', 'Ethan_FR', 'Jade_Cartes',
   'Lucas_Bdx', 'Chloé.R', 'Maël', 'Anaïs_34', 'Romain_Wiki', 'Lina', 'Axel_Lille', 'Eva.D', 'Tom_Collec', 'Louise_59', 'Noah', 'Clara_Nice'];
 const BOT_PRICE = { common: [2, 6], uncommon: [5, 14], rare: [12, 36], super: [40, 110], ultra: [120, 320], legendary: [350, 900] };
-const BOT_MIX = [['common', .30], ['uncommon', .27], ['rare', .23], ['super', .12], ['ultra', .06], ['legendary', .02]];
+const BOT_MIX = [['common', .30], ['uncommon', .27], ['rare', .23], ['super', .12], ['ultra', .08]];   // jamais de légendaire : elles sont uniques, le marché des légendaires est entre joueurs
 const BOT_MINUTES = [[60, .3], [360, .3], [720, .2], [1440, .2]];
+const BOT_SALES_PER_DAY = 5;             // ventes à des joueurs simulés autorisées par joueur et par jour
 const BOT_LISTINGS = 30;                 // ventes simulées ouvertes en permanence
 const BOT_NEW_PER_TICK = 5;
 const pickW = list => { let r = Math.random() * list.reduce((t, x) => t + x[1], 0); for (const [v, w] of list) if ((r -= w) < 0) return v; return list.at(-1)[0]; };
@@ -398,7 +427,7 @@ const demand = views => Math.min(1, Math.max(.2, Math.log10(Math.max(1, views)) 
 let lastBot = 0;
 
 /** Chance qu'une carte cherchée soit mise en vente par un joueur simulé : plus la carte est rare, moins c'est probable (la recherche ne garantit plus rien). */
-const WISH_CHANCE = { common: .40, uncommon: .30, rare: .22, super: .14, ultra: .08, legendary: .04 };
+const WISH_CHANCE = { common: .40, uncommon: .30, rare: .22, super: .14, ultra: .08, legendary: 0 };   // une légendaire cherchée n'est jamais mise en vente par un joueur simulé
 /** Tirage décidé une fois par heure pour un même joueur et une même carte : chercher 20 fois la même carte ne change pas le résultat. */
 const wishRoll = (uid, c) => hash(`${uid}:${c.id}:${Math.floor(now() / 3600e3)}`) / 4294967296 < (WISH_CHANCE[c.rarity] ?? .1);
 /** Une carte cherchée par un joueur peut (parfois) être mise en vente par un joueur simulé, à un moment aléatoire dans l'heure. */
@@ -413,15 +442,21 @@ async function wishListing(env, c) {
 
 /** Joueurs simulés (créés au besoin) : ils vendent et enchérissent à la place de vrais joueurs. */
 async function getBots(env) {
-  let bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
+  let bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1 AND name <> ?', MARKET.seller);
   if (bots.length < BOT_NAMES.length) {
     await env.DB.batch(BOT_NAMES.map(n => st(env, "INSERT OR IGNORE INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, is_bot) VALUES (?,?,?,?,?,?,?,1)", n, 'bot', '!', 1e9, 0, now(), now())));
-    bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1');
+    bots = await all(env, 'SELECT id, name FROM users WHERE is_bot = 1 AND name <> ?', MARKET.seller);
   }
   return bots;
 }
-/** Prix de départ d'une vente simulée : prix moyen du marché s'il existe, sinon fourchette de la rareté ; une page très visitée coûte un peu plus. */
-const botPrice = (rarity, views, avg) => { const [lo, hi] = BOT_PRICE[rarity], d = demand(views); return Math.max(1, Math.round((avg ?? rand(lo, hi)) * rand(.8, 1.3) * (.85 + .5 * d))); };
+/** Valeur de référence d'une carte pour les joueurs simulés : fixée par la rareté et la popularité de la page, indépendante des ventes (donc impossible à gonfler par des ventes truquées). */
+const botRef = (rarity, views) => { const [lo, hi] = BOT_PRICE[rarity]; return (lo + hi) / 2 * (.85 + .5 * demand(views)); };
+/** Prix du marché vu par les joueurs simulés : la moyenne des dernières ventes, bornée entre la moitié et une fois et demie la valeur de référence. */
+const botValue = (rarity, views, avg) => { const ref = botRef(rarity, views); return avg == null ? ref : Math.max(ref * .5, Math.min(avg, ref * 1.5)); };
+/** Offre maximale d'un joueur simulé : au plus 3 % au-dessus du prix du marché. */
+const botCap = value => Math.floor(value * 1.03) + 1;
+/** Prix de départ d'une vente simulée : autour du prix du marché. */
+const botPrice = (rarity, views, avg) => Math.max(1, Math.round(botValue(rarity, views, avg) * rand(.8, 1.2)));
 
 async function botTick(env, ctx, force = false) {
   if (!force && now() - lastBot < 150000) return;
@@ -460,8 +495,7 @@ async function botTick(env, ctx, force = false) {
     const avgRows = await all(env, `SELECT card_id, CAST(ROUND(AVG(price)) AS INTEGER) p FROM sales WHERE card_id IN (${placeholders(ids.length)}) GROUP BY card_id`, ...ids);
     const avg = new Map(avgRows.map(r => [r.card_id, r.p]));
     for (const l of listings) {
-      const [lo, hi] = BOT_PRICE[l.rarity], d = demand(l.views);
-      const price = Math.max(1, Math.round((avg.get(l.cardId) ?? rand(lo, hi)) * rand(.8, 1.3) * (.85 + .5 * d)));   // une page très visitée se vend un peu plus cher
+      const price = botPrice(l.rarity, l.views, avg.get(l.cardId) ?? null);
       const seller = bots[Math.floor(Math.random() * bots.length)];
       stmts.push(st(env, 'INSERT INTO auctions (seller_id, card_id, start_price, ends_at) VALUES (?,?,?,?)', seller.id, l.cardId, price, now() + Math.round(pickW(BOT_MINUTES) * 60000 * rand(.2, 1))));
     }
@@ -473,11 +507,16 @@ async function botTick(env, ctx, force = false) {
   if (bare.length) ctx?.waitUntil(enrich(env, bare).catch(() => {}));
 
   // 4) enchères des joueurs simulés (au plus 4 par passage). Plus la page est visitée, plus on se l'arrache.
+  // Un joueur ne vend qu'un nombre limité de cartes par jour aux joueurs simulés (ventes réglées aujourd'hui + ventes en cours dont un simulé mène) : ils ne sont pas une source d'argent illimitée.
+  const botIds = bots.map(b => b.id), dayStart = now() - (86400000 - msToMidnight());
+  const quota = new Map((await all(env, `SELECT a.seller_id, COUNT(*) n FROM auctions a WHERE a.bidder_id IN (${placeholders(botIds.length)}) AND a.seller_id NOT IN (${placeholders(botIds.length)}) AND ((a.status = 'sold' AND a.ends_at >= ?) OR a.status = 'open') GROUP BY a.seller_id`, ...botIds, ...botIds, dayStart)).map(r => [r.seller_id, +r.n]));
   let bidsLeft = 4;
   for (const a of open.sort(() => Math.random() - .5)) {
     if (bidsLeft <= 0) break;
+    if (a.rarity === 'legendary') continue;                         // les joueurs simulés n'enchérissent jamais sur une légendaire (unique)
+    if (!botName.has(a.seller_id) && !(a.bidder_id && botName.has(a.bidder_id)) && (quota.get(a.seller_id) || 0) >= BOT_SALES_PER_DAY) continue;   // ce joueur a déjà vendu son quota du jour aux joueurs simulés
     const d = demand(a.views), humanSeller = !botName.has(a.seller_id), humanLeads = a.bidder_id && !botName.has(a.bidder_id);
-    const value = a.avg_price ?? (BOT_PRICE[a.rarity][0] + BOT_PRICE[a.rarity][1]) / 2;
+    const value = botValue(a.rarity, a.views, a.avg_price), cap = botCap(value);   // jamais au-dessus du prix du marché (à 3 % près)
     const maxBids = 2 + Math.round(4 * d);
     let p;
     if (humanSeller) p = a.nb === 0 ? .04 + .30 * d * d : a.nb < maxBids ? .02 + .16 * d * d : 0;   // une vente de joueur reçoit des offres selon la demande
@@ -485,14 +524,14 @@ async function botTick(env, ctx, force = false) {
     else p = a.nb < maxBids ? .02 + .08 * d : 0;                    // les ventes entre simulés montent doucement
     if (Math.random() >= p) continue;
     const min = Math.max(a.start_price, a.bid + 1);
-    const amount = a.bid ? min + Math.max(0, Math.round(a.bid * rand(.03, .12 + .08 * d))) : min;
-    if (amount > value * (1.2 + 1.2 * d) + 3) continue;             // plafond selon l'envie : on surpaye plus pour une page populaire
+    if (min > cap) continue;                                        // l'offre minimale dépasse déjà le prix du marché : ils passent
+    const amount = Math.min(cap, a.bid ? min + Math.max(0, Math.round(a.bid * rand(.03, .12 + .08 * d))) : min);
     const bot = bots.filter(b => b.id !== a.seller_id && b.id !== a.bidder_id)[Math.floor(Math.random() * (bots.length - 1))];
     if (!bot) continue;
     const ends = a.ends_at - now() < 30000 ? now() + 30000 : a.ends_at;
     const won = await run(env, "UPDATE auctions SET bid = ?, bidder_id = ?, ends_at = ? WHERE id = ? AND bid = ? AND status = 'open'", amount, bot.id, ends, a.id, a.bid);
     if (!won.meta.changes) continue;
-    bidsLeft--;
+    bidsLeft--; if (!botName.has(a.seller_id) && !(a.bidder_id && botName.has(a.bidder_id))) quota.set(a.seller_id, (quota.get(a.seller_id) || 0) + 1);
     await run(env, 'INSERT INTO bids (auction_id, user_id, amount, ts) VALUES (?,?,?,?)', a.id, bot.id, amount, now());
     if (humanLeads) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', a.bid, a.bidder_id);   // l'humain surenchéri est remboursé
     const others = new Set((await all(env, 'SELECT DISTINCT user_id FROM bids WHERE auction_id = ?', a.id)).map(r => r.user_id));
@@ -523,7 +562,7 @@ async function settleAuctions(env, ctx) {
   for (const a of due) {
     const claimed = await run(env, "UPDATE auctions SET status = ? WHERE id = ? AND status = 'open'", a.bidder_id ? 'sold' : 'expired', a.id);
     if (!claimed.meta.changes) continue; // déjà réglée par une autre requête
-    const card = await one(env, 'SELECT title FROM cards WHERE id = ?', a.card_id);
+    const card = await one(env, 'SELECT title, rarity FROM cards WHERE id = ?', a.card_id);
     const flags = new Map((await all(env, 'SELECT id, is_bot FROM users WHERE id IN (?, ?)', a.seller_id, a.bidder_id ?? a.seller_id)).map(r => [r.id, r.is_bot]));
     const sellerBot = !!flags.get(a.seller_id), bidderBot = !!(a.bidder_id && flags.get(a.bidder_id)); // les joueurs simulés ne gardent pas de cartes
     if (a.bidder_id) {
@@ -537,6 +576,8 @@ async function settleAuctions(env, ctx) {
       if (!sellerBot) bq(env, ctx, a.seller_id, { sale_done: 1 });
       if (!bidderBot) notify(env, ctx, { t: 'notify', msg: `Tu as remporté « ${card.title} » pour ${a.bid} pièces` }, a.bidder_id);
       if (!sellerBot) notify(env, ctx, { t: 'notify', msg: `« ${card.title} » vendu ${a.bid} pièces` }, a.seller_id);
+    } else if (sellerBot) {
+      if (card?.rarity === 'legendary') await releaseLegends(env, [{ id: a.card_id, rarity: 'legendary' }]);   // lot du Marché sans offre : la légendaire retourne dans la réserve
     } else if (!sellerBot) {
       await addCard(env, a.seller_id, a.card_id).run();
       notify(env, ctx, { t: 'notify', msg: `Enchère sans offre : « ${card.title} » t'est rendue.` }, a.seller_id);
@@ -619,7 +660,7 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {}));
   if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   if (!liftDone) { liftDone = true; ctx.waitUntil(sanctions.lift(env).catch(() => { liftDone = false; })); }   // opération unique : fin des sanctions de pièces
-  if (!expedDone) { expedDone = true; ctx.waitUntil(economy.finishExpeditionsOnce(env, ctx).catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
+  if (!expedDone) { expedDone = true; ctx.waitUntil((async () => { await economy.capExpeditionsOnce(env); await economy.finishExpeditionsOnce(env, ctx); })().catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
   const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
   const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
   const frozen = await sanctions.check(env, user).catch(() => 0);                // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
@@ -627,7 +668,8 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   const maint = await maintenanceOn(env).catch(() => false);                      // maintenance : écran bloquant pour les joueurs, simple bandeau pour l'administrateur
   const resetOn = env.RESET !== '0' && now() < RESET_AT, resetChosen = resetOn ? await reset.chosen(env, user.id).catch(() => false) : false;   // remise à zéro annoncée
   if (resetOn) ev.push({ id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: RESET_AT });
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
+  const recap = !resetOn && now() >= RESET_AT ? await one(env, 'SELECT seen FROM season0_recap WHERE user_id = ?', user.id).catch(() => null) : null;   // bilan de la saison 0 à montrer une fois
+  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -740,11 +782,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
   };
 }, false);
 
-route('POST', '/api/me/test-mode', async ({ env, user, body }) => {
-  if (!user.is_admin) bad('Le mode test est réservé à l’administrateur', 403);
-  await run(env, 'UPDATE users SET test_mode = ? WHERE id = ?', body.on ? 1 : 0, user.id);
-  return { ok: true };
-});
+route('POST', '/api/me/test-mode', async () => bad('Le mode test a été retiré', 403));
 /** Rapport d'incident envoyé par l'appli (ex. un ×10 interrompu) : va dans le journal pour qu'on voie le vrai message d'erreur côté joueur. */
 route('POST', '/api/clientlog', async ({ user, body }) => {
   logEvent({ level: 'warn', kind: 'client', user: user.name, route: String(body.where || '').slice(0, 60), status: Math.floor(+body.status) || 0, ms: 0, detail: String(body.msg || '').slice(0, 300) });
@@ -759,13 +797,15 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
     const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
     if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
   }
+  let drawn = null;
   try {
     const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-    const drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm);
+    drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm, u.id);
     ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
     return await finishPack(env, ctx, user, drawn, 0, fake);
   } catch (e) {                                            // échec après avoir pris le paquet : on le rend (jamais de paquet perdu), l'appli peut réessayer
     if (!testOn(u)) await run(env, 'UPDATE users SET pack_stock = pack_stock + 1 WHERE id = ?', u.id).catch(() => {});
+    if (drawn) await releaseLegends(env, drawn);
     throw e;
   }
 });
@@ -782,13 +822,15 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
+  let drawn = null;
   try {
     const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
-    const drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm);
+    drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm, user.id);
     ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
     return await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
   } catch (e) {                                            // échec après paiement : les pièces sont rendues
     await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', CFG.PACK_PRICE, user.id).catch(() => {});
+    if (drawn) await releaseLegends(env, drawn);
     throw e;
   }
 });
@@ -885,7 +927,9 @@ async function todaysThemes(env, origin) {
   // on garde les deux albums à l'empreinte la plus petite pour ce jour : ajouter ou retirer un album ne change presque jamais les catégories du jour (seulement si le nouveau est tiré)
   return all_.map(a => [hash(day + ':' + a.id), a]).sort((x, y) => x[0] - y[0] || (x[1].id < y[1].id ? -1 : 1)).slice(0, 2).map(x => x[1]);
 }
-route('GET', '/api/themepacks', async ({ env, origin }) => ({
+const themeKey = () => 'tp:' + dayKey();
+route('GET', '/api/themepacks', async ({ env, user, origin }) => ({
+  daily: await (async () => { await ensureGameSchema(env); const used = +((await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', themeKey(), user.id))?.n || 0); return { max: CFG.THEME_PACK_DAILY, used, left: Math.max(0, CFG.THEME_PACK_DAILY - used) }; })(),
   price: (await events.mods(env)).themePrice ?? CFG.THEME_PACK_PRICE, normalPrice: CFG.THEME_PACK_PRICE, festival: !!(await events.mods(env)).themeGuarantee, mult: CFG.THEME_LEGEND_MULT, resetIn: msToMidnight(),
   themes: (await todaysThemes(env, origin)).map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, count: a.cards.length, sample: a.cards.slice(0, 3).map(c => c.t) })),
 }));
@@ -900,11 +944,15 @@ async function themeAsked(env, origin, id) {
 route('POST', '/api/themepacks/buy', async ({ env, ctx, user, body, origin }) => {
   const theme = await themeAsked(env, origin, body.theme);
   const evm = await events.drawMods(env, origin), price = evm.themePrice ?? CFG.THEME_PACK_PRICE;
+  await ensureGameSchema(env);
+  const release = () => run(env, 'UPDATE event_progress SET n = GREATEST(0, n - 1) WHERE key = ? AND user_id = ?', themeKey(), user.id).catch(() => {});
+  const slot = await run(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,1) ON CONFLICT (key, user_id) DO UPDATE SET n = event_progress.n + 1 WHERE event_progress.n < ?', themeKey(), user.id, CFG.THEME_PACK_DAILY);
+  if (!slot.meta.changes) bad(`Limite atteinte : ${CFG.THEME_PACK_DAILY} paquets du jour par jour, reviens demain`);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', price, user.id, price);
-  if (!paid.meta.changes) bad(`Pas assez de pièces (${price} requises)`);
+  if (!paid.meta.changes) { await release(); bad(`Pas assez de pièces (${price} requises)`); }
   let drawn;
-  try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm); }
-  catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); throw e; }   // tirage impossible : remboursé
+  try { drawn = await drawCards(env, origin, PACK_SIZE, userWeights(user), theme, evm, user.id); }
+  catch (e) { await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', price, user.id); await release(); throw e; }   // tirage impossible : remboursé
   return finishPack(env, ctx, { ...user, coins: user.coins - price }, drawn, price);
 });
 
@@ -923,15 +971,19 @@ const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.unt
 
 // ---------- événements surprise (voir events.js) ----------
 const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, placeholders });
-const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN,
+const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
+const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
+const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
+  afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
+const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN, insertCard, stats, addCard, enrich,
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
-export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
+export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, get market() { return market; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
-const ALBUM_COINS = 5000;                                    // pièces pour un album complété, + une carte de l'album au choix en shiny
-const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: ALBUM_COINS, p: a.cards.length >= 8 ? 2 : 1 });
+const ALBUM_COINS = 5000;                                    // pièces pour un album complété (rien d'autre : ni paquets, ni shiny)
+const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: ALBUM_COINS, p: 0 });
 /** Albums éphémères (cartes + dates), lus une fois dans le catalogue statique. */
 let eventAlbumsCache = null;
 const eventAlbums = async (env, origin) => { try { return (eventAlbumsCache ??= (await assetJson(env, origin, '/catalog/albums-events.json')).albums); } catch { return []; } };
@@ -967,29 +1019,16 @@ route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, body, or
   const inv = await all(env, `SELECT card_id FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET));
   const n = new Set(inv.map(r => (r.card_id >= SHINY_OFFSET ? r.card_id - SHINY_OFFSET : r.card_id))).size;
   if (n < ids.length) bad(`Il te manque ${ids.length - n} carte${ids.length - n > 1 ? 's' : ''} pour terminer cet album`);
-  // la carte transformée en shiny : uniquement une carte de l'album dont le joueur a un exemplaire normal et pas encore de version shiny
-  const norm = new Set(inv.filter(r => r.card_id < SHINY_OFFSET).map(r => r.card_id)), shin = new Set(inv.filter(r => r.card_id >= SHINY_OFFSET).map(r => r.card_id - SHINY_OFFSET));
-  const eligible = ids.filter(i => norm.has(i) && !shin.has(i)), pid = Math.floor(+body.card_id) || 0;
-  if (eligible.length && !eligible.includes(pid)) bad('Choisis une carte de cet album à transformer en shiny');
   const first = await run(env, 'INSERT INTO album_claims (user_id, album, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, a.id, now());
   if (!first.meta.changes) bad('Récompense déjà récupérée');
-  const rw = albumReward(a), pick = eligible.length ? await one(env, 'SELECT id, title, views, rarity FROM cards WHERE id = ?', pid) : null, sid = pick ? pid + SHINY_OFFSET : 0;
-  await env.DB.batch([
-    ...(pick ? [
-      insertCard(env, { id: sid, title: pick.title, views: pick.views, rarity: pick.rarity, shiny: 1, ...stats(pick.title, pick.rarity, true) }),
-      st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0', pid, sid),
-      addCard(env, user.id, sid),
-      st(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty >= 1', user.id, pid),
-      st(env, 'DELETE FROM inventory WHERE user_id = ? AND card_id = ? AND qty <= 0', user.id, pid),
-    ] : []),
-    st(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id),
-  ]);
+  const rw = albumReward(a);
+  await run(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', rw.c, rw.p, user.id);
   statsCache.delete(user.id); profileCache.delete(user.id);
-  notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces et ${rw.p} paquet${rw.p > 1 ? 's' : ''}${pick ? `, et « ${pick.title} » est devenue shiny` : ''} !` }, user.id);
+  notify(env, ctx, { t: 'notify', msg: `Album « ${a.name} » complété : +${rw.c} pièces${rw.p ? ` et ${rw.p} paquet${rw.p > 1 ? 's' : ''}` : ''} !` }, user.id);
   if (a.ev) await events.titleNotify(env, ctx, user.id, 'ev_alb_' + a.id);
   const ti = await syncTitles(env, user.id).catch(() => null);
   ti?.added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
-  return { ok: true, reward: rw, shiny: pick ? { id: sid, title: pick.title } : null };
+  return { ok: true, reward: rw, shiny: null };
 });
 
 // ---------- fusion de doublons : la carte monte de niveau (+ATK/+DEF) ----------
@@ -1031,6 +1070,7 @@ route('POST', '/api/discard', async ({ env, ctx, user, body }) => {
   const cid = +body.card_id, want = Math.max(1, Math.floor(+body.qty || 1));
   const c = await one(env, 'SELECT c.rarity, i.qty FROM inventory i JOIN cards c ON c.id = i.card_id WHERE i.user_id = ? AND i.card_id = ?', user.id, cid);
   if (!c) bad('Tu ne possèdes pas cette carte');
+  if (c.rarity === 'legendary' && await uniqueOn(env)) bad('Une légendaire est unique : vends-la aux enchères ou échange-la, elle ne peut pas être défaussée');
   const qty = Math.min(want, c.qty), price = SELL[c.rarity] * qty;
   const taken = await run(env, 'UPDATE inventory SET qty = qty - ? WHERE user_id = ? AND card_id = ? AND qty >= ?', qty, user.id, cid, qty);
   if (!taken.meta.changes) bad('Tu ne possèdes pas cette carte');
@@ -1048,6 +1088,7 @@ route('POST', '/api/discard-many', async ({ env, ctx, user, body }) => {
   if (!ids.length) bad('Aucune carte choisie');
   const rows = await all(env, `SELECT card_id, qty, rar FROM inventory WHERE user_id = ? AND card_id IN (${placeholders(ids.length)}) AND qty >= 1`, user.id, ...ids);
   if (!rows.length) bad('Tu ne possèdes plus ces cartes');
+  if (rows.some(r => r.rar === 5) && await uniqueOn(env)) bad('Une légendaire est unique : elle ne peut pas être défaussée (vends-la aux enchères ou échange-la)');
   const price = rows.reduce((t, r) => t + SELL[RARITIES[r.rar]], 0), got = rows.map(r => r.card_id);
   await env.DB.batch([
     ...got.map(id => st(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty >= 1', user.id, id)),
@@ -1117,6 +1158,28 @@ route('POST', '/api/dm/:peer', async ({ env, ctx, user, params, body }) => {
   notify(env, ctx, { t: 'dm', from: user.id, name: user.name, body: preview, ts }, peer.id);
   return { ok: true, message: { id: res[0].meta.last_row_id, mine: true, body: text, ts } };
 });
+/** Qui possède cette carte ? Propriétaires, vente en cours, et pour une légendaire unique : libre / en jeu, avec l'autre version (normale ↔ shiny). */
+route('GET', '/api/cards/:id/owners', async ({ env, params, origin }) => {
+  await ensureGameSchema(env);
+  const id = Math.floor(+params.id); if (!Number.isFinite(id) || id < 1) bad('Carte inconnue', 404);
+  const info = async cid => {
+    const [card, owners, auction, taken] = await Promise.all([
+      one(env, 'SELECT id, title, rarity, shiny FROM cards WHERE id = ?', cid),
+      all(env, 'SELECT u.id, u.name, i.qty FROM inventory i JOIN users u ON u.id = i.user_id WHERE i.card_id = ? AND i.qty > 0 AND u.is_bot = 0 ORDER BY i.qty DESC, u.name LIMIT 20', cid),
+      one(env, "SELECT a.id, a.bid, a.start_price, a.ends_at, s.name seller, s.is_bot seller_bot FROM auctions a JOIN users s ON s.id = a.seller_id WHERE a.card_id = ? AND a.status = 'open' ORDER BY a.ends_at LIMIT 1", cid),
+      one(env, 'SELECT 1 x FROM legend_taken WHERE card_id = ?', cid)]);
+    return { card, owners, auction, taken: !!taken };
+  };
+  const me = await info(id);
+  if (!me.card) bad('Carte inconnue', 404);
+  const unique = me.card.rarity === 'legendary' && await uniqueOn(env);
+  const total = me.owners.reduce((t, o) => t + +o.qty, 0);
+  const state = !unique ? null : me.owners.length ? 'collection' : me.auction ? 'enchère' : me.taken ? 'en jeu' : 'libre';
+  let other = null;                                                             // l'autre version (shiny ↔ normale) d'une légendaire
+  if (unique) { const oid = id >= SHINY_OFFSET ? id - SHINY_OFFSET : id + SHINY_OFFSET, o = await info(oid); other = { id: oid, shiny: oid >= SHINY_OFFSET, state: o.owners.length ? 'collection' : o.auction ? 'enchère' : o.taken ? 'en jeu' : 'libre', owner: o.owners[0]?.name ?? o.auction?.seller ?? null }; }
+  return { id, title: me.card.title, rarity: me.card.rarity, shiny: !!me.card.shiny, unique, state, owners: me.owners.map(o => ({ id: o.id, name: o.name, qty: +o.qty })), total, players: me.owners.length,
+    auction: me.auction ? { id: me.auction.id, price: me.auction.bid || me.auction.start_price, ends_at: me.auction.ends_at, seller: me.auction.seller } : null, other };
+});
 route('GET', '/api/catalog/search', async ({ env, ctx, origin, user, query }) => {
   const q = (query.get('q') || '').trim().slice(0, 80);
   if (q.length < 2) return { cards: [] };
@@ -1185,9 +1248,10 @@ route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 &
 
 let expedDone = false, liftDone = false;
 let auctionsCache = { t: 0, rows: null };                         // la liste est la même pour tous (hors drapeaux « à moi / en tête ») : lue au plus toutes les 8 s
-route('GET', '/api/auctions', async ({ env, ctx, user }) => {
+route('GET', '/api/auctions', async ({ env, ctx, user, origin }) => {
   maybeRefill(env, ctx);
   const settled = await settleAuctions(env, ctx);
+  await market.tick(env, ctx, origin).catch(e => console.error('market', e));
   if (!settled) ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée (pas dans la même requête qu'un règlement : limite d'appels à la base)
   if (now() - auctionsCache.t > 8000 || !auctionsCache.rows) {
     auctionsCache = { t: now(), rows: await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
@@ -1636,6 +1700,19 @@ route('POST', '/api/push/pull', async ({ env, body }) => ({ msgs: await pull(env
 // ---------- administration (réservée aux comptes is_admin) ----------
 const admin = fn => async ctx => { if (!ctx.user.is_admin) bad('Réservé à l’administrateur', 403); return fn(ctx); };
 const onlineIds = async env => { try { return (await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids; } catch { return []; } };
+// ---------- remise à zéro (saison 0) : opération d'administration + bilan du joueur ----------
+route('POST', '/api/admin/reset-run', admin(async ({ env, body }) => {
+  if (!body.dry && body.confirm !== 'REMETTRE A ZERO') bad('Confirmation manquante : écris REMETTRE A ZERO', 400);
+  try { return await seasonZero.reset(env, { dry: !!body.dry }); } catch (e) { if (e.status) bad(e.message, e.status); throw e; }
+}));
+route('GET', '/api/recap', async ({ env, user }) => {
+  await ensureGameSchema(env);
+  const r = await seasonZero.recapOf(env, user.id); if (!r) bad('Pas de bilan', 404);
+  const founder = JSON.parse(r.founder), card = await one(env, 'SELECT * FROM cards WHERE id = ?', founder.id);
+  if (card && !card.image) ctx_enrich(env, [founder.id]);
+  return { recap: JSON.parse(r.data), founder: { ...founder, card }, seen: !!r.seen };
+});
+route('POST', '/api/recap/seen', async ({ env, user }) => { await seasonZero.markSeen(env, user.id); return { ok: true }; });
 route('POST', '/api/admin/maintenance', admin(async ({ env, body }) => {
   await ensureGameSchema(env);
   if (body.off) await run(env, "INSERT INTO settings (key, value) VALUES ('maintenance_off', '1') ON CONFLICT (key) DO UPDATE SET value = '1'");
@@ -1670,7 +1747,7 @@ route('POST', '/api/admin/give', admin(async ({ env, ctx, body }) => {
   if (parts.length && (coins > 0 || packs > 0)) notify(env, ctx, { t: 'notify', msg: `Cadeau de l'admin : ${parts.join(' et ')}` }, id);
   return { ok: true, name: u.name };
 }));
-route('POST', '/api/admin/test-mode', admin(async ({ env, body }) => { await run(env, 'UPDATE users SET test_mode = ? WHERE id = ? AND is_bot = 0 AND is_admin = 1', body.on ? 1 : 0, +body.user_id); return { ok: true }; }));   // jamais pour un joueur ordinaire
+route('POST', '/api/admin/test-mode', admin(async () => bad('Le mode test a été retiré', 403)));
 route('POST', '/api/admin/password', admin(async ({ env, body }) => {
   const pw = String(body.password || ''); if (pw.length < 4) bad('Mot de passe trop court (4 min.)');
   const u = await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', +body.user_id); if (!u) bad('Joueur introuvable', 404);
@@ -1717,6 +1794,7 @@ route('POST', '/api/admin/lot', admin(async ({ env, ctx, origin, body }) => {
   const title = String(body.title || '').trim(); if (!title) bad('Choisis une carte');
   const rank = await rankOf(env, origin, title); if (rank == null) bad('Cette page n’est pas dans le catalogue', 404);
   const { ranges } = await getMeta(env, origin), rarity = RARITIES.find(r => rank >= ranges[r][0] && rank < ranges[r][1]);
+  if (rarity === 'legendary' && await uniqueOn(env)) bad('Les légendaires sont uniques : elles ne se mettent pas en vente sous le nom d\'un joueur simulé', 400);
   const [id, t, views] = await entryAt(env, origin, rank);
   if (await one(env, "SELECT 1 x FROM auctions WHERE card_id = ? AND status = 'open'", id)) bad('Cette carte est déjà en vente');
   const bots = await getBots(env), seller = body.seller_id ? bots.find(b => b.id === +body.seller_id) : bots[Math.floor(Math.random() * bots.length)];
@@ -1732,6 +1810,7 @@ route('POST', '/api/admin/lot', admin(async ({ env, ctx, origin, body }) => {
 }));
 route('POST', '/api/admin/lots-random', admin(async ({ env, ctx, origin, body }) => {
   const n = Math.min(30, Math.max(1, Math.trunc(+body.count) || 1)), want = RARITIES.includes(body.rarity) ? body.rarity : null;
+  if (want === 'legendary' && await uniqueOn(env)) bad('Les légendaires sont uniques : pas de ventes simulées de légendaires', 400);
   const mins = body.minutes ? Math.min(1440, Math.max(5, Math.trunc(+body.minutes))) : null;
   const bots = await getBots(env), { ranges } = await getMeta(env, origin);
   const open = new Set((await all(env, "SELECT card_id FROM auctions WHERE status = 'open'")).map(r => r.card_id));
@@ -1766,6 +1845,23 @@ route('GET', '/api/admin/stats', admin(async ({ env, query }) => {
   const pick = p => items.filter(([k]) => k.startsWith(p)).map(([k, x]) => ({ k: k.slice(p.length), ...x }));
   const month = days.filter(d => d.day.slice(0, 7) === day.slice(0, 7)).reduce((t, d) => t + (sum(d.items).by || 0), 0);
   return { day, perDay, total: perDay.find(d => d.day === day) ?? {}, hours: pick('T:'), routes: pick('R:'), users: pick('U:'), queries: pick('Q:').sort((a, b) => ((b.nr || 0) + (b.nw || 0)) - ((a.nr || 0) + (a.nw || 0))).slice(0, 60), monthBytes: month };
+}));
+/** Santé de l'économie : réservée à l'administrateur (garde `admin`). Quelques agrégats seulement. */
+route('GET', '/api/admin/economy', admin(async ({ env }) => {
+  await ensureGameSchema(env);
+  const t = now(), day = 864e5;
+  const [pl, top, sold, daily, legend, albums, open] = await Promise.all([
+    one(env, 'SELECT COUNT(*) n, COALESCE(SUM(coins),0) coins, COALESCE(SUM(pack_stock),0) stock, COALESCE(SUM(packs_opened),0) opened, COALESCE(MAX(coins),0) max FROM users WHERE is_bot = 0'),
+    all(env, 'SELECT name, coins FROM users WHERE is_bot = 0 ORDER BY coins DESC LIMIT 5'),
+    one(env, "SELECT COUNT(*) n, COALESCE(SUM(a.bid),0) vol, COALESCE(SUM(CASE WHEN u.is_bot = 1 THEN 1 ELSE 0 END),0) bots, COALESCE(SUM(CASE WHEN u.is_bot = 1 THEN a.bid ELSE 0 END),0) botvol FROM auctions a JOIN users u ON u.id = a.bidder_id WHERE a.status = 'sold' AND a.ends_at > ?", t - day),
+    all(env, 'SELECT (ts / 86400000) d, COUNT(*) n, SUM(price) vol FROM sales WHERE ts > ? GROUP BY 1 ORDER BY 1', t - 7 * day),
+    one(env, 'SELECT (SELECT COUNT(*) FROM legend_taken) taken, (SELECT COUNT(*) FROM cards WHERE rarity = ? AND shiny = 0) pool'.replace('?', "'legendary'")),
+    one(env, 'SELECT COUNT(*) n FROM album_claims WHERE ts > ?', t - day),
+    one(env, "SELECT COUNT(*) n FROM auctions WHERE status = 'open'")]);
+  const share = pl.coins ? Math.round(100 * top.reduce((a, x) => a + +x.coins, 0) / pl.coins) : 0;
+  return { players: +pl.n, coins: +pl.coins, avg: pl.n ? Math.round(pl.coins / pl.n) : 0, packsStock: +pl.stock, packsOpened: +pl.opened, top: top.map(x => ({ name: x.name, coins: +x.coins })), topShare: share,
+    sold24: { n: +sold.n, volume: +sold.vol, toBots: +sold.bots, botVolume: +sold.botvol }, sales7: daily.map(x => ({ day: new Date(+x.d * day).toISOString().slice(0, 10), n: +x.n, volume: +x.vol })),
+    legendaries: { existing: +legend.taken, pool: +legend.pool * 2 }, albums24: +albums.n, openAuctions: +open.n, unique: await uniqueOn(env) };
 }));
 /** Journal de log et de contrôle (table logs de Supabase, 14 jours). */
 route('GET', '/api/admin/logs', admin(async ({ env, query }) => { await flushLogs(env, true); return readLogs(env, { level: query.get('level') || '', kind: query.get('kind') || '', q: (query.get('q') || '').slice(0, 60), before: +query.get('before') || 0, limit: +query.get('limit') || 100 }); }));
@@ -1894,8 +1990,10 @@ export default {
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
       await events.tick(env, ctx).catch(e => console.error('événements', e));
+      await economy.capExpeditionsOnce(env).catch(e => console.error('expéditions', e));
       await economy.finishExpeditionsOnce(env, ctx).catch(e => console.error('expéditions', e));
       await sanctions.lift(env).catch(e => console.error('sanctions', e));
+      await market.tick(env, ctx).catch(e => console.error('market', e));
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await pruneLogs(withDb(env0)).catch(() => {});
@@ -1904,4 +2002,4 @@ export default {
   },
   async fetch(req, env, ctx) { return secure(await handle(req, env, ctx)); },
 };
-export { pickRarity, userWeights, wishRoll, WISH_CHANCE };   // exportés pour les tests
+export { pickRarity, userWeights, wishRoll, WISH_CHANCE, botRef, botValue, botCap, botPrice };   // exportés pour les tests

@@ -1126,6 +1126,19 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .rsrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rsrow b{width:24px;text-align:center}.rsrow.sel{background:#6aa9ff26}.rsrow.sel b{color:#7fe3a6}
 .evchip.reset{background:#1d2c4d;border-color:#6aa9ff99}
 
+/* carte fondateur : halo « bêta » */
+.card.beta{box-shadow:0 0 0 2px #ffd37a,0 0 16px 3px #ffb84d99,0 0 34px #ff9a3c44;animation:betaGlow 3.2s ease-in-out infinite}
+@keyframes betaGlow{50%{box-shadow:0 0 0 2px #fff0b8,0 0 22px 6px #ffc861cc,0 0 48px #ffa94d66}}
+.betatag{position:absolute;left:6px;bottom:6px;z-index:4;padding:2px 7px;border-radius:999px;font:700 10px/1.5 inherit;letter-spacing:.08em;color:#3a2600;background:linear-gradient(90deg,#ffe58a,#ffb84d)}
+/* bilan de la saison 0 */
+#modal>div.recapsheet{max-width:460px;width:calc(100% - 20px);max-height:92vh;overflow-y:auto;padding:22px 18px;border:1px solid #ffd37a88;background:linear-gradient(#1d1708,#14141d);-webkit-overflow-scrolling:touch}
+.recapsheet .rsx{font-size:56px;margin:0;text-align:center}.recapsheet h2{margin:6px 0 10px;text-align:center}.recapsheet p{line-height:1.45}
+.rcwrap{max-width:220px;margin:12px auto}.rcwrap .card.rcreveal{animation:rcPop .9s cubic-bezier(.2,1.4,.4,1) both,betaGlow 3.2s ease-in-out .9s infinite}
+@keyframes rcPop{0%{transform:scale(.3) rotate(-8deg);opacity:0;filter:brightness(3)}60%{transform:scale(1.08) rotate(2deg);opacity:1}100%{transform:none;filter:none}}
+.rcgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.rcgrid div{background:#ffffff0d;border-radius:12px;padding:8px 10px}.rcgrid small{display:block;color:var(--mut,#9aa);font-size:11px}.rcgrid b{font-size:16px}
+
+.recapsheet .srdrum{animation:srShake .25s linear infinite}@keyframes srShake{0%{transform:rotate(-8deg) scale(1.05)}50%{transform:rotate(8deg) scale(.95)}100%{transform:rotate(-8deg) scale(1.05)}}
+.evchip.seasonend{background:#2b2210;border-color:#ffd37a99}
 /* maintenance */
 #maint{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 30%,#1b2440,#0b0d16 70%)}
 #maint .maintbox{max-width:380px;text-align:center;padding:28px 22px;border-radius:20px;border:1px solid #6aa9ff55;background:#12182a}

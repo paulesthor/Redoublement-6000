@@ -3,10 +3,11 @@
 // Le serveur ne révèle un événement qu'au moment où il commence (bannière, notification, page « Événements »). Tout est calculé, rien n'est planifié en base.
 import { grantTitle, syncTitles, TITLE, onTrack } from './game.js';
 import { EVENT_ALBUMS, WEEKLY_BY, WEEKLY } from './events-data.js';
+import { uniqueOn, claimLegend, releaseLegends } from './unique.js';
 
 const DAY = 86400000, HOUR = 3600000;
 export const WEEK_ANCHOR = '2026-01-05';      // un lundi : les semaines, week-ends et blocs sont comptés à partir de là
-export const SEASON_ANCHOR = '2026-10-12';    // un lundi : début de la saison 1 (saisons de 14 jours qui s'enchaînent)
+export const SEASON_ANCHOR = '2026-10-14';    // mercredi 14 octobre : début de la saison 1, juste après la remise à zéro (saisons de 14 jours qui s'enchaînent)
 export const SEASON_DAYS = 14;
 
 /** Réglages des événements (taux, récompenses). */
@@ -17,10 +18,25 @@ export const EV = {
   weekly: { c: 400, p: 2, titleAfter: 4 },
   hunt: { first: { c: 500, p: 2 }, other: { c: 60 } },
   goal: { minPlayers: 10, perPlayer: 40, min: 150, c: 250, p: 2, minOpen: 10 }, // objectif = 40 paquets par joueur (150 au minimum) ; il faut avoir ouvert 10 paquets pour être récompensé
-  album: { coins: 5000, p: 3 },
-  season: { pts: { open_pack: 1, legendary: 8, battle_win: 6, battle_play: 2, duel_win: 5, quiz_daily: 5, quiz_correct: 1, trade_done: 4, sale_done: 3, win_auction: 4, fuse: 3, expedition: 3, bourse_bet: 1 },
-    rewards: [{ c: 1000, p: 3 }, { c: 600, p: 2 }, { c: 400, p: 1 }], part: { min: 50, c: 150, p: 1 }, tiny: { c: 50 } },
+  album: { coins: 5000, p: 0 },
+  season: { rewards: [{ c: 200, p: 3 }, { c: 120, p: 2 }, { c: 80, p: 1 }], part: { min: 30, c: 50, p: 0 }, tiny: { c: 20 }, prizeTop: 1000 },   // le vainqueur gagne en plus une légendaire secrète parmi les 1 000 pages les plus vues
 };
+/** Thèmes de saison : chaque saison récompense une seule discipline. L'ordre est tiré au sort par le secret (inconnu de tous, même de l'administrateur) ; le thème n'est connu qu'au début de la saison. */
+export const SEASON_THEMES = {
+  combat: { name: 'Combat', emoji: '⚔️', desc: 'Remporte un maximum de combats de cartes.', info: '10 points par combat gagné, 2 par combat joué.', pts: { battle_win: 10, battle_play: 2 } },
+  quiz: { name: 'Quiz', emoji: '🧠', desc: 'Réponds juste aux quiz et gagne des duels.', info: '10 points par quiz du jour terminé, 2 par bonne réponse, 6 par duel de quiz gagné, 1 par duel joué.', pts: { quiz_daily: 10, quiz_correct: 2, duel_win: 6, duel_play: 1 } },
+  collection: { name: 'Collection', emoji: '📚', desc: 'Découvre un maximum de cartes différentes.', info: '1 point par nouvelle carte, 2 par carte rare ou mieux, 15 par légendaire.', pts: { new_cards: 1, rare_plus: 2, legendary: 15 } },
+};
+const THEME_IDS = Object.keys(SEASON_THEMES);
+/** Thème de la saison numéro idx : les thèmes passent tous une fois par cycle de 3 dans un ordre mélangé, jamais deux fois de suite. */
+export const themeIdOf = (secret, idx) => {
+  const order = k => THEME_IDS.map(id => [H(secret, 'season-theme', k, id), id]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  const k = Math.floor(idx / 3); let cur = order(k);
+  if (k > 0) { const prev = order(k - 1); if (cur[0] === prev[2]) cur = [cur[1], cur[0], cur[2]]; }
+  return cur[idx % 3];
+};
+/** Points d'une action selon le thème. */
+export const seasonPts = (themeId, ev) => { let pts = 0; for (const [k, v] of Object.entries(ev)) pts += (SEASON_THEMES[themeId].pts[k] || 0) * (v || 0); return pts; };
 const ALWAYS_ON = new Set(['weekly', 'hunt', 'season']);
 const PUSH_KINDS = new Set(['golden', 'shiny', 'theme', 'album', 'goal']);   // les seuls événements annoncés par notification
 export const KINDS = {
@@ -121,7 +137,7 @@ const OK_TITLE = t => !/^(Liste|Listes|Élections?|Décès|Catégorie|Portail|Wi
 const clampTitle = (id, fallback) => (TITLE[id] ? id : fallback);
 
 export function installEvents(d) {
-  const { route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, albumGroups, eventAlbums } = d;
+  const { route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, albumGroups, eventAlbums, insertCard, stats, addCard, enrich, assetOrigin } = d;
   let secretCache = null;
   /** Secret du calendrier : créé au premier usage, gardé en base, jamais renvoyé par l'API. */
   async function getSecret(env) {
@@ -135,6 +151,25 @@ export function installEvents(d) {
     }
     return (secretCache = row.value);
   }
+  /** Thème de la saison idx (tiré au sort par le secret). */
+  const themeOf = async (env, idx) => themeIdOf(await getSecret(env), idx);
+  /** Légendaire secrète du vainqueur : tirée au début de la saison parmi les pages les plus vues, réservée (jamais tirable dans un paquet) et révélée seulement à la fin. */
+  const prizeSeen = new Set();
+  async function ensurePrize(env, idx, origin = assetOrigin) {
+    if (prizeSeen.has(idx)) return;
+    const key = 'season_prize:' + idx;
+    if (await one(env, 'SELECT 1 x FROM settings WHERE key = ?', key)) { prizeSeen.add(idx); return; }
+    const { ranges } = await getMeta(env, origin), top = Math.min(EV.season.prizeTop, ranges.legendary[1]), unique = await uniqueOn(env);
+    let e = null;
+    for (let i = 0; i < 80 && !e; i++) { const c = await entryAt(env, origin, Math.floor(Math.random() * top)); if (!unique || await claimLegend(env, c[0])) e = c; }
+    if (!e) return;
+    const ins = await run(env, 'INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT (key) DO NOTHING', key, JSON.stringify({ id: e[0], title: e[1], views: e[2] }));
+    if (!ins.meta.changes) { if (unique) await releaseLegends(env, [{ id: e[0], rarity: 'legendary' }]); prizeSeen.add(idx); return; }
+    await insertCard(env, { id: e[0], title: e[1], views: e[2], rarity: 'legendary', shiny: 0, ...stats(e[1], 'legendary', false) }).run();
+    prizeSeen.add(idx);
+  }
+  const prizeOf = async (env, idx) => { const r = await one(env, 'SELECT value FROM settings WHERE key = ?', 'season_prize:' + idx); try { return r ? JSON.parse(r.value) : null; } catch { return null; } };
+  const winnerOf = async (env, idx) => { const r = await one(env, 'SELECT p.user_id id, u.name, p.n FROM event_progress p JOIN users u ON u.id = p.user_id WHERE p.key = ? AND u.is_bot = 0 ORDER BY p.n DESC, p.user_id LIMIT 1', 's:' + idx); return r ? { id: +r.id, name: r.name, pts: +r.n } : null; };
   // événements autour de l'instant présent, recalculés au plus une fois par minute
   let near = { at: 0, list: [] };
   async function nearby(env, t = now()) {
@@ -176,7 +211,7 @@ export function installEvents(d) {
   async function track(env, uid, ev) {
     const act = await activeNow(env), stmts = [];
     const wk = act.find(e => e.kind === 'weekly'); if (wk) { const w = WEEKLY_BY[wk.weekly]; if (ev[w.event] > 0) stmts.push(up(env, 'w:' + wk.day, uid, ev[w.event])); }
-    const se = act.find(e => e.kind === 'season'); if (se) { let pts = 0; for (const [k, v] of Object.entries(ev)) pts += (EV.season.pts[k] || 0) * (v || 0); if (pts >= 1) stmts.push(up(env, 's:' + se.idx, uid, pts)); }
+    const se = act.find(e => e.kind === 'season'); if (se) { const pts = seasonPts(await themeOf(env, se.idx), ev); if (pts >= 1) stmts.push(up(env, 's:' + se.idx, uid, pts)); }
     const go = act.find(e => e.kind === 'goal'); if (go && ev.open_pack > 0) stmts.push(up(env, 'g:' + go.id, uid, ev.open_pack));
     if (stmts.length) await env.DB.batch(stmts);
   }
@@ -225,7 +260,12 @@ export function installEvents(d) {
 
   // ---------- état complet pour un joueur ----------
   const briefOf = e => ({ id: e.id, kind: e.kind, name: e.kind === 'album' ? `Album « ${EVENT_ALBUMS.find(x => x.id === e.album)?.name} »` : KINDS[e.kind].name, emoji: e.kind === 'album' ? EVENT_ALBUMS.find(x => x.id === e.album)?.emoji : KINDS[e.kind].emoji, end: e.end, ...(e.album ? { album: e.album } : {}) });
-  async function brief(env) { const t = now(); return (await activeNow(env, t)).filter(e => PUSH_KINDS.has(e.kind)).map(briefOf); }
+  async function brief(env) {
+    const t = now(), act = await activeNow(env, t), out = act.filter(e => PUSH_KINDS.has(e.kind)).map(briefOf), se = act.find(e => e.kind === 'season');
+    if (se && se.idx > 0 && t - se.start < 3 * DAY) out.push({ id: 'seasonend:' + (se.idx - 1), kind: 'seasonend', name: `${seasonName(se.idx - 1)} terminée : le vainqueur !`, emoji: '🏆', end: se.start + 3 * DAY });   // le résultat de la saison précédente (révélation)
+    if (se) await ensurePrize(env, se.idx).catch(() => {});                       // la légendaire secrète de la saison est tirée dès le début
+    return out;
+  }
   const targetOf = async (env, ev) => {
     await run(env, "INSERT INTO event_progress (key, user_id, n) SELECT ?, 0, GREATEST(?, ? * COUNT(*)) FROM users WHERE is_bot = 0 AND packs_opened > 0 ON CONFLICT (key, user_id) DO NOTHING", 'gt:' + ev.id, EV.goal.min, EV.goal.perPlayer);
     return +(await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = 0', 'gt:' + ev.id)).n;
@@ -264,7 +304,8 @@ export function installEvents(d) {
         all(env, 'SELECT p.user_id id, u.name, p.n FROM event_progress p JOIN users u ON u.id = p.user_id WHERE p.key = ? AND u.is_bot = 0 ORDER BY p.n DESC, p.user_id LIMIT 5', 's:' + se.idx),
         one(env, 'SELECT COUNT(*) n FROM event_progress p WHERE p.key = ? AND p.n > COALESCE((SELECT n FROM event_progress WHERE key = ? AND user_id = ?), 0)', 's:' + se.idx, 's:' + se.idx, user.id)]);
       const pts = +(mine?.n || 0);
-      out.season = { idx: se.idx, name: seasonName(se.idx), until: se.end, points: pts, rank: pts > 0 ? +cnt.n + 1 : null, top: top.map(r => ({ id: r.id, name: r.name, pts: +r.n })), pointsInfo: EV.season.pts, rewards: EV.season.rewards, part: EV.season.part };
+      const th = SEASON_THEMES[await themeOf(env, se.idx)]; await ensurePrize(env, se.idx, origin);
+      out.season = { idx: se.idx, name: seasonName(se.idx), until: se.end, points: pts, rank: pts > 0 ? +cnt.n + 1 : null, top: top.map(r => ({ id: r.id, name: r.name, pts: +r.n })), theme: { name: th.name, emoji: th.emoji, desc: th.desc, info: th.info }, rewards: EV.season.rewards, part: EV.season.part, secretPrize: true };
       if (se.idx > 0) out.season.prev = await prevSeason(env, user.id, se.idx - 1);
     } else if (t < parisTs(SEASON_ANCHOR)) out.season = { upcoming: true, start: parisTs(SEASON_ANCHOR), name: seasonName(0) };
     // album éphémère en cours
@@ -278,7 +319,7 @@ export function installEvents(d) {
     if (!pts) return null;
     const [r, cl] = await Promise.all([one(env, 'SELECT COUNT(*) n FROM event_progress WHERE key = ? AND n > ?', key, pts), one(env, 'SELECT 1 x FROM event_claims WHERE key = ? AND user_id = ?', 'sc:' + idx, uid)]);
     const rank = +r.n + 1;
-    return { idx, name: seasonName(idx), points: pts, rank, reward: seasonReward(rank, pts), claimed: !!cl };
+    return { idx, name: seasonName(idx), points: pts, rank, reward: seasonReward(rank, pts), claimed: !!cl, winner: rank === 1 };
   }
 
   route('GET', '/api/events', async ({ env, user, origin }) => stateFor(env, user, origin));
@@ -310,11 +351,23 @@ export function installEvents(d) {
     const prev = await prevSeason(env, user.id, idx); if (!prev?.reward) bad('Tu n\'as pas marqué de points cette saison');
     if (!(await claimOnce(env, 'sc:' + idx, user.id))) bad('Récompense déjà récupérée');
     await give(env, user.id, prev.reward);
+    let card = null;
+    if (prev.rank === 1) { const pz = await prizeOf(env, idx); if (pz) { await addCard(env, user.id, pz.id).run(); card = pz; enrich(env, [pz.id]).catch(() => {}); } }   // le vainqueur reçoit la légendaire secrète
     const k = idx + 1;
     if (prev.rank === 1) await titleNotify(env, ctx, user.id, clampTitle(`s${k}_champion`, 'ev_season_champ'));
     else if (prev.rank <= 3) await titleNotify(env, ctx, user.id, 'ev_season_podium');
     if (prev.points >= EV.season.part.min) await titleNotify(env, ctx, user.id, clampTitle(`s${k}_veteran`, 'ev_season_vet'));
-    return { ok: true, reward: prev.reward, rank: prev.rank };
+    return { ok: true, reward: prev.reward, rank: prev.rank, card };
+  });
+  /** Résultat de la dernière saison terminée (révélation) : thème, vainqueur et légendaire secrète, enfin dévoilés. */
+  route('GET', '/api/events/season/last', async ({ env, user }) => {
+    await ensureGameSchema(env);
+    const t = now(), act = activeIn(await nearby(env, t), t), cur = act.find(e => e.kind === 'season');
+    if (!cur || cur.idx < 1) bad('Aucune saison terminée', 404);
+    const idx = cur.idx - 1, [winner, prize, mine, th] = await Promise.all([winnerOf(env, idx), prizeOf(env, idx), prevSeason(env, user.id, idx), themeOf(env, idx)]);
+    const card = prize ? await one(env, 'SELECT * FROM cards WHERE id = ?', prize.id) : null;
+    if (card && !card.image) enrich(env, [prize.id]).catch(() => {});
+    return { idx, name: seasonName(idx), theme: { name: SEASON_THEMES[th].name, emoji: SEASON_THEMES[th].emoji }, winner, prize: card, mine, me: user.id };
   });
   /** Récompense de l'album éphémère : plus généreuse que celle d'un album normal + titre exclusif. */
   const eventAlbumReward = () => ({ c: EV.album.coins, p: EV.album.p });
