@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.7';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -64,6 +64,7 @@ async function fetchJson(path, body) {
   const raw = await r.text();
   let j = {}; try { j = JSON.parse(raw); } catch { /* réponse vide */ }
   if (r.status === 401 && token) logout();
+  if (r.status === 503 && /Maintenance/.test(j.error || '')) maintenanceScreen();
   if (!r.ok) { if (j.quota) showQuota(j.until); const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
   if (quotaBar && Date.now() - quotaAt > 8000) hideQuota();   // la base répond à nouveau (on laisse 8 s après la dernière erreur pour ne pas clignoter)
   if (!body && SWR.test(path)) gcache.set(path, { t: Date.now(), raw });
@@ -1443,6 +1444,7 @@ const render = safe(async () => {
 });
 async function refreshMe() {
   me = await api('/me');
+  if (me.maintenance === true) maintenanceScreen();
   { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }
   loadCosmetics();
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
@@ -1454,10 +1456,10 @@ async function refreshMe() {
 }
 /** Bandeau des événements en cours (heure dorée, week-end shiny…) sous l'en-tête, sur tous les écrans. */
 function paintEvBar() {
-  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = e => { if (e.target.closest('.evchip.reset')) return resetScreen(null, true); if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
+  let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = async e => { if (e.target.closest('.evchip.maint')) { if (window.confirm('Lever la maintenance ? Les joueurs pourront rejouer tout de suite.')) { await api('/admin/maintenance', { off: true }); await refreshMe(); paintEvBar(); toast('Maintenance levée'); } return; } if (e.target.closest('.evchip.reset')) return resetScreen(null, true); if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
   const left = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
   const list = me.ev || [];
-  b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${e.emoji} <b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join(''); b.hidden = !list.length;
+  b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${e.emoji} <b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join('') + (me.maintenance === 'admin' ? '<button class="evchip maint">🔧 <b>Maintenance active</b> · les joueurs sont bloqués · lever</button>' : ''); b.hidden = !list.length && me.maintenance !== 'admin';
 }
 const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.onclick = e => { if (e.target.closest('button')) return; playerSheet(el.dataset.pl); });
 /** Profil d'un joueur : stats, meilleures cartes, succès. */
@@ -2160,6 +2162,16 @@ function sanctionScreen(then) {
   $('#sx-ok').onclick = () => { m.hidden = true; m.innerHTML = ''; then?.(); };
   return true;
 }
+/** Écran de maintenance (de minuit jusqu'à la fin de la remise à zéro) : bloque le jeu, se met à jour tout seul. */
+let maintTimer = null;
+function maintenanceScreen() {
+  if ($('#maint')) return;
+  const d = document.createElement('div'); d.id = 'maint'; d.setAttribute('role', 'alertdialog');
+  d.innerHTML = '<div class="maintbox"><p class="mx">🔧</p><h2>Maintenance en cours</h2><p>La remise à zéro est en cours de préparation. Le jeu revient très vite avec la <b>saison 1</b> !</p><p class="mut">Tes cartes choisies sont bien enregistrées, rien n\'est perdu. Cette page se met à jour toute seule dès que c\'est prêt.</p><button id="mt-r">Vérifier maintenant</button></div>';
+  document.body.append(d); document.body.classList.add('noscroll');
+  const check = async () => { try { const r = (await fetchJson('/me')).j; if (!r.maintenance) location.reload(); } catch { /* on réessaiera */ } };
+  $('#mt-r').onclick = check; maintTimer = setInterval(check, 30000);
+}
 /** Écran d'annonce de la remise à zéro : explications complètes + choix des 3 cartes légendaires (carte fondateur). Affiché à l'arrivée tant que le joueur n'a pas choisi ; ensuite accessible depuis la pastille de l'accueil. */
 function resetScreen(then, force = false) {
   const r = me?.reset; if (!r || Date.now() >= r.at) return false;
@@ -2244,6 +2256,7 @@ async function start() {
       await new Promise(r => setTimeout(r, 1500));
     }
   }
+  if (me?.maintenance === true) maintenanceScreen();
   $('#boot').hidden = true;
   if (!ok) { $('#auth').hidden = false; $('#a-err').textContent = 'Serveur injoignable. Réessaie dans un instant (tu restes connecté).'; return; } $('#app').hidden = false; connect(); render();
   setTimeout(() => ['/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500); schedulePrefetch();   // pré-chargement des onglets suivants

@@ -624,9 +624,10 @@ route('GET', '/api/me', async ({ env, ctx, user }) => {
   const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
   const frozen = await sanctions.check(env, user).catch(() => 0);                // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
   if (frozen) ev.push({ id: 'freeze', kind: 'freeze', name: 'Gains suspendus', emoji: '⛔', end: frozen });
+  const maint = await maintenanceOn(env).catch(() => false);                      // maintenance : écran bloquant pour les joueurs, simple bandeau pour l'administrateur
   const resetOn = env.RESET !== '0' && now() < RESET_AT, resetChosen = resetOn ? await reset.chosen(env, user.id).catch(() => false) : false;   // remise à zéro annoncée
   if (resetOn) ev.push({ id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: RESET_AT });
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}) };
+  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -1635,6 +1636,12 @@ route('POST', '/api/push/pull', async ({ env, body }) => ({ msgs: await pull(env
 // ---------- administration (réservée aux comptes is_admin) ----------
 const admin = fn => async ctx => { if (!ctx.user.is_admin) bad('Réservé à l’administrateur', 403); return fn(ctx); };
 const onlineIds = async env => { try { return (await (await env.LOBBY.get(env.LOBBY.idFromName('main')).fetch('https://lobby/online')).json()).ids; } catch { return []; } };
+route('POST', '/api/admin/maintenance', admin(async ({ env, body }) => {
+  await ensureGameSchema(env);
+  if (body.off) await run(env, "INSERT INTO settings (key, value) VALUES ('maintenance_off', '1') ON CONFLICT (key) DO UPDATE SET value = '1'");
+  else await run(env, "DELETE FROM settings WHERE key = 'maintenance_off'");
+  mnt.t = 0; return { ok: true, off: !!body.off };
+}));
 route('GET', '/api/admin/overview', admin(async ({ env }) => {
   const day = new Date(); day.setUTCHours(0, 0, 0, 0);
   const n = async (sql, ...p) => (await one(env, sql, ...p)).n;
@@ -1814,6 +1821,14 @@ function actionDetail(r, body, out) {
 }
 /** Routes qui font dépenser des pièces : fermées aux joueurs sanctionnés (le déclencheur SQL coin_freeze_trg refuse aussi toute baisse de pièces en filet de sécurité). */
 const SPEND_ROUTE = /^\/api\/(packs\/buy|themepacks\/buy|auctions\/[^/]+\/bid|tournaments|tournaments\/[^/]+\/join|bourse\/bet|hilo\/start|bank\/deposit|fights\/bet)$/;
+/** Maintenance de la remise à zéro : à partir de RESET_AT, et tant que la remise à zéro n'a pas eu lieu (ou que l'administrateur n'a pas levé la maintenance), seuls les administrateurs peuvent jouer. */
+let mnt = { t: 0, on: false };
+async function maintenanceOn(env) {
+  if (env.RESET === '0' || now() < RESET_AT) return false;
+  if (now() - mnt.t > 10000) { await ensureGameSchema(env); const rows = await all(env, "SELECT key FROM settings WHERE key IN ('reset_done', 'maintenance_off')"); mnt = { t: now(), on: rows.length === 0 }; }
+  return mnt.on;
+}
+const MAINT_OK = /^\/api\/(me|version|config|logout|clientlog|reset|reset\/choose|admin\/.*)$/;   // restent ouvertes : l'écran de maintenance se met à jour avec /me
 async function api(req, env0, ctx, url) {
   const t0 = Date.now();
   const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
@@ -1828,6 +1843,7 @@ async function api(req, env0, ctx, url) {
       if (!user) bad('Non connecté', 401);
       env = meter(env0, 'R:' + label, 'U:' + user.name);
     }
+    if (r.auth && !user.is_admin && !MAINT_OK.test(url.pathname) && await maintenanceOn(env)) bad('Maintenance en cours : la remise à zéro se prépare, le jeu revient très vite !', 503);
     if (r.auth && req.method === 'POST' && SPEND_ROUTE.test(url.pathname)) {                    // sanction : aucune dépense de pièces (paquets, enchères, paris, banque…)
       const end = await sanctions.check(env, user);
       if (end) bad(`Tes dépenses sont suspendues jusqu'au ${new Date(end).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' })}. T'avais qu'à pas tricher.`, 403);

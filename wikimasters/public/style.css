@@ -1125,3 +1125,10 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .rsrow{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-bottom:1px solid #ffffff12;background:none;color:inherit;text-align:left;font:inherit}.rsrow img,.rsrow .rsph{width:36px;height:36px;border-radius:8px;object-fit:cover;flex:none;background:#ffffff14;display:grid;place-items:center}
 .rsrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rsrow b{width:24px;text-align:center}.rsrow.sel{background:#6aa9ff26}.rsrow.sel b{color:#7fe3a6}
 .evchip.reset{background:#1d2c4d;border-color:#6aa9ff99}
+
+/* maintenance */
+#maint{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 30%,#1b2440,#0b0d16 70%)}
+#maint .maintbox{max-width:380px;text-align:center;padding:28px 22px;border-radius:20px;border:1px solid #6aa9ff55;background:#12182a}
+#maint .mx{font-size:56px;margin:0;animation:mtSpin 4s linear infinite}@keyframes mtSpin{50%{transform:rotate(20deg)}}
+#maint h2{margin:8px 0 12px}#maint p{line-height:1.5}#maint button{width:100%;margin-top:14px}
+.evchip.maint{background:#3a2a10;border-color:#ffb84d99}
