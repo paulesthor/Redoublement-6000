@@ -1,7 +1,7 @@
 // Remise à zéro de la saison 0 : cartes fondateur, état de départ, sauvegardes, bilan, titre « Pionnier ».
 import './api.mjs';
 const { call, settle, ok, DB, J, done, env } = globalThis.__T;
-const { planFounders, START, FOUNDER_TITLE, WIPE } = await import('../src/seasonzero.js');
+const { planFounders, START, FOUNDER_TITLE, WIPE, GIFT, BAN_ID } = await import('../src/seasonzero.js');
 const { RESET_AT } = await import('../src/reset.js');
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 // 1) tirage des cartes fondateur (fonction pure)
@@ -14,6 +14,11 @@ const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
   ok('chacun reçoit une carte qu\'il avait proposée quand c\'est possible', [1, 2].every(u => !out.get(u) || picks.get(u).includes(out.get(u).id) || out.get(u).source !== 'choix'));
   ok('sans proposition : une légendaire de sa collection', out.get(3).source === 'collection' && out.get(3).id === 30, J(out.get(3)));
   ok('proposition invalide (pas à lui) : retombe sur sa collection', out.get(4).source === 'collection' && out.get(4).id === 40, J(out.get(4)));
+  { // un joueur interdit de recevoir une carte précise, même s'il la possède et la propose ; une carte imposée n'est donnée à personne d'autre
+    let bad = 0, other = 0;
+    for (let i = 0; i < 200; i++) { const r = await planFounders({ players: [1, 2, 3], picks: new Map([[2, [BAN_ID]], [3, [GIFT.id]]]), owned: new Map([[2, [BAN_ID, 55]], [3, [GIFT.id]]]), randomCard: async used => { let c = 900; while (used.has(c)) c++; return c; }, forced: new Map([[1, GIFT.id]]), banned: new Map([[2, new Set([BAN_ID])]]) });
+      if (r.get(2).id === BAN_ID) bad++; if (r.get(1).id !== GIFT.id || r.get(3).id === GIFT.id || new Set([...r.values()].map(f => f.id)).size !== 3) other++; }
+    ok('carte interdite : jamais donnée à ce joueur', bad === 0, bad); ok('carte imposée : donnée à son joueur seulement, aucun doublon', other === 0, other); }
   const none = await planFounders({ players: [5], picks: new Map(), owned: new Map(), randomCard: async () => 777, rnd }); ok('aucune légendaire : carte tirée au hasard', none.get(5).source === 'hasard' && none.get(5).id === 777);
   // trois joueurs proposent exactement la même carte : un seul l'obtient, les autres reçoivent une autre légendaire, jamais de doublon ; la consolation évite les cartes proposées par d'autres
   { let dup = 0, gotIt = new Set(), lost = 0;
@@ -56,7 +61,7 @@ const inv = await q('SELECT user_id, card_id, qty, rar FROM inventory WHERE user
 ok('chaque joueur n\'a plus que sa carte fondateur (légendaire, 1 exemplaire)', inv.length === 4 && inv.every(i => i.rar === 5 && +i.qty === 1) && new Set(inv.map(i => i.card_id)).size === 4, J(inv));
 ok('une seule légendaire par article dans tout le jeu, chacune réservée', +(await q('SELECT COUNT(*) n FROM (SELECT card_id FROM inventory WHERE rar = 5 GROUP BY card_id HAVING SUM(qty) > 1) x'))[0].n === 0 && +(await q('SELECT COUNT(*) n FROM inventory i WHERE i.rar = 5 AND NOT EXISTS (SELECT 1 FROM legend_taken t WHERE t.card_id = i.card_id)'))[0].n === 0);
 ok('elles portent le halo bêta', (await q('SELECT COUNT(*) n FROM cards WHERE beta = 1'))[0].n === 4);
-ok('Alice garde une de ses 3 propositions, pas la shiny', [7001, 7002, 7003].includes(+inv.find(i => i.user_id === ids.Alice).card_id));
+ok('l\'administrateur (Alice) reçoit Mia Khalifa', +inv.find(i => i.user_id === ids.Alice).card_id === GIFT.id && (await q('SELECT title FROM cards WHERE id = ?', GIFT.id))[0].title === 'Mia Khalifa');
 const u = await q('SELECT coins, pack_stock, packs_opened, duel_wins, title FROM users WHERE id = ?', ids.Alice);
 ok('état de départ : 500 pièces, 10 paquets, statistiques à zéro, titre Pionnier', u[0].coins === START.coins && u[0].pack_stock === START.packs && +u[0].packs_opened === 0 && +u[0].duel_wins === 0 && u[0].title === FOUNDER_TITLE, J(u));
 ok('le titre Pionnier est débloqué', (await q('SELECT 1 x FROM user_titles WHERE user_id = ? AND tid = ?', ids.Alice, FOUNDER_TITLE)).length === 1 && (await q('SELECT COUNT(*) n FROM user_titles'))[0].n === 4);
