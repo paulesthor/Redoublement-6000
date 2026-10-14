@@ -3,7 +3,7 @@
 
 const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
 export const BOURSE = { slots: 12, minStake: 10, maxStake: 500, maxBets: 8, dayStake: 2000, payout: 1.8, popularRanks: 1500 };
-export const HILO = { time: 15000, grace: 2500, minStake: 10, maxStake: 50, perDay: 2, step: 1.85, maxStreak: 5, gap: 0.15, ranks: 30000 };
+export const HILO = { time: 8000, grace: 2500, minStake: 10, maxStake: 50, perDay: 2, step: 1.85, maxStreak: 5, gap: 0.15, ranks: 30000 };
 /** Joueurs privés du « Plus ou moins » (pseudo comparé sans majuscules, accents ni séparateurs) et message affiché quand ils essaient d'y accéder. */
 export const HILO_BLOCKED = ['michelleclebresil', 'michelecestlebresil'], HILO_BLOCKED_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const hiloBlocked = u => HILO_BLOCKED.includes(String(u?.name || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''));
