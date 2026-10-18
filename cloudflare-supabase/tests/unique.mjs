@@ -42,7 +42,8 @@ await releaseLegends(env, [tl[1]]); ok('une carte non donnée retourne dans la r
 [s, r] = await call(A, 'POST', '/api/discard', { card_id: one.id }); ok('défausse d\'une légendaire : refusée', s === 400 && /unique/.test(r.error), J([s, r]));
 [s, r] = await call(A, 'POST', '/api/discard-many', { ids: [one.id] }); ok('défausse multiple avec une légendaire : refusée', s === 400, J([s, r]));
 // 7) vrais paquets : aucune légendaire en double entre deux joueurs
-await q('DELETE FROM legend_taken'); CFG.DROP.legendary = 3000; await q('UPDATE users SET pack_stock = 40, coins = 10000');
+await q('DELETE FROM legend_taken'); await q('DELETE FROM inventory WHERE rar = 5'); CFG.DROP.legendary = 3000;   // réserve ET collections vidées : sinon une légendaire gardée d'un test précédent peut ressortir (le tirage ne la voit plus réservée)
+ await q('UPDATE users SET pack_stock = 40, coins = 10000');
 for (let i = 0; i < 12; i++) { await call(A, 'POST', '/api/packs/open', {}); await call(B, 'POST', '/api/packs/buy', {}); } await settle();
 const inv = await q('SELECT card_id, COUNT(*) n, SUM(qty) q FROM inventory WHERE rar = 5 GROUP BY card_id');
 ok('vrais paquets : chaque légendaire existe une seule fois', inv.length > 20 && inv.every(x => +x.n === 1 && +x.q === 1), J([inv.length, inv.filter(x => +x.n > 1 || +x.q > 1).length]));
@@ -71,6 +72,7 @@ ok('aucun joueur simulé n\'enchérit sur une légendaire', (await q('SELECT COU
 // 10) tableau de bord de l'économie : administrateur seulement
 { 
   await q('UPDATE users SET is_admin = 0 WHERE id <> ?', alice); [s] = await call(B, 'GET', '/api/admin/economy'); ok('économie : refusée à un joueur non administrateur', s === 403, s);
-  [s, r] = await call(A, 'GET', '/api/admin/economy'); ok('économie : chiffres pour l\'administrateur', s === 200 && r.players >= 2 && r.coins > 0 && r.legendaries.existing > 0 && Array.isArray(r.top), J([s, r])); }
+  [s, r] = await call(A, 'GET', '/api/admin/economy'); ok('économie : chiffres pour l\'administrateur', s === 200 && r.players >= 2 && r.coins > 0 && r.legendaries.existing > 0 && Array.isArray(r.top), J([s, r]));
+  ok('économie : répartition des collections par rareté et par joueur', r.collections?.byRarity?.length > 0 && r.collections.cardsPerPlayer.max >= r.collections.cardsPerPlayer.median && r.collections.cardsPerPlayer.median > 0, J(r.collections)); }
 CFG.DROP.legendary = saveL; CFG.GODPACK_CHANCE = saveG; CFG.SHINY_CHANCE = saveS;
 done();
