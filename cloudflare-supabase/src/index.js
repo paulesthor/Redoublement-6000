@@ -1851,17 +1851,21 @@ route('GET', '/api/admin/stats', admin(async ({ env, query }) => {
 route('GET', '/api/admin/economy', admin(async ({ env }) => {
   await ensureGameSchema(env);
   const t = now(), day = 864e5;
-  const [pl, top, sold, daily, legend, albums, open] = await Promise.all([
+  const [pl, top, sold, daily, legend, albums, open, byRar, perUser] = await Promise.all([
     one(env, 'SELECT COUNT(*) n, COALESCE(SUM(coins),0) coins, COALESCE(SUM(pack_stock),0) stock, COALESCE(SUM(packs_opened),0) opened, COALESCE(MAX(coins),0) max FROM users WHERE is_bot = 0'),
     all(env, 'SELECT name, coins FROM users WHERE is_bot = 0 ORDER BY coins DESC LIMIT 5'),
     one(env, "SELECT COUNT(*) n, COALESCE(SUM(a.bid),0) vol, COALESCE(SUM(CASE WHEN u.is_bot = 1 THEN 1 ELSE 0 END),0) bots, COALESCE(SUM(CASE WHEN u.is_bot = 1 THEN a.bid ELSE 0 END),0) botvol FROM auctions a JOIN users u ON u.id = a.bidder_id WHERE a.status = 'sold' AND a.ends_at > ?", t - day),
     all(env, 'SELECT (ts / 86400000) d, COUNT(*) n, SUM(price) vol FROM sales WHERE ts > ? GROUP BY 1 ORDER BY 1', t - 7 * day),
     one(env, 'SELECT (SELECT COUNT(*) FROM legend_taken) taken, (SELECT COUNT(*) FROM cards WHERE rarity = ? AND shiny = 0) pool'.replace('?', "'legendary'")),
     one(env, 'SELECT COUNT(*) n FROM album_claims WHERE ts > ?', t - day),
-    one(env, "SELECT COUNT(*) n FROM auctions WHERE status = 'open'")]);
+    one(env, "SELECT COUNT(*) n FROM auctions WHERE status = 'open'"),
+    all(env, 'SELECT i.rar, COUNT(DISTINCT i.user_id) players, COUNT(*) uniques, COALESCE(SUM(i.qty),0) cards FROM inventory i JOIN users u ON u.id = i.user_id AND u.is_bot = 0 GROUP BY i.rar ORDER BY i.rar'),
+    all(env, 'SELECT i.user_id, SUM(i.qty) n, COUNT(*) u FROM inventory i JOIN users u ON u.id = i.user_id AND u.is_bot = 0 GROUP BY i.user_id ORDER BY n')]);
+  const ns = perUser.map(x => +x.n), q = p => ns.length ? ns[Math.min(ns.length - 1, Math.floor(p * ns.length))] : 0;
   const share = pl.coins ? Math.round(100 * top.reduce((a, x) => a + +x.coins, 0) / pl.coins) : 0;
   return { players: +pl.n, coins: +pl.coins, avg: pl.n ? Math.round(pl.coins / pl.n) : 0, packsStock: +pl.stock, packsOpened: +pl.opened, top: top.map(x => ({ name: x.name, coins: +x.coins })), topShare: share,
     sold24: { n: +sold.n, volume: +sold.vol, toBots: +sold.bots, botVolume: +sold.botvol }, sales7: daily.map(x => ({ day: new Date(+x.d * day).toISOString().slice(0, 10), n: +x.n, volume: +x.vol })),
+    collections: { byRarity: byRar.map(r => ({ rarity: ['common', 'uncommon', 'rare', 'super', 'ultra', 'legendary'][r.rar], players: +r.players, uniques: +r.uniques, cards: +r.cards, avg: pl.n ? +(r.cards / pl.n).toFixed(1) : 0 })), cardsPerPlayer: { min: q(0), p25: q(.25), median: q(.5), p75: q(.75), p90: q(.9), max: ns.at(-1) ?? 0 }, withoutCards: Math.max(0, +pl.n - ns.length) },
     legendaries: { existing: +legend.taken, pool: +legend.pool * 2 }, albums24: +albums.n, openAuctions: +open.n, unique: await uniqueOn(env) };
 }));
 /** Journal de log et de contrôle (table logs de Supabase, 14 jours). */
