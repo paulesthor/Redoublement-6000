@@ -138,6 +138,14 @@ for (const [m, p, b] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/mar
 }
 [s, r] = await call(B, 'GET', '/api/admin/overview'); ok('admin refusé aux autres', s === 403);
 [s, r] = await call(A, 'GET', '/api/admin/users'); ok('admin/users désactivé', s === 403);
+{ const [, z] = await call(null, 'POST', '/api/register', { name: 'Zoe', password: 'oublie1' }), Z = z.token;
+  [s] = await call(B, 'POST', '/api/admin/password', { name: 'Zoe', password: 'nouveau1' }); ok('mot de passe : refusé à un joueur non admin', s === 403, s);
+  [s] = await call(A, 'POST', '/api/admin/password', { name: 'Zoe', password: 'abc' }); ok('mot de passe : trop court refusé', s === 400, s);
+  [s] = await call(A, 'POST', '/api/admin/password', { name: 'inconnu', password: 'nouveau1' }); ok('mot de passe : joueur inconnu', s === 404, s);
+  [s, r] = await call(A, 'POST', '/api/admin/password', { name: 'zoe', password: 'nouveau1' }); ok('mot de passe réinitialisé par pseudo (casse libre)', s === 200 && r.name === 'Zoe', J([s, r]));
+  [s] = await call(null, 'POST', '/api/login', { name: 'Zoe', password: 'oublie1' }); ok('ancien mot de passe refusé', s === 401, s);
+  [s, r] = await call(null, 'POST', '/api/login', { name: 'Zoe', password: 'nouveau1' }); ok('nouveau mot de passe accepté', s === 200 && r.token, J([s, r]));
+  [s] = await call(Z, 'GET', '/api/me'); ok('ses anciennes sessions sont fermées', s === 401, s); }
 [s, r] = await call(A, 'GET', '/api/admin/market'); const lotsB = r.lots; if (lotsB?.length) { [s, r] = await call(A, 'POST', '/api/admin/lot/remove', { id: lotsB[0].id }); ok('retrait d\'un lot simulé', s === 200, J([s, r])); }
 await settle();
 
