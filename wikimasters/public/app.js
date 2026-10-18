@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -2137,6 +2137,58 @@ views.expeditions = async v => {
   });
 };
 
+// ---------- fil d'actualité : chaque légendaire tirée devient un post (comme sur Instagram) ----------
+const ago = ts => { const s = Math.max(1, Math.round((Date.now() - ts) / 1000)); return s < 60 ? 'à l\'instant' : s < 3600 ? `il y a ${Math.floor(s / 60)} min` : s < 86400 ? `il y a ${Math.floor(s / 3600)} h` : `il y a ${Math.floor(s / 86400)} j`; };
+views.feed = async v => {
+  const [d] = await Promise.all([api('/feed'), loadCosmetics()]);
+  let posts = d.posts, more = d.more;
+  const byId = id => posts.find(p => p.id === id);
+  const comHtml = (p, c) => `<div class="fcom" data-c="${c.id}"><span><b>${esc(c.name)}</b> ${esc(c.text)}</span>${c.mine || p.user.id === me.id || me.admin ? '<button class="fdel" aria-label="Supprimer ce commentaire" title="Supprimer">×</button>' : ''}</div>`;
+  const postHtml = p => `<article class="fpost" data-p="${p.id}">
+    <header><span class="fav">${avatar(p.user.name)}</span><div><b class="fwho" data-u="${p.user.id}">${esc(p.user.name)}</b>${ttl(p.user.name)}<small>${p.card.shiny ? '✨ Shiny · ' : ''}${ago(p.ts)}</small></div></header>
+    <div class="fcard" data-card="${p.card.id}">${cardHtml(p.card, { cls: 'fbig' })}<span class="fheart" aria-hidden="true">❤</span></div>
+    <div class="facts"><button class="flike ${p.liked ? 'on' : ''}" aria-label="J'aime">${ico('heart')}</button><button class="fcm" aria-label="Commenter">${ico('chat')}</button></div>
+    <div class="flikes"><b>${p.likes}</b> J'aime</div>
+    <p class="fcap"><b>${esc(p.user.name)}</b> a tiré <b>${esc(p.card.title)}</b> ${p.card.shiny ? '✨' : '🌟'}</p>
+    <div class="fcoms">${p.comments > p.last.length ? `<button class="fall">Voir les ${p.comments} commentaires</button>` : ''}${p.last.map(c => comHtml(p, c)).join('')}</div>
+    <form class="fadd"><input maxlength="200" placeholder="Ajouter un commentaire…" autocomplete="off" aria-label="Commentaire"><button>Publier</button></form></article>`;
+  const draw = () => {
+    v.innerHTML = `${pageHead('Fil', 'Les légendaires tirées par les joueurs')}<div class="feed">${posts.length ? posts.map(postHtml).join('') : '<div class="empty">Aucune légendaire pour le moment.<br>La prochaine à sortir d\'un paquet apparaîtra ici !</div>'}</div>${more ? '<button class="plain fmore">Voir plus</button>' : ''}`;
+    $('#view').querySelectorAll('[data-bg]').forEach(el => { el.style.backgroundImage = `url('${el.dataset.bg}')`; });
+  };
+  draw();
+  const refreshPost = p => { const el = v.querySelector(`[data-p="${p.id}"]`); if (el) { el.querySelector('.flike').classList.toggle('on', p.liked); el.querySelector('.flikes b').textContent = p.likes; } };
+  const like = safe(async id => { const p = byId(id), r = await api('/feed/like', { post: id }); p.liked = r.liked; p.likes = r.likes; refreshPost(p); });
+  let lastTap = 0, tapTimer = 0;
+  v.addEventListener('click', e => {                                                         // un tap : fiche de la carte ; deux taps rapprochés : J'aime (comme Instagram)
+    const box = e.target.closest('.fcard'); if (!box) return;
+    e.stopPropagation(); e.preventDefault();
+    const id = +box.closest('[data-p]').dataset.p, t = Date.now();
+    if (t - lastTap < 320) {
+      clearTimeout(tapTimer); lastTap = 0; const p = byId(id), h = box.querySelector('.fheart'); h.classList.remove('pop'); void h.offsetWidth; h.classList.add('pop');
+      if (!p.liked) like(id);
+    } else { lastTap = t; tapTimer = setTimeout(() => showCard(+box.dataset.card), 330); }
+  }, true);
+  v.addEventListener('click', safe(async e => {
+    const art = e.target.closest('[data-p]'); if (e.target.closest('.fcard')) return;
+    if (e.target.closest('.fmore')) { const r = await api('/feed?before=' + posts.at(-1).id); posts = posts.concat(r.posts); more = r.more; return draw(); }
+    if (e.target.closest('.fwho')) { playerId = +e.target.closest('.fwho').dataset.u; playerFrom = 'feed'; tab = 'player'; return render(); }
+    if (!art) return;
+    const p = byId(+art.dataset.p);
+    if (e.target.closest('.flike')) return like(p.id);
+    if (e.target.closest('.fcm')) return art.querySelector('.fadd input').focus();
+    if (e.target.closest('.fall')) { const r = await api(`/feed/${p.id}/comments`); art.querySelector('.fcoms').innerHTML = r.comments.map(c => comHtml(p, c)).join(''); return; }
+    const del = e.target.closest('.fdel');
+    if (del) { const cid = +del.closest('[data-c]').dataset.c; await api('/feed/comment/delete', { id: cid }); del.closest('[data-c]').remove(); p.comments = Math.max(0, p.comments - 1); }
+  }));
+  v.addEventListener('submit', safe(async e => {
+    const f = e.target.closest('.fadd'); if (!f) return; e.preventDefault();
+    const art = f.closest('[data-p]'), p = byId(+art.dataset.p), inp = f.querySelector('input'), text = inp.value.trim(); if (!text) return;
+    inp.disabled = true;
+    try { const r = await api('/feed/comment', { post: p.id, text }); inp.value = ''; p.comments++; art.querySelector('.fcoms').insertAdjacentHTML('beforeend', comHtml(p, r.comment)); }
+    finally { inp.disabled = false; inp.focus(); }
+  }));
+};
 // ---------- page des nouveautés (à chaque mise à jour) ----------
 // ---------- combats en direct et paris ----------
 async function liveFights(v) {
@@ -2274,6 +2326,21 @@ function seasonReveal(then, force = false) {
   return true;
 }
 /** Bilan de la saison 0 + ouverture du Pack Fondateur (une seule fois, juste après la remise à zéro). */
+/** Écran de nouveautés (une seule fois par joueur) : le fil d'actualité, idée de Justin. */
+function newsScreen(then) {
+  let seen = true; try { seen = localStorage.getItem('wm_news_feed') === '1'; } catch { /* stockage indisponible : on n'insiste pas */ }
+  if (seen || !me || me.maintenance || $('#modal').hidden === false) return false;
+  const m = $('#modal'); m.hidden = false;
+  m.innerHTML = `<div class="recapsheet" role="dialog" aria-label="Nouveauté : le fil"><p class="rsx">📸</p><h2>Nouveau : le Fil !</h2>
+    <p>Chaque <b>légendaire</b> tirée par un joueur devient une publication, comme sur un réseau social : tu vois la carte, qui l'a tirée, et tu peux mettre un <b>❤ J'aime</b> ou laisser un <b>commentaire</b>.</p>
+    <p class="mut">Astuce : touche deux fois la carte pour liker. Le Fil est dans la barre du bas.</p>
+    <p style="text-align:center;margin:14px 0"><span style="display:inline-block;background:#ffffff12;border:1px solid var(--line2);border-radius:14px;padding:8px 14px;font-size:14px">💡 Une idée de <b>Justin</b> — merci à lui !</span></p>
+    <div class="row"><button id="nw-go" style="flex:1">Voir le Fil</button><button class="plain" id="nw-x" style="flex:1">Plus tard</button></div></div>`;
+  const close = () => { try { localStorage.setItem('wm_news_feed', '1'); } catch { /* ignoré */ } m.hidden = true; m.innerHTML = ''; };
+  $('#nw-go').onclick = () => { close(); tab = 'feed'; render(); };
+  $('#nw-x').onclick = () => { close(); then?.(); };
+  return true;
+}
 function recapScreen(then) {
   if (!me?.recap) return false;
   const m = $('#modal'); m.hidden = false; m.innerHTML = '<div class="recapsheet"><p class="mut" style="text-align:center">Chargement…</p></div>';
@@ -2341,7 +2408,7 @@ async function start() {
   setTimeout(pushStartup, 2500);
   setTimeout(() => {                                                                  // à l'ouverture : nouveautés de la mise à jour, puis récompense du jour
     const daily = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
-    const next = () => { if (!recapScreen(daily) && !resetScreen(daily) && !seasonReveal(daily)) daily(); };
+    const next = () => { if (!recapScreen(daily) && !resetScreen(daily) && !seasonReveal(daily) && !newsScreen(daily)) daily(); };
     if (!game && !sanctionScreen(next)) next();
   }, 900);
 }
