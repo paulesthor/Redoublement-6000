@@ -45,7 +45,7 @@ export async function randomPool(env, n) {
   // les cartes shiny ont un identifiant énorme (article + 100 000 000) : on tire le point de départ parmi les cartes normales seulement, en plusieurs endroits
   const max = (await one(env, 'SELECT MAX(id) m FROM cards WHERE shiny = 0'))?.m ?? 0;
   const sel = 'SELECT id, title, extract, views FROM cards WHERE enriched >= 1 AND shiny = 0 AND length(extract) > 80 AND id ', parts = Math.min(n, 5), per = Math.ceil(n / parts), seen = new Map();
-  for (let i = 0; i < parts && seen.size < n; i++) {
+  for (let i = 0; i < parts + 6 && (i < parts || seen.size < n); i++) {   // quelques tirages de rattrapage si des blocs se chevauchent
     const start = Math.floor(Math.random() * max);
     let a = await all(env, sel + '>= ? ORDER BY id LIMIT ?', start, per);
     if (a.length < per) a = [...a, ...await all(env, sel + '< ? ORDER BY id LIMIT ?', start, per - a.length)];
