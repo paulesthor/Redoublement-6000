@@ -40,14 +40,16 @@ export function installEconomy(d) {
   async function ensureMarket(env, origin) {
     await ensureGameSchema(env);
     const day = dayKey(), have = (await all(env, 'SELECT slot FROM bourse_market WHERE day = ?', day)).map(r => +r.slot);
-    if (have.length >= BOURSE.slots || now() - buildTry < (have.length >= 4 ? 600000 : 15000)) return day;   // complet, ou essai trop récent (on réessaie vite tant qu'il y a moins de 4 titres)
+    if (have.length >= BOURSE.slots || now() - buildTry < 15000) return day;       // complet, ou essai trop récent : on complète peu à peu, par petits lots
     buildTry = now();
-    const from = addDays(day, -7), to = addDays(day, -1), out = [];
+    const from = addDays(day, -7), to = addDays(day, -1), out = []; let calls = 0;
     // Wikimedia refuse les rafales : une demande à la fois, avec une courte pause, et on s'arrête dès qu'il dit « trop de demandes »
     const cand = async slot => {
       for (let k = 0; k < 6; k++) {
         const e = await entryAt(env, origin, (hash(`bourse${day}${slot}`) + k * 104729) % BOURSE.popularRanks);
         if (LIST.test(e[1])) continue;
+        if (calls >= 14) return 'stop';                                              // une requête Worker ne peut faire qu'une cinquantaine d'appels : le reste au prochain passage
+        calls++;
         const v = await pageViews(e[1], from, to);
         if (!v) return 'stop';                                                        // l'API ne répond pas ou limite les demandes
         const series = []; for (let i = -7; i <= -1; i++) series.push(v[addDays(day, i)] ?? 0);
@@ -89,7 +91,7 @@ export function installEconomy(d) {
     }
   }
   route('GET', '/api/bourse', async ({ env, ctx, user, origin }) => {
-    const day = await ensureMarket(env, origin);
+    const day = await ensureMarket(env, origin).catch(e => { console.error('bourse', e); return dayKey(); });   // jamais d'erreur serveur : au pire, marché vide avec son message
     await settleBourse(env, ctx).catch(() => {});
     const [market, bets, past] = await Promise.all([
       all(env, 'SELECT slot, id, title, series, ref FROM bourse_market WHERE day = ? ORDER BY slot', day),
