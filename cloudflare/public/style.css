@@ -1145,3 +1145,29 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 #maint .mx{font-size:56px;margin:0;animation:mtSpin 4s linear infinite}@keyframes mtSpin{50%{transform:rotate(20deg)}}
 #maint h2{margin:8px 0 12px}#maint p{line-height:1.5}#maint button{width:100%;margin-top:14px}
 .evchip.maint{background:#3a2a10;border-color:#ffb84d99}
+
+/* fil d'actualité (style réseau social) */
+.feed{display:flex;flex-direction:column;gap:22px;max-width:480px;margin:0 auto 18px}
+.fpost{background:var(--panel,#10101a);border:1px solid var(--line2);border-radius:18px;overflow:hidden}
+.fpost header{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.fpost header b{font-size:14.5px;cursor:pointer}.fpost header small{display:block;color:var(--mut);font-size:12px}
+.fpost .av{width:36px;height:36px}
+.fcard{position:relative;padding:4px 18px 14px;display:flex;justify-content:center;cursor:pointer;-webkit-user-select:none;user-select:none}
+.fcard .card.fbig{width:100%;max-width:300px;font-size:14px}
+.fheart{position:absolute;left:50%;top:50%;font-size:92px;color:#ff4d5e;transform:translate(-50%,-50%) scale(0);opacity:0;pointer-events:none;text-shadow:0 6px 30px #0009}
+.fheart.pop{animation:fheart .75s ease-out}
+@keyframes fheart{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}25%{transform:translate(-50%,-50%) scale(1.15);opacity:1}60%{transform:translate(-50%,-50%) scale(.95);opacity:1}100%{transform:translate(-50%,-60%) scale(1);opacity:0}}
+.facts{display:flex;gap:6px;padding:0 10px}
+.facts button{background:none;box-shadow:none;color:var(--fg);padding:6px;border-radius:10px;min-width:0}
+.facts button svg{width:26px;height:26px}
+.flike.on svg{fill:#ff4d5e;stroke:#ff4d5e}
+.flikes,.fcap{margin:2px 14px;font-size:14px}
+.fcap{margin-bottom:6px;color:var(--fg)}
+.fcoms{padding:0 14px}
+.fall{background:none;box-shadow:none;color:var(--mut);padding:2px 0;font-size:13.5px;font-weight:500}
+.fcom{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:2px 0;overflow-wrap:anywhere}
+.fdel{background:none;box-shadow:none;color:var(--mut);padding:0 4px;min-width:0;font-size:18px;line-height:1}
+.fadd{display:flex;gap:8px;padding:10px 14px 14px;border-top:1px solid var(--line2);margin-top:10px}
+.fadd input{flex:1;min-width:0;border-radius:20px}
+.fadd button{padding:0 14px;border-radius:20px}
+.fmore{display:block;margin:0 auto 24px}

@@ -9,6 +9,7 @@ import { installEvents } from './events.js';
 import { installReset, RESET_AT } from './reset.js';
 import { installMarket, MARKET } from './market.js';
 import { installSeasonZero } from './seasonzero.js';
+import { installFeed } from './feed.js';
 import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
@@ -302,6 +303,7 @@ const publicUser = u => ({
 });
 
 async function finishPack(env, ctx, user, drawn, spent = 0, fake = false) {
+  await ensureGameSchema(env);                                              // tables du fil d'actualité créées si besoin avant l'écriture groupée
   // TOUT part en un seul aller-retour vers la base (une transaction) : lecture « déjà possédées », écritures, relecture des cartes et des favoris
   const ids = [...new Set(drawn.map(c => c.id))], ph = placeholders(ids.length);
   const god = drawn.some(c => c.god), hitsOf = drawn.filter(c => c.rarity === 'legendary');
@@ -313,6 +315,7 @@ async function finishPack(env, ctx, user, drawn, spent = 0, fake = false) {
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
     ...(god ? [st(env, 'INSERT INTO hits (username, title, shiny, ts) VALUES (?,?,?,?)', user.name, 'un GODPACK', 0, now())] : []),
     ...hitsOf.map(c => st(env, 'INSERT INTO hits (username, title, shiny, ts) VALUES (?,?,?,?)', user.name, c.title, c.shiny, now())),
+    ...hitsOf.map(c => feed.postStmt(env, user.id, c.id)),   // chaque légendaire devient une publication du fil d'actualité
     st(env, `SELECT * FROM cards WHERE id IN (${ph})`, ...ids),
     st(env, `SELECT card_id FROM favorites WHERE user_id = ? AND card_id IN (${ph})`, user.id, ...ids),
   ]);
@@ -973,6 +976,7 @@ const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.unt
 const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, placeholders });
 const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
 const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
+const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
 const events = installEvents({ route, bad, one, all, run, st, notify, ensureGameSchema, CFG, now, entryAt, getMeta, assetOrigin: ASSET_ORIGIN, insertCard, stats, addCard, enrich,

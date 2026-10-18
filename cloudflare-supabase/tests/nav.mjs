@@ -26,8 +26,23 @@ const mk = async (w, h) => { const c = await browser.newContext({ viewport: { wi
 const vis = async p => p.$$eval('nav button', bs => bs.filter(b => b.offsetParent !== null).map(b => b.dataset.tab));
 console.log('— téléphone 390 px');
 let p = await mk(390, 844);
-let v = await vis(p); ok('4 onglets + Plus', J(v) === J(['packs', 'album', 'duel', 'market', 'more']), J(v));
+let v = await vis(p); ok('onglets du bas : boosters, collection, combats, marché, fil + Plus', J(v) === J(['packs', 'album', 'duel', 'market', 'feed', 'more']), J(v));
 ok('pastille rouge sur Plus (message non lu)', await p.$('nav button.more.has-badge') !== null);
+{ // fil d'actualité : un post (carte, pseudo), J'aime, double tap, commentaire
+  const cid = (await DB.prepare('SELECT card_id FROM inventory LIMIT 1').all()).results[0].card_id;
+  await DB.prepare('INSERT INTO feed_posts (user_id, card_id, ts) VALUES (2, ?, ?)').bind(cid, Date.now() - 600000).run();
+  ok('écran de nouveautés : le fil, avec l\'idée de Justin', (await p.textContent('#modal')).includes('Justin') && (await p.textContent('#modal')).includes('Fil'));
+  await p.click('#nw-x'); await p.waitForTimeout(500); await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });   // la récompense du jour qui suit
+  await p.click('nav button[data-tab=feed]'); await p.waitForSelector('.fpost'); await p.waitForTimeout(300);
+  ok('le fil affiche un post avec le pseudo et la carte', (await p.textContent('.fpost header b')) === 'Bob' && await p.$('.fpost .card') !== null);
+  ok('l\'onglet Fil est marqué actif dans la barre', await p.$('nav button[data-tab=feed].on') !== null);
+  await p.click('.flike'); await p.waitForTimeout(500);
+  ok('J\'aime : coeur plein et compteur à 1', await p.$('.flike.on') !== null && (await p.textContent('.flikes b')) === '1');
+  await p.click('.flike'); await p.waitForTimeout(500); ok('second appui : J\'aime retiré', await p.$('.flike.on') === null && (await p.textContent('.flikes b')) === '0');
+  await p.dblclick('.fcard'); await p.waitForTimeout(600); ok('double tap sur la carte : J\'aime', await p.$('.flike.on') !== null && (await p.$('#modal:not([hidden]) .detail')) === null);
+  await p.fill('.fadd input', 'Magnifique !'); await p.click('.fadd button'); await p.waitForSelector('.fcom'); ok('commentaire publié et affiché', (await p.textContent('.fcom')).includes('Magnifique'));
+  await p.screenshot({ path: 'feed-mobile.png' });
+  await p.click('nav button[data-tab=packs]'); await p.waitForTimeout(300); }
 await p.screenshot({ path: 'nav-mobile.png' });
 await p.click('nav button.more'); await p.waitForSelector('.moresheet'); await p.waitForTimeout(450);
 await p.screenshot({ path: 'nav-plus.png' });
@@ -44,15 +59,16 @@ await p.click('nav button[data-tab=market]'); await p.waitForTimeout(500); ok('o
 ok('aucune erreur JavaScript (téléphone)', p.errs.length === 0, J(p.errs));
 console.log('— ordinateur 1100 px');
 p = await mk(1100, 800); v = await vis(p);
-ok('8 onglets en barre latérale, pas de Plus', v.length === 8 && !v.includes('more'), J(v));
+ok('9 onglets en barre latérale (dont le Fil), pas de Plus', v.length === 9 && !v.includes('more'), J(v));
 await p.screenshot({ path: 'nav-desktop.png' });
 ok('aucune erreur JavaScript (ordinateur)', p.errs.length === 0, J(p.errs));
 console.log('— joueur ordinaire (non admin)');
 {
   const c = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
-  await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_push_ask', '1'); if (!localStorage.getItem('wm_seen_ver')) localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, B);
+  await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); if (!localStorage.getItem('wm_seen_ver')) localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, B);
   const q = await c.newPage(); q.errs = []; q.on('pageerror', e => q.errs.push(e.message));
   await q.goto('http://localhost:8767/'); await q.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(900);
+  await q.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });   // récompense du jour
   await q.click('nav button.more'); await q.waitForSelector('.moresheet'); await q.waitForTimeout(300);
   ok('pas de tuile Admin dans le menu Plus', await q.$('.mtile[data-go=admin]') === null && !(await q.textContent('.moresheet')).includes('Admin'));
   await q.click('#mo-x'); await q.click('nav button.more'); await q.click('.mtile[data-go=settings]'); await q.waitForTimeout(400);
