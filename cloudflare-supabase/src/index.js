@@ -1750,7 +1750,8 @@ route('POST', '/api/admin/give', admin(async ({ env, ctx, body }) => {
 route('POST', '/api/admin/test-mode', admin(async () => bad('Le mode test a été retiré', 403)));
 route('POST', '/api/admin/password', admin(async ({ env, body }) => {
   const pw = String(body.password || ''); if (pw.length < 4) bad('Mot de passe trop court (4 min.)');
-  const u = await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', +body.user_id); if (!u) bad('Joueur introuvable', 404);
+  const u = body.name ? await one(env, 'SELECT id, name FROM users WHERE LOWER(name) = LOWER(?) AND is_bot = 0', String(body.name).trim().slice(0, 40)) : await one(env, 'SELECT id, name FROM users WHERE id = ? AND is_bot = 0', +body.user_id);
+  if (!u) bad('Joueur introuvable', 404);
   const salt = randomHex(16);
   await env.DB.batch([st(env, 'UPDATE users SET salt = ?, hash = ? WHERE id = ?', salt, await hashPw(pw, salt), u.id), st(env, 'DELETE FROM sessions WHERE user_id = ?', u.id)]);   // le joueur devra se reconnecter
   return { ok: true, name: u.name };
@@ -1932,7 +1933,7 @@ async function api(req, env0, ctx, url) {
   let env = meter(env0, 'R:' + label), user = null, status = 200, err = null, body = {}, out;
   try {
     if (!r) bad('Route inconnue', 404);
-    if (/^\/api\/admin\/(users|give|password|drop|cards|take-card)$/.test(url.pathname)) bad('Fonction retirée : plus aucun réglage des joueurs (pièces, paquets, cartes, taux) depuis l\'administration', 403);
+    if (/^\/api\/admin\/(users|give|drop|cards|take-card)$/.test(url.pathname)) bad('Fonction retirée : plus aucun réglage des joueurs (pièces, paquets, cartes, taux) depuis l\'administration', 403);
     const params = url.pathname.match(r.re).groups || {};
     if (r.auth) {
       user = await userFromToken(env, (req.headers.get('authorization') || '').replace('Bearer ', ''));
