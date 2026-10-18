@@ -39,25 +39,31 @@ export function installEconomy(d) {
   let buildTry = 0;
   async function ensureMarket(env, origin) {
     await ensureGameSchema(env);
-    const day = dayKey(), have = await all(env, 'SELECT slot FROM bourse_market WHERE day = ?', day);
-    if (have.length >= 4 || now() - buildTry < 120000) return day;                  // déjà construit (ou essai récent sans succès)
+    const day = dayKey(), have = (await all(env, 'SELECT slot FROM bourse_market WHERE day = ?', day)).map(r => +r.slot);
+    if (have.length >= BOURSE.slots || now() - buildTry < (have.length >= 4 ? 600000 : 15000)) return day;   // complet, ou essai trop récent (on réessaie vite tant qu'il y a moins de 4 titres)
     buildTry = now();
     const from = addDays(day, -7), to = addDays(day, -1), out = [];
+    // Wikimedia refuse les rafales : une demande à la fois, avec une courte pause, et on s'arrête dès qu'il dit « trop de demandes »
     const cand = async slot => {
       for (let k = 0; k < 6; k++) {
         const e = await entryAt(env, origin, (hash(`bourse${day}${slot}`) + k * 104729) % BOURSE.popularRanks);
         if (LIST.test(e[1])) continue;
         const v = await pageViews(e[1], from, to);
-        if (!v) return null;                                                          // l'API ne répond pas : on abandonne cet emplacement
+        if (!v) return 'stop';                                                        // l'API ne répond pas ou limite les demandes
         const series = []; for (let i = -7; i <= -1; i++) series.push(v[addDays(day, i)] ?? 0);
         if (series.filter(Boolean).length < 6) continue;                                // article trop peu consulté pour un pari lisible
         return { slot, id: e[0], title: e[1], series, ref: Math.round(series.reduce((t, x) => t + x, 0) / 7) };
       }
       return null;
     };
-    for (const m of (await Promise.all(Array.from({ length: BOURSE.slots }, (_, s) => cand(s)))).filter(Boolean)) out.push(m);
-    if (out.length < 4) return day;
-    await env.DB.batch(out.map(m => st(env, "INSERT INTO bourse_market (day, slot, id, title, series, ref, status) VALUES (?,?,?,?,?,?,'open') ON CONFLICT DO NOTHING", day, m.slot, m.id, m.title, JSON.stringify(m.series), m.ref)));
+    for (let slot = 0; slot < BOURSE.slots; slot++) {
+      if (have.includes(slot)) continue;
+      const m = await cand(slot);
+      if (m === 'stop') break;
+      if (m) out.push(m);
+      await new Promise(r => setTimeout(r, 250));
+    }
+    if (out.length && have.length + out.length >= 4) await env.DB.batch(out.map(m => st(env, "INSERT INTO bourse_market (day, slot, id, title, series, ref, status) VALUES (?,?,?,?,?,?,'open') ON CONFLICT DO NOTHING", day, m.slot, m.id, m.title, JSON.stringify(m.series), m.ref)));
     return day;
   }
   /** Règle les marchés des jours passés dès que les vues du jour sont publiées (4 jours d'attente au plus, sinon les mises sont rendues). */
