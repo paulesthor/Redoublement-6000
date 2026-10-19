@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '8.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2000,7 +2000,7 @@ const cdTxt = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 
 
 views.bourse = async v => {
   const d = await api('/bourse');
-  if (!d.market.length) { v.innerHTML = `${pageHead('Bourse', 'Paris sur les vues Wikipédia')}<div class="empty">Le marché du jour n'est pas disponible (les statistiques Wikipédia ne répondent pas).<br>Réessaie dans quelques minutes.</div>`; return; }
+  if (!d.market.length) { v.innerHTML = `${pageHead('Bourse', 'Paris sur les vues Wikipédia')}<div class="empty">Le marché du jour n'est pas disponible (les statistiques Wikipédia ne répondent pas).<br>Réessaie dans quelques minutes.${d.why ? `<br><small class="mut">Détail : ${esc(d.why)}</small>` : ''}</div>`; return; }
   const res = { won: ['Gagné', 'ok'], lost: ['Perdu', 'ko'], tie: ['Rendu', ''], wait: ['En attente', ''] };
   v.innerHTML = `${pageHead('Bourse', 'Les vues de l\'article vont-elles monter ou baisser aujourd\'hui ?')}
     <div class="panel boursehead"><p class="mut" style="margin:0">Pour chaque titre, parie sur les vues <b>du jour</b> comparées à la <b>moyenne des 7 derniers jours</b>. Bon pari : <b>×${d.payout}</b>. Résultat demain (les statistiques de Wikipédia sortent après minuit). ${ico('clock')} Nouveau marché dans ${cdTxt(d.resetIn)} · ${d.left} pari${d.left > 1 ? 's' : ''} restant${d.left > 1 ? 's' : ''} · ${fmt(Math.max(0, d.dayStake))} pièces misables.</p></div>

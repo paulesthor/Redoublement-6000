@@ -16,17 +16,19 @@ const ymd = d => d.replace(/-/g, '');
 const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * DAY).toISOString().slice(0, 10);
 
 /** Vues Wikipédia par jour (UTC) d'un article entre deux jours « YYYY-MM-DD » : { 'YYYY-MM-DD': vues }, ou null si l'API ne répond pas. Un jour sans visite est absent. */
+export const viewsError = { msg: null };     // dernière raison d'échec des statistiques Wikimedia (affichée à l'écran quand le marché est vide)
 export async function pageViews(title, from, to, fetchFn = fetch) {
   const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/fr.wikipedia/all-access/user/${encodeURIComponent(title.replace(/ /g, '_'))}/daily/${ymd(from)}00/${ymd(to)}00`;
   try {
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 4500);
-    const r = await fetchFn(url, { headers: UA, signal: ctl.signal }); clearTimeout(t);
+    const r = await fetchFn(url, { headers: { ...UA, 'Api-User-Agent': UA['User-Agent'] }, signal: ctl.signal }); clearTimeout(t);
     if (r.status === 404) return {};
-    if (!r.ok) return null;
+    if (!r.ok) { viewsError.msg = `Wikimedia a répondu ${r.status}${r.status === 429 ? ' (trop de demandes)' : ''}`; return null; }
+    viewsError.msg = null;
     const j = await r.json(), out = {};
     for (const it of j.items ?? []) { const s = String(it.timestamp); out[`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`] = it.views; }
     return out;
-  } catch { return null; }
+  } catch (e) { viewsError.msg = e?.name === 'AbortError' ? 'Wikimedia ne répond pas (délai dépassé)' : `Wikimedia injoignable : ${String(e?.message || e).slice(0, 80)}`; return null; }
 }
 
 export function installEconomy(d) {
@@ -99,7 +101,7 @@ export function installEconomy(d) {
       all(env, `SELECT b.day, b.dir, b.stake, b.payout, b.settled, b.actual, m.title, m.ref FROM bourse_bets b JOIN bourse_market m ON m.day = b.day AND m.slot = b.slot WHERE b.user_id = ? AND b.day < ? ORDER BY b.day DESC, b.slot LIMIT 20`, user.id, day),
     ]);
     const my = new Map(bets.map(b => [b.slot, b]));
-    return { day, resetIn: msToMidnight(), payout: BOURSE.payout, min: BOURSE.minStake, max: BOURSE.maxStake, left: BOURSE.maxBets - bets.length, dayStake: BOURSE.dayStake - bets.reduce((t, b) => t + b.stake, 0),
+    return { day, why: market.length ? null : viewsError.msg, resetIn: msToMidnight(), payout: BOURSE.payout, min: BOURSE.minStake, max: BOURSE.maxStake, left: BOURSE.maxBets - bets.length, dayStake: BOURSE.dayStake - bets.reduce((t, b) => t + b.stake, 0),
       market: market.map(m => ({ slot: m.slot, id: m.id, title: m.title, series: JSON.parse(m.series), ref: m.ref, bet: my.get(m.slot) ?? null })),
       past: past.map(p => ({ ...p, result: !p.settled ? 'wait' : p.payout > p.stake ? 'won' : p.payout === p.stake ? 'tie' : 'lost' })) };
   });
