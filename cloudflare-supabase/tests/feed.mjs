@@ -33,6 +33,10 @@ const cid = (await q('SELECT id FROM feed_comments ORDER BY id LIMIT 1'))[0].id,
 let limited = 0; for (let i = 0; i < CFG_LIMIT(); i++) { [s] = await call(C, 'POST', '/api/feed/comment', { post: p0.id, text: 'spam ' + i }); if (s === 429) limited++; }
 function CFG_LIMIT() { return 25; }
 ok('trop de commentaires en une heure : limité', limited > 0, limited);
+// photos : les cartes du fil sans photo sont complétées à l'ouverture du fil
+{ const id = 7770001; await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url, enriched) VALUES (?,?,?,?,?,?,0,?,0) ON CONFLICT DO NOTHING', id, 'Sans photo', 5, 'legendary', 5, 5, 'u');
+  await q('INSERT INTO feed_posts (user_id, card_id, ts) VALUES (?,?,?)', alice, id, Date.now() + 1000);
+  [s, r] = await call(C, 'GET', '/api/feed'); const c = r.posts[0].card; ok('fil : la photo de l\'article est chargée à l\'ouverture', c.id === id && !!c.image && c.enriched >= 1, J(c)); }
 // pagination
 const many = await q('SELECT COUNT(*) n FROM feed_posts'); const n = +many[0].n;
 [s, r] = await call(C, 'GET', '/api/feed'); ok('une page contient au plus 12 publications', r.posts.length === Math.min(12, n) && r.more === (n > 12), J([r.posts.length, r.more, n]));

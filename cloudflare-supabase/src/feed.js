@@ -10,7 +10,7 @@ export const FEED_TABLES = [
 ];
 
 export function installFeed(d) {
-  const { route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, isMaint } = d;
+  const { route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich } = d;
   const person = u => ({ id: u.id, name: u.name, av: u.av ?? null });
   const pid = v => { const n = Math.floor(+v); if (!Number.isFinite(n) || n < 1) bad('Publication inconnue', 404); return n; };
 
@@ -24,6 +24,9 @@ export function installFeed(d) {
     const more = rows.length > FEED.page, page = rows.slice(0, FEED.page);
     if (!page.length) return { posts: [], more: false };
     const ids = page.map(r => +r.id), ph = placeholders(ids.length), cardIds = [...new Set(page.map(r => +r.card_id))];
+    // les photos et textes des articles ne sont chargés qu'à la demande : on complète ici les cartes du fil qui n'ont pas encore leur photo (6 au plus par page, le reste au passage suivant)
+    const needs = async () => (await cardRows(env, cardIds)).filter(c => !c.image && !(+c.enriched >= 2)).map(c => c.id).slice(0, 6);
+    const todo = enrich ? await needs() : []; if (todo.length) await enrich(env, todo).catch(() => {});
     const [cards, likes, mine, counts, last] = await Promise.all([
       cardRows(env, cardIds),
       all(env, `SELECT post_id, COUNT(*) n FROM feed_likes WHERE post_id IN (${ph}) GROUP BY post_id`, ...ids),
