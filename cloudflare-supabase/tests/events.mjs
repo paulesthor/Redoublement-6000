@@ -20,14 +20,17 @@ console.log('— calendrier (pur calcul)');
 {
   const t0 = Date.parse('2026-10-12T00:00:00Z'), ev = eventsIn(SECRET, t0, t0 + 365 * DAY), by = k => ev.filter(e => e.kind === k && e.start >= t0 && e.start < t0 + 365 * DAY);
   ok('heures dorées : environ 38 % des jours (110 à 170 sur un an)', by('golden').length > 110 && by('golden').length < 170, by('golden').length);
-  ok('heures dorées : 1 h, entre 12 h et 22 h (heure de Paris), au quart d\'heure', by('golden').every(e => e.end - e.start === 3600000 && parisHour(e.start) >= 12 && parisHour(e.start) <= 21 && e.start % 900000 === 0));
+  ok('heures dorées : 1 h, entre 12 h et 22 h (heure de Paris), au quart d\'heure', by('golden').filter(e => e.id.split(':').length === 2).every(e => e.end - e.start === 3600000 && parisHour(e.start) >= 12 && parisHour(e.start) <= 21 && e.start % 900000 === 0));
   ok('week-ends shiny : un toutes les 3 semaines environ, du samedi 9 h au lundi 9 h (48 h)', by('shiny').length >= 16 && by('shiny').length <= 19 && by('shiny').every(e => Math.abs(e.end - e.start - 48 * 3600000) <= 3600000 && parisHour(e.start) === 9 && new Date(e.start).getUTCDay() === 6));
   ok('festival des catégories : jamais en même temps que le week-end shiny', !by('theme').some(a => by('shiny').some(b => a.start < b.end && b.start < a.end)) && by('theme').length >= 11);
   ok('albums éphémères : 7 jours, un toutes les 4 semaines', by('album').length >= 12 && by('album').length <= 14 && by('album').every(e => Math.abs(e.end - e.start - 7 * DAY) <= 3600000 && EVENT_ALBUMS.some(a => a.id === e.album)));
   ok('albums de saison : Halloween en octobre-novembre, Noël en décembre-janvier, été en juin-août', by('album').every(e => { const m = +e.day.slice(5, 7), a = EVENT_ALBUMS.find(x => x.id === e.album); return !a.months || a.months.includes(m); }));
   ok('objectifs collectifs : du samedi 10 h au lundi 10 h', by('goal').length >= 15 && by('goal').every(e => Math.abs(e.end - e.start - 48 * 3600000) <= 3600000 && parisHour(e.start) === 10));
   const wk = by('weekly'); ok('un défi par semaine, jamais le même deux semaines de suite', wk.length >= 52 && wk.every((e, i) => !i || e.weekly !== wk[i - 1].weekly));
-  ok('un seul défi de la semaine en cours à tout instant', [0, 1, 2, 3, 4, 5, 6].every(i => activeIn(eventsIn(SECRET, t0 + i * DAY, t0 + i * DAY + 1), t0 + i * DAY).filter(e => e.kind === 'weekly').length === 1));
+  { const t = parisTs('2026-10-24', 9, 30), g = activeIn(eventsIn(SECRET, t, t + 1), t).filter(e => e.kind === 'golden');
+  ok('heure dorée du 24/10 à 9 h 15 : active à 9 h 30, comme une heure dorée normale', g.length === 1 && g[0].end - g[0].start === 3600000 && modsFrom(g).legend === EV.goldenLegend, J(g));
+  const t2 = parisTs('2026-10-24', 10, 20); ok('terminée à 10 h 20', activeIn(eventsIn(SECRET, t2, t2 + 1), t2).filter(e => e.kind === 'golden').length === 0); }
+ok('un seul défi de la semaine en cours à tout instant', [0, 1, 2, 3, 4, 5, 6].every(i => activeIn(eventsIn(SECRET, t0 + i * DAY, t0 + i * DAY + 1), t0 + i * DAY).filter(e => e.kind === 'weekly').length === 1));
   ok('une carte recherchée par jour', activeIn(eventsIn(SECRET, T0, T0 + 1), T0).filter(e => e.kind === 'hunt').length === 1);
   const ss = ev.filter(e => e.kind === 'season'); ok('saisons de 14 jours qui s\'enchaînent, la première le 14 octobre (remise à zéro)', ss[0].start === parisTs(SEASON_ANCHOR) && ss.every((e, i) => !i || e.start === ss[i - 1].end) && ss.every(e => Math.abs(e.end - e.start - 14 * DAY) <= 3600000));
   ok('calendrier différent avec un autre secret, identique avec le même', J(eventsIn('autre', t0, t0 + 90 * DAY).map(e => e.id)) !== J(eventsIn(SECRET, t0, t0 + 90 * DAY).map(e => e.id)) && J(eventsIn(SECRET, t0, t0 + 90 * DAY)) === J(eventsIn(SECRET, t0, t0 + 90 * DAY)));

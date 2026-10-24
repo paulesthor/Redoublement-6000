@@ -57,6 +57,8 @@ const dowOf = ds => new Date(ds + 'T12:00:00Z').getUTCDay();
 const fmtParis = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 const parisOff = ts => { const p = Object.fromEntries(fmtParis.formatToParts(new Date(ts)).map(x => [x.type, x.value])); return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(ts / 1000) * 1000; };
 /** Instant (ms) de « jour » à h:m heure de Paris. */
+/** Heures dorées supplémentaires (jour, heure, minute à Paris) : elles se comportent exactement comme celles tirées au sort (même annonce, mêmes effets). */
+export const EXTRA_GOLDEN = [['2026-10-24', 9, 15]];
 export const parisTs = (ds, h = 0, m = 0) => { const [y, mo, d] = ds.split('-').map(Number), base = Date.UTC(y, mo - 1, d, h, m); return base - parisOff(base - parisOff(base)); };
 export const dayOfTs = t => { const p = Object.fromEntries(fmtParis.formatToParts(new Date(t)).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}`; };
 const A0 = dnum(WEEK_ANCHOR), S0 = dnum(SEASON_ANCHOR);
@@ -96,6 +98,7 @@ export function eventsIn(secret, t0, t1) {
       push({ id: 'weekly:' + ds, kind: 'weekly', start: parisTs(ds, 0, 0), end: parisTs(dstr(n + 7), 0, 0), day: ds, weekly: w.id });
     }
   }
+  for (const [ds, h, m] of EXTRA_GOLDEN) { const start = parisTs(ds, h, m); push({ id: 'golden:' + ds + ':' + h + m, kind: 'golden', start, end: start + HOUR }); }
   const w0 = Math.floor((a - A0) / 7) - 1, w1 = Math.floor((b - A0) / 7) + 1;
   const shinyWeek = wk => { const blk = Math.floor(wk / 3); return wk === blk * 3 + H(secret, 'shiny', blk) % 3; };
   const rawTheme = wk => { const blk = Math.floor((wk + 1) / 4); return wk === blk * 4 - 1 + H(secret, 'theme', blk) % 4; };
