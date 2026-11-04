@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS trades (
   from_id BIGINT NOT NULL REFERENCES users(id),
   to_id BIGINT NOT NULL REFERENCES users(id),
   offer_card BIGINT NOT NULL REFERENCES cards(id),
-  want_card BIGINT NOT NULL REFERENCES cards(id),
+  want_card BIGINT REFERENCES cards(id),          -- vide pour une vente directe (carte contre pièces)
+  price BIGINT,                                   -- prix en pièces d'une vente directe
   status TEXT NOT NULL DEFAULT 'pending',
   created BIGINT NOT NULL
 );

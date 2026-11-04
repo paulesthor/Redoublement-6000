@@ -1346,11 +1346,11 @@ route('POST', '/api/auctions/:id/bid', async ({ env, ctx, user, params, body }) 
   return { ok: true };
 });
 
-route('GET', '/api/trades', async ({ env, user }) => ({
+route('GET', '/api/trades', async ({ env, user }) => (await ensureGameSchema(env), {
   trades: await all(env, `SELECT t.id, t.status, t.from_id, t.to_id, f.name from_name, o.name to_name,
-    c1.id offer_id, c1.title offer_title, c1.rarity offer_rarity, c2.id want_id, c2.title want_title, c2.rarity want_rarity
+    t.price, c1.id offer_id, c1.title offer_title, c1.rarity offer_rarity, c2.id want_id, c2.title want_title, c2.rarity want_rarity
     FROM trades t JOIN users f ON f.id = t.from_id JOIN users o ON o.id = t.to_id
-    JOIN cards c1 ON c1.id = t.offer_card JOIN cards c2 ON c2.id = t.want_card
+    JOIN cards c1 ON c1.id = t.offer_card LEFT JOIN cards c2 ON c2.id = t.want_card
     WHERE t.status = 'pending' AND (t.from_id = ? OR t.to_id = ?) ORDER BY t.id DESC`, user.id, user.id),
 }));
 // Recherche d'une carte à demander : parmi les cartes déjà connues du jeu (tirées au moins une fois)
@@ -1365,14 +1365,20 @@ route('GET', '/api/cards/search', async ({ env, query }) => {
   const like = q.toLowerCase().replace(/[\\%_]/g, '\\$&') + '%';          // début du titre, sans tenir compte des majuscules (l'index cards_title sert ce type de recherche)
   return { cards: await all(env, `SELECT id, title, rarity, shiny FROM cards WHERE shiny = 0 AND lower(title) LIKE ? ORDER BY views DESC LIMIT 15`, like) };
 });
+const TRADE_MAX_PRICE = 1000000;
 route('POST', '/api/trades', async ({ env, ctx, user, body }) => {
   const to = +body.to;
   if (to === user.id || !(await one(env, 'SELECT 1 FROM users WHERE id = ?', to))) bad('Destinataire invalide');
   if (!(await one(env, 'SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?', user.id, +body.offer_card))) bad('Tu ne possèdes pas la carte proposée');
-  if (!(await one(env, 'SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?', to, +body.want_card))) bad('Ce joueur ne possède pas la carte demandée');
-  await run(env, 'INSERT INTO trades (from_id, to_id, offer_card, want_card, created) VALUES (?,?,?,?,?)', user.id, to, +body.offer_card, +body.want_card, now());
+  await ensureGameSchema(env);
+  const price = Math.floor(+body.price) || 0, sale = price > 0 && !body.want_card;                       // vente directe : une carte contre des pièces, à un joueur précis
+  if (body.price !== undefined && body.price !== null && body.price !== '' && !sale && !body.want_card) bad(`Prix invalide (entre 1 et ${TRADE_MAX_PRICE} pièces)`);
+  if (sale && (price < 1 || price > TRADE_MAX_PRICE)) bad(`Prix invalide (entre 1 et ${TRADE_MAX_PRICE} pièces)`);
+  if (!sale && !(await one(env, 'SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?', to, +body.want_card))) bad('Ce joueur ne possède pas la carte demandée');
+  await run(env, 'INSERT INTO trades (from_id, to_id, offer_card, want_card, price, created) VALUES (?,?,?,?,?,?)', user.id, to, +body.offer_card, sale ? null : +body.want_card, sale ? price : null, now());
   bq(env, ctx, user.id, { trade_propose: 1 });
-  notify(env, ctx, { t: 'notify', msg: `${user.name} te propose un échange !` }, to);
+  if (sale) { const c = await one(env, 'SELECT title FROM cards WHERE id = ?', +body.offer_card); notify(env, ctx, { t: 'notify', msg: `${user.name} te propose « ${c?.title ?? 'une carte'} » pour ${price} pièces` }, to); }
+  else notify(env, ctx, { t: 'notify', msg: `${user.name} te propose un échange !` }, to);
   notify(env, ctx, { t: 'refresh', what: 'trades' }, to);
   return { ok: true };
 });
@@ -1384,6 +1390,21 @@ route('POST', '/api/trades/:id/:action', async ({ env, ctx, user, params }) => {
   else if (params.action === 'decline') { if (t.to_id !== user.id) bad('Interdit', 403); await setStatus('declined'); }
   else if (params.action === 'accept') {
     if (t.to_id !== user.id) bad('Interdit', 403);
+    if (t.price > 0 && !t.want_card) {                                                         // vente directe : le joueur paie, reçoit la carte, le vendeur reçoit les pièces
+      const end = await sanctions.check(env, user);
+      if (end) bad('Tes dépenses sont suspendues : tu ne peux pas acheter pour le moment.', 403);
+      if (!(await setStatus('done')).meta.changes) bad('Échange introuvable', 404);
+      const revert = () => run(env, "UPDATE trades SET status = 'pending' WHERE id = ?", t.id);
+      const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', t.price, user.id, t.price);
+      if (!paid.meta.changes) { await revert(); bad(`Pas assez de pièces (${t.price} requises)`); }
+      const took = await run(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty > 0', t.from_id, t.offer_card);
+      if (!took.meta.changes) { await env.DB.batch([st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', t.price, user.id), st(env, "UPDATE trades SET status = 'pending' WHERE id = ?", t.id)]); bad("Le vendeur n'a plus cette carte"); }
+      await env.DB.batch([st(env, 'DELETE FROM inventory WHERE qty <= 0'), addCard(env, user.id, t.offer_card), st(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', t.price, t.from_id)]);
+      bq(env, ctx, t.to_id, { trade_done: 1 }); bq(env, ctx, t.from_id, { trade_done: 1 });
+      notify(env, ctx, { t: 'refresh', what: 'trades' }, t.from_id);
+      notify(env, ctx, { t: 'notify', msg: `Vente conclue : ${user.name} t'a acheté ta carte pour ${t.price} pièces.` }, t.from_id);
+      return { ok: true };
+    }
     if (!(await setStatus('done')).meta.changes) bad('Échange introuvable', 404);
     const take = (uid, cid) => run(env, 'UPDATE inventory SET qty = qty - 1 WHERE user_id = ? AND card_id = ? AND qty > 0', uid, cid);
     if (!(await take(t.from_id, t.offer_card)).meta.changes) { await run(env, "UPDATE trades SET status = 'pending' WHERE id = ?", t.id); bad("L'un de vous n'a plus la carte concernée"); }
