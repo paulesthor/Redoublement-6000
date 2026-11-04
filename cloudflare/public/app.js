@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '8.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '9.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -758,31 +758,43 @@ const views = {
   async trades(v) {
     const [{ trades }, { users }] = await Promise.all([api('/trades'), api('/users')]);
     const others = users.filter(u => !u.me);
-    let give = null, want = null;
+    let give = null, want = null, mode = 'swap';
     const slot = (c, label) => `<small>${label}</small>` + (c ? `<div class="tpick ${c.rarity}" style="--c:var(--${c.shiny ? 'shiny' : c.rarity})"><div class="pimg ${c.image ? '' : 'noimg'}" ${c.image ? `style="background-image:url('${esc(c.image)}')"` : ''}><span class="chip">${ABBR[c.rarity]}</span></div><b>${esc(c.title)}</b></div><em>Changer</em>` : '<span class="plus">+</span><em>Choisir une carte</em>');
-    v.innerHTML = `${pageHead('Marché', 'Échange des cartes avec un joueur')}${seg(MARKET_SEG, 'trades')}
-      <div class="panel"><h3>Proposer un échange</h3>${others.length ? `<div class="tform">
+    const what = t => t.price > 0 && !t.want_id ? `<b style="color:var(--fg)">${esc(t.offer_title)}</b> pour <b style="color:var(--fg)">${fmt(t.price)} pièces</b>` : `<b style="color:var(--fg)">${esc(t.offer_title)}</b> contre <b style="color:var(--fg)">${esc(t.want_title)}</b>`;
+    v.innerHTML = `${pageHead('Marché', 'Échange ou vends des cartes à un joueur')}${seg(MARKET_SEG, 'trades')}
+      <div class="panel"><h3>Proposer à un joueur</h3>${others.length ? `<div class="seg" id="t-mode"><button data-m="swap" class="on">Carte contre carte</button><button data-m="sale">Vendre contre des pièces</button></div><div class="tform">
         <select id="t-to" aria-label="Joueur">${others.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>
-        <div class="tslots"><button class="tslot" id="t-offs"></button><div class="tarrow" aria-hidden="true">⇄</div><button class="tslot" id="t-wants"></button></div>
+        <div class="tslots"><button class="tslot" id="t-offs"></button><div class="tarrow" aria-hidden="true" id="t-arrow">⇄</div><button class="tslot" id="t-wants"></button><label class="fld tprice" id="t-pricebox" hidden>Prix demandé (pièces)<input id="t-price" type="number" inputmode="numeric" min="1" max="1000000" placeholder="Ex. 500"></label></div>
         <button id="t-go" disabled>Proposer l'échange</button></div>` : '<p class="mut">Aucun autre joueur pour le moment.</p>'}</div>
       ` + (trades.length ? `<h3 class="sec">En attente</h3><div class="list">${trades.map(t => {
-        const mine = t.from_id === me.id;
-        return `<div class="item tap" data-pl="${mine ? t.to_id : t.from_id}">${avatar(mine ? t.to_name : t.from_name)}<div class="grow"><div class="nm">${mine ? 'Toi' : esc(t.from_name)} → ${mine ? esc(t.to_name) : 'toi'}</div>
-          <div class="sub"><span><b style="color:var(--fg)">${esc(t.offer_title)}</b> contre <b style="color:var(--fg)">${esc(t.want_title)}</b></span></div></div>
-          <div class="acts">${mine ? `<button class="plain" data-a="cancel" data-id="${t.id}">Annuler</button>` : `<button data-a="accept" data-id="${t.id}">Accepter</button><button class="plain" data-a="decline" data-id="${t.id}">Refuser</button>`}</div></div>`;
+        const mine = t.from_id === me.id, sale = t.price > 0 && !t.want_id;
+        return `<div class="item tap" data-pl="${mine ? t.to_id : t.from_id}">${avatar(mine ? t.to_name : t.from_name)}<div class="grow"><div class="nm">${mine ? 'Toi' : esc(t.from_name)} → ${mine ? esc(t.to_name) : 'toi'}${sale ? ' <span class="mut">· vente</span>' : ''}</div>
+          <div class="sub"><span>${what(t)}</span></div></div>
+          <div class="acts">${mine ? `<button class="plain" data-a="cancel" data-id="${t.id}">Annuler</button>` : `<button data-a="accept" data-id="${t.id}">${sale ? `Acheter (${fmt(t.price)})` : 'Accepter'}</button><button class="plain" data-a="decline" data-id="${t.id}">Refuser</button>`}</div></div>`;
       }).join('')}</div>` : '<div class="empty">Aucun échange en attente.</div>');
     bindSeg(v); bindPlayers(v);
     if (others.length) {
-      const paint = () => { $('#t-offs').innerHTML = slot(give, 'Tu donnes'); $('#t-wants').innerHTML = slot(want, 'Tu veux'); $('#t-go').disabled = !(give && want); };
+      const paint = () => {
+        const sale = mode === 'sale';
+        $('#t-offs').innerHTML = slot(give, sale ? 'Tu vends' : 'Tu donnes'); $('#t-wants').innerHTML = slot(want, 'Tu veux');
+        $('#t-wants').hidden = sale; $('#t-pricebox').hidden = !sale; $('#t-arrow').textContent = sale ? '→' : '⇄';
+        $('#t-go').textContent = sale ? 'Proposer la vente' : 'Proposer l\'échange';
+        const price = Math.floor(+$('#t-price').value) || 0;
+        $('#t-go').disabled = sale ? !(give && price >= 1) : !(give && want);
+      };
       paint();
+      $('#t-mode').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; $('#t-mode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); paint(); };
+      $('#t-price').oninput = paint;
       $('#t-to').onchange = () => { want = null; paint(); };
-      $('#t-offs').onclick = async () => { const c = await cardPicker('Quelle carte donnes-tu ?'); if (c) { give = c; paint(); } };
+      $('#t-offs').onclick = async () => { const c = await cardPicker(mode === 'sale' ? 'Quelle carte vends-tu ?' : 'Quelle carte donnes-tu ?'); if (c) { give = c; paint(); } };
       $('#t-wants').onclick = safe(async () => {
         const id = +$('#t-to').value, name = others.find(u => u.id === id).name;
         const c = await cardPicker(`Quelle carte veux-tu à ${name} ?`, { user: id }); if (c) { want = c; paint(); }
       });
       $('#t-go').onclick = safe(async () => {
-        await api('/trades', { to: $('#t-to').value, offer_card: give.id, want_card: want.id }); toast('Proposition envoyée'); render();
+        if (mode === 'sale') { await api('/trades', { to: $('#t-to').value, offer_card: give.id, price: Math.floor(+$('#t-price').value) }); toast('Offre de vente envoyée'); }
+        else { await api('/trades', { to: $('#t-to').value, offer_card: give.id, want_card: want.id }); toast('Proposition envoyée'); }
+        render();
       });
     }
     v.querySelectorAll('[data-a]').forEach(b => b.onclick = safe(async () => { await api(`/trades/${b.dataset.id}/${b.dataset.a}`, {}); await refreshMe(); render(); }));
