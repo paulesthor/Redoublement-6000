@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '9.9';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.0';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -412,6 +412,11 @@ async function fillMissing(r) {
 // ---------- vues ----------
 
 const GROUP = { gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+/** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
+const ussrOn = () => { try { return !!me?.admin && localStorage.getItem('wm_ussr') === '1'; } catch { return false; } };
+const loadUssr = () => window.ussrPackStage ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ussrpack.js?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error('ussrpack')); document.head.append(s); });
+const ussrOpts = () => ussrOn() && window.ussrPackStage ? { ussr: true, stage: window.ussrPackStage, shape: (() => { try { return localStorage.getItem('wm_ussr_shape') || 'auto'; } catch { return 'auto'; } })() } : {};
+const ussrLabels = () => ussrOn() && window.USSR_GRADES ? window.USSR_GRADES : RAR;
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -510,6 +515,7 @@ const views = {
     if (lastPack) show(lastPack);
     // ouverture animée : les cartes arrivent une par une, de la moins rare à la plus rare
     const openAnimated = path => safe(async () => {
+      if (ussrOn()) await loadUssr().catch(() => {});
       $('#open').disabled = $('#buy').disabled = true; $('#open').textContent = 'Ouverture…';
       // la requête part tout de suite et le paquet se déchire pendant ce temps : le chargement est masqué par l'animation
       const cardsPromise = (async () => {
@@ -523,7 +529,7 @@ const views = {
       })();
       cardsPromise.catch(() => {});
       let again;
-      try { again = await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg, again: () => path === '/packs/open' ? { ok: me.test || me.packs > 0, label: me.test ? 'Ouvrir un autre paquet' : `Ouvrir un autre paquet (${me.packs})` } : { ok: me.coins >= cfg.packPrice, label: `Acheter un autre (${cfg.packPrice})` } }); }
+      try { again = await playReveal(cardsPromise, { ...ussrOpts(), labels: ussrLabels(), rank: RANK, fmt, cardHtml, noimg, again: () => path === '/packs/open' ? { ok: me.test || me.packs > 0, label: me.test ? 'Ouvrir un autre paquet' : `Ouvrir un autre paquet (${me.packs})` } : { ok: me.coins >= cfg.packPrice, label: `Acheter un autre (${cfg.packPrice})` } }); }
       finally { await render(); }
       if (again === 'again') setTimeout(() => $(path === '/packs/open' ? '#open' : '#buy')?.click(), 60);   // on enchaîne sans repasser par l'accueil
     });
@@ -1774,6 +1780,16 @@ const THEME_LIST = [['urss', 'Camarade', '#2a0f14', '#f4d56b', 'Rouge soviétiqu
   ['violet', 'Violet', '#171027', '#d2b4ff', 'Mauve nocturne'], ['light', 'Clair', '#f2f1ee', '#222', 'Fond blanc'], ['beige', 'Beige', '#efe6d3', '#6b5a3a', 'Papier chaleureux'], ['auto', 'Automatique', 'linear-gradient(135deg,#07070b 50%,#f2f1ee 50%)', '#888', 'Suit ton téléphone']];
 const pref = (k, d = '') => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } window.applyPrefs?.(); };
+/** Aperçu admin : joue l'ouverture « URSS » avec de fausses cartes (aucun paquet consommé). best : 'rare' | 'ultra' | 'legendary'. */
+async function previewUssr(best) {
+  await loadUssr();
+  const T = ['Moscou', 'Joseph Staline', 'Léon Tolstoï', 'Vodka', 'Samovar', 'Kremlin', 'Youri Gagarine', 'Vladimir Lénine', 'Borchtch', 'Transsibérien', 'Saint-Pétersbourg'];
+  const mk = (i, rarity) => ({ id: 9100000 + i * 37, title: T[i % T.length], rarity, shiny: false, isNew: i % 3 === 0, extract: 'Aperçu de l\'ouverture URSS : cette carte est factice.', atk: 1000 + i * 400, def: 900 + i * 300, image: null });
+  const list = [...['common', 'common', 'common', 'common', 'common', 'uncommon', 'uncommon', 'rare', 'super'].map((r, i) => mk(i, r)), mk(9, best)];
+  const stage = window.ussrPackStage, prevOn = localStorage.getItem('wm_ussr'); localStorage.setItem('wm_ussr', '1');
+  try { await playReveal(Promise.resolve(list), { ussr: true, stage, shape: localStorage.getItem('wm_ussr_shape') || 'auto', labels: window.USSR_GRADES, rank: RANK, fmt, cardHtml, noimg, again: () => ({ ok: false, label: '' }) }); }
+  finally { if (prevOn === null) localStorage.removeItem('wm_ussr'); else localStorage.setItem('wm_ussr', prevOn); }
+}
 views.settings = async v => {
   const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = (await api('/camp').catch(() => null))?.perks || [];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
@@ -1785,11 +1801,17 @@ views.settings = async v => {
       ${sw('st-vib', 'Vibrations', 'Combats, ouvertures, récompenses', pref('wm_vibe', '1') !== '0')}
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
+    ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
+      <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div></div></div>` : ''}
     <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
     <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
   $('#tx-seg').onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); $('#tx-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+  $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
+  $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
+  v.querySelectorAll('[data-ussr-test]').forEach(b => b.onclick = safe(async () => { await previewUssr(b.dataset.ussrTest); render(); }));
   $('#st-snd').onchange = e => setPref('wm_sound', e.target.checked ? '1' : '0');
   $('#st-vib').onchange = e => { setPref('wm_vibe', e.target.checked ? '1' : '0'); if (e.target.checked) { toast('Vibrations activées (rechargement conseillé)'); try { navigator.vibrate?.(40); } catch { /* non supporté */ } } };
   $('#st-mot').onchange = e => setPref('wm_motion', e.target.checked ? '1' : '0');
@@ -1934,6 +1956,7 @@ async function tenFlow(path, body, again) {
   finally { await render(); }
 }
 async function openThemed(id, themePrice = 150) {
+  if (ussrOn()) await loadUssr().catch(() => {});
   const cardsPromise = (async () => {
     const r = await api('/themepacks/buy', { theme: id });
     schedulePrefetch();
@@ -1943,7 +1966,7 @@ async function openThemed(id, themePrice = 150) {
   })();
   cardsPromise.catch(() => {});
   let again;
-  try { again = await playReveal(cardsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, noimg, again: () => ({ ok: me.coins >= themePrice, label: `Racheter un paquet (${themePrice})` }) }); } finally { await render(); }
+  try { again = await playReveal(cardsPromise, { ...ussrOpts(), labels: ussrLabels(), rank: RANK, fmt, cardHtml, noimg, again: () => ({ ok: me.coins >= themePrice, label: `Racheter un paquet (${themePrice})` }) }); } finally { await render(); }
   if (again === 'again') setTimeout(() => safe(() => openThemed(id, themePrice))(), 60);
 }
 views.themepacks = async v => {

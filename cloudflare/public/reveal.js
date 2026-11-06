@@ -163,7 +163,7 @@
     let cards;
     try {
       if (reduceNow()) { cards = await dataP; }
-      else cards = await window.packStage(root, { dataP, rank: o.rank, buzz, preload });
+      else cards = await (o.stage || window.packStage)(root, { dataP, rank: o.rank, buzz, preload, shape: o.shape });
     } catch (e) {                                                    // erreur serveur : on referme proprement
       root.remove(); document.body.classList.remove('noscroll');
       throw e;
@@ -189,7 +189,7 @@
       i = n; locked = true; dx = 0;
       const c = seq[n], legend = c.rarity === 'legendary', ultra = c.rarity === 'ultra', last = n === N - 1;
       if (c._ready) await Promise.race([c._ready, sleep(1800)]);          // photo de cette carte : on l'attend un instant, sans bloquer
-      root.className = `r-${c.rarity} ${c.shiny ? 'shiny' : ''} ${cards.god ? 'god' : ''}`;
+      root.className = `r-${c.rarity} ${c.shiny ? 'shiny' : ''} ${cards.god ? 'god' : ''} ${o.ussr ? 'ussr' : ''}`;
       if (c._ready) c._ready.then(() => {                                  // la photo arrive pendant qu'on regarde la carte : on la glisse en place
         if (i !== n) return;
         const ph = root.querySelector('.ph.noimg'), ds = root.querySelector('.ds');
@@ -210,6 +210,7 @@
           <div class="dots">${seq.map((s, k) => `<i class="${k === n ? 'on' : k < n ? 'seen' : ''}" ${k === n ? '' : `style="--dc:var(--${s.rarity})"`}></i>`).join('')}</div>
           <button class="plain arrow nxt" ${last ? 'disabled' : ''} aria-label="Suivante">›</button></div>
           <button class="next">${last ? 'Continuer' : `Encore ${N - 1 - n} carte${N - 1 - n > 1 ? 's' : ''}`}</button></div>`;
+      if (o.ussr) root.querySelector('.rc')?.insertAdjacentHTML('beforeend', `<div class="ussr-stamp"><b>ПРИНЯТО</b><small>№ ${String(c.id % 1000000).padStart(6, '0')} · ${esc(o.labels[c.rarity])}</small></div>`);
       root.querySelector('.skip').onclick = summary;
       root.querySelector('.next').onclick = next;
       root.querySelector('.nxt').onclick = next;
@@ -229,8 +230,8 @@
     async function walkout(c) {
       const w = document.createElement('div');
       w.className = 'walk';
-      w.innerHTML = `<div class="streak"></div><div class="streak s2"></div><div class="wt">${c.shiny ? 'SHINY' : 'LÉGENDAIRE'}</div>
-        <div class="wsub">${c.shiny ? 'LÉGENDAIRE' : ''}</div><div class="wflash"></div>`;
+      w.innerHTML = `<div class="streak"></div><div class="streak s2"></div><div class="wt">${c.shiny ? 'SHINY' : o.ussr ? 'MARÉCHAL' : 'LÉGENDAIRE'}</div>
+        <div class="wsub">${c.shiny ? (o.ussr ? 'MARÉCHAL' : 'LÉGENDAIRE') : o.ussr ? 'Hero du Plan' : ''}</div><div class="wflash"></div>`;
       root.append(w);
       buzz([30, 60, 30]);
       await sleep(2300);
