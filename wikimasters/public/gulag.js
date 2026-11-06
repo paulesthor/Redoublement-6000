@@ -1,4 +1,6 @@
 // Démo : « Directeur du Camp » — jeu de gestion incrémental, satire de la bureaucratie soviétique (humour noir de pacotille, sans cruauté montrée).
+/** Rythme : cibles de production de chaque plan, calibrées pour qu'un joueur régulier (10 min toutes les 40 min) finisse les 6 plans en ~3 jours. */
+export const PLAN_TARGETS = [1e10, 9.4e11, 4.7e13, 1e16, 4.6e17, 4.6e19];
 const SAVE_KEY = 'wm_gulag_demo_v1', OFFLINE_MAX = 2 * 3600, GROWTH = 1.15;
 const GRADES = ['Contremaître stagiaire', 'Chef de brigade', 'Directeur adjoint', 'Directeur du camp', 'Commissaire du peuple', 'Héros du Travail Socialiste'];
 
@@ -56,11 +58,13 @@ const fmt = n => { n = Math.floor(n); if (n < 10000) return String(n).replace(/\
 const fx = n => n < 10 ? n.toFixed(1).replace('.', ',') : fmt(n);
 const pick = a => a[(Math.random() * a.length) | 0];
 
+export const _DATA = { ALL, STAFF, GROWTH };
 export function startGulag(host, opts = {}) {
   const fresh = () => ({ r: 0, produced: 0, plan: 0, planProd: 0, own: Object.fromEntries(ALL.map(w => [w.id, 0])), mgr: {}, staff: {}, favor: 55, risk: 10, cd: 0, nextEv: 50, t: Date.now(), history: [] });
   let S; try { S = { ...fresh(), ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; } catch { S = fresh(); }
   S.own = { ...fresh().own, ...S.own }; S.plan = S.plan || 0;
-  const planTarget = n => 25000 * Math.pow(7, n);
+  const planTarget = n => PLAN_TARGETS[n] ?? PLAN_TARGETS[PLAN_TARGETS.length - 1] * Math.pow(80, n - PLAN_TARGETS.length + 1);
+  const planFrac = () => Math.min(1, Math.log10(1 + S.planProd) / Math.log10(planTarget(S.plan)));   // barre à l'échelle logarithmique : elle avance régulièrement même quand la production explose
   const permMult = () => 1 + 0.25 * S.plan;
   const mult = () => permMult() * (S.staff.prof ? 1.25 : 1);
   const wIncome = w => w.inc * S.own[w.id] * (S.mgr[w.id] ? 2 : 1);
@@ -68,7 +72,9 @@ export function startGulag(host, opts = {}) {
   const cost = w => Math.ceil(w.base * Math.pow(GROWTH, S.own[w.id]));
   const campScore = () => ALL.reduce((t, w) => t + (S.own[w.id] || 0) + (S.mgr[w.id] ? 2 : 0), 0) + Object.keys(S.staff).length * 4 + 25 * S.plan;
   let camp = null, sceneMod = null;
-  const syncScene = () => { if (!camp || !sceneMod) return; const st = sceneMod.stageOf(campScore()); camp.sync({ stage: st, plan: S.plan }); $('gl-region').textContent = REGION_NAMES[S.plan % REGION_NAMES.length]; $('gl-stage').textContent = `Étape ${st + 1}/8 — ${sceneMod.STAGES[st]}`; };
+  const STAGE_AT_P = [0, 0.03, 0.09, 0.18, 0.30, 0.45, 0.65, 0.85];
+  const stageNow = () => { const P = (S.plan + planFrac()) / PLAN_TARGETS.length; let st = 0; STAGE_AT_P.forEach((t, i) => { if (P >= t) st = i; }); return st; };
+  const syncScene = () => { if (!camp || !sceneMod) return; const st = stageNow(); camp.sync({ stage: st, plan: S.plan }); $('gl-region').textContent = REGION_NAMES[S.plan % REGION_NAMES.length]; $('gl-stage').textContent = `Étape ${st + 1}/8 — ${sceneMod.STAGES[st]}`; };
   const saveNow = () => { try { S.t = Date.now(); localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch { /* stockage indisponible */ } };
 
   host.innerHTML = `<div class="gl"><header class="gl-top"><div class="gl-head"><button class="gl-exit" id="gl-exit">Quitter</button><div class="gl-title"><small id="gl-region">Camp n° 7</small><b>Directeur du Camp</b></div><div class="gl-grade" id="gl-grade"></div></div></header>
@@ -87,13 +93,13 @@ export function startGulag(host, opts = {}) {
       return `<section class="gl-card" data-w="${w.id}"><div class="gl-ico">${icon(w.icon)}</div><div class="gl-info"><h3>${w.name}</h3><p>${w.desc}</p><div class="gl-stats"><span>Niveau <b>${n}</b></span><span>${inc ? '+' + fx(inc) + ' / s' : 'à bâtir'}</span>${m ? '<span class="ok">cadre en poste</span>' : ''}</div>
         <div class="gl-btns"><button data-buy="${w.id}">${n ? 'Améliorer' : 'Bâtir'} · ${fmt(c)}</button>${!m && n ? `<button class="alt" data-mgr="${w.id}" title="${w.mgr[1]}">${w.mgr[0]} · ${fmt(w.mgr[2])}</button>` : ''}</div>${m ? `<p class="gl-mgr">${w.mgr[0]} : ${w.mgr[1]}</p>` : ''}</div></section>`; }).join('') + (S.plan < 5 ? `<section class="gl-card gl-locked"><div class="gl-info"><h3>Prochain plan : ${REGION_NAMES[S.plan + 1]}</h3><p>${ALL.filter(w => w.plan === S.plan + 1).map(w => w.name).join(' · ')}</p><p class="gl-mgr">Accomplissez le plan n° ${S.plan + 1} pour transférer votre camp et débloquer ces ateliers.</p></div></section>` : '');
     else if (tab === 's') b.innerHTML = STAFF.map(p => `<section class="gl-card"><div class="gl-info"><h3>${p.name}</h3><p>${p.text}</p><div class="gl-btns">${S.staff[p.id] ? '<span class="ok">en poste (et il le sait)</span>' : `<button data-staff="${p.id}">Recruter · ${fmt(p.cost)}</button>`}</div></div></section>`).join('');
-    else b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Journal du camp</h3>${S.history.length ? S.history.map(h => `<p class="gl-log">${h}</p>`).join('') : '<p>Rien à signaler. Ce qui est, évidemment, très suspect.</p>'}</div></section><section class="gl-card"><div class="gl-info"><h3>Règles du Politburo</h3><p>Remplis le plan quinquennal avant que la faveur tombe à zéro. Ne laisse pas le risque d'inspection atteindre 100 %. Les rapports falsifiés aident beaucoup, jusqu'à ce qu'ils n'aident plus.</p></div></section>`;
+    else b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Journal du camp</h3>${S.history.length ? S.history.map(h => `<p class="gl-log">${h}</p>`).join('') : '<p>Rien à signaler. Ce qui est, évidemment, très suspect.</p>'}</div></section><section class="gl-card"><div class="gl-info"><h3>Règles du Politburo</h3><p class="gl-mgr">Rythme prévu : environ 3 jours pour accomplir les 6 plans en jouant 10 minutes toutes les 40 minutes.</p><div class="gl-btns"><button class="alt" data-reset>Recommencer la démo à zéro</button></div><p>Remplis le plan quinquennal avant que la faveur tombe à zéro. Ne laisse pas le risque d'inspection atteindre 100 %. Les rapports falsifiés aident beaucoup, jusqu'à ce qu'ils n'aident plus.</p></div></section>`;
     refresh(); syncScene();
   }
   function refresh() {
     const inc = income();
     $('gl-r').textContent = fmt(S.r); $('gl-ps').textContent = '+' + fx(inc) + ' / s'; $('gl-grade').textContent = GRADES[Math.min(GRADES.length - 1, S.plan)];
-    const tgt = planTarget(S.plan), p = Math.min(1, S.planProd / tgt); $('gl-plan').textContent = `n° ${S.plan + 1} — ${Math.floor(p * 100)} %`; $('gl-planbar').style.width = p * 100 + '%';
+    const p = planFrac(); $('gl-plan').textContent = `n° ${S.plan + 1} — ${Math.floor(p * 100)} %`; $('gl-planbar').style.width = p * 100 + '%';
     $('gl-fav').style.width = Math.max(0, Math.min(100, S.favor)) + '%'; $('gl-risk').style.width = Math.max(0, Math.min(100, S.risk)) + '%';
     $('gl-fake').disabled = S.cd > 0 || eventOpen; $('gl-fake').textContent = S.cd > 0 ? `Falsifier le rapport (${Math.ceil(S.cd)} s)` : 'Falsifier le rapport';
     const bribe = Math.ceil(inc * 90 + 150); $('gl-bribe').textContent = `Pot-de-vin · ${fmt(bribe)}`; $('gl-bribe').disabled = S.r < bribe || S.risk < 5 || eventOpen;
@@ -124,8 +130,9 @@ export function startGulag(host, opts = {}) {
   }
   function planDone() {
     const next = S.plan + 1, region = REGION_NAMES[next % REGION_NAMES.length], news = ALL.filter(w => w.plan === next).map(w => w.name);
-    const m = popup(`<div class="gl-event"><div class="gl-stamp ok">PLAN ACCOMPLI</div><h2>Plan quinquennal n° ${S.plan + 1} rempli</h2><p>Terminé en quatre ans et onze mois, à ce que dit le rapport. Le Parti vous décore et transfère votre camp : <b>${region}</b>. Rien n'est perdu, tout est « réaffecté ».</p><p>Production +25 % pour toujours. Nouveau grade : <b>${GRADES[Math.min(GRADES.length - 1, next)]}</b>.${news.length ? ` Nouveaux ateliers : ${news.join(', ')}.` : ''}</p><button data-close>En route pour le plan n° ${next + 1} !</button></div>`);
+    const m = popup(`<div class="gl-event"><div class="gl-stamp ok">PLAN ACCOMPLI</div><h2>Plan quinquennal n° ${S.plan + 1} rempli</h2><p>Terminé en quatre ans et onze mois, à ce que dit le rapport. Le Parti vous décore et transfère votre camp : <b>${region}</b>. Rien n'est perdu, tout est « réaffecté ».</p><p>Production +25 % pour toujours. Nouveau grade : <b>${GRADES[Math.min(GRADES.length - 1, next)]}</b>.${news.length ? ` Nouveaux ateliers : ${news.join(', ')}.` : ''}</p><button data-close>${next >= PLAN_TARGETS.length ? 'Continuer à produire (sans fin, camarade)' : `En route pour le plan n° ${next + 1} !`}</button></div>`);
     camp?.celebrate();
+    if (next >= PLAN_TARGETS.length) m.querySelector('.gl-stamp').textContent = 'ÉDITION TERMINÉE';
     m.querySelector('[data-close]').addEventListener('click', () => { S.plan = next; S.planProd = 0; S.favor = Math.min(100, S.favor + 15); S.risk = Math.max(0, S.risk - 20); log(`Plan n° ${next} accompli. Le camp est transféré : ${region}. Médaille reçue, et aussitôt reprise pour inventaire.`); saveNow(); renderBody(); });
   }
 
@@ -133,6 +140,7 @@ export function startGulag(host, opts = {}) {
   host.addEventListener('click', e => {
     const t = e.target.closest('button'); if (!t || eventOpen) return;
     if (t.id === 'gl-exit') return opts.onExit?.();
+    if (t.dataset.reset !== undefined) { if (t.dataset.sure) { S = fresh(); saveNow(); tab = 'w'; host.querySelectorAll('#gl-tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === 'w')); renderBody(); return; } t.dataset.sure = '1'; t.textContent = 'Sûr ? Tout sera perdu (rappuyer pour confirmer)'; return; }
     if (t.dataset.k) { tab = t.dataset.k; host.querySelectorAll('#gl-tabs button').forEach(b => b.classList.toggle('on', b === t)); return renderBody(); }
     if (t.dataset.buy) { const w = ALL.find(x => x.id === t.dataset.buy), c = cost(w); if (S.r >= c) { S.r -= c; S.own[w.id]++; renderBody(); } return; }
     if (t.dataset.mgr) { const w = ALL.find(x => x.id === t.dataset.mgr); if (S.r >= w.mgr[2]) { S.r -= w.mgr[2]; S.mgr[w.id] = 1; log(`${w.mgr[0]} embauché. Il a signé sans lire, comme tout le monde.`); renderBody(); } return; }
@@ -146,7 +154,7 @@ export function startGulag(host, opts = {}) {
   renderBody();
   import('./gulag-scene.js').then(m => { if (stopped) return; sceneMod = m; try { camp = m.createCamp($('gl-scene')); syncScene(); } catch (e) { camp = null; $('gl-scene').classList.add('nowebgl'); } }).catch(() => { $('gl-scene').classList.add('nowebgl'); });
   if (away > 60 && income() > 0) { const g = income() * away * 0.5; gain(g); setTimeout(() => toast(`Pendant votre absence (${Math.round(away / 60)} min), le plan a avancé tout seul : +${fmt(g)} kop.. Personne ne sait comment.`, 'ok'), 500); }
-  let last = performance.now(), acc = 0, saveAcc = 0;
+  let last = performance.now(), acc = 0, saveAcc = 0, acc2 = 0;
   const timer = setInterval(() => {
     if (stopped) return; const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
     if (!eventOpen) {
@@ -155,11 +163,12 @@ export function startGulag(host, opts = {}) {
       S.risk = Math.max(0, Math.min(100, S.risk + (0.05 * (S.staff.espion ? 0.6 : 1) - 0.12) * dt + 0.015 * dt));
       S.nextEv -= dt;
       if (S.planProd >= planTarget(S.plan)) planDone();
+      else if (acc2 >= 5 && (acc2 = 0, syncScene(), false)) { /* mise à jour de l'étape visible */ }
       else if (S.favor <= 0) dismissed();
       else if (S.risk >= 100) inspection();
       else if (S.nextEv <= 0) { S.nextEv = 45 + Math.random() * 35; showEvent(); }
     }
-    acc += dt; saveAcc += dt; if (acc >= 0.2) { acc = 0; refresh(); }
+    acc += dt; saveAcc += dt; acc2 += dt; if (acc >= 0.2) { acc = 0; refresh(); }
     newsI += dt; if (newsI > 9) { newsI = 0; $('gl-news').textContent = pick(HEADLINES); $('gl-news').classList.remove('in'); void $('gl-news').offsetWidth; $('gl-news').classList.add('in'); }
     if (saveAcc > 5) { saveAcc = 0; saveNow(); }
   }, 100);
