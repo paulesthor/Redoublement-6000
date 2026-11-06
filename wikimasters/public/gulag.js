@@ -1,7 +1,9 @@
 // Démo : « Directeur du Camp » — jeu de gestion incrémental, satire de la bureaucratie soviétique (humour noir de pacotille, sans cruauté montrée).
-/** Rythme : cibles de production de chaque plan, calibrées pour qu'un joueur régulier (10 min toutes les 40 min) finisse les 6 plans en ~3 jours. */
-export const PLAN_TARGETS = [1e10, 9.4e11, 4.7e13, 1e16, 4.6e17, 4.6e19];
-const SAVE_KEY = 'wm_gulag_demo_v1', OFFLINE_MAX = 2 * 3600, GROWTH = 1.15;
+/** Rythme : cibles de production de chaque plan, calibrées (simulation) pour qu'un joueur « médian » (7 min toutes les 50 min) finisse les 6 plans en ~3 jours. */
+export const PLAN_TARGETS = [1.4e10, 2.4e12, 6.7e13, 1.7e16, 3.8e17, 1.1e20];
+/** Délai réglementaire minimum de chaque plan (heures réelles) : même un joueur parfait ne peut pas finir l'édition en moins de 60 h. */
+export const PLAN_MIN_H = [4, 8, 10, 12, 12, 14];
+const SAVE_KEY = 'wm_gulag_demo_v2', OFFLINE_MAX = 2 * 3600, GROWTH = 1.15;
 const GRADES = ['Contremaître stagiaire', 'Chef de brigade', 'Directeur adjoint', 'Directeur du camp', 'Commissaire du peuple', 'Héros du Travail Socialiste'];
 
 const WORKSHOPS = [
@@ -33,18 +35,21 @@ const STAFF = [
   { id: 'comptable', name: 'La Comptable', text: 'Sait faire dire aux chiffres ce qu\'on veut. Les rapports falsifiés rapportent +30 %.', cost: 1600000 },
 ];
 const EVENTS = [
-  { t: 'Inspection du Politburo', x: 'Un inspecteur arrive demain. Il est annoncé depuis six mois, mais personne n\'a lu la lettre.', a: ['Repeindre tout en rouge', { r: -1, f: 4, k: -20 }, 'Les murs sont rouges, comme l\'avenir.'], b: ['Cacher les registres dans la neige', { f: -3, k: 15 }, 'La neige garde un secret. Jusqu\'au dégel.'] },
-  { t: 'Tempête de neige', x: 'La production est à l\'arrêt. Le froid, lui, travaille à plein régime.', a: ['Déclarer un record de fraîcheur', { r: -1, f: 5 }, 'Le Politburo félicite votre froid.'], b: ['Travailler quand même', { r: 3, k: 10 }, 'On n\'a perdu que quelques doigts. Ils ne servaient pas au rapport.'] },
-  { t: 'Un pensionnaire se dit cousin du ministre', x: 'Il a une lettre, un sourire, et probablement un cousin.', a: ['Le croire', { f: -6, k: -10 }, 'Il est parti en vacances. Le ministre n\'a jamais su qu\'il avait un cousin.'], b: ['L\'envoyer à la scierie', { r: 2, k: 5 }, 'Il scie avec conviction. La parenté s\'arrête là.'] },
-  { t: 'Ordre contradictoire du ministère', x: '« Produisez plus avec moins de bois. » Signé, « Le Ministère du Bois (service des économies de bois). »', a: ['Appliquer les deux ordres', { r: -2, f: 6 }, 'Un modèle d\'efficacité : on produit du plan, plus de bois.'], b: ['Perdre le courrier', { f: -2, k: 10 }, 'Le courrier a été perdu. Il est retrouvé dans trois ans.'] },
-  { t: 'Pénurie de crayons', x: 'Impossible de signer les rapports. Le plan est suspendu à un morceau de graphite.', a: ['Signer à la craie', { r: -0.5, k: 5 }, 'La craie est solide, la signature moins.'], b: ['Demander au Politburo (délai : 3 ans)', { r: -1, f: 2 }, 'Votre demande a été enregistrée dans l\'armoire des demandes.'] },
-  { t: 'Visite du Commissaire avec photographe', x: 'On veut du camp heureux sur la photo. Le camp n\'est pas habitué.', a: ['Dresser un banquet en carton', { r: -3, f: 10 }, 'Le carton a eu un grand succès. On en a mangé l\'ensemble.'], b: ['Montrer la réalité', { f: -15, k: 25 }, 'Vous êtes bien honnête. C\'est dommage pour votre carrière.'] },
-  { t: 'La comptable trouve une erreur de 40 000 roubles', x: 'Elle ne dit pas qui l\'a faite. Elle regarde le plafond. Le plafond regarde ailleurs.', a: ['L\'effacer', { r: 2, k: 15 }, 'L\'erreur n\'a jamais existé. Elle est juste très discrète.'], b: ['La classer en « dépense de moral »', { r: -2, f: 3 }, 'Le moral est soutenu. Personne ne sait lequel.'] },
-  { t: 'Le poète écrit une ode à l\'inspecteur', x: 'Quatre-vingts strophes, aucune rime. Le Parti trouve ça très moderne.', a: ['La publier', { r: -1, f: 6 }, 'L\'inspecteur est ému. Le poète aussi : on l\'a augmenté d\'un manteau.'], b: ['La confisquer pour manque de rimes', { f: -2, k: -5 }, 'Le poète a retrouvé son goût du silence.'] },
-  { t: 'Colis du Parti : 400 kg de médailles, 0 kg de pain', x: 'On ne mange pas les médailles, mais on peut les compter.', a: ['Distribuer les médailles', { r: -1, f: 8 }, 'Le camp est décoré. Il a toujours faim, mais avec panache.'], b: ['Les fondre et les vendre', { r: 5, k: 20 }, 'L\'or est ravi de servir une meilleure cause. Le Parti, un peu moins.'] },
-  { t: 'Un loup demande un emploi', x: 'Il s\'est présenté au poste de garde avec un CV. Le CV est un lapin.', a: ['L\'embaucher', { r: 2, k: 5 }, 'Il est excellent. Personne n\'ose le contredire.'], b: ['Le promouvoir directement', { r: 4, f: -3 }, 'Il est désormais chef de service. Il est toujours un loup, mais avec un bureau.'] },
-  { t: 'Grève du chauffage', x: 'Le froid refuse de se mettre au travail, il a un syndicat.', a: ['Réquisitionner le froid', { r: 1, f: 2 }, 'Le froid s\'exécute, la tête haute et les pieds gelés.'], b: ['Brûler les archives', { r: 3, k: -15, f: -5 }, 'Il fait enfin chaud. Les archives aussi, avant de partir.'] },
-  { t: 'Le Politburo demande un rapport sur le rapport', x: 'Délai : hier. Le rapport est urgent, il est en retard de trente ans.', a: ['Écrire le rapport du rapport', { r: -1, f: 7 }, 'Le rapport du rapport est un chef-d\'œuvre. Il n\'a pas de lecteur.'], b: ['Écrire le rapport du rapport du rapport', { r: -3, f: 15 }, 'Le Politburo est conquis. Il demande déjà la suite.'] },
+  { t: 'Inspection du Politburo', x: 'Un inspecteur arrive demain. Il est annoncé depuis six mois, mais personne n\'a lu la lettre.', a: ['Repeindre tout en rouge', { r: -8, f: 4, k: -20 }, 'Les murs sont rouges, comme l\'avenir. La peinture a coûté un peu plus que prévu.'], b: ['Cacher les registres dans la neige', { f: -8, k: 25 }, 'La neige garde un secret. Jusqu\'au dégel, et l\'inspecteur est arrivé avec le dégel.'] },
+  { t: 'Tempête de neige', x: 'La production est à l\'arrêt. Le froid, lui, travaille à plein régime.', a: ['Déclarer un record de fraîcheur', { r: -6, f: 5, k: 5 }, 'Le Politburo félicite votre froid. Il n\'a pas félicité votre budget.'], b: ['Travailler quand même', { r: 5, k: 15, f: -6 }, 'On n\'a perdu que quelques doigts, ils ne servaient pas au rapport. Le médecin n\'est pas d\'accord.'] },
+  { t: 'Un pensionnaire se dit cousin du ministre', x: 'Il a une lettre, un sourire, et probablement un cousin.', a: ['Le croire', { f: -8, k: -10, r: -3 }, 'Il est parti en vacances aux frais du camp. Le ministre n\'a jamais su qu\'il avait un cousin.'], b: ['L\'envoyer à la scierie', { r: 3, k: 12, f: -3 }, 'Il scie avec conviction. Le vrai cousin arrive dans trois semaines avec des questions.'] },
+  { t: 'Ordre contradictoire du ministère', x: '« Produisez plus avec moins de bois. » Signé, « Le Ministère du Bois (service des économies de bois). »', a: ['Appliquer les deux ordres', { r: -5, f: 6, k: 5 }, 'Un modèle d\'efficacité : on produit du plan, plus de bois. Ça se voit au budget.'], b: ['Perdre le courrier', { f: -6, k: 15, r: 1 }, 'Le courrier a été perdu. Il est retrouvé dans trois ans, avec les intérêts.'] },
+  { t: 'Pénurie de crayons', x: 'Impossible de signer les rapports. Le plan est suspendu à un morceau de graphite.', a: ['Signer à la craie', { r: -2, k: 10, f: -2 }, 'La craie est solide, la signature moins. Le Parti ne signera plus avec vous.'], b: ['Demander au Politburo (délai : 3 ans)', { r: -4, f: 3 }, 'Votre demande a été enregistrée dans l\'armoire des demandes. Elle y retrouvera les autres.'] },
+  { t: 'Visite du Commissaire avec photographe', x: 'On veut du camp heureux sur la photo. Le camp n\'est pas habitué.', a: ['Dresser un banquet en carton', { r: -10, f: 12, k: 5 }, 'Le carton a eu un grand succès. On l\'a mangé en entier, c\'est le seul repas de la semaine. Il fallait le payer.'], b: ['Montrer la réalité', { f: -18, k: 25, r: 2 }, 'Vous êtes très honnête. C\'est dommage pour votre carrière, et pour votre sommeil.'] },
+  { t: 'La comptable trouve une erreur de 40 000 roubles', x: 'Elle ne dit pas qui l\'a faite. Elle regarde le plafond. Le plafond regarde ailleurs.', a: ['L\'effacer', { r: 4, k: 20 }, 'L\'erreur n\'a jamais existé. Elle est juste très discrète, et très surveillée.'], b: ['La classer en « dépense de moral »', { r: -5, f: 3, k: -5 }, 'Le moral est soutenu. Personne ne sait lequel. Le budget, si.'] },
+  { t: 'Le poète écrit une ode à l\'inspecteur', x: 'Quatre-vingts strophes, aucune rime. Le Parti trouve ça très moderne.', a: ['La publier', { r: -3, f: 7, k: 8 }, 'L\'inspecteur est ému. L\'imprimerie aussi : elle réclame des sous.'], b: ['La confisquer pour manque de rimes', { f: -5, k: -5, r: -1 }, 'Le poète a retrouvé son goût du silence. Le Parti, un peu moins le goût de vous.'] },
+  { t: 'Colis du Parti : 400 kg de médailles, 0 kg de pain', x: 'On ne mange pas les médailles, mais on peut les compter.', a: ['Distribuer les médailles', { r: -4, f: 8, k: 5 }, 'Le camp est décoré. Il a toujours faim, mais avec panache. Les médailles se perdent vite.'], b: ['Les fondre et les vendre', { r: 8, k: 25, f: -6 }, 'L\'or est ravi de servir une meilleure cause. Le Parti, un peu moins.'] },
+  { t: 'Un loup demande un emploi', x: 'Il s\'est présenté au poste de garde avec un CV. Le CV est un lapin.', a: ['L\'embaucher', { r: 3, k: 8, f: -3 }, 'Il est excellent. Personne n\'ose le contredire, ni le surveiller.'], b: ['Le promouvoir directement', { r: 5, f: -8, k: 5 }, 'Il est désormais chef de service. Il est toujours un loup, mais avec un bureau, et un cousin.'] },
+  { t: 'Grève du chauffage', x: 'Le froid refuse de se mettre au travail, il a un syndicat.', a: ['Réquisitionner le froid', { r: -2, f: 3, k: 8 }, 'Le froid s\'exécute, la tête haute et les pieds gelés. Il a gardé la facture.'], b: ['Brûler les archives', { r: 5, k: -15, f: -10 }, 'Il fait enfin chaud. Les archives aussi, avant de partir. Le Parti n\'a pas trouvé ça drôle.'] },
+  { t: 'Le Politburo demande un rapport sur le rapport', x: 'Délai : hier. Le rapport est urgent, il est en retard de trente ans.', a: ['Écrire le rapport du rapport', { r: -3, f: 7, k: 5 }, 'Le rapport du rapport est un chef-d\'œuvre. Il n\'a pas de lecteur, mais un budget.'], b: ['Écrire le rapport du rapport du rapport', { r: -9, f: 15, k: 5 }, 'Le Politburo est conquis. Il demande déjà la suite, et vous a envoyé la facture du papier.'] },
+  { t: 'Contrôle des stocks', x: 'On vous demande de compter les patates. Il y en a moins que dans le rapport. Ou plus. Ce n\'est pas clair.', a: ['Compter les vraies patates', { r: -6, f: -4 }, 'Il en manque beaucoup. Le froid les a mangées, d\'après le rapport du froid.'], b: ['Compter ce qui est écrit', { k: 18, f: 2 }, 'Le compte est bon, au papier près. Le papier est d\'accord, pas l\'inspecteur.'] },
+  { t: 'Un rhume traverse le camp', x: 'Le froid est fier de son travail. Le médecin, lui, n\'a pas de médicaments, mais beaucoup d\'optimisme.', a: ['Arrêt maladie collectif', { r: -8, f: -3 }, 'Tout le monde se repose. Le plan, lui, ne se repose pas et vous le rappelle.'], b: ['Soigner à la vodka', { r: 2, k: 12, f: -5 }, 'Tout le monde va très bien, surtout ceux qui ne tiennent plus debout.'] },
+  { t: 'Dénonciation anonyme', x: 'Quelqu\'un vous a dénoncé. L\'écriture ressemble étrangement à la vôtre, mais plus soignée.', a: ['Démentir énergiquement', { f: -6, k: -8 }, 'Vous avez tout démenti. Le Parti a trouvé cela suspect.'], b: ['Reconnaître et s\'excuser', { f: 2, k: 20, r: -4 }, 'Vous êtes sincère. C\'est bien vu, et très noté dans le dossier.'] },
 ];
 const HEADLINES = ['PRAVDA : la production de bonheur dépasse les objectifs de 140 %.', 'Le froid est une ressource renouvelable, rappelle le ministère.', 'Les bouleaux de la région confirment, à l\'unanimité, être heureux.', 'Aucune évasion signalée : la Sibérie est jugée trop spacieuse.', 'Le Parti rappelle que le pain n\'est pas obligatoire, mais le plan si.', 'Découverte : le plan quinquennal peut être rempli en quatre ans et onze mois, dans l\'esprit.', 'Le directeur du camp voisin a été promu. On ne sait pas où.', 'Météo : −31 °C, ressentis −31 °C. Le ministère de la Météo n\'a pas de commentaire.', 'Le Politburo félicite chaleureusement ses propres félicitations.', 'Pénurie de papier : on écrit désormais les rapports sur les rapports.', 'Une délégation étrangère visite le camp et le trouve « très organisé ». Elle n\'est jamais repartie.', 'Tout va bien, camarade. La neige est de la poudre de bonheur.'];
 
@@ -60,10 +65,12 @@ const pick = a => a[(Math.random() * a.length) | 0];
 
 export const _DATA = { ALL, STAFF, GROWTH };
 export function startGulag(host, opts = {}) {
-  const fresh = () => ({ r: 0, produced: 0, plan: 0, planProd: 0, own: Object.fromEntries(ALL.map(w => [w.id, 0])), mgr: {}, staff: {}, favor: 55, risk: 10, cd: 0, nextEv: 50, t: Date.now(), history: [] });
+  const fresh = () => ({ r: 0, produced: 0, plan: 0, planProd: 0, own: Object.fromEntries(ALL.map(w => [w.id, 0])), mgr: {}, staff: {}, favor: 55, risk: 10, cd: 0, nextEv: 50, t: Date.now(), history: [], audits: [], planStart: Date.now() });
   let S; try { S = { ...fresh(), ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; } catch { S = fresh(); }
-  S.own = { ...fresh().own, ...S.own }; S.plan = S.plan || 0;
+  S.own = { ...fresh().own, ...S.own }; S.plan = S.plan || 0; S.audits = S.audits || []; S.planStart = S.planStart || Date.now();
   const planTarget = n => PLAN_TARGETS[n] ?? PLAN_TARGETS[PLAN_TARGETS.length - 1] * Math.pow(80, n - PLAN_TARGETS.length + 1);
+  const gateLeft = () => Math.max(0, (PLAN_MIN_H[S.plan] ?? 14) * 3600 - (Date.now() - S.planStart) / 1000);
+  const hm = sec => { const m = Math.ceil(sec / 60), h = Math.floor(m / 60); return h ? `${h} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
   const planFrac = () => Math.min(1, Math.log10(1 + S.planProd) / Math.log10(planTarget(S.plan)));   // barre à l'échelle logarithmique : elle avance régulièrement même quand la production explose
   const permMult = () => 1 + 0.25 * S.plan;
   const mult = () => permMult() * (S.staff.prof ? 1.25 : 1);
@@ -79,7 +86,7 @@ export function startGulag(host, opts = {}) {
 
   host.innerHTML = `<div class="gl"><header class="gl-top"><div class="gl-head"><button class="gl-exit" id="gl-exit">Quitter</button><div class="gl-title"><small id="gl-region">Camp n° 7</small><b>Directeur du Camp</b></div><div class="gl-grade" id="gl-grade"></div></div></header>
     <div class="gl-scene" id="gl-scene"><div class="gl-hud"><div class="gl-money"><span id="gl-r">0</span><small>kopeks du Plan</small><em id="gl-ps">+0 / s</em></div></div>
-      <div class="gl-bars"><div><label>Plan <b id="gl-plan"></b></label><div class="gl-bar"><i id="gl-planbar"></i></div></div><div><label>Faveur</label><div class="gl-bar fav"><i id="gl-fav"></i></div></div><div><label>Risque</label><div class="gl-bar risk"><i id="gl-risk"></i></div></div></div><div class="gl-stage" id="gl-stage"></div></div>
+      <div class="gl-bars"><div><label>Plan <b id="gl-plan"></b></label><div class="gl-bar"><i id="gl-planbar"></i></div></div><div><label>Faveur</label><div class="gl-bar fav"><i id="gl-fav"></i></div></div><div><label>Risque</label><div class="gl-bar risk"><i id="gl-risk"></i></div></div></div><div class="gl-stage" id="gl-stage"></div><button class="gl-zoom" id="gl-zoom">Agrandir</button></div>
     <div class="gl-actions"><button id="gl-fake">Falsifier le rapport</button><button id="gl-bribe" class="alt">Pot-de-vin</button></div>
     <nav class="gl-tabs" id="gl-tabs"><button data-k="w" class="on">Ateliers</button><button data-k="s">Pensionnaires</button><button data-k="d">Décrets</button></nav>
     <main class="gl-body" id="gl-body"></main><footer class="gl-ticker"><span id="gl-news"></span></footer><div class="gl-modal" id="gl-modal"></div></div>`;
@@ -93,13 +100,13 @@ export function startGulag(host, opts = {}) {
       return `<section class="gl-card" data-w="${w.id}"><div class="gl-ico">${icon(w.icon)}</div><div class="gl-info"><h3>${w.name}</h3><p>${w.desc}</p><div class="gl-stats"><span>Niveau <b>${n}</b></span><span>${inc ? '+' + fx(inc) + ' / s' : 'à bâtir'}</span>${m ? '<span class="ok">cadre en poste</span>' : ''}</div>
         <div class="gl-btns"><button data-buy="${w.id}">${n ? 'Améliorer' : 'Bâtir'} · ${fmt(c)}</button>${!m && n ? `<button class="alt" data-mgr="${w.id}" title="${w.mgr[1]}">${w.mgr[0]} · ${fmt(w.mgr[2])}</button>` : ''}</div>${m ? `<p class="gl-mgr">${w.mgr[0]} : ${w.mgr[1]}</p>` : ''}</div></section>`; }).join('') + (S.plan < 5 ? `<section class="gl-card gl-locked"><div class="gl-info"><h3>Prochain plan : ${REGION_NAMES[S.plan + 1]}</h3><p>${ALL.filter(w => w.plan === S.plan + 1).map(w => w.name).join(' · ')}</p><p class="gl-mgr">Accomplissez le plan n° ${S.plan + 1} pour transférer votre camp et débloquer ces ateliers.</p></div></section>` : '');
     else if (tab === 's') b.innerHTML = STAFF.map(p => `<section class="gl-card"><div class="gl-info"><h3>${p.name}</h3><p>${p.text}</p><div class="gl-btns">${S.staff[p.id] ? '<span class="ok">en poste (et il le sait)</span>' : `<button data-staff="${p.id}">Recruter · ${fmt(p.cost)}</button>`}</div></div></section>`).join('');
-    else b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Journal du camp</h3>${S.history.length ? S.history.map(h => `<p class="gl-log">${h}</p>`).join('') : '<p>Rien à signaler. Ce qui est, évidemment, très suspect.</p>'}</div></section><section class="gl-card"><div class="gl-info"><h3>Règles du Politburo</h3><p class="gl-mgr">Rythme prévu : environ 3 jours pour accomplir les 6 plans en jouant 10 minutes toutes les 40 minutes.</p><div class="gl-btns"><button class="alt" data-reset>Recommencer la démo à zéro</button></div><p>Remplis le plan quinquennal avant que la faveur tombe à zéro. Ne laisse pas le risque d'inspection atteindre 100 %. Les rapports falsifiés aident beaucoup, jusqu'à ce qu'ils n'aident plus.</p></div></section>`;
+    else b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Journal du camp</h3>${S.history.length ? S.history.map(h => `<p class="gl-log">${h}</p>`).join('') : '<p>Rien à signaler. Ce qui est, évidemment, très suspect.</p>'}</div></section><section class="gl-card"><div class="gl-info"><h3>Règles du Politburo</h3><p class="gl-mgr">Rythme prévu : environ 3 jours en jouant 7 minutes toutes les 50 minutes. Chaque plan a un délai réglementaire minimum (4 h, 8 h, 10 h, 12 h, 12 h, 14 h) : on ne bâcle pas un plan quinquennal.</p><div class="gl-btns"><button class="alt" data-reset>Recommencer la démo à zéro</button></div><p>Remplis le plan quinquennal avant que la faveur tombe à zéro. Ne laisse pas le risque d'inspection atteindre 100 %. Les rapports falsifiés aident beaucoup, jusqu'à ce qu'ils n'aident plus.</p></div></section>`;
     refresh(); syncScene();
   }
   function refresh() {
     const inc = income();
     $('gl-r').textContent = fmt(S.r); $('gl-ps').textContent = '+' + fx(inc) + ' / s'; $('gl-grade').textContent = GRADES[Math.min(GRADES.length - 1, S.plan)];
-    const p = planFrac(); $('gl-plan').textContent = `n° ${S.plan + 1} — ${Math.floor(p * 100)} %`; $('gl-planbar').style.width = p * 100 + '%';
+    const p = planFrac(); $('gl-plan').textContent = `n° ${S.plan + 1} — ${Math.floor(p * 100)} %${gateLeft() > 0 ? ` · ${hm(gateLeft())}` : ''}`; $('gl-planbar').style.width = p * 100 + '%';
     $('gl-fav').style.width = Math.max(0, Math.min(100, S.favor)) + '%'; $('gl-risk').style.width = Math.max(0, Math.min(100, S.risk)) + '%';
     $('gl-fake').disabled = S.cd > 0 || eventOpen; $('gl-fake').textContent = S.cd > 0 ? `Falsifier le rapport (${Math.ceil(S.cd)} s)` : 'Falsifier le rapport';
     const bribe = Math.ceil(inc * 90 + 150); $('gl-bribe').textContent = `Pot-de-vin · ${fmt(bribe)}`; $('gl-bribe').disabled = S.r < bribe || S.risk < 5 || eventOpen;
@@ -111,21 +118,27 @@ export function startGulag(host, opts = {}) {
   function toast(msg, kind = '') { const m = $('gl-modal'); m.innerHTML = `<div class="gl-note ${kind}">${msg}</div>`; m.classList.add('show', 'note'); setTimeout(() => { if (!eventOpen) { m.classList.remove('show', 'note'); m.innerHTML = ''; } }, 2600); }
 
   function popup(html, onClose) { const m = $('gl-modal'); eventOpen = true; m.classList.remove('note'); m.classList.add('show'); m.innerHTML = html; refresh(); m.querySelector('[data-close]')?.addEventListener('click', () => { m.classList.remove('show'); m.innerHTML = ''; eventOpen = false; onClose?.(); refresh(); }); return m; }
+  const fxText = e => [e.r ? `${e.r > 0 ? '+' : '−'}${Math.abs(e.r)} min de production` : '', e.f ? `faveur ${e.f > 0 ? '+' : '−'}${Math.abs(e.f)}` : '', e.k ? `risque ${e.k > 0 ? '+' : '−'}${Math.abs(e.k)}` : ''].filter(Boolean).join(' · ');
   function applyEffect(e) { const inc = income(); if (e.r) gain(Math.max(-S.r, e.r * 60 * inc)); S.favor = Math.max(0, Math.min(100, S.favor + (e.f || 0))); S.risk = Math.max(0, Math.min(100, S.risk + (e.k || 0) * (e.k > 0 && S.staff.espion ? 0.6 : 1))); }
   function showEvent() {
     const ev = pick(EVENTS), m = popup(`<div class="gl-event"><div class="gl-stamp">ORDRE DU JOUR</div><h2>${ev.t}</h2><p>${ev.x}</p><div class="gl-choices"><button data-c="a">${ev.a[0]}</button><button data-c="b" class="alt">${ev.b[0]}</button></div></div>`);
     m.querySelectorAll('[data-c]').forEach(bt => bt.addEventListener('click', () => {
       const o = ev[bt.dataset.c]; applyEffect(o[1]); log(`${ev.t} : ${o[0].toLowerCase()}.`);
-      m.innerHTML = `<div class="gl-event"><div class="gl-stamp ok">APPROUVÉ</div><h2>${o[0]}</h2><p>${o[2]}</p><button data-close>Au suivant, camarade</button></div>`;
+      m.innerHTML = `<div class="gl-event"><div class="gl-stamp ok">APPROUVÉ</div><h2>${o[0]}</h2><p>${o[2]}</p><p class="gl-fx">${fxText(o[1])}</p><button data-close>Au suivant, camarade</button></div>`;
       m.querySelector('[data-close]').onclick = () => { m.classList.remove('show'); m.innerHTML = ''; eventOpen = false; refresh(); };
     }));
   }
+  function audit() {
+    if (S.risk < 40) { toast('Contre-vérification du rapport : rien à signaler (c\'est suspect, mais personne ne l\'a remarqué).', 'ok'); return; }
+    const loss = Math.min(S.r * 0.25, income() * 900); S.r -= loss; S.favor = Math.max(0, S.favor - 10); S.risk = Math.min(100, S.risk + 10); log(`Contre-vérification : le rapport falsifié ne tient pas. Amende de ${fmt(loss)} kop.`);
+    popup(`<div class="gl-event"><div class="gl-stamp bad">CONTRE-VÉRIFICATION</div><h2>Le rapport ne tient pas</h2><p>Un comptable zélé a refait les calculs. Il a trouvé que « 40 % de patates » ne se trouve dans aucun tableau. Amende : <b>${fmt(loss)} kopeks</b>, faveur −10, risque +10.</p><button data-close>Je plaide l'erreur de frappe</button></div>`);
+  }
   function inspection() {
-    const loss = S.r * 0.5; S.r -= loss; S.risk = 30; S.favor = Math.max(0, S.favor - 15); log('Inspection surprise : la moitié du trésor a été « mise à l\'abri ».');
-    popup(`<div class="gl-event"><div class="gl-stamp bad">INSPECTION</div><h2>Surprise !</h2><p>Les inspecteurs ont trouvé ce que vous cachiez, et aussi ce que vous ne cachiez pas. Ils ont « mis à l'abri » ${fmt(loss)} kopeks du Plan. Pour votre sécurité, bien sûr.</p><button data-close>Merci pour la vigilance</button></div>`);
+    const loss = S.r * 0.5; S.r -= loss; S.risk = 30; S.favor = Math.max(0, S.favor - 15); const lost = Object.keys(S.mgr); let muted = ''; if (lost.length) { const id = lost[(Math.random() * lost.length) | 0], w = ALL.find(x => x.id === id); delete S.mgr[id]; muted = ` Au passage, ${w.mgr[0]} est muté « là où le Parti a besoin de lui » (c'est-à-dire plus loin que le camp).`; } log('Inspection surprise : la moitié du trésor a été « mise à l\'abri ».' + muted);
+    popup(`<div class="gl-event"><div class="gl-stamp bad">INSPECTION</div><h2>Surprise !</h2><p>Les inspecteurs ont trouvé ce que vous cachiez, et aussi ce que vous ne cachiez pas. Ils ont « mis à l'abri » ${fmt(loss)} kopeks du Plan. Pour votre sécurité, bien sûr.${muted}</p><button data-close>Merci pour la vigilance</button></div>`);
   }
   function dismissed() {
-    const s0 = S.plan; S = { ...fresh(), plan: s0 }; saveNow(); renderBody(); syncScene();
+    const s0 = S.plan, ps = S.planStart; S = { ...fresh(), plan: s0, planStart: ps }; saveNow(); renderBody(); syncScene();
     popup(`<div class="gl-event"><div class="gl-stamp bad">RELEVÉ DE VOS FONCTIONS</div><h2>Le Politburo vous remercie</h2><p>La faveur est tombée à zéro. Vous êtes promu au camp n° 8, section « anciens directeurs », où vous êtes accueilli avec les honneurs, un manteau et une pelle. Le camp n° 7 a déjà un nouveau directeur : c'est vous, mais avec un meilleur sourire.</p><button data-close>Reprendre le poste (de zéro)</button></div>`);
   }
   function planDone() {
@@ -133,7 +146,7 @@ export function startGulag(host, opts = {}) {
     const m = popup(`<div class="gl-event"><div class="gl-stamp ok">PLAN ACCOMPLI</div><h2>Plan quinquennal n° ${S.plan + 1} rempli</h2><p>Terminé en quatre ans et onze mois, à ce que dit le rapport. Le Parti vous décore et transfère votre camp : <b>${region}</b>. Rien n'est perdu, tout est « réaffecté ».</p><p>Production +25 % pour toujours. Nouveau grade : <b>${GRADES[Math.min(GRADES.length - 1, next)]}</b>.${news.length ? ` Nouveaux ateliers : ${news.join(', ')}.` : ''}</p><button data-close>${next >= PLAN_TARGETS.length ? 'Continuer à produire (sans fin, camarade)' : `En route pour le plan n° ${next + 1} !`}</button></div>`);
     camp?.celebrate();
     if (next >= PLAN_TARGETS.length) m.querySelector('.gl-stamp').textContent = 'ÉDITION TERMINÉE';
-    m.querySelector('[data-close]').addEventListener('click', () => { S.plan = next; S.planProd = 0; S.favor = Math.min(100, S.favor + 15); S.risk = Math.max(0, S.risk - 20); log(`Plan n° ${next} accompli. Le camp est transféré : ${region}. Médaille reçue, et aussitôt reprise pour inventaire.`); saveNow(); renderBody(); });
+    m.querySelector('[data-close]').addEventListener('click', () => { S.plan = next; S.planProd = 0; S.planStart = Date.now(); S.favor = Math.min(100, S.favor + 15); S.risk = Math.max(0, S.risk - 20); log(`Plan n° ${next} accompli. Le camp est transféré : ${region}. Médaille reçue, et aussitôt reprise pour inventaire.`); saveNow(); renderBody(); });
   }
 
   // ---------- actions ----------
@@ -141,19 +154,29 @@ export function startGulag(host, opts = {}) {
     const t = e.target.closest('button'); if (!t || eventOpen) return;
     if (t.id === 'gl-exit') return opts.onExit?.();
     if (t.dataset.reset !== undefined) { if (t.dataset.sure) { S = fresh(); saveNow(); tab = 'w'; host.querySelectorAll('#gl-tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === 'w')); renderBody(); return; } t.dataset.sure = '1'; t.textContent = 'Sûr ? Tout sera perdu (rappuyer pour confirmer)'; return; }
+    if (t.id === 'gl-zoom') { const big = $('gl-scene').classList.toggle('big'); t.textContent = big ? 'Réduire' : 'Agrandir'; return; }
     if (t.dataset.k) { tab = t.dataset.k; host.querySelectorAll('#gl-tabs button').forEach(b => b.classList.toggle('on', b === t)); return renderBody(); }
     if (t.dataset.buy) { const w = ALL.find(x => x.id === t.dataset.buy), c = cost(w); if (S.r >= c) { S.r -= c; S.own[w.id]++; renderBody(); } return; }
     if (t.dataset.mgr) { const w = ALL.find(x => x.id === t.dataset.mgr); if (S.r >= w.mgr[2]) { S.r -= w.mgr[2]; S.mgr[w.id] = 1; log(`${w.mgr[0]} embauché. Il a signé sans lire, comme tout le monde.`); renderBody(); } return; }
     if (t.dataset.staff) { const p = STAFF.find(x => x.id === t.dataset.staff); if (S.r >= p.cost) { S.r -= p.cost; S.staff[p.id] = 1; log(`${p.name} rejoint l'équipe. Il n'a pas été consulté.`); renderBody(); } return; }
-    if (t.id === 'gl-fake' && S.cd <= 0) { const g = income() * 180 * (S.staff.comptable ? 1.3 : 1) + 20; gain(g); S.risk = Math.min(100, S.risk + 22 * (S.staff.espion ? 0.6 : 1)); S.favor = Math.min(100, S.favor + 6); S.cd = 40; toast(`Rapport falsifié : +${fmt(g)} kop. sur le papier. Le papier est très satisfait.`, 'ok'); log('Rapport falsifié. Le papier a tout accepté.'); refresh(); return; }
+    if (t.id === 'gl-fake' && S.cd <= 0) {
+      const g = income() * 150 * (S.staff.comptable ? 1.3 : 1) + 20; gain(g); S.risk = Math.min(100, S.risk + 30 * (S.staff.espion ? 0.6 : 1)); S.favor = Math.min(100, S.favor + 2); S.cd = 40; S.audits.push(60 + Math.random() * 120);
+      log('Rapport falsifié. Le papier a tout accepté, pour l\'instant.');
+      if (Math.random() < 0.22) { const l = Math.min(S.r * 0.12, income() * 400); S.r -= l; S.favor = Math.max(0, S.favor - 8); toast(`Un vérificateur zélé a remarqué le rapport : amende de ${fmt(l)} kop. et faveur −8.`, 'bad'); log('Un vérificateur zélé a relevé une incohérence. Il a reçu une prime.'); }
+      else toast(`Rapport falsifié : +${fmt(g)} kop. sur le papier. Un contrôle de cohérence est prévu dans quelques instants…`, 'ok');
+      refresh(); return; }
     if (t.id === 'gl-bribe') { const b = Math.ceil(income() * 90 + 150); if (S.r >= b) { S.r -= b; S.risk = Math.max(0, S.risk - 35); toast('Pot-de-vin versé. Il s\'appelle « frais de représentation ».', 'ok'); log('Frais de représentation versés à un inspecteur sans nom.'); refresh(); } return; }
   });
 
   // ---------- boucle ----------
-  const away = Math.min(OFFLINE_MAX, (Date.now() - (S.t || Date.now())) / 1000);
+  const rawAway = Math.max(0, (Date.now() - (S.t || Date.now())) / 1000), away = Math.min(OFFLINE_MAX, rawAway);
   renderBody();
   import('./gulag-scene.js').then(m => { if (stopped) return; sceneMod = m; try { camp = m.createCamp($('gl-scene')); syncScene(); } catch (e) { camp = null; $('gl-scene').classList.add('nowebgl'); } }).catch(() => { $('gl-scene').classList.add('nowebgl'); });
-  if (away > 60 && income() > 0) { const g = income() * away * 0.5; gain(g); setTimeout(() => toast(`Pendant votre absence (${Math.round(away / 60)} min), le plan a avancé tout seul : +${fmt(g)} kop.. Personne ne sait comment.`, 'ok'), 500); }
+  if (away > 60 && income() > 0) {
+    const g = income() * away * 0.5, dur = (() => { const m = Math.round(rawAway / 60), h = Math.floor(m / 60); return h ? `${h} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim() : `${m} min`; })(), capped = rawAway > OFFLINE_MAX;
+    gain(g); S.t = Date.now();
+    setTimeout(() => popup(`<div class="gl-event"><div class="gl-stamp ok">RAPPORT D'ABSENCE</div><h2>Bon retour, camarade</h2><p>Vous étiez absent <b>${dur}</b>. Pendant ce temps, le camp a continué à produire tout seul (à 50 %, le directeur adjoint est un peu paresseux) et vous a rapporté <b>${fmt(g)} kopeks du Plan</b>.${capped ? ' Au-delà de 2 heures, le camp se met en grève du zèle : le reste n\'a pas été compté.' : ''}</p><p class="gl-fx">+${fmt(g)} kopeks</p><button data-close>Merci, camarade directeur adjoint</button></div>`), 300);
+  }
   let last = performance.now(), acc = 0, saveAcc = 0, acc2 = 0;
   const timer = setInterval(() => {
     if (stopped) return; const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
@@ -162,7 +185,8 @@ export function startGulag(host, opts = {}) {
       S.favor = Math.max(0, Math.min(100, S.favor - 0.035 * dt + (S.staff.poete ? 0.25 * dt : 0) + 0.0001 * dt * income() ** 0.5));
       S.risk = Math.max(0, Math.min(100, S.risk + (0.05 * (S.staff.espion ? 0.6 : 1) - 0.12) * dt + 0.015 * dt));
       S.nextEv -= dt;
-      if (S.planProd >= planTarget(S.plan)) planDone();
+      for (let i = S.audits.length - 1; i >= 0; i--) { S.audits[i] -= dt; if (S.audits[i] <= 0) { S.audits.splice(i, 1); audit(); break; } }
+      if (S.planProd >= planTarget(S.plan) && gateLeft() <= 0) planDone();
       else if (acc2 >= 5 && (acc2 = 0, syncScene(), false)) { /* mise à jour de l'étape visible */ }
       else if (S.favor <= 0) dismissed();
       else if (S.risk >= 100) inspection();
