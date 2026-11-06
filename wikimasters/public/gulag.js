@@ -88,7 +88,7 @@ export function startGulag(host, opts = {}) {
     <div class="gl-scene" id="gl-scene"><div class="gl-hud"><div class="gl-money"><span id="gl-r">0</span><small>kopeks du Plan</small><em id="gl-ps">+0 / s</em></div></div>
       <div class="gl-bars"><div><label>Plan <b id="gl-plan"></b></label><div class="gl-bar"><i id="gl-planbar"></i></div></div><div><label>Faveur</label><div class="gl-bar fav"><i id="gl-fav"></i></div></div><div><label>Risque</label><div class="gl-bar risk"><i id="gl-risk"></i></div></div></div><div class="gl-stage" id="gl-stage"></div><button class="gl-zoom" id="gl-zoom">Agrandir</button></div>
     <div class="gl-actions"><button id="gl-fake">Falsifier le rapport</button><button id="gl-bribe" class="alt">Pot-de-vin</button></div>
-    <nav class="gl-tabs" id="gl-tabs"><button data-k="w" class="on">Ateliers</button><button data-k="s">Pensionnaires</button><button data-k="d">Décrets</button></nav>
+    <nav class="gl-tabs" id="gl-tabs"><button data-k="w" class="on">Ateliers</button><button data-k="s">Pensionnaires</button><button data-k="p" id="gl-tabp">Primes</button><button data-k="d">Décrets</button></nav>
     <main class="gl-body" id="gl-body"></main><footer class="gl-ticker"><span id="gl-news"></span></footer><div class="gl-modal" id="gl-modal"></div></div>`;
   const $ = id => host.querySelector('#' + id);
   let tab = 'w', stopped = false, eventOpen = false, newsI = 0;
@@ -100,8 +100,35 @@ export function startGulag(host, opts = {}) {
       return `<section class="gl-card" data-w="${w.id}"><div class="gl-ico">${icon(w.icon)}</div><div class="gl-info"><h3>${w.name}</h3><p>${w.desc}</p><div class="gl-stats"><span>Niveau <b>${n}</b></span><span>${inc ? '+' + fx(inc) + ' / s' : 'à bâtir'}</span>${m ? '<span class="ok">cadre en poste</span>' : ''}</div>
         <div class="gl-btns"><button data-buy="${w.id}">${n ? 'Améliorer' : 'Bâtir'} · ${fmt(c)}</button>${!m && n ? `<button class="alt" data-mgr="${w.id}" title="${w.mgr[1]}">${w.mgr[0]} · ${fmt(w.mgr[2])}</button>` : ''}</div>${m ? `<p class="gl-mgr">${w.mgr[0]} : ${w.mgr[1]}</p>` : ''}</div></section>`; }).join('') + (S.plan < 5 ? `<section class="gl-card gl-locked"><div class="gl-info"><h3>Prochain plan : ${REGION_NAMES[S.plan + 1]}</h3><p>${ALL.filter(w => w.plan === S.plan + 1).map(w => w.name).join(' · ')}</p><p class="gl-mgr">Accomplissez le plan n° ${S.plan + 1} pour transférer votre camp et débloquer ces ateliers.</p></div></section>` : '');
     else if (tab === 's') b.innerHTML = STAFF.map(p => `<section class="gl-card"><div class="gl-info"><h3>${p.name}</h3><p>${p.text}</p><div class="gl-btns">${S.staff[p.id] ? '<span class="ok">en poste (et il le sait)</span>' : `<button data-staff="${p.id}">Recruter · ${fmt(p.cost)}</button>`}</div></div></section>`).join('');
+    else if (tab === 'p') { renderPrimes(b); return; }
     else b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Journal du camp</h3>${S.history.length ? S.history.map(h => `<p class="gl-log">${h}</p>`).join('') : '<p>Rien à signaler. Ce qui est, évidemment, très suspect.</p>'}</div></section><section class="gl-card"><div class="gl-info"><h3>Règles du Politburo</h3><p class="gl-mgr">Rythme prévu : environ 3 jours en jouant 7 minutes toutes les 50 minutes. Chaque plan a un délai réglementaire minimum (4 h, 8 h, 10 h, 12 h, 12 h, 14 h) : on ne bâcle pas un plan quinquennal.</p><div class="gl-btns"><button class="alt" data-reset>Recommencer la démo à zéro</button></div><p>Remplis le plan quinquennal avant que la faveur tombe à zéro. Ne laisse pas le risque d'inspection atteindre 100 %. Les rapports falsifiés aident beaucoup, jusqu'à ce qu'ils n'aident plus.</p></div></section>`;
     refresh(); syncScene();
+  }
+  // ---------- primes : paliers et récompenses du mode classique ----------
+  let camp0 = null;
+  const progressP = () => S.plan + planFrac();
+  const hoursNow = () => camp0 && !camp0.error ? camp0.hours + (Date.now() - camp0.at) / 3600000 : 0;
+  async function loadCamp() { if (!opts.api) { camp0 = { error: 'Primes indisponibles ici.' }; return; } try { camp0 = await opts.api('/camp'); camp0.at = Date.now(); } catch (e) { camp0 = { error: e.message || 'Primes indisponibles.' }; } if (tab === 'p') renderBody(); else refresh(); }
+  const claimable = () => camp0 && !camp0.error ? camp0.milestones.filter(m => !camp0.claimed.includes(m.id) && progressP() >= m.p && hoursNow() >= m.minH) : [];
+  function renderPrimes(b) {
+    if (!camp0) { b.innerHTML = '<section class="gl-card"><div class="gl-info"><p>Le Parti consulte ses archives…</p></div></section>'; loadCamp(); return; }
+    if (camp0.error) { b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Primes</h3><p>${camp0.error}</p></div></section>`; return; }
+    const P = progressP(), h = hoursNow(), got = camp0.claimed.length;
+    b.innerHTML = `<section class="gl-card gl-sum"><div class="gl-info"><h3>Primes du Parti : ${got} / ${camp0.milestones.length}</h3><p>Chaque palier donne une prime <b>dans le jeu normal</b> : wikibidou, paquets, titres de profil, et au palier 4 le <b>thème rouge « Camarade »</b> à garder à vie. Total possible : ${fmt(camp0.totalCoins)} wikibidou et ${camp0.totalPacks} paquets.</p></div></section>` + camp0.milestones.map(m => {
+      const done = camp0.claimed.includes(m.id), reachedP = P >= m.p, reachedT = h >= m.minH, ready = !done && reachedP && reachedT;
+      const status = done ? '<span class="ok">Prime récupérée</span>' : !reachedP ? `<span>Progression : ${Math.min(99, Math.floor(P / m.p * 100))} %</span>` : !reachedT ? `<span>Délai réglementaire : encore ${hm((m.minH - h) * 3600)}</span>` : '<span class="ok">Prête</span>';
+      const rew = [`${fmt(m.coins)} wikibidou`, m.packs ? `${m.packs} paquet${m.packs > 1 ? 's' : ''}` : '', m.title ? `titre « ${m.title} »` : '', m.perk ? 'thème rouge « Camarade » (à vie)' : ''].filter(Boolean).join(' · ');
+      return `<section class="gl-card ${done ? 'gl-done' : ''}"><div class="gl-ico gl-num">${m.id}</div><div class="gl-info"><h3>${m.name}</h3><p>${m.text}</p><div class="gl-stats"><span>${rew}</span></div><div class="gl-stats">${status}</div>${ready ? `<div class="gl-btns"><button data-claim="${m.id}">Récupérer la prime</button></div>` : ''}</div></section>`;
+    }).join('');
+  }
+  async function claim(id) {
+    const m = camp0?.milestones.find(x => x.id === id); if (!m) return;
+    try {
+      const r = await opts.api('/camp/claim', { id, p: progressP() }); camp0.claimed.push(id); if (r.perk) camp0.perks = [...(camp0.perks || []), r.perk];
+      opts.onReward?.();
+      log(`Prime n° ${id} (« ${m.name} ») récupérée : ${m.coins} wikibidou.`);
+      popup(`<div class="gl-event"><div class="gl-stamp ok">PRIME DU PARTI</div><h2>${m.name}</h2><p>${m.text}</p><p class="gl-fx">${[`+${fmt(r.coins)} wikibidou`, r.packs ? `+${r.packs} paquet${r.packs > 1 ? 's' : ''}` : '', r.title ? `titre « ${r.title} »` : '', r.perk ? 'thème rouge « Camarade » débloqué (Réglages → Thème)' : ''].filter(Boolean).join(' · ')}</p><button data-close>Pour la gloire du Plan</button></div>`, () => { if (tab === 'p') renderBody(); });
+    } catch (e) { toast(e.message || 'Le Parti refuse', 'bad'); if (tab === 'p') renderBody(); }
   }
   function refresh() {
     const inc = income();
@@ -110,6 +137,7 @@ export function startGulag(host, opts = {}) {
     $('gl-fav').style.width = Math.max(0, Math.min(100, S.favor)) + '%'; $('gl-risk').style.width = Math.max(0, Math.min(100, S.risk)) + '%';
     $('gl-fake').disabled = S.cd > 0 || eventOpen; $('gl-fake').textContent = S.cd > 0 ? `Falsifier le rapport (${Math.ceil(S.cd)} s)` : 'Falsifier le rapport';
     const bribe = Math.ceil(inc * 90 + 150); $('gl-bribe').textContent = `Pot-de-vin · ${fmt(bribe)}`; $('gl-bribe').disabled = S.r < bribe || S.risk < 5 || eventOpen;
+    const cl = claimable().length, tp = host.querySelector('#gl-tabp'); if (tp) tp.textContent = cl ? `Primes · ${cl}` : 'Primes';
     host.querySelectorAll('[data-buy]').forEach(bt => { bt.disabled = S.r < cost(ALL.find(w => w.id === bt.dataset.buy)); });
     host.querySelectorAll('[data-mgr]').forEach(bt => { bt.disabled = S.r < ALL.find(w => w.id === bt.dataset.mgr).mgr[2]; });
     host.querySelectorAll('[data-staff]').forEach(bt => { bt.disabled = S.r < STAFF.find(x => x.id === bt.dataset.staff).cost; });
@@ -155,6 +183,7 @@ export function startGulag(host, opts = {}) {
     if (t.id === 'gl-exit') return opts.onExit?.();
     if (t.dataset.reset !== undefined) { if (t.dataset.sure) { S = fresh(); saveNow(); tab = 'w'; host.querySelectorAll('#gl-tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === 'w')); renderBody(); return; } t.dataset.sure = '1'; t.textContent = 'Sûr ? Tout sera perdu (rappuyer pour confirmer)'; return; }
     if (t.id === 'gl-zoom') { const big = $('gl-scene').classList.toggle('big'); t.textContent = big ? 'Réduire' : 'Agrandir'; return; }
+    if (t.dataset.claim) { claim(+t.dataset.claim); return; }
     if (t.dataset.k) { tab = t.dataset.k; host.querySelectorAll('#gl-tabs button').forEach(b => b.classList.toggle('on', b === t)); return renderBody(); }
     if (t.dataset.buy) { const w = ALL.find(x => x.id === t.dataset.buy), c = cost(w); if (S.r >= c) { S.r -= c; S.own[w.id]++; renderBody(); } return; }
     if (t.dataset.mgr) { const w = ALL.find(x => x.id === t.dataset.mgr); if (S.r >= w.mgr[2]) { S.r -= w.mgr[2]; S.mgr[w.id] = 1; log(`${w.mgr[0]} embauché. Il a signé sans lire, comme tout le monde.`); renderBody(); } return; }
@@ -170,7 +199,7 @@ export function startGulag(host, opts = {}) {
 
   // ---------- boucle ----------
   const rawAway = Math.max(0, (Date.now() - (S.t || Date.now())) / 1000), away = Math.min(OFFLINE_MAX, rawAway);
-  renderBody();
+  renderBody(); loadCamp();
   import('./gulag-scene.js').then(m => { if (stopped) return; sceneMod = m; try { camp = m.createCamp($('gl-scene')); syncScene(); } catch (e) { camp = null; $('gl-scene').classList.add('nowebgl'); } }).catch(() => { $('gl-scene').classList.add('nowebgl'); });
   if (away > 60 && income() > 0) {
     const g = income() * away * 0.5, dur = (() => { const m = Math.round(rawAway / 60), h = Math.floor(m / 60); return h ? `${h} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim() : `${m} min`; })(), capped = rawAway > OFFLINE_MAX;
