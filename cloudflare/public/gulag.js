@@ -10,6 +10,20 @@ const WORKSHOPS = [
   { id: 'samovar', icon: 'urn', name: 'Usine de samovars', desc: 'Pour le thé du Politburo. Le vôtre est dans le rapport.', base: 52000, inc: 820, mgr: ['Chef d\'atelier Boris', 'Fait bouillir l\'eau et les nerfs avec la même passion.', 950000] },
   { id: 'rapports', icon: 'paper', name: 'Bureau des Rapports en triple exemplaire', desc: 'Il produit du papier qui produit du papier qui produit du plan.', base: 410000, inc: 5300, mgr: ['Secrétaire Olga', 'Tamponne même dans son sommeil, et ça compte pour le plan.', 7200000] },
 ];
+const UNLOCKS = [
+  { plan: 1, id: 'orkol', icon: 'cart', name: 'Mine d\'or de Kolyma', desc: 'On y trouve de l\'or, du froid, et un taux de rendement que le froid trouve exagéré.', base: 3.2e6, inc: 3.8e4, mgr: ['Géologue Semionov', 'Découvre de l\'or partout, surtout dans les rapports.', 2.6e7] },
+  { plan: 1, id: 'tampons', icon: 'paper', name: 'Usine de tampons officiels', desc: 'Un tampon par minute, un refus par tampon.', base: 2.4e7, inc: 2.6e5, mgr: ['Chef de service Anatoli', 'Tamponne la nuit pour ne pas être vu en train de tamponner.', 1.9e8] },
+  { plan: 2, id: 'nickel', icon: 'urn', name: 'Fonderie de nickel de Norilsk', desc: 'Le nickel est brillant, l\'air un peu moins.', base: 2e8, inc: 2e6, mgr: ['Ingénieur Fedor', 'Respire peu et travaille beaucoup, par économie.', 1.6e9] },
+  { plan: 2, id: 'cheminee', icon: 'urn', name: 'Cheminée record du monde', desc: 'Elle fume tellement que le ciel s\'est excusé de lui faire de l\'ombre.', base: 1.6e9, inc: 1.5e7, mgr: ['Fumiste Gleb', 'Dit qu\'il y a un record de fumée. Il a raison, c\'est le problème.', 1.3e10] },
+  { plan: 3, id: 'charbon', icon: 'cart', name: 'Charbonnage polaire de Vorkouta', desc: 'Sous l\'aurore boréale, le charbon brille presque joyeusement.', base: 1.3e10, inc: 1.1e8, mgr: ['Mineur-chef Piotr', 'A trouvé du charbon dans une mine de charbon. On le décore.', 1e11] },
+  { plan: 3, id: 'rail', icon: 'cart', name: 'Chemin de fer du Grand Nord', desc: 'Le train arrive à l\'heure. Il suffit de ne pas préciser laquelle.', base: 1.1e11, inc: 9e8, mgr: ['Chef de gare Ilya', 'Siffle quand il passe un train, et quand il n\'en passe pas.', 9e11] },
+  { plan: 4, id: 'complexe', icon: 'urn', name: 'Complexe industriel n° 1', desc: 'Un complexe qui sert à construire d\'autres complexes.', base: 9e11, inc: 7e9, mgr: ['Directeur Zinoviev', 'Dirige parfaitement, sauf les directions.', 7e12] },
+  { plan: 4, id: 'radio', icon: 'paper', name: 'Radio-télévision du Plan', desc: 'Diffuse uniquement les bonnes nouvelles. Elle en invente chaque soir.', base: 7e12, inc: 5.5e10, mgr: ['Présentatrice Vera', 'Sourit pendant que les chiffres pleurent.', 5.6e13] },
+  { plan: 5, id: 'vitrine', icon: 'hat', name: 'Vitrine pour délégations étrangères', desc: 'Tout est neuf, propre et vide. Les touristes adorent.', base: 6e13, inc: 4.5e11, mgr: ['Guide Natacha', 'Explique que « tout va très bien » en six langues.', 4.8e14] },
+  { plan: 5, id: 'statue', icon: 'hat', name: 'Statue du Directeur (en carton)', desc: 'Il y a un budget pour le bronze. Il est dans le bureau du directeur.', base: 5e14, inc: 4e12, mgr: ['Sculpteur Dimitri', 'Ne sculpte plus depuis qu\'il a vu le budget.', 4e15] },
+];
+const REGION_NAMES = ['Camp n° 7 — la taïga', 'Kolyma — les mines d\'or', 'Norilsk — nickel et fumées', 'Vorkouta — charbon polaire', 'Grand Nord — complexe industriel', 'Cité modèle du socialisme'];
+const ALL = [...WORKSHOPS, ...UNLOCKS.map(u => ({ ...u }))];
 const STAFF = [
   { id: 'poete', name: 'Le Poète', text: 'Écrit des odes au Parti que personne ne lit. +0,25 de faveur par seconde.', cost: 1800 },
   { id: 'prof', name: 'Le Professeur de chimie', text: 'Optimise tout, y compris les rations. Production +25 %.', cost: 26000 },
@@ -43,21 +57,24 @@ const fx = n => n < 10 ? n.toFixed(1).replace('.', ',') : fmt(n);
 const pick = a => a[(Math.random() * a.length) | 0];
 
 export function startGulag(host, opts = {}) {
-  const fresh = () => ({ r: 0, produced: 0, plan: 0, planProd: 0, own: Object.fromEntries(WORKSHOPS.map(w => [w.id, 0])), mgr: {}, staff: {}, favor: 55, risk: 10, cd: 0, nextEv: 50, t: Date.now(), history: [] });
+  const fresh = () => ({ r: 0, produced: 0, plan: 0, planProd: 0, own: Object.fromEntries(ALL.map(w => [w.id, 0])), mgr: {}, staff: {}, favor: 55, risk: 10, cd: 0, nextEv: 50, t: Date.now(), history: [] });
   let S; try { S = { ...fresh(), ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; } catch { S = fresh(); }
-  S.own = { ...fresh().own, ...S.own };
+  S.own = { ...fresh().own, ...S.own }; S.plan = S.plan || 0;
   const planTarget = n => 25000 * Math.pow(7, n);
   const permMult = () => 1 + 0.25 * S.plan;
   const mult = () => permMult() * (S.staff.prof ? 1.25 : 1);
   const wIncome = w => w.inc * S.own[w.id] * (S.mgr[w.id] ? 2 : 1);
-  const income = () => WORKSHOPS.reduce((t, w) => t + wIncome(w), 0) * mult();
+  const income = () => ALL.filter(w => (w.plan || 0) <= S.plan).reduce((t, w) => t + wIncome(w), 0) * mult();
   const cost = w => Math.ceil(w.base * Math.pow(GROWTH, S.own[w.id]));
+  const campScore = () => ALL.reduce((t, w) => t + (S.own[w.id] || 0) + (S.mgr[w.id] ? 2 : 0), 0) + Object.keys(S.staff).length * 4 + 25 * S.plan;
+  let camp = null, sceneMod = null;
+  const syncScene = () => { if (!camp || !sceneMod) return; const st = sceneMod.stageOf(campScore()); camp.sync({ stage: st, plan: S.plan }); $('gl-region').textContent = REGION_NAMES[S.plan % REGION_NAMES.length]; $('gl-stage').textContent = `Étape ${st + 1}/8 — ${sceneMod.STAGES[st]}`; };
   const saveNow = () => { try { S.t = Date.now(); localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch { /* stockage indisponible */ } };
 
-  host.innerHTML = `<div class="gl"><header class="gl-top"><div class="gl-head"><button class="gl-exit" id="gl-exit">Quitter</button><div class="gl-title"><small>Camp n° 7</small><b>Directeur du Camp</b></div><div class="gl-grade" id="gl-grade"></div></div>
-    <div class="gl-money"><span id="gl-r">0</span><small>kopeks du Plan</small><em id="gl-ps">+0 / s</em></div>
-    <div class="gl-bars"><div><label>Plan quinquennal <b id="gl-plan"></b></label><div class="gl-bar"><i id="gl-planbar"></i></div></div><div><label>Faveur du Politburo</label><div class="gl-bar fav"><i id="gl-fav"></i></div></div><div><label>Risque d'inspection</label><div class="gl-bar risk"><i id="gl-risk"></i></div></div></div>
-    <div class="gl-actions"><button id="gl-fake">Falsifier le rapport</button><button id="gl-bribe" class="alt">Pot-de-vin</button></div></header>
+  host.innerHTML = `<div class="gl"><header class="gl-top"><div class="gl-head"><button class="gl-exit" id="gl-exit">Quitter</button><div class="gl-title"><small id="gl-region">Camp n° 7</small><b>Directeur du Camp</b></div><div class="gl-grade" id="gl-grade"></div></div></header>
+    <div class="gl-scene" id="gl-scene"><div class="gl-hud"><div class="gl-money"><span id="gl-r">0</span><small>kopeks du Plan</small><em id="gl-ps">+0 / s</em></div></div>
+      <div class="gl-bars"><div><label>Plan <b id="gl-plan"></b></label><div class="gl-bar"><i id="gl-planbar"></i></div></div><div><label>Faveur</label><div class="gl-bar fav"><i id="gl-fav"></i></div></div><div><label>Risque</label><div class="gl-bar risk"><i id="gl-risk"></i></div></div></div><div class="gl-stage" id="gl-stage"></div></div>
+    <div class="gl-actions"><button id="gl-fake">Falsifier le rapport</button><button id="gl-bribe" class="alt">Pot-de-vin</button></div>
     <nav class="gl-tabs" id="gl-tabs"><button data-k="w" class="on">Ateliers</button><button data-k="s">Pensionnaires</button><button data-k="d">Décrets</button></nav>
     <main class="gl-body" id="gl-body"></main><footer class="gl-ticker"><span id="gl-news"></span></footer><div class="gl-modal" id="gl-modal"></div></div>`;
   const $ = id => host.querySelector('#' + id);
@@ -66,12 +83,12 @@ export function startGulag(host, opts = {}) {
 
   function renderBody() {
     const b = $('gl-body');
-    if (tab === 'w') b.innerHTML = WORKSHOPS.map(w => { const c = cost(w), inc = wIncome(w) * mult(), n = S.own[w.id], m = S.mgr[w.id];
+    if (tab === 'w') b.innerHTML = ALL.filter(w => (w.plan || 0) <= S.plan).map(w => { const c = cost(w), inc = wIncome(w) * mult(), n = S.own[w.id], m = S.mgr[w.id];
       return `<section class="gl-card" data-w="${w.id}"><div class="gl-ico">${icon(w.icon)}</div><div class="gl-info"><h3>${w.name}</h3><p>${w.desc}</p><div class="gl-stats"><span>Niveau <b>${n}</b></span><span>${inc ? '+' + fx(inc) + ' / s' : 'à bâtir'}</span>${m ? '<span class="ok">cadre en poste</span>' : ''}</div>
-        <div class="gl-btns"><button data-buy="${w.id}">${n ? 'Améliorer' : 'Bâtir'} · ${fmt(c)}</button>${!m && n ? `<button class="alt" data-mgr="${w.id}" title="${w.mgr[1]}">${w.mgr[0]} · ${fmt(w.mgr[2])}</button>` : ''}</div>${m ? `<p class="gl-mgr">${w.mgr[0]} : ${w.mgr[1]}</p>` : ''}</div></section>`; }).join('');
+        <div class="gl-btns"><button data-buy="${w.id}">${n ? 'Améliorer' : 'Bâtir'} · ${fmt(c)}</button>${!m && n ? `<button class="alt" data-mgr="${w.id}" title="${w.mgr[1]}">${w.mgr[0]} · ${fmt(w.mgr[2])}</button>` : ''}</div>${m ? `<p class="gl-mgr">${w.mgr[0]} : ${w.mgr[1]}</p>` : ''}</div></section>`; }).join('') + (S.plan < 5 ? `<section class="gl-card gl-locked"><div class="gl-info"><h3>Prochain plan : ${REGION_NAMES[S.plan + 1]}</h3><p>${ALL.filter(w => w.plan === S.plan + 1).map(w => w.name).join(' · ')}</p><p class="gl-mgr">Accomplissez le plan n° ${S.plan + 1} pour transférer votre camp et débloquer ces ateliers.</p></div></section>` : '');
     else if (tab === 's') b.innerHTML = STAFF.map(p => `<section class="gl-card"><div class="gl-info"><h3>${p.name}</h3><p>${p.text}</p><div class="gl-btns">${S.staff[p.id] ? '<span class="ok">en poste (et il le sait)</span>' : `<button data-staff="${p.id}">Recruter · ${fmt(p.cost)}</button>`}</div></div></section>`).join('');
     else b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Journal du camp</h3>${S.history.length ? S.history.map(h => `<p class="gl-log">${h}</p>`).join('') : '<p>Rien à signaler. Ce qui est, évidemment, très suspect.</p>'}</div></section><section class="gl-card"><div class="gl-info"><h3>Règles du Politburo</h3><p>Remplis le plan quinquennal avant que la faveur tombe à zéro. Ne laisse pas le risque d'inspection atteindre 100 %. Les rapports falsifiés aident beaucoup, jusqu'à ce qu'ils n'aident plus.</p></div></section>`;
-    refresh();
+    refresh(); syncScene();
   }
   function refresh() {
     const inc = income();
@@ -80,8 +97,8 @@ export function startGulag(host, opts = {}) {
     $('gl-fav').style.width = Math.max(0, Math.min(100, S.favor)) + '%'; $('gl-risk').style.width = Math.max(0, Math.min(100, S.risk)) + '%';
     $('gl-fake').disabled = S.cd > 0 || eventOpen; $('gl-fake').textContent = S.cd > 0 ? `Falsifier le rapport (${Math.ceil(S.cd)} s)` : 'Falsifier le rapport';
     const bribe = Math.ceil(inc * 90 + 150); $('gl-bribe').textContent = `Pot-de-vin · ${fmt(bribe)}`; $('gl-bribe').disabled = S.r < bribe || S.risk < 5 || eventOpen;
-    host.querySelectorAll('[data-buy]').forEach(bt => { bt.disabled = S.r < cost(WORKSHOPS.find(w => w.id === bt.dataset.buy)); });
-    host.querySelectorAll('[data-mgr]').forEach(bt => { bt.disabled = S.r < WORKSHOPS.find(w => w.id === bt.dataset.mgr).mgr[2]; });
+    host.querySelectorAll('[data-buy]').forEach(bt => { bt.disabled = S.r < cost(ALL.find(w => w.id === bt.dataset.buy)); });
+    host.querySelectorAll('[data-mgr]').forEach(bt => { bt.disabled = S.r < ALL.find(w => w.id === bt.dataset.mgr).mgr[2]; });
     host.querySelectorAll('[data-staff]').forEach(bt => { bt.disabled = S.r < STAFF.find(x => x.id === bt.dataset.staff).cost; });
   }
   const gain = v => { S.r += v; if (v > 0) { S.produced += v; S.planProd += v; } };
@@ -102,12 +119,14 @@ export function startGulag(host, opts = {}) {
     popup(`<div class="gl-event"><div class="gl-stamp bad">INSPECTION</div><h2>Surprise !</h2><p>Les inspecteurs ont trouvé ce que vous cachiez, et aussi ce que vous ne cachiez pas. Ils ont « mis à l'abri » ${fmt(loss)} kopeks du Plan. Pour votre sécurité, bien sûr.</p><button data-close>Merci pour la vigilance</button></div>`);
   }
   function dismissed() {
-    const s0 = S.plan; S = { ...fresh(), plan: s0 }; saveNow(); renderBody();
+    const s0 = S.plan; S = { ...fresh(), plan: s0 }; saveNow(); renderBody(); syncScene();
     popup(`<div class="gl-event"><div class="gl-stamp bad">RELEVÉ DE VOS FONCTIONS</div><h2>Le Politburo vous remercie</h2><p>La faveur est tombée à zéro. Vous êtes promu au camp n° 8, section « anciens directeurs », où vous êtes accueilli avec les honneurs, un manteau et une pelle. Le camp n° 7 a déjà un nouveau directeur : c'est vous, mais avec un meilleur sourire.</p><button data-close>Reprendre le poste (de zéro)</button></div>`);
   }
   function planDone() {
-    const m = popup(`<div class="gl-event"><div class="gl-stamp ok">PLAN ACCOMPLI</div><h2>Plan quinquennal n° ${S.plan + 1} rempli</h2><p>Terminé en quatre ans et onze mois, à ce que dit le rapport. On vous décore et on vous remet à zéro : le Parti adore les nouveaux départs, surtout avec les mêmes chiffres. Bonus permanent : production +25 %. Nouveau grade : <b>${GRADES[Math.min(GRADES.length - 1, S.plan + 1)]}</b>.</p><button data-close>Au prochain plan !</button></div>`);
-    m.querySelector('[data-close]').addEventListener('click', () => { const p = S.plan + 1, staff = S.staff, hist = S.history; S = { ...fresh(), plan: p, staff, history: hist }; log(`Plan n° ${p} accompli. Médaille reçue, et aussitôt reprise pour inventaire.`); saveNow(); renderBody(); });
+    const next = S.plan + 1, region = REGION_NAMES[next % REGION_NAMES.length], news = ALL.filter(w => w.plan === next).map(w => w.name);
+    const m = popup(`<div class="gl-event"><div class="gl-stamp ok">PLAN ACCOMPLI</div><h2>Plan quinquennal n° ${S.plan + 1} rempli</h2><p>Terminé en quatre ans et onze mois, à ce que dit le rapport. Le Parti vous décore et transfère votre camp : <b>${region}</b>. Rien n'est perdu, tout est « réaffecté ».</p><p>Production +25 % pour toujours. Nouveau grade : <b>${GRADES[Math.min(GRADES.length - 1, next)]}</b>.${news.length ? ` Nouveaux ateliers : ${news.join(', ')}.` : ''}</p><button data-close>En route pour le plan n° ${next + 1} !</button></div>`);
+    camp?.celebrate();
+    m.querySelector('[data-close]').addEventListener('click', () => { S.plan = next; S.planProd = 0; S.favor = Math.min(100, S.favor + 15); S.risk = Math.max(0, S.risk - 20); log(`Plan n° ${next} accompli. Le camp est transféré : ${region}. Médaille reçue, et aussitôt reprise pour inventaire.`); saveNow(); renderBody(); });
   }
 
   // ---------- actions ----------
@@ -115,8 +134,8 @@ export function startGulag(host, opts = {}) {
     const t = e.target.closest('button'); if (!t || eventOpen) return;
     if (t.id === 'gl-exit') return opts.onExit?.();
     if (t.dataset.k) { tab = t.dataset.k; host.querySelectorAll('#gl-tabs button').forEach(b => b.classList.toggle('on', b === t)); return renderBody(); }
-    if (t.dataset.buy) { const w = WORKSHOPS.find(x => x.id === t.dataset.buy), c = cost(w); if (S.r >= c) { S.r -= c; S.own[w.id]++; renderBody(); } return; }
-    if (t.dataset.mgr) { const w = WORKSHOPS.find(x => x.id === t.dataset.mgr); if (S.r >= w.mgr[2]) { S.r -= w.mgr[2]; S.mgr[w.id] = 1; log(`${w.mgr[0]} embauché. Il a signé sans lire, comme tout le monde.`); renderBody(); } return; }
+    if (t.dataset.buy) { const w = ALL.find(x => x.id === t.dataset.buy), c = cost(w); if (S.r >= c) { S.r -= c; S.own[w.id]++; renderBody(); } return; }
+    if (t.dataset.mgr) { const w = ALL.find(x => x.id === t.dataset.mgr); if (S.r >= w.mgr[2]) { S.r -= w.mgr[2]; S.mgr[w.id] = 1; log(`${w.mgr[0]} embauché. Il a signé sans lire, comme tout le monde.`); renderBody(); } return; }
     if (t.dataset.staff) { const p = STAFF.find(x => x.id === t.dataset.staff); if (S.r >= p.cost) { S.r -= p.cost; S.staff[p.id] = 1; log(`${p.name} rejoint l'équipe. Il n'a pas été consulté.`); renderBody(); } return; }
     if (t.id === 'gl-fake' && S.cd <= 0) { const g = income() * 180 * (S.staff.comptable ? 1.3 : 1) + 20; gain(g); S.risk = Math.min(100, S.risk + 22 * (S.staff.espion ? 0.6 : 1)); S.favor = Math.min(100, S.favor + 6); S.cd = 40; toast(`Rapport falsifié : +${fmt(g)} kop. sur le papier. Le papier est très satisfait.`, 'ok'); log('Rapport falsifié. Le papier a tout accepté.'); refresh(); return; }
     if (t.id === 'gl-bribe') { const b = Math.ceil(income() * 90 + 150); if (S.r >= b) { S.r -= b; S.risk = Math.max(0, S.risk - 35); toast('Pot-de-vin versé. Il s\'appelle « frais de représentation ».', 'ok'); log('Frais de représentation versés à un inspecteur sans nom.'); refresh(); } return; }
@@ -125,6 +144,7 @@ export function startGulag(host, opts = {}) {
   // ---------- boucle ----------
   const away = Math.min(OFFLINE_MAX, (Date.now() - (S.t || Date.now())) / 1000);
   renderBody();
+  import('./gulag-scene.js').then(m => { if (stopped) return; sceneMod = m; try { camp = m.createCamp($('gl-scene')); syncScene(); } catch (e) { camp = null; $('gl-scene').classList.add('nowebgl'); } }).catch(() => { $('gl-scene').classList.add('nowebgl'); });
   if (away > 60 && income() > 0) { const g = income() * away * 0.5; gain(g); setTimeout(() => toast(`Pendant votre absence (${Math.round(away / 60)} min), le plan a avancé tout seul : +${fmt(g)} kop.. Personne ne sait comment.`, 'ok'), 500); }
   let last = performance.now(), acc = 0, saveAcc = 0;
   const timer = setInterval(() => {
@@ -146,7 +166,7 @@ export function startGulag(host, opts = {}) {
   $('gl-news').textContent = pick(HEADLINES); $('gl-news').classList.add('in');
   const onHide = () => saveNow(); document.addEventListener('visibilitychange', onHide);
   return {
-    stop() { stopped = true; clearInterval(timer); saveNow(); document.removeEventListener('visibilitychange', onHide); host.innerHTML = ''; },
-    state: () => S, _debug: { gain: v => { gain(v); refresh(); }, event: showEvent, inspection, planDone, dismissed, set: o => { Object.assign(S, o); refresh(); }, income },
+    stop() { stopped = true; clearInterval(timer); saveNow(); camp?.stop(); document.removeEventListener('visibilitychange', onHide); host.innerHTML = ''; },
+    state: () => S, _debug: { camp: () => camp, gain: v => { gain(v); refresh(); }, event: showEvent, inspection, planDone, dismissed, set: o => { Object.assign(S, o); renderBody(); }, income },
   };
 }
