@@ -1349,3 +1349,16 @@ body.ussr-ui .rar{letter-spacing:.14em;text-transform:uppercase}
 body.ussr-ui .card .t{text-transform:uppercase;letter-spacing:.02em}
 body.ussr-ui .empty{border-color:#f4d56b55;color:#e8c35a;text-transform:uppercase;letter-spacing:.06em}
 .us-home{width:100%;height:100%;display:grid;place-items:center}.us-home .us-svg{width:min(78%,300px);height:auto;filter:none;animation:usBob 3.2s ease-in-out infinite}
+
+/* mise en page adaptative : rien ne dépasse, même sur un petit écran (320 px) */
+.seg{max-width:100%;flex-wrap:wrap}.seg button{flex:1 1 auto;min-width:0;padding:7px clamp(8px,3.4vw,18px)}
+.titles{grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr))}.titlecard{min-width:0;overflow-wrap:anywhere}.titlecard b,.titlecard small{max-width:100%}
+.row{flex-wrap:wrap}.row>button{min-width:0}
+.pagehead h1,.pagehead p{overflow-wrap:anywhere}
+body.ussr-ui .nm,body.ussr-ui .item .sub,body.ussr-ui .mtile small,body.ussr-ui .mtile b,body.ussr-ui .panel p,body.ussr-ui .panel h3{overflow-wrap:break-word;word-break:normal;hyphens:auto}
+body.ussr-ui .us-news{margin-left:max(12px,env(safe-area-inset-left));margin-right:max(12px,env(safe-area-inset-right))}
+@media(max-width:360px){body.ussr-ui .pagehead h1{font-size:1.35rem;padding-left:12px}body.ussr-ui .pagehead p{padding-left:12px;font-size:10px}.us-news{font-size:11.5px}.us-news b{letter-spacing:.1em}}
+.grow{min-width:0}
+.row>button{max-width:100%;flex-shrink:1}
+
+@media(max-width:360px){body.ussr-ui .mgrid{grid-template-columns:1fr}body.ussr-ui .mtile b{font-size:13px;letter-spacing:0}body.ussr-ui .hero h1{padding-right:36px}}

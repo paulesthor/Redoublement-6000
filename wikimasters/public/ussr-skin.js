@@ -12,7 +12,7 @@
     'Ouvrir un paquet': 'Distribution des colis', 'Classement': 'Tableau d\'honneur', 'Succès': 'Décorations', 'Réglages': 'Règlement intérieur', 'Bourse': 'Bourse des vivres', 'Plus ou moins': 'Plan : ça monte ou ça baisse ?',
     'Banque': 'Caisse d\'épargne d\'État', 'Expéditions': 'Brigades de travail', 'Quêtes du jour': 'Normes du jour', 'Quiz du jour': 'Leçon du Parti', 'Albums': 'Albums de propagande', 'Événements': 'Décrets', 'Tournois': 'Olympiades du peuple',
     'Personnaliser': 'Dossier personnel', 'Mon profil': 'Mon dossier', 'Tendances': 'Cours du jour', 'Paquets du jour': 'Colis spéciaux', 'Recherche': 'Recherches', 'Enchères': 'Ventes aux enchères du Parti', 'Échanges': 'Troc entre camarades',
-    'Administration': 'Politburo', 'Messages privés': 'Courrier privé', 'Combat': 'Affrontement', 'Combat terminé': 'Affrontement terminé', 'Classement général': 'Tableau d\'honneur général',
+    'Administration': 'Politburo', 'Messages privés': 'Courrier privé', 'Combat': 'Duel', 'Combat terminé': 'Duel terminé', 'Classement général': 'Tableau d\'honneur général',
     // sous-titres
     'Défie un joueur connecté': 'Défie un camarade connecté', 'Défie un joueur, ou parie sur un combat en cours': 'Défie un camarade, ou parie sur un affrontement en cours', 'Apparence, jeu et notifications': 'Apparence, jeu et avis du Comité',
     'Les légendaires tirées par les joueurs': 'Les héros du Plan, dévoilés par les camarades', 'Paris sur les vues Wikipédia': 'Paris sur les vues Wikipédia, au prix du pain', 'Quel article a le plus de vues ?': 'Quel article a la plus grande production de vues ?',
