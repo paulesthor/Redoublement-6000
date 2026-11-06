@@ -128,5 +128,5 @@
     await sleep(lvl >= 4 ? 900 : 650); stage.classList.add('fly'); await sleep(420);
     cleanup(); return cards;
   }
-  window.ussrPackStage = ussrPackStage;
+  window.ussrPackStage = ussrPackStage; window.ussrParcelSvg = parcelSvg;
 })();
