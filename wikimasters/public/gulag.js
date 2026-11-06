@@ -55,7 +55,7 @@ export function startGulag(host, opts = {}) {
   const saveNow = () => { try { S.t = Date.now(); localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch { /* stockage indisponible */ } };
 
   host.innerHTML = `<div class="gl"><header class="gl-top"><div class="gl-head"><button class="gl-exit" id="gl-exit">Quitter</button><div class="gl-title"><small>Camp n° 7</small><b>Directeur du Camp</b></div><div class="gl-grade" id="gl-grade"></div></div>
-    <div class="gl-money"><span id="gl-r">0</span><small>wikiroubles</small><em id="gl-ps">+0 / s</em></div>
+    <div class="gl-money"><span id="gl-r">0</span><small>kopeks du Plan</small><em id="gl-ps">+0 / s</em></div>
     <div class="gl-bars"><div><label>Plan quinquennal <b id="gl-plan"></b></label><div class="gl-bar"><i id="gl-planbar"></i></div></div><div><label>Faveur du Politburo</label><div class="gl-bar fav"><i id="gl-fav"></i></div></div><div><label>Risque d'inspection</label><div class="gl-bar risk"><i id="gl-risk"></i></div></div></div>
     <div class="gl-actions"><button id="gl-fake">Falsifier le rapport</button><button id="gl-bribe" class="alt">Pot-de-vin</button></div></header>
     <nav class="gl-tabs" id="gl-tabs"><button data-k="w" class="on">Ateliers</button><button data-k="s">Pensionnaires</button><button data-k="d">Décrets</button></nav>
@@ -99,7 +99,7 @@ export function startGulag(host, opts = {}) {
   }
   function inspection() {
     const loss = S.r * 0.5; S.r -= loss; S.risk = 30; S.favor = Math.max(0, S.favor - 15); log('Inspection surprise : la moitié du trésor a été « mise à l\'abri ».');
-    popup(`<div class="gl-event"><div class="gl-stamp bad">INSPECTION</div><h2>Surprise !</h2><p>Les inspecteurs ont trouvé ce que vous cachiez, et aussi ce que vous ne cachiez pas. Ils ont « mis à l'abri » ${fmt(loss)} wikiroubles. Pour votre sécurité, bien sûr.</p><button data-close>Merci pour la vigilance</button></div>`);
+    popup(`<div class="gl-event"><div class="gl-stamp bad">INSPECTION</div><h2>Surprise !</h2><p>Les inspecteurs ont trouvé ce que vous cachiez, et aussi ce que vous ne cachiez pas. Ils ont « mis à l'abri » ${fmt(loss)} kopeks du Plan. Pour votre sécurité, bien sûr.</p><button data-close>Merci pour la vigilance</button></div>`);
   }
   function dismissed() {
     const s0 = S.plan; S = { ...fresh(), plan: s0 }; saveNow(); renderBody();
@@ -118,14 +118,14 @@ export function startGulag(host, opts = {}) {
     if (t.dataset.buy) { const w = WORKSHOPS.find(x => x.id === t.dataset.buy), c = cost(w); if (S.r >= c) { S.r -= c; S.own[w.id]++; renderBody(); } return; }
     if (t.dataset.mgr) { const w = WORKSHOPS.find(x => x.id === t.dataset.mgr); if (S.r >= w.mgr[2]) { S.r -= w.mgr[2]; S.mgr[w.id] = 1; log(`${w.mgr[0]} embauché. Il a signé sans lire, comme tout le monde.`); renderBody(); } return; }
     if (t.dataset.staff) { const p = STAFF.find(x => x.id === t.dataset.staff); if (S.r >= p.cost) { S.r -= p.cost; S.staff[p.id] = 1; log(`${p.name} rejoint l'équipe. Il n'a pas été consulté.`); renderBody(); } return; }
-    if (t.id === 'gl-fake' && S.cd <= 0) { const g = income() * 180 * (S.staff.comptable ? 1.3 : 1) + 20; gain(g); S.risk = Math.min(100, S.risk + 22 * (S.staff.espion ? 0.6 : 1)); S.favor = Math.min(100, S.favor + 6); S.cd = 40; toast(`Rapport falsifié : +${fmt(g)} ₽ sur le papier. Le papier est très satisfait.`, 'ok'); log('Rapport falsifié. Le papier a tout accepté.'); refresh(); return; }
+    if (t.id === 'gl-fake' && S.cd <= 0) { const g = income() * 180 * (S.staff.comptable ? 1.3 : 1) + 20; gain(g); S.risk = Math.min(100, S.risk + 22 * (S.staff.espion ? 0.6 : 1)); S.favor = Math.min(100, S.favor + 6); S.cd = 40; toast(`Rapport falsifié : +${fmt(g)} kop. sur le papier. Le papier est très satisfait.`, 'ok'); log('Rapport falsifié. Le papier a tout accepté.'); refresh(); return; }
     if (t.id === 'gl-bribe') { const b = Math.ceil(income() * 90 + 150); if (S.r >= b) { S.r -= b; S.risk = Math.max(0, S.risk - 35); toast('Pot-de-vin versé. Il s\'appelle « frais de représentation ».', 'ok'); log('Frais de représentation versés à un inspecteur sans nom.'); refresh(); } return; }
   });
 
   // ---------- boucle ----------
   const away = Math.min(OFFLINE_MAX, (Date.now() - (S.t || Date.now())) / 1000);
   renderBody();
-  if (away > 60 && income() > 0) { const g = income() * away * 0.5; gain(g); setTimeout(() => toast(`Pendant votre absence (${Math.round(away / 60)} min), le plan a avancé tout seul : +${fmt(g)} ₽. Personne ne sait comment.`, 'ok'), 500); }
+  if (away > 60 && income() > 0) { const g = income() * away * 0.5; gain(g); setTimeout(() => toast(`Pendant votre absence (${Math.round(away / 60)} min), le plan a avancé tout seul : +${fmt(g)} kop.. Personne ne sait comment.`, 'ok'), 500); }
   let last = performance.now(), acc = 0, saveAcc = 0;
   const timer = setInterval(() => {
     if (stopped) return; const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
