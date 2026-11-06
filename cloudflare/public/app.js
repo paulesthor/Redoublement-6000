@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '9.2';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '9.3';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -2217,6 +2217,21 @@ views.potato = async v => {
     window.__potato = game;
   } catch (e) { jlog('patates : ' + e.message); full.querySelector('#pt-host').innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger le jeu 3D (${esc(e.message)}).<br><button onclick="this.closest('.ptfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
+// ---------- démo « Directeur du Camp » (aperçu réservé à l'administrateur) ----------
+views.gulag = async v => {
+  if (!me.admin) { tab = 'packs'; return render(); }
+  v.innerHTML = `${pageHead('Camp', 'Démo du jeu de gestion (administrateur)')}<div class="empty">Le jeu tourne en plein écran.<br><button id="gl-reopen" style="margin-top:10px">Rouvrir le jeu</button></div>`;
+  $('#gl-reopen').onclick = () => render();
+  const full = document.createElement('div'); full.className = 'glfull'; full.innerHTML = '<div id="gl-host"></div>'; document.body.append(full); document.body.classList.add('ptlock');
+  let game = null, gone = false;
+  viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); };
+  try {
+    const mod = await import('/gulag.js?v=' + encodeURIComponent(BUILD));
+    if (gone) return;
+    game = mod.startGulag(full.querySelector('#gl-host'), { onExit: () => { tab = 'packs'; render(); setTimeout(() => moreSheet(), 120); } });
+    window.__gulag = game;
+  } catch (e) { jlog('camp : ' + e.message); full.innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger la démo (${esc(e.message)}).<br><button onclick="this.closest('.glfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
+};
 // ---------- page des nouveautés (à chaque mise à jour) ----------
 // ---------- combats en direct et paris ----------
 async function liveFights(v) {
@@ -2400,7 +2415,7 @@ function moreSheet() {
     <h3>Gagner des pièces</h3><div class="mgrid">${T('events', 'spark', 'Événements', 'Défis, saison, surprises', (me.ev || []).length)}${T('bourse', 'market', 'Bourse', 'Paris sur les vues')}${T('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${T('trends', 'trophy', 'Tendances', 'Cours et alertes')}${T('bank', 'building', 'Banque', 'Épargne et dividendes')}${T('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires')}${T('albums', 'album', 'Albums', 'Séries de cartes à compléter')}${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
-    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('potato', 'shield', 'Patates (test)', 'Jeu 3D, aperçu admin') + T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
+    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('potato', 'shield', 'Patates (test)', 'Jeu 3D, aperçu admin') + T('gulag', 'shield', 'Camp (démo)', 'Gestion, aperçu admin') + T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const k = b.dataset.go; close();

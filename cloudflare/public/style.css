@@ -1214,3 +1214,35 @@ body.ptlock{overflow:hidden;overscroll-behavior:none}
 .ptfull .pt-prog{bottom:calc(14px + env(safe-area-inset-bottom))}.ptfull .pt-hint{bottom:calc(36px + env(safe-area-inset-bottom))}
 .pt-top b em{font-style:normal;font-size:13px;opacity:.7;margin-left:2px}.pt-top b.done{color:#8bd05a}
 .pt-exit{position:absolute;left:10px;bottom:calc(52px + env(safe-area-inset-bottom));pointer-events:auto;background:#1a1208cc;color:#f6efd8;border:1px solid #e8c35a66;border-radius:10px;padding:7px 12px;font-size:12.5px;box-shadow:none}
+
+/* démo « Directeur du Camp » (aperçu admin) */
+.glfull{position:fixed;inset:0;z-index:70;background:#140d0b;overflow:hidden}
+.gl{--red:#b3262d;--cream:#efe6cc;--gold:#e8c35a;--ink:#1b1310;position:absolute;inset:0;display:flex;flex-direction:column;color:var(--cream);background:repeating-linear-gradient(135deg,#1a1210 0 14px,#1d1411 14px 28px);font-family:inherit}
+.gl-top{padding:calc(8px + env(safe-area-inset-top)) 12px 8px;background:linear-gradient(#7d1118,#5c0c12);border-bottom:3px solid var(--gold);box-shadow:0 6px 20px #0008;position:relative}
+.gl-top::after{content:"";position:absolute;right:-30px;top:-30px;width:130px;height:130px;background:var(--gold);opacity:.08;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);pointer-events:none}
+.gl-head{display:flex;align-items:center;gap:10px}
+.gl-exit{background:#0004;color:var(--cream);border:1px solid #e8c35a66;border-radius:8px;padding:6px 10px;font-size:12px;box-shadow:none}
+.gl-title{flex:1;line-height:1.1}.gl-title small{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}.gl-title b{font-size:17px;text-transform:uppercase;letter-spacing:.03em}
+.gl-grade{font-size:11px;text-align:right;color:var(--gold);max-width:110px;line-height:1.15;text-transform:uppercase;letter-spacing:.05em}
+.gl-money{display:flex;align-items:baseline;gap:8px;margin:8px 0 6px}.gl-money span{font-size:34px;font-weight:800;color:#fff4cf;font-variant-numeric:tabular-nums;text-shadow:0 2px 0 #0006}.gl-money small{opacity:.8}.gl-money em{margin-left:auto;font-style:normal;color:var(--gold);font-weight:700}
+.gl-bars{display:grid;gap:6px}.gl-bars label{display:flex;justify-content:space-between;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;opacity:.9}
+.gl-bar{height:8px;background:#0006;border-radius:4px;overflow:hidden;box-shadow:inset 0 0 0 1px #ffffff1f}.gl-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--gold),#f6e08a);transition:width .2s}
+.gl-bar.fav i{background:linear-gradient(90deg,#c0161d,#e8c35a,#8bd05a)}.gl-bar.risk i{background:linear-gradient(90deg,#6fa8dc,#e8c35a,#ff4d3d)}
+.gl-actions{display:flex;gap:8px;margin-top:9px}.gl-actions button{flex:1;padding:9px 6px;font-size:13px;font-weight:700;border-radius:10px;border:0;background:var(--gold);color:#4a0b10;box-shadow:0 3px 0 #9a7b24}.gl-actions .alt{background:#0004;color:var(--cream);box-shadow:inset 0 0 0 1px #ffffff33}
+.gl-actions button:disabled{opacity:.45;box-shadow:none}
+.gl-tabs{display:flex;background:#0006;border-bottom:1px solid #ffffff18}.gl-tabs button{flex:1;background:none;color:var(--cream);box-shadow:none;border-radius:0;padding:11px 4px;font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;opacity:.65;border-bottom:3px solid transparent}.gl-tabs button.on{opacity:1;border-bottom-color:var(--red);color:var(--gold)}
+.gl-body{flex:1;overflow:auto;padding:10px 10px 12px;-webkit-overflow-scrolling:touch;display:grid;gap:10px;align-content:start}
+.gl-card{display:flex;gap:11px;background:#2a1b17;border:1px solid #ffffff14;border-left:4px solid var(--red);border-radius:6px;padding:11px;box-shadow:0 3px 0 #0006}
+.gl-ico{width:46px;height:46px;flex:none;background:var(--red);color:var(--cream);display:grid;place-items:center;transform:rotate(-3deg);box-shadow:3px 3px 0 #0007}.gl-ic{width:28px;height:28px}
+.gl-info{flex:1;min-width:0}.gl-info h3{margin:0 0 3px;font-size:14.5px;text-transform:uppercase;letter-spacing:.02em}.gl-info p{margin:0 0 6px;font-size:12.5px;line-height:1.4;opacity:.85}
+.gl-stats{display:flex;gap:12px;font-size:12px;color:var(--gold);flex-wrap:wrap}.gl-stats b{color:#fff4cf}.ok{color:#8bd05a}
+.gl-btns{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}.gl-btns button{background:var(--gold);color:#4a0b10;font-weight:800;font-size:12.5px;border-radius:8px;padding:8px 10px;box-shadow:0 2px 0 #9a7b24}.gl-btns .alt{background:#0004;color:var(--cream);box-shadow:inset 0 0 0 1px #ffffff2e;font-weight:600}.gl-btns button:disabled{opacity:.4;box-shadow:none}
+.gl-mgr{font-style:italic;font-size:11.5px!important;opacity:.7!important;margin-top:6px!important}.gl-log{border-bottom:1px dashed #ffffff1c;padding:5px 0;margin:0!important}
+.gl-ticker{background:#000;border-top:2px solid var(--red);padding:7px 12px calc(7px + env(safe-area-inset-bottom));font-size:12px;color:var(--gold);min-height:36px;display:flex;align-items:center;overflow:hidden}
+.gl-ticker span{opacity:0;transform:translateY(6px)}.gl-ticker span.in{animation:glnews .6s forwards}@keyframes glnews{to{opacity:1;transform:none}}
+.gl-modal{position:absolute;inset:0;display:none;place-items:center;background:#000a;padding:16px;z-index:5}.gl-modal.show{display:grid}.gl-modal.note{background:none;place-items:start center;padding-top:calc(150px + env(safe-area-inset-top));pointer-events:none}
+.gl-note{background:#1a1208f2;border:1px solid var(--gold);padding:10px 14px;border-radius:10px;max-width:340px;text-align:center;font-weight:600;box-shadow:0 8px 30px #000a}.gl-note.ok{border-color:#8bd05a}
+.gl-event{background:linear-gradient(#efe6cc,#d9cca3);color:#2a1d12;border:3px solid #5b0b10;max-width:360px;padding:18px 18px 16px;position:relative;box-shadow:0 14px 40px #000c}
+.gl-event h2{margin:6px 0 8px;font-size:19px;text-transform:uppercase;line-height:1.15;color:#7d1118}.gl-event p{margin:0 0 12px;font-size:14px;line-height:1.45}
+.gl-stamp{display:inline-block;border:3px solid #b3262d;color:#b3262d;font-weight:900;letter-spacing:.12em;font-size:12px;padding:2px 8px;transform:rotate(-4deg)}.gl-stamp.ok{border-color:#2f7a2a;color:#2f7a2a}.gl-stamp.bad{border-color:#b3262d}
+.gl-choices{display:grid;gap:8px}.gl-event button{background:#7d1118;color:#f6efd8;font-weight:700;border-radius:6px;padding:11px 12px;font-size:13.5px;box-shadow:0 3px 0 #3c070a;text-align:left}.gl-event button.alt{background:#efe6cc;color:#7d1118;border:2px solid #7d1118;box-shadow:none}
