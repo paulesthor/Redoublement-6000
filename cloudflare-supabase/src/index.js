@@ -10,6 +10,7 @@ import { installReset, RESET_AT } from './reset.js';
 import { installMarket, MARKET } from './market.js';
 import { installSeasonZero } from './seasonzero.js';
 import { installFeed } from './feed.js';
+import { installCamp } from './camp.js';
 import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
@@ -762,7 +763,9 @@ route('GET', '/api/titles', async ({ env, ctx, user }) => {
   const { owned, added, ctx: c } = await syncTitles(env, user.id);
   added.forEach(id => notify(env, ctx, { t: 'notify', msg: `Nouveau titre débloqué : « ${TITLE[id].label} » !` }, user.id));
   const cur = (await one(env, 'SELECT title FROM users WHERE id = ?', user.id))?.title ?? null;
-  return { current: cur, cats: TITLE_CATS, titles: TITLES.map(x => ({ id: x.id, cat: x.cat, label: x.label, desc: x.desc, season: !!x.season, unlocked: owned.has(x.id), prog: !owned.has(x.id) && x.prog ? x.prog(c) : null })) };
+  // les titres du camp (aperçu réservé à l'administrateur) ne se voient dans le catalogue qu'une fois gagnés
+  const shown = TITLES.filter(x => x.cat !== 'camp' || owned.has(x.id)), cats = Object.fromEntries(Object.entries(TITLE_CATS).filter(([k]) => k !== 'camp' || shown.some(x => x.cat === 'camp')));
+  return { current: cur, cats, titles: shown.map(x => ({ id: x.id, cat: x.cat, label: x.label, desc: x.desc, season: !!x.season, unlocked: owned.has(x.id), prog: !owned.has(x.id) && x.prog ? x.prog(c) : null })) };
 });
 route('POST', '/api/me/title', async ({ env, user, body }) => {
   await ensureGameSchema(env);
@@ -976,6 +979,7 @@ const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.unt
 const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, placeholders });
 const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
 const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
+installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle });
 const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });

@@ -1,6 +1,7 @@
 // Récompense quotidienne, quêtes du jour, quiz du jour : règles, catalogue de quêtes, suivi de progression.
 import { st } from './util.js';
 import { FEED_TABLES } from './feed.js';
+import { CAMP_TABLES, CAMP_TITLES } from './camp.js';
 import { EVENT_ALBUMS } from './events-data.js';
 
 const TZ = 'Europe/Paris';
@@ -136,7 +137,7 @@ export async function ensureGameSchema(env) {
     'ALTER TABLE cards ADD COLUMN IF NOT EXISTS beta INTEGER NOT NULL DEFAULT 0',   // 1 = carte fondateur (halo « bêta »)
     'CREATE TABLE IF NOT EXISTS legend_taken (card_id BIGINT PRIMARY KEY, ts BIGINT NOT NULL)', 'ALTER TABLE legend_taken ENABLE ROW LEVEL SECURITY',   // légendaires uniques : cartes légendaires qui existent déjà
     'ALTER TABLE trades ALTER COLUMN want_card DROP NOT NULL', 'ALTER TABLE trades ADD COLUMN IF NOT EXISTS price BIGINT',   // vente directe : carte contre pièces (pas de carte demandée)
-    ...FEED_TABLES,
+    ...FEED_TABLES, ...CAMP_TABLES,
     'CREATE TABLE IF NOT EXISTS card_seen (user_id BIGINT NOT NULL, card_id BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (user_id, card_id))',
     'ALTER TABLE card_seen ENABLE ROW LEVEL SECURITY',
     // historique « déjà possédée un jour » : alimenté par un déclencheur, donc quel que soit le chemin d'obtention (paquet, échange, enchère, duel…)
@@ -180,7 +181,7 @@ export function tPayouts(n, stake) {
 // ---------- titres à débloquer (profil) ----------
 // calc : débloqué automatiquement d'après les statistiques ; sans calc : accordé par un événement (grantTitle) ; season : réservé aux futures saisons.
 const TI = (id, cat, label, desc, calc, prog) => ({ id, cat, label, desc, calc, prog });
-export const TITLE_CATS = { modes: 'Modes de jeu', exploits: 'Exploits et collection', evenements: 'Événements', saison: 'Saisons' };
+export const TITLE_CATS = { camp: 'Camp du Goulag', modes: 'Modes de jeu', exploits: 'Exploits et collection', evenements: 'Événements', saison: 'Saisons' };
 export const TITLES = [
   TI('duelist', 'modes', 'Duelliste', 'Gagne 10 duels ou combats', c => c.wins >= 10, c => [c.wins, 10]),
   TI('gladiator', 'modes', 'Gladiateur', 'Gagne 50 duels ou combats', c => c.wins >= 50, c => [c.wins, 50]),
@@ -213,6 +214,7 @@ export const TITLES = [
   TI('ev_season_podium', 'evenements', 'Sur le podium', 'Termine 2e ou 3e d\'une saison'),
   TI('ev_season_vet', 'evenements', 'Vétéran de saison', 'Marque 50 points de saison'),
   ...EVENT_ALBUMS.map(a => TI('ev_alb_' + a.id, 'evenements', `${a.emoji} ${a.name}`, `Complète l'album éphémère « ${a.name} »`)),
+  ...CAMP_TITLES.map(t => ({ id: t.id, cat: 'camp', label: t.label, desc: t.desc, season: true })),
   { id: 'saison0', cat: 'saison', label: '🏅 Pionnier · Saison 0', desc: 'Titre exclusif : tu étais là dès la bêta', season: true },
   { id: 's1_champion', cat: 'saison', label: 'Champion de la saison 1', desc: 'Titre exclusif de la saison 1', season: true },
   { id: 's1_veteran', cat: 'saison', label: 'Vétéran de la saison 1', desc: 'Titre exclusif de la saison 1', season: true },

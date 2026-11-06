@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '9.7';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '9.8';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1770,15 +1770,15 @@ views.tournament = async v => {
 };
 
 // ---------- réglages : thèmes, texte, animations, vibrations, notifications ----------
-const THEME_LIST = [['dark', 'Sombre', '#07070b', '#ecebe6', 'Le thème d\'origine'], ['midnight', 'Minuit', '#000', '#ecebe6', 'Noir total, économise la batterie'], ['ocean', 'Océan', '#0d1726', '#8fd0ff', 'Bleu nuit'], ['forest', 'Forêt', '#0d1a13', '#9be3b0', 'Vert profond'],
+const THEME_LIST = [['urss', 'Camarade', '#2a0f14', '#f4d56b', 'Rouge soviétique, gagné au Camp'], ['dark', 'Sombre', '#07070b', '#ecebe6', 'Le thème d\'origine'], ['midnight', 'Minuit', '#000', '#ecebe6', 'Noir total, économise la batterie'], ['ocean', 'Océan', '#0d1726', '#8fd0ff', 'Bleu nuit'], ['forest', 'Forêt', '#0d1a13', '#9be3b0', 'Vert profond'],
   ['violet', 'Violet', '#171027', '#d2b4ff', 'Mauve nocturne'], ['light', 'Clair', '#f2f1ee', '#222', 'Fond blanc'], ['beige', 'Beige', '#efe6d3', '#6b5a3a', 'Papier chaleureux'], ['auto', 'Automatique', 'linear-gradient(135deg,#07070b 50%,#f2f1ee 50%)', '#888', 'Suit ton téléphone']];
 const pref = (k, d = '') => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } window.applyPrefs?.(); };
 views.settings = async v => {
-  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm');
+  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = (await api('/camp').catch(() => null))?.perks || [];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
   v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
-    <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
+    <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.filter(t => t[0] !== 'urss' || perks.includes('theme_urss') || th === 'urss').map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
       ${sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
@@ -2228,7 +2228,7 @@ views.gulag = async v => {
   try {
     const mod = await import('/gulag.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
-    game = mod.startGulag(full.querySelector('#gl-host'), { onExit: () => { tab = 'packs'; render(); setTimeout(() => moreSheet(), 120); } });
+    game = mod.startGulag(full.querySelector('#gl-host'), { api, onReward: () => { refreshMe().catch(() => {}); }, onExit: () => { tab = 'packs'; render(); setTimeout(() => moreSheet(), 120); } });
     window.__gulag = game;
   } catch (e) { jlog('camp : ' + e.message); full.innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger la démo (${esc(e.message)}).<br><button onclick="this.closest('.glfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };

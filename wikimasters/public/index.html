@@ -14,7 +14,7 @@
 <meta name="theme-color" content="#07070b">
 <script>
 /* préférences d'affichage appliquées avant le premier affichage (pas de flash) : thème, taille du texte, animations, vibrations */
-window.THEME_BG = { dark: '#07070b', midnight: '#000000', ocean: '#050b14', forest: '#050d09', violet: '#0b0714', light: '#f2f1ee', beige: '#efe6d3' };
+window.THEME_BG = { dark: '#07070b', midnight: '#000000', ocean: '#050b14', forest: '#050d09', violet: '#0b0714', urss: '#16070a', light: '#f2f1ee', beige: '#efe6d3' };
 window.applyPrefs = function () {
   var g = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, r = document.documentElement;
   var th = g('wm_theme') || 'dark'; if (th === 'auto') th = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';

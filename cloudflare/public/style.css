@@ -1279,3 +1279,6 @@ body.ptlock{overflow:hidden;overscroll-behavior:none}
 .gl-hud .gl-money span{font-size:24px}
 
 .gl-scene .gl-bars{grid-template-columns:2fr 1fr 1fr}
+
+.gl-num{font-weight:900;font-size:18px;font-family:inherit}.gl-done{opacity:.6;border-left-color:#2f7a2a}.gl-sum{border-left-color:var(--gold)}
+html[data-theme=urss]{--bg:#16070a;--bg2:#1e0a0e;--panel:#2a0f14;--panel2:#38141a;--line:#4a1a21;--line2:#662630;--gold:#f4d56b;--gold2:#c9a43a;--grad-gold:linear-gradient(180deg,#ffe58a,#e0b53c)}html[data-theme=urss],html[data-theme=urss] body{background:#16070a}

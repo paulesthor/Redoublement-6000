@@ -1,0 +1,32 @@
+// Camp du Goulag : paliers et primes pour le mode classique (une fois, délai minimum, aperçu réservé à l'admin).
+import './api.mjs';
+const { call, ok, DB, J, done } = globalThis.__T;
+const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
+[s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
+await q('UPDATE users SET is_admin = 1 WHERE name = ?', 'Alice');
+const alice = (await q("SELECT id FROM users WHERE name = 'Alice'"))[0].id, coins = async () => +(await q('SELECT coins FROM users WHERE id = ?', alice))[0].coins, packs = async () => +(await q('SELECT pack_stock FROM users WHERE id = ?', alice))[0].pack_stock;
+[s] = await call(B, 'GET', '/api/camp'); ok('aperçu : refusé à un joueur ordinaire', s === 403, s);
+[s] = await call(B, 'POST', '/api/camp/claim', { id: 1, p: 9 }); ok('réclamer : refusé à un joueur ordinaire', s === 403, s);
+[s, r] = await call(A, 'GET', '/api/camp'); ok('liste des 10 paliers, rien de réclamé', s === 200 && r.milestones.length === 10 && r.claimed.length === 0 && r.perks.length === 0 && r.totalCoins > 0, J(r).slice(0, 200));
+[s] = await call(A, 'POST', '/api/camp/claim', { id: 99, p: 9 }); ok('palier inconnu : 404', s === 404, s);
+[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 1, p: 9 }); ok('trop tôt : le délai minimum depuis le début n\'est pas écoulé', s === 400 && /délai/.test(r.error), J([s, r]));
+await q('UPDATE camp_progress SET start = ? WHERE user_id = ?', Date.now() - 2 * 3600e3, alice);
+[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 1, p: 0.1 }); ok('progression insuffisante : refusé', s === 400 && /Progression/.test(r.error), J([s, r]));
+[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 1, p: 'abc' }); ok('progression invalide : refusé', s === 400, J([s, r]));
+const c0 = await coins(); [s, r] = await call(A, 'POST', '/api/camp/claim', { id: 1, p: 0.6 }); ok('palier 1 : 40 wikibidou + titre', s === 200 && r.coins === 40 && r.title === 'Contremaître stagiaire' && r.titleNew === true && await coins() === c0 + 40, J([s, r]));
+ok('le titre est dans la collection du joueur', (await q("SELECT 1 x FROM user_titles WHERE user_id = ? AND tid = 'camp_1'", alice)).length === 1);
+[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 1, p: 0.6 }); ok('une seule fois : deuxième demande refusée', s === 409, J([s, r]));
+[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 4, p: 5 }); ok('palier 4 (12 h) refusé à 2 h même avec une progression énorme', s === 400 && /délai/.test(r.error), J([s, r]));
+await q('UPDATE camp_progress SET start = ? WHERE user_id = ?', Date.now() - 13 * 3600e3, alice);
+const c1 = await coins(), p1 = await packs(); [s, r] = await call(A, 'POST', '/api/camp/claim', { id: 2, p: 1 }); ok('palier 2 : 100 wikibidou + 1 paquet', s === 200 && await coins() === c1 + 100 && await packs() === p1 + 1, J([s, r]));
+[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 4, p: 2.1 }); ok('palier 4 : thème rouge débloqué à vie', s === 200 && r.perk === 'theme_urss', J([s, r]));
+[s, r] = await call(A, 'GET', '/api/camp'); ok('état : paliers 1, 2 et 4 réclamés, thème dans les avantages', J(r.claimed) === '[1,2,4]' && r.perks.includes('theme_urss'), J(r));
+// concurrence : deux appareils réclament le même palier en même temps
+await q('UPDATE camp_progress SET start = ? WHERE user_id = ?', Date.now() - 100 * 3600e3, alice);
+const c2 = await coins(); const both = await Promise.all([call(A, 'POST', '/api/camp/claim', { id: 3, p: 2 }), call(A, 'POST', '/api/camp/claim', { id: 3, p: 2 })]);
+ok('réclamations simultanées : une seule passe', both.filter(x => x[0] === 200).length === 1 && await coins() === c2 + 80, J(both.map(x => x[0])));
+for (const id of [5, 6, 7, 8, 9, 10]) await call(A, 'POST', '/api/camp/claim', { id, p: 7 });
+[s, r] = await call(A, 'GET', '/api/camp'); ok('les 10 paliers réclamés au final', r.claimed.length === 10, J(r.claimed));
+const total = r.totalCoins; ok('total de primes borné (aucune réclamation en double)', (await q('SELECT COUNT(*) n FROM user_titles WHERE user_id = ? AND tid LIKE ?', alice, 'camp_%'))[0].n === 6 && total === 2620, total);
+done();
