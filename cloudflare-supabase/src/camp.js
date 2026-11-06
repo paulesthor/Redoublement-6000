@@ -4,7 +4,7 @@ export const MILESTONES = [
   { id: 1, p: 0.5, minH: 1, name: 'Contremaître stagiaire', text: 'Le Parti vous prête un sifflet. Il siffle, mais pas dans le bon sens.', coins: 40, packs: 0, title: 'camp_1' },
   { id: 2, p: 1, minH: 4, name: 'Chef de brigade', text: 'Premier plan accompli. On vous remet une médaille, puis on vous la reprend pour l\'inventaire.', coins: 100, packs: 1, title: 'camp_2' },
   { id: 3, p: 1.5, minH: 8, name: 'Prime de rendement', text: 'Une enveloppe du ministère. Elle contient un mot gentil et un peu d\'argent.', coins: 80, packs: 0 },
-  { id: 4, p: 2, minH: 12, name: 'Directeur adjoint', text: 'Deuxième plan accompli. Le camp est transféré, vous aussi. Le drapeau rouge vous suit : le thème « Camarade » est à vous pour toujours.', coins: 200, packs: 0, title: 'camp_3', perk: 'theme_urss' },
+  { id: 4, p: 2, minH: 12, name: 'Directeur adjoint', text: 'Deuxième plan accompli. Le camp est transféré, vous aussi, avec vos bagages et votre dossier (qui est arrivé avant vous).', coins: 200, packs: 0, title: 'camp_3' },
   { id: 5, p: 2.5, minH: 17, name: 'Colis du Parti', text: 'Deux paquets, trois blagues, et une lettre d\'excuses pour le retard.', coins: 120, packs: 2 },
   { id: 6, p: 3, minH: 22, name: 'Directeur du camp', text: 'Troisième plan accompli. On vous donne un bureau, un tampon et un nom sur la porte (mal orthographié).', coins: 250, packs: 0, title: 'camp_4' },
   { id: 7, p: 3.5, minH: 28, name: 'Prime de la délégation', text: 'Les étrangers ont tout aimé et rien compris. Le Parti paie.', coins: 180, packs: 3 },
