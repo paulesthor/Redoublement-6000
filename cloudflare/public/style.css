@@ -1282,3 +1282,46 @@ body.ptlock{overflow:hidden;overscroll-behavior:none}
 
 .gl-num{font-weight:900;font-size:18px;font-family:inherit}.gl-done{opacity:.6;border-left-color:#2f7a2a}.gl-sum{border-left-color:var(--gold)}
 html[data-theme=urss]{--bg:#16070a;--bg2:#1e0a0e;--panel:#2a0f14;--panel2:#38141a;--line:#4a1a21;--line2:#662630;--gold:#f4d56b;--gold2:#c9a43a;--grad-gold:linear-gradient(180deg,#ffe58a,#e0b53c)}html[data-theme=urss],html[data-theme=urss] body{background:#16070a}
+
+/* ouverture de paquet « ambiance URSS » (aperçu admin) */
+#reveal.ussr{background:#1c0507}
+.us-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 32%,#9a141c 0,#4d0a10 55%,#1c0507 100%)}
+.us-bands{position:absolute;inset:0;background:repeating-linear-gradient(115deg,transparent 0 58px,rgba(244,213,107,.07) 58px 62px);pointer-events:none}
+.us-fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+.us-stage{position:absolute;inset:0;display:grid;place-items:center;z-index:3;transition:transform .45s ease-in,opacity .45s}
+.us-stage.fly{transform:scale(1.4);opacity:0}
+.us-obj{position:relative;width:min(80vw,380px);aspect-ratio:240/220;transform:translateY(90px) scale(.7);opacity:0;transition:transform .55s cubic-bezier(.2,1.2,.4,1),opacity .4s;touch-action:none}
+.us-obj.in{transform:none;opacity:1;animation:usBob 3.2s ease-in-out .6s infinite}
+.us-obj.snap,.us-obj.open{animation:none}
+.us-obj.leave{transform:translateY(-40px) scale(.8)!important;opacity:0!important;transition:transform .4s,opacity .4s}
+@keyframes usBob{50%{transform:translateY(-8px) rotate(-.8deg)}}
+.us-svg{width:100%;height:100%;display:block;overflow:visible}
+.us-obj::before{content:"";position:absolute;left:12%;right:12%;top:2%;height:42%;background:radial-gradient(ellipse at 50% 100%,rgba(255,226,140,.95),rgba(244,213,107,0) 70%);opacity:0;transition:opacity .45s;pointer-events:none}
+.us-obj.open::before{opacity:1}
+.us-lid,.us-cover,.us-strap{transform-box:fill-box}
+.us-lid{transform-origin:50% 0;transition:transform .5s cubic-bezier(.3,1.4,.5,1)}.us-obj.open .us-lid{transform:scaleY(-1.05)}
+.us-string{transition:transform .55s ease-in,opacity .45s}.us-obj.snap .us-string{transform:translateY(70px) rotate(10deg);opacity:0}
+.us-cover{transform-origin:0 50%;transition:transform .55s cubic-bezier(.3,1.3,.5,1)}.folder.open .us-cover{transform:scaleX(-.88)}
+.us-strap{transform-origin:0 50%;transition:transform .3s,opacity .3s}.folder.snap .us-strap{transform:scaleX(.06);opacity:0}
+.us-obj.dolls{display:grid;place-items:center;aspect-ratio:1/1.1}
+.us-doll{grid-area:1/1;position:relative;width:64%;scale:var(--s,1);overflow:visible;animation:usWob 1.6s ease-in-out infinite;filter:none}
+.us-doll[data-k="0"]{z-index:4}.us-doll[data-k="1"]{--s:.82;z-index:3}.us-doll[data-k="2"]{--s:.66;z-index:2}.us-doll[data-k="3"]{--s:.5;z-index:1}
+@keyframes usWob{0%,100%{rotate:-3deg}50%{rotate:3deg}}
+.us-doll .d-top{transform-box:fill-box;transform-origin:50% 100%;transition:transform .5s cubic-bezier(.3,1.4,.5,1)}
+.us-doll.split .d-top{transform:translateY(-70px) rotate(28deg)}.us-doll.gone{opacity:0;transition:opacity .3s .15s}
+.us-banner{position:absolute;top:calc(14px + env(safe-area-inset-top));left:0;right:0;text-align:center;color:#f4d56b;z-index:5;pointer-events:none}
+.us-banner b{display:block;font-size:22px;letter-spacing:.18em}.us-banner span{font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85}
+.us-hint{position:absolute;left:0;right:0;bottom:calc(36px + env(safe-area-inset-bottom));text-align:center;color:#f6efd8;font-size:14px;z-index:5;pointer-events:none;transition:opacity .3s;text-shadow:0 1px 4px #000}
+.us-flash{position:absolute;inset:0;background:radial-gradient(circle,#fff6cf,rgba(244,213,107,0) 62%);opacity:0;z-index:6;pointer-events:none}.us-flash.go{animation:usFlash .8s ease-out}
+@keyframes usFlash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
+.us-stamp{position:absolute;left:50%;top:26%;z-index:7;border:6px solid #f4d56b;color:#f4d56b;font-weight:900;font-size:38px;letter-spacing:.08em;padding:4px 16px;opacity:0;transform:translate(-50%,-50%) scale(3) rotate(-12deg);pointer-events:none;background:#7d111866}
+.us-stamp.go{animation:usStamp .55s cubic-bezier(.2,1.6,.4,1) forwards}.us-stamp.secret{border-color:#f6efd8;color:#f6efd8}.us-stamp.ok{border-color:#8bd05a;color:#8bd05a}
+@keyframes usStamp{0%{opacity:0;transform:translate(-50%,-50%) scale(3) rotate(-12deg)}30%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(-12deg)}85%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1) rotate(-12deg)}}
+/* cartes : fond rouge, grade militaire, tampon et matricule */
+#reveal.ussr .bg{background:radial-gradient(ellipse at 50% 38%,#8a1119 0,#400a0f 60%,#190406 100%)}
+#reveal.ussr .rc{position:relative;background:#efe6cc;border:4px solid #7d1118;border-radius:8px;box-shadow:0 0 0 3px #f4d56b66,0 18px 50px #000b}
+#reveal.ussr .rl{color:#7d1118;letter-spacing:.2em}#reveal.ussr .nm{font-family:inherit;text-transform:uppercase;letter-spacing:.02em}
+#reveal.ussr .next{background:linear-gradient(135deg,#f4d56b,#c9a43a);color:#4a0b10}
+.ussr-stamp{position:absolute;right:8px;bottom:56px;border:3px solid #b3262d;color:#b3262d;padding:3px 9px;font-weight:900;letter-spacing:.1em;text-align:center;transform:rotate(-11deg) scale(2.6);opacity:0;animation:usStamp2 .5s .55s cubic-bezier(.2,1.6,.4,1) forwards;background:#efe6cccc;pointer-events:none}
+.ussr-stamp b{display:block;font-size:19px}.ussr-stamp small{font-size:9px;letter-spacing:.06em}
+@keyframes usStamp2{to{opacity:.92;transform:rotate(-11deg) scale(1)}}
