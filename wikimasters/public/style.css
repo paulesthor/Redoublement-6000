@@ -1262,3 +1262,20 @@ body.ptlock{overflow:hidden;overscroll-behavior:none}
 .gl-top::after{display:none}
 
 .gl-hud,.gl-scene .gl-bars,.gl-stage{z-index:2}
+
+/* camp : menu compact pour tout voir à l'écran */
+.gl-scene{flex:0 0 30vh;min-height:200px;transition:flex-basis .25s}.gl-scene.big{flex-basis:60vh}
+.gl-zoom{position:absolute;right:8px;bottom:6px;z-index:3;background:#0007;color:#fff4cf;border:1px solid #e8c35a88;border-radius:8px;padding:4px 9px;font-size:11px;box-shadow:none}
+.gl-top{padding:calc(4px + env(safe-area-inset-top)) 8px 4px}.gl-title b{font-size:15px;white-space:nowrap}.gl-title small{font-size:9.5px}.gl-grade{font-size:10px;max-width:96px}.gl-exit{padding:5px 8px}
+.gl-actions{padding:6px 8px;gap:6px}.gl-actions button{padding:7px 4px;font-size:12px}
+.gl-tabs button{padding:8px 2px;font-size:11px}
+.gl-body{padding:8px 8px 10px;gap:8px}
+.gl-card{padding:8px;gap:9px}.gl-ico{width:36px;height:36px}.gl-ic{width:22px;height:22px}
+.gl-info h3{font-size:13px;margin-bottom:2px}.gl-info p{font-size:11.5px;line-height:1.3;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.gl-stats{font-size:11px;gap:9px}.gl-btns{margin-top:5px;gap:6px}.gl-btns button{padding:6px 9px;font-size:12px}
+.gl-ticker{min-height:28px;padding:5px 10px calc(5px + env(safe-area-inset-bottom));font-size:11px}
+.gl-mgr{font-size:11px!important}
+.gl-note.bad{border-color:#ff5a4d}.gl-fx{font-weight:700;color:#7d1118;border-top:1px dashed #7d111855;padding-top:8px}
+.gl-hud .gl-money span{font-size:24px}
+
+.gl-scene .gl-bars{grid-template-columns:2fr 1fr 1fr}
