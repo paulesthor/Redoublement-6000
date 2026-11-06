@@ -1175,3 +1175,33 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .tprice{flex:1;min-width:0;margin:0}.tprice input{width:100%}
 #t-mode{margin-bottom:10px}
 .tslots [hidden]{display:none!important}
+
+/* jeu 3D des patates (aperçu admin) */
+.ptwrap{max-width:560px;margin:0 auto}
+.pthost{position:relative;width:100%;height:min(78vh,720px);min-height:420px;border-radius:18px;overflow:hidden;background:#1b2233;border:1px solid var(--line2)}
+.pt-canvas{width:100%;height:100%;display:block}
+.pt-loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--mut)}
+.pt-ui{position:absolute;inset:0;pointer-events:none;font-family:inherit}
+.pt-top{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px}
+.pt-top>div{background:#1a1208cc;border:1px solid #e8c35a66;border-radius:10px;padding:5px 12px;text-align:center;min-width:74px;backdrop-filter:blur(4px)}
+.pt-top small{display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#e8c35a}
+.pt-top b{font-size:22px;color:#f6efd8;font-variant-numeric:tabular-nums}
+.pt-mood{position:absolute;top:70px;left:10px;right:10px;font-size:10.5px;color:#f6efd8;text-transform:uppercase;letter-spacing:.08em}
+.pt-mood>i{display:block;height:6px;border-radius:3px;background:linear-gradient(90deg,#8bbf5a,#e8c35a,#c0161d);width:10%;transition:width .4s;box-shadow:0 0 0 1px #0006}
+.pt-mood span{display:block;margin-top:3px;opacity:.8}
+.pt-late .pt-mood>i{animation:ptpulse .6s infinite alternate}
+@keyframes ptpulse{to{filter:brightness(1.5)}}
+.pt-prog{position:absolute;left:14px;right:14px;bottom:14px;height:9px;border-radius:5px;background:#0006;overflow:hidden;box-shadow:0 0 0 1px #ffffff22}
+.pt-prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,#c0161d,#e8c35a);transition:width .15s}
+.pt-hint{position:absolute;left:14px;right:14px;bottom:34px;text-align:center;font-size:13px;color:#f6efd8;text-shadow:0 1px 3px #000;transition:opacity .4s}
+.pt-hint.off{opacity:0}
+.pt-toast{position:absolute;left:50%;top:44%;transform:translate(-50%,-30%);background:#1a1208ee;border:1px solid #e8c35a;color:#f6efd8;padding:8px 14px;border-radius:12px;font-weight:700;opacity:0;transition:all .3s;max-width:88%;text-align:center}
+.pt-toast.show{opacity:1;transform:translate(-50%,-50%)}.pt-toast.good{border-color:#8bbf5a}.pt-toast.bad{border-color:#c0161d}
+.pt-over{position:absolute;inset:0;display:none;place-items:center;background:#0a0a10b3;padding:16px;pointer-events:auto}
+.pt-over.show{display:grid}
+.pt-card{background:linear-gradient(#a8141b,#7d0f15);border:2px solid #e8c35a;border-radius:16px;padding:18px 20px;max-width:360px;color:#f6efd8;text-align:center;box-shadow:0 12px 40px #000a}
+.pt-card h2{margin:6px 0 8px;font-size:20px;color:#f4d56b;letter-spacing:.02em}.pt-card h3{margin:10px 0 4px;color:#f4d56b}
+.pt-card p,.pt-card li{font-size:14px;line-height:1.45}.pt-card ul{text-align:left;margin:8px 0 12px;padding-left:18px}
+.pt-card button{background:#f4d56b;color:#5a0b10;font-weight:800;border:0;border-radius:12px;padding:11px 20px;margin-top:6px}
+.pt-big{font-size:42px!important;font-weight:800;color:#f4d56b;margin:4px 0!important}.pt-big small{font-size:13px;font-weight:500;color:#f6efd8}
+.pt-star{width:34px;height:34px;margin:0 auto;background:#f4d56b;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
