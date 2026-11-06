@@ -1205,3 +1205,12 @@ html[data-theme=light] .theme .sw,html[data-theme=beige] .theme .sw{filter:inver
 .pt-card button{background:#f4d56b;color:#5a0b10;font-weight:800;border:0;border-radius:12px;padding:11px 20px;margin-top:6px}
 .pt-big{font-size:42px!important;font-weight:800;color:#f4d56b;margin:4px 0!important}.pt-big small{font-size:13px;font-weight:500;color:#f6efd8}
 .pt-star{width:34px;height:34px;margin:0 auto;background:#f4d56b;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
+
+/* jeu des patates : plein écran */
+body.ptlock{overflow:hidden;overscroll-behavior:none}
+.ptfull{position:fixed;inset:0;z-index:70;background:#0b0f18;touch-action:none}
+.ptfull .pthost{width:100%;height:100%;max-height:none;min-height:0;border-radius:0;border:0}
+.ptfull .pt-top{top:calc(10px + env(safe-area-inset-top))}.ptfull .pt-mood{top:calc(70px + env(safe-area-inset-top))}
+.ptfull .pt-prog{bottom:calc(14px + env(safe-area-inset-bottom))}.ptfull .pt-hint{bottom:calc(36px + env(safe-area-inset-bottom))}
+.pt-top b em{font-style:normal;font-size:13px;opacity:.7;margin-left:2px}.pt-top b.done{color:#8bd05a}
+.pt-exit{position:absolute;left:10px;bottom:calc(52px + env(safe-area-inset-bottom));pointer-events:auto;background:#1a1208cc;color:#f6efd8;border:1px solid #e8c35a66;border-radius:10px;padding:7px 12px;font-size:12.5px;box-shadow:none}

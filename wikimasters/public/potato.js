@@ -6,11 +6,16 @@ const DURATION = 90;                       // secondes d'un quart de travail
 const TARGET = 0.95;                       // part de la peau à enlever pour que la patate compte
 const TEX_W = 1024, TEX_H = 512;           // peau de la patate (texture peinte au doigt)
 const GRID_W = 128, GRID_H = 64;           // grille de suivi de ce qui est épluché
-const BRUSH = 15;                          // rayon de l'éplucheur (pixels de la texture)
+const BRUSH = 30;                          // rayon de l'éplucheur (pixels de la texture) : large, pour éplucher sans s'y reprendre dix fois
+const GOAL = 450;                          // le « plan » : points à atteindre pour le quota du quart de travail
 
-const PHRASES = ['Du pain, camarade !', 'Mes enfants ont faim…', 'Une patate, juste une !', 'Trois heures qu\'on attend…', 'Le Parti avait promis !', 'Plus vite, citoyen !',
-  'J\'ai ma carte de rationnement !', 'Mon voisin en a eu deux !', 'Il fait −24 °C ici…', 'Pitié pour la babouchka !', 'Le plan est dépassé, non ?', 'Pas de patates, pas de travail !', 'On n\'a rien mangé depuis hier…'];
-const THANKS = ['Merci, camarade !', 'Gloire au travail !', 'Le Parti vous remercie !', 'Dieu vous le rende…'];
+const PH_CALM = ['Du pain, camarade !', 'Mes enfants ont faim…', 'Une patate, juste une !', 'Il fait −24 °C ici, camarade…', 'Pitié pour la babouchka !', 'J\'ai ma carte de rationnement !', 'On n\'a rien mangé depuis hier…', 'Le Parti avait promis des patates…', 'Camarade, un petit effort pour le peuple !'];
+const PH_MID = ['Plus vite, camarade !', 'Trois heures qu\'on attend !', 'Mon voisin en a eu deux !', 'C\'est une patate, pas un tableau !', 'Même ma babouchka épluche plus vite !', 'Tu comptes finir avant le prochain plan quinquennal ?', 'Un peu de nerf, camarade !', 'La queue ne recule pas toute seule !', 'Camarade, on a faim, pas le temps de rêver !'];
+const PH_HOT = ['Plus vite, feignasse !', 'Dépêche-toi, fainéant !', 'T\'as pas fini de traîner, camarade mollasson ?', 'Même le chien épluche plus vite !', 'Je le dirai au Politburo !', 'À ce rythme on mange en 1991 !', 'Tire-toi les doigts, feignasse !', 'Y\'a pas de pause dans le plan !', 'Camarade, tu bosses ou tu rêves ?', 'On va te muter en Sibérie !', 'Mollasson de camarade, on gèle !'];
+const KID = ['J\'ai faim, maman…', 'Une patate, s\'il vous plaît !'], KID_HOT = ['Même moi j\'épluche plus vite !', 'Dépêche, camarade lent !'];
+const THANKS = ['Merci, camarade !', 'Enfin, feignasse !', 'Gloire au travail !', 'Le Parti te remercie !', 'Pas trop tôt, camarade !', 'Dieu vous le rende…'];
+const pick = a => a[(Math.random() * a.length) | 0];
+const phraseFor = (kid, mood) => kid ? pick(mood > 0.6 ? KID_HOT : KID) : pick(mood > 0.7 ? PH_HOT : mood > 0.35 ? PH_MID : PH_CALM);
 
 // ---------- petits outils ----------
 const rng = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -141,8 +146,9 @@ export function startPotato(host, opts = {}) {
 
   // ---------- bulles de dialogue ----------
   const bubbleCache = new Map();
-  const bubbleTex = text => { if (bubbleCache.has(text)) return bubbleCache.get(text); const t = new THREE.CanvasTexture(canvasOf(512, 128, (x, w, h) => { x.font = 'bold 34px Arial, sans-serif'; const tw = Math.min(w - 40, x.measureText(text).width + 44); x.fillStyle = 'rgba(247,242,228,0.97)'; x.strokeStyle = '#3a2f26'; x.lineWidth = 4; const L = (w - tw) / 2; x.beginPath(); x.roundRect(L, 6, tw, 74, 18); x.fill(); x.stroke(); x.beginPath(); x.moveTo(w / 2 - 14, 80); x.lineTo(w / 2, 112); x.lineTo(w / 2 + 14, 80); x.closePath(); x.fill(); x.stroke(); x.fillStyle = '#2a2018'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, w / 2, 44); })); t.colorSpace = THREE.SRGBColorSpace; bubbleCache.set(text, t); return t; };
-  const makeBubble = () => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, opacity: 0, fog: false })); s.scale.set(2.3, 0.575, 1); s.renderOrder = 5; return s; };
+  const wrapText = (x, text, max) => { const words = text.split(' '), lines = []; let cur = ''; for (const w of words) { const t = cur ? cur + ' ' + w : w; if (x.measureText(t).width > max && cur) { lines.push(cur); cur = w; } else cur = t; } lines.push(cur); return lines.slice(0, 3); };
+  const bubbleTex = text => { if (bubbleCache.has(text)) return bubbleCache.get(text); const t = new THREE.CanvasTexture(canvasOf(512, 192, (x, w, h) => { x.font = 'bold 31px Arial, sans-serif'; const lines = wrapText(x, text, 400), tw = Math.min(w - 20, Math.max(...lines.map(l => x.measureText(l).width)) + 44), bh = 26 + lines.length * 38, bottom = 156, top = bottom - bh, L = (w - tw) / 2; x.fillStyle = 'rgba(247,242,228,0.97)'; x.strokeStyle = '#3a2f26'; x.lineWidth = 4; x.beginPath(); x.roundRect(L, top, tw, bh, 18); x.fill(); x.stroke(); x.beginPath(); x.moveTo(w / 2 - 14, bottom - 1); x.lineTo(w / 2, 188); x.lineTo(w / 2 + 14, bottom - 1); x.closePath(); x.fill(); x.stroke(); x.fillStyle = '#2a2018'; x.textAlign = 'center'; x.textBaseline = 'middle'; lines.forEach((l, i) => x.fillText(l, w / 2, top + 13 + 19 + i * 38)); })); t.colorSpace = THREE.SRGBColorSpace; bubbleCache.set(text, t); return t; };
+  const makeBubble = () => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, opacity: 0, fog: false })); s.scale.set(2.6, 0.975, 1); s.renderOrder = 5; return s; };
 
   // ---------- les gens ----------
   const COATS = [0x4d4a45, 0x3e4a3b, 0x5b4636, 0x3a3f4f, 0x6a5a48, 0x2f3a3e, 0x55432f, 0x4a4040];
@@ -167,7 +173,7 @@ export function startPotato(host, opts = {}) {
     if (spec.bowl) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), metal); b.position.set(0, -0.58, 0.07); armL.add(b); }
     if (spec.cane) { const c = cyl(0.015, 0.015, 1.0, darkWood, 0.42, 0.5, 0.15, 5, g); c.rotation.z = -0.08; }
     g.scale.setScalar(S);
-    const bubble = makeBubble(); bubble.position.set(0, 2.3, 0); g.add(bubble);
+    const bubble = makeBubble(); bubble.position.set(0, 2.62, 0); g.add(bubble);
     g.userData = { armL, armR, headG, bubble, bubbleT: 0, nextTalk: 1 + R() * 6, phase: R() * 6.28, home: new THREE.Vector3(), kid: S < 0.8, speed: 0.8 + R() * 0.6, state: 'wait', leaveT: 0 };
     return g;
   }
@@ -228,26 +234,27 @@ export function startPotato(host, opts = {}) {
   const RADIUS = 1;
 
   // ---------- éplucheur et lamelles ----------
-  const peeler = new THREE.Group(); const blade = box(0.34, 0.025, 0.1, metal, 0, 0, 0, peeler); box(0.06, 0.05, 0.4, lam(0xb3262d), 0, 0.03, -0.3, peeler); const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 6, 14), metal); ring.position.set(0, 0.03, 0.04); ring.rotation.x = Math.PI / 2; peeler.add(ring); peeler.visible = false; scene.add(peeler);
+  const peeler = new THREE.Group(); const blade = box(0.34, 0.025, 0.1, metal, 0, 0, 0, peeler); box(0.06, 0.05, 0.4, lam(0xb3262d), 0, 0.03, -0.3, peeler); const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 6, 14), metal); ring.position.set(0, 0.03, 0.04); ring.rotation.x = Math.PI / 2; peeler.add(ring); peeler.visible = false; peeler.scale.setScalar(1.7); scene.add(peeler);
   const strips = Array.from({ length: 48 }, () => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.012, 0.055), new THREE.MeshLambertMaterial({ color: 0x8f6a40 })); m.visible = false; m.userData = { v: new THREE.Vector3(), life: 0, spin: new THREE.Vector3() }; scene.add(m); return m; });
   let stripI = 0;
   const spawnStrip = p => { const s = strips[stripI++ % strips.length]; s.position.copy(p); s.visible = true; s.scale.setScalar(1); s.userData.life = 1.4; s.userData.v.set((R() - 0.5) * 1.2, 1.2 + R() * 1.2, 0.4 + R() * 1.2); s.userData.spin.set(R() * 8, R() * 8, R() * 8); };
 
   // ---------- état de jeu et interface ----------
   const ui = document.createElement('div'); ui.className = 'pt-ui';
-  ui.innerHTML = `<div class="pt-top"><div><small>Quart de travail</small><b id="pt-time">${DURATION}</b></div><div><small>Plan</small><b id="pt-score">0</b></div><div><small>Patates</small><b id="pt-count">0</b></div></div>
+  ui.innerHTML = `<div class="pt-top"><div><small>Quart de travail</small><b id="pt-time">${DURATION}</b></div><div><small>Plan</small><b><span id="pt-score">0</span><em>/${GOAL}</em></b></div><div><small>Patates</small><b id="pt-count">0</b></div></div>
     <div class="pt-mood"><i id="pt-mood"></i><span>Patience de la file</span></div><div class="pt-toast" id="pt-toast"></div><div class="pt-prog"><i id="pt-prog"></i></div>
-    <div class="pt-hint" id="pt-hint">Glisse le doigt sur la patate pour l'éplucher. Glisse à côté pour la tourner.</div>
+    <div class="pt-hint" id="pt-hint">1 doigt : éplucher — 2 doigts : tourner la patate</div><button class="pt-exit" id="pt-exit" aria-label="Quitter">Quitter</button>
     <div class="pt-over" id="pt-over"></div>`;
   host.appendChild(ui);
+  ui.querySelector('#pt-exit').onclick = () => opts.onExit?.();
   const $ = id => ui.querySelector('#' + id);
   const state = { running: false, over: true, t: DURATION, score: 0, count: 0, mood: 0.1, qualitySum: 0 };
   let toastTimer = 0;
   const toast = (msg, kind = '') => { const el = $('pt-toast'); el.textContent = msg; el.className = 'pt-toast show ' + kind; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.className = 'pt-toast'; }, 1800); };
-  const rank = s => s >= 700 ? ['Héros du Travail Socialiste', 'Médaille de Stakhanov, camarade ! Le Politburo vous cite en exemple.'] : s >= 450 ? ['Camarade éplucheur modèle', 'Le Parti est fier de votre rendement.'] : s >= 200 ? ['Ouvrier honorable', 'Le quota est atteint, de justesse. Le Parti est satisfait.'] : ['Rapport au Comité', 'Quota non atteint. La file murmure… et vous aussi allez devoir vous expliquer.'];
+  const rank = s => s >= GOAL * 1.55 ? ['Héros du Travail Socialiste', 'Médaille de Stakhanov, camarade ! Le Politburo vous cite en exemple.'] : s >= GOAL ? ['Camarade éplucheur modèle', 'Plan accompli ! Le Parti est fier de votre rendement.'] : s >= GOAL * 0.45 ? ['Ouvrier honorable', 'Le plan n\'est pas atteint, mais le Parti ferme les yeux pour cette fois.'] : ['Rapport au Comité', 'Quota très loin du compte. La file murmure… et vous allez devoir vous expliquer, feignasse.'];
   function showStart() {
     $('pt-over').innerHTML = `<div class="pt-card"><div class="pt-star"></div><h2>Section pommes de terre n° 7</h2><p>La file attend depuis l'aube. Épluchez le plus de patates possible en <b>${DURATION} secondes</b>.</p>
-      <ul><li>Enlève toute la peau, sans entailler la chair : <b>trop de coups sur la même zone, c'est du gaspillage</b>.</li><li>Une patate est terminée quand ${Math.round(TARGET * 100)} % de la peau est partie.</li><li>Plus la file s'impatiente, plus elle se rapproche…</li></ul><button id="pt-go">Commencer le quart</button></div>`;
+      <ul><li><b>Objectif : ${GOAL} points du plan</b> (le quota). Chaque patate rapporte jusqu'à 100 points selon la peau enlevée.</li><li><b>1 doigt</b> pour éplucher, <b>2 doigts</b> pour tourner la patate.</li><li>Enlève toute la peau sans t'acharner au même endroit : <b>trop de coups, c'est du gaspillage</b>.</li><li>Une patate est terminée quand ${Math.round(TARGET * 100)} % de la peau est partie.</li><li>Plus la file s'impatiente, plus elle se rapproche…</li></ul><button id="pt-go">Commencer le quart</button></div>`;
     $('pt-over').classList.add('show'); $('pt-go').onclick = start;
   }
   function start() {
@@ -260,11 +267,11 @@ export function startPotato(host, opts = {}) {
     $('pt-over').innerHTML = `<div class="pt-card"><div class="pt-star"></div><h2>Fin du quart</h2><p class="pt-big">${state.score} <small>points du plan</small></p><p>${state.count} patate${state.count > 1 ? 's' : ''} épluchée${state.count > 1 ? 's' : ''}.</p><h3>${title}</h3><p>${text}</p><button id="pt-go">Un autre quart</button></div>`;
     $('pt-over').classList.add('show'); $('pt-go').onclick = start; opts.onEnd?.({ score: state.score, count: state.count });
   }
-  function upd() { $('pt-time').textContent = Math.max(0, Math.ceil(state.t)); $('pt-score').textContent = state.score; $('pt-count').textContent = state.count; $('pt-mood').style.width = Math.round(state.mood * 100) + '%'; $('pt-prog').style.width = Math.round(Math.min(1, coverage / TARGET) * 100) + '%'; ui.classList.toggle('pt-late', state.mood > 0.7); }
+  function upd() { $('pt-time').textContent = Math.max(0, Math.ceil(state.t)); $('pt-score').textContent = state.score; $('pt-score').parentElement.classList.toggle('done', state.score >= GOAL); $('pt-count').textContent = state.count; $('pt-mood').style.width = Math.round(state.mood * 100) + '%'; $('pt-prog').style.width = Math.round(Math.min(1, coverage / TARGET) * 100) + '%'; ui.classList.toggle('pt-late', state.mood > 0.7); }
 
   // ---------- interactions ----------
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
-  let dragMode = null, last = null, lastT = 0, spinVel = { x: 0, y: 0 }, lastXY = null, repaint = false;
+  let dragMode = null, last = null, lastT = 0, repaint = false;
   const setPtr = e => { const r = canvas.getBoundingClientRect(); ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); };
   const hitSkin = e => { setPtr(e); ray.setFromCamera(ptr, camera); return ray.intersectObject(skinMesh, false)[0] || ray.intersectObject(fleshMesh, false)[0] || null; };
   function brushAt(uv, dt) {
@@ -279,47 +286,49 @@ export function startPotato(host, opts = {}) {
       if (peeled[k]) already++; else { peeled[k] = 1; peeledWeight += weight[j]; }
     }
     coverage = peeledWeight / weightSum;
-    if (touched && already / touched > 0.85) { waste += dt; const s = Math.max(0.9, 0.965 - waste * 0.01); fleshMesh.scale.setScalar(s); }
+    if (touched && already / touched > 0.92) { waste += dt; const s = Math.max(0.9, 0.965 - waste * 0.01); fleshMesh.scale.setScalar(s); }
   }
   function strokeBetween(a, b, dt) {
     if (!a || Math.abs(a.x - b.x) > 0.4) { brushAt(b, dt); return; }
     const d = Math.hypot((a.x - b.x) * TEX_W, (a.y - b.y) * TEX_H), n = Math.max(1, Math.ceil(d / (BRUSH * 0.7)));
     for (let i = 1; i <= n; i++) brushAt({ x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }, dt / n);
   }
-  canvas.style.touchAction = 'none';
+  canvas.style.touchAction = 'none'; canvas.addEventListener('contextmenu', e => e.preventDefault());
+  const pointers = new Map(); let lastCenter = null;
+  const center = () => { let x = 0, y = 0; pointers.forEach(p => { x += p.x; y += p.y; }); return { x: x / pointers.size, y: y / pointers.size }; };
+  const spinBy = (dx, dy) => { spinG.rotation.y += dx * 0.012; spinG.rotation.x = Math.max(-1.4, Math.min(1.4, spinG.rotation.x + dy * 0.012)); };
   canvas.addEventListener('pointerdown', e => {
-    canvas.setPointerCapture?.(e.pointerId); lastXY = { x: e.clientX, y: e.clientY }; lastT = performance.now(); spinVel.x = spinVel.y = 0;
+    canvas.setPointerCapture?.(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); lastT = performance.now();
     if (!state.running) return;
-    const hit = hitSkin(e); if (hit && hit.uv) { dragMode = 'peel'; last = null; } else dragMode = 'spin';
-    $('pt-hint').classList.add('off');
+    if (pointers.size >= 2 || (e.pointerType === 'mouse' && (e.button === 2 || e.shiftKey))) { dragMode = 'spin'; last = null; peeler.visible = false; lastCenter = center(); $('pt-hint').classList.add('off'); return; }
+    const hit = hitSkin(e); if (hit && hit.uv) { dragMode = 'peel'; last = null; $('pt-hint').classList.add('off'); } else dragMode = null;   // un seul doigt à côté de la patate : rien ne se passe
   });
   canvas.addEventListener('pointermove', e => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!dragMode || !state.running) return;
     const now = performance.now(), dt = Math.min(0.06, (now - lastT) / 1000); lastT = now;
+    if (dragMode === 'spin') { const c = center(); if (lastCenter) spinBy(c.x - lastCenter.x, c.y - lastCenter.y); lastCenter = c; return; }
     if (dragMode === 'peel') {
       const hit = hitSkin(e);
-      if (hit && hit.uv && hit.object === skinMesh || hit && hit.uv) {
+      if (hit && hit.uv) {
         const p = { x: hit.uv.x, y: hit.uv.y }, before = coverage; strokeBetween(last, p, dt); last = p;
-        const gained = coverage - before; if (gained > 0) { if (R() < Math.min(1, gained * 90)) spawnStrip(hit.point); }
-        peeler.visible = true; peeler.position.copy(hit.point).addScaledVector(hit.face.normal.clone().transformDirection(skinMesh.matrixWorld), 0.28); peeler.lookAt(camera.position); peeler.rotateX(0.5); peeler.rotateZ(-0.3);
+        const gained = coverage - before; if (gained > 0 && R() < Math.min(1, gained * 60)) spawnStrip(hit.point);
+        peeler.visible = true; peeler.position.copy(hit.point).addScaledVector(hit.face.normal.clone().transformDirection(skinMesh.matrixWorld), 0.3); peeler.lookAt(camera.position); peeler.rotateX(0.5); peeler.rotateZ(-0.3);
       } else { last = null; peeler.visible = false; }
-    } else {
-      const dx = e.clientX - lastXY.x, dy = e.clientY - lastXY.y; lastXY = { x: e.clientX, y: e.clientY };
-      spinG.rotation.y += dx * 0.012; spinG.rotation.x = Math.max(-1.4, Math.min(1.4, spinG.rotation.x + dy * 0.012)); spinVel.y = dx * 0.012 / Math.max(dt, 0.008) * 0.02;
     }
   });
-  const release = () => { dragMode = null; last = null; peeler.visible = false; };
-  canvas.addEventListener('pointerup', release); canvas.addEventListener('pointercancel', release); canvas.addEventListener('pointerleave', release);
+  const release = e => { pointers.delete(e.pointerId); if (pointers.size === 0) { dragMode = null; last = null; lastCenter = null; peeler.visible = false; } else if (pointers.size === 1 && dragMode === 'spin') { lastCenter = center(); } };
+  canvas.addEventListener('pointerup', release); canvas.addEventListener('pointercancel', release); canvas.addEventListener('pointerleave', e => { if (e.pointerType !== 'mouse') return; release(e); });
 
   // ---------- fin d'une patate ----------
   let flight = null;
   function finishPotato() {
-    const quality = Math.max(10, Math.round(coverage * 100 - Math.min(45, waste * 14))), pts = Math.round(quality * 0.8 + Math.max(0, 10 - waste * 2));
+    const quality = Math.max(10, Math.round(coverage * 100 - Math.min(45, waste * 10))), pts = Math.round(quality * 0.8 + Math.max(0, 10 - waste * 2));
     state.score += pts; state.count++; state.qualitySum += quality; state.mood = Math.max(0, state.mood - 0.28);
-    toast(waste > 2.5 ? `+${pts} — trop de chair perdue, c'est du gaspillage !` : quality >= 92 ? `+${pts} — travail de maître, camarade !` : `+${pts} — bien travaillé !`, waste > 2.5 ? 'bad' : 'good');
+    toast(waste > 2.5 ? `+${pts} — trop de chair perdue, gaspilleur !` : quality >= 92 ? `+${pts} — travail de maître, camarade !` : `+${pts} — pas mal, pour un feignant !`, waste > 2.5 ? 'bad' : 'good');
     dragMode = null; peeler.visible = false; flight = { t: 0, from: potatoG.position.clone() };
     // quelqu'un reçoit sa patate
-    const who = crowd.filter(c => c.userData.state === 'wait').sort((a, b) => a.position.z - b.position.z)[0]; if (who) { who.userData.state = 'served'; who.userData.leaveT = 0; who.userData.bubbleT = 2.2; who.userData.bubble.material.map = bubbleTex(THANKS[(Math.random() * THANKS.length) | 0]); who.userData.bubble.material.needsUpdate = true; }
+    const who = crowd.filter(c => c.userData.state === 'wait').sort((a, b) => a.position.z - b.position.z)[0]; if (who) { who.userData.state = 'served'; who.userData.leaveT = 0; who.userData.bubbleT = 2.2; who.userData.bubble.material.map = bubbleTex(pick(THANKS)); who.userData.bubble.material.needsUpdate = true; }
     // le pot reçoit de la vapeur
     for (let i = 0; i < 3; i++) setTimeout(() => puff(1.95 + (R() - 0.5) * 0.3, 1.9, 2.1), i * 120);
     upd();
@@ -341,7 +350,7 @@ export function startPotato(host, opts = {}) {
       flight.t += dt / 0.7; const k = Math.min(1, flight.t), e = k * k * (3 - 2 * k);
       potatoG.position.set(flight.from.x + (1.95 - flight.from.x) * e, flight.from.y + (2.1 - flight.from.y) * e + Math.sin(k * Math.PI) * 1.2, flight.from.z + (2.1 - flight.from.z) * e); potatoG.scale.setScalar(0.68 * (1 - e * 0.7)); fleshMat.color.setHex(0xeedd9b);
       if (k >= 1) { flight = null; potatoG.position.set(0, 2.25, 3.0); if (state.running) buildPotato(++potatoSeed); }
-    } else if (!dragMode && state.running) { spinG.rotation.y += spinVel.y; spinVel.y *= 0.92; }
+    }
     if (repaint) { skinTex.needsUpdate = true; repaint = false; if (state.running) $('pt-prog').style.width = Math.round(Math.min(1, coverage / TARGET) * 100) + '%'; }
     // lampadaire qui grésille, étal chaleureux
     const fl = 0.85 + Math.sin(t * 23) * 0.06 + (Math.sin(t * 3.1) > 0.97 ? -0.5 : 0) + Math.sin(t * 7.3) * 0.05; lampLight.intensity = 28 * Math.max(0.3, fl); bulb.material.color.setHex(fl < 0.6 ? 0x8a6a3a : 0xffd28a);
@@ -373,9 +382,8 @@ export function startPotato(host, opts = {}) {
       u.armL.rotation.x = lift; u.armR.rotation.x = lift + Math.sin(t * 2.3 + ph) * 0.15; u.armL.rotation.z = 0.12; u.armR.rotation.z = -0.12;
       u.headG.rotation.y = Math.sin(t * 0.7 + ph) * 0.25; u.headG.rotation.x = Math.sin(t * 1.1 + ph) * 0.05 - mood * 0.08;
       u.nextTalk -= dt * (0.6 + mood * 1.8);
-      if (u.bubbleT > 0) { u.bubbleT -= dt; u.bubble.material.opacity = Math.min(1, u.bubbleT * 2.5, (u.bubbleT > 0.3 ? 1 : u.bubbleT / 0.3)); u.bubble.position.y = 2.3 + Math.sin(t * 2 + ph) * 0.03; if (u.bubbleT <= 0) u.bubble.material.opacity = 0; }
-      else if (u.nextTalk <= 0 && !u.kid) { u.nextTalk = 5 + R() * 8; u.bubbleT = 2.6; u.bubble.material.map = bubbleTex(PHRASES[(R() * PHRASES.length) | 0]); u.bubble.material.needsUpdate = true; }
-      else if (u.nextTalk <= 0) { u.nextTalk = 5 + R() * 8; u.bubbleT = 2.6; u.bubble.material.map = bubbleTex(R() < 0.5 ? 'J\'ai faim, maman…' : 'Une patate, s\'il vous plaît !'); u.bubble.material.needsUpdate = true; }
+      if (u.bubbleT > 0) { u.bubbleT -= dt; u.bubble.material.opacity = Math.min(1, u.bubbleT * 2.5, (u.bubbleT > 0.3 ? 1 : u.bubbleT / 0.3)); u.bubble.position.y = 2.62 + Math.sin(t * 2 + ph) * 0.03; if (u.bubbleT <= 0) u.bubble.material.opacity = 0; }
+      else if (u.nextTalk <= 0) { u.nextTalk = 5 + R() * 7; u.bubbleT = 3.0; u.bubble.material.map = bubbleTex(phraseFor(u.kid, mood)); u.bubble.material.needsUpdate = true; }
       if (((t * 0.5 + ph) % 3) < dt * 0.5 + 0.0001) { tmp.set(c.position.x, 1.6 * (u.kid ? 0.62 : 0.95), c.position.z + 0.3); puff(tmp.x, tmp.y, tmp.z); }
     }
     // la caméra dérive doucement de gauche à droite : on découvre peu à peu l'étal et la rue
@@ -390,7 +398,7 @@ export function startPotato(host, opts = {}) {
   buildPotato(potatoSeed); showStart(); upd(); tick();
   return {
     stop() { stopped = true; cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); scene.traverse(o => { o.geometry?.dispose?.(); const m = o.material; if (m) (Array.isArray(m) ? m : [m]).forEach(x => { x.map?.dispose?.(); x.dispose?.(); }); }); canvas.remove(); ui.remove(); },
-    state, forceCover(v) { coverage = v; },
+    state, forceCover(v) { coverage = v; }, rot() { return [spinG.rotation.x, spinG.rotation.y]; },
     screenPos() { const v = potatoG.position.clone().project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height }; },
   };
 }

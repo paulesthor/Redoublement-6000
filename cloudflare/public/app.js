@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '9.1';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '9.2';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2204,16 +2204,18 @@ views.feed = async v => {
 // ---------- jeu 3D des patates (aperçu réservé à l'administrateur) ----------
 views.potato = async v => {
   if (!me.admin) { tab = 'packs'; return render(); }
-  v.innerHTML = `${pageHead('Patates', 'Aperçu du jeu 3D (administrateur)')}<div class="ptwrap"><div class="pthost" id="pt-host"><div class="pt-loading">Chargement du kolkhoze…</div></div></div>`;
+  v.innerHTML = `${pageHead('Patates', 'Aperçu du jeu 3D (administrateur)')}<div class="empty">Le jeu tourne en plein écran.<br><button id="pt-reopen" style="margin-top:10px">Rouvrir le jeu</button></div>`;
+  $('#pt-reopen').onclick = () => render();
+  const full = document.createElement('div'); full.className = 'ptfull'; full.innerHTML = '<div class="pthost" id="pt-host"><div class="pt-loading">Chargement du kolkhoze…</div></div>'; document.body.append(full); document.body.classList.add('ptlock');
   let game = null, gone = false;
-  viewCleanup = () => { gone = true; game?.stop(); };
+  viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); };
   try {
     const mod = await import('/potato.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
-    $('#pt-host .pt-loading')?.remove();
-    game = mod.startPotato($('#pt-host'), {});
+    full.querySelector('.pt-loading')?.remove();
+    game = mod.startPotato(full.querySelector('#pt-host'), { onExit: () => { tab = 'packs'; render(); setTimeout(() => moreSheet(), 120); } });
     window.__potato = game;
-  } catch (e) { jlog('patates : ' + e.message); $('#pt-host').innerHTML = `<div class="empty">Impossible de charger le jeu 3D (${esc(e.message)}).</div>`; }
+  } catch (e) { jlog('patates : ' + e.message); full.querySelector('#pt-host').innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger le jeu 3D (${esc(e.message)}).<br><button onclick="this.closest('.ptfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
 // ---------- page des nouveautés (à chaque mise à jour) ----------
 // ---------- combats en direct et paris ----------
