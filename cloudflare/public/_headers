@@ -27,3 +27,5 @@
   Cache-Control: no-cache
 /gulag.js
   Cache-Control: no-cache
+/gulag-scene.js
+  Cache-Control: no-cache
