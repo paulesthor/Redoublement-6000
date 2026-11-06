@@ -114,10 +114,10 @@ export function startGulag(host, opts = {}) {
     if (!camp0) { b.innerHTML = '<section class="gl-card"><div class="gl-info"><p>Le Parti consulte ses archives…</p></div></section>'; loadCamp(); return; }
     if (camp0.error) { b.innerHTML = `<section class="gl-card"><div class="gl-info"><h3>Primes</h3><p>${camp0.error}</p></div></section>`; return; }
     const P = progressP(), h = hoursNow(), got = camp0.claimed.length;
-    b.innerHTML = `<section class="gl-card gl-sum"><div class="gl-info"><h3>Primes du Parti : ${got} / ${camp0.milestones.length}</h3><p>Chaque palier donne une prime <b>dans le jeu normal</b> : wikibidou, paquets, titres de profil, et au palier 4 le <b>thème rouge « Camarade »</b> à garder à vie. Total possible : ${fmt(camp0.totalCoins)} wikibidou et ${camp0.totalPacks} paquets.</p></div></section>` + camp0.milestones.map(m => {
+    b.innerHTML = `<section class="gl-card gl-sum"><div class="gl-info"><h3>Primes du Parti : ${got} / ${camp0.milestones.length}</h3><p>Chaque palier donne une prime <b>dans le jeu normal</b> : wikibidou, paquets et titres de profil. Total possible : ${fmt(camp0.totalCoins)} wikibidou et ${camp0.totalPacks} paquets.</p></div></section>` + camp0.milestones.map(m => {
       const done = camp0.claimed.includes(m.id), reachedP = P >= m.p, reachedT = h >= m.minH, ready = !done && reachedP && reachedT;
       const status = done ? '<span class="ok">Prime récupérée</span>' : !reachedP ? `<span>Progression : ${Math.min(99, Math.floor(P / m.p * 100))} %</span>` : !reachedT ? `<span>Délai réglementaire : encore ${hm((m.minH - h) * 3600)}</span>` : '<span class="ok">Prête</span>';
-      const rew = [`${fmt(m.coins)} wikibidou`, m.packs ? `${m.packs} paquet${m.packs > 1 ? 's' : ''}` : '', m.title ? `titre « ${m.title} »` : '', m.perk ? 'thème rouge « Camarade » (à vie)' : ''].filter(Boolean).join(' · ');
+      const rew = [`${fmt(m.coins)} wikibidou`, m.packs ? `${m.packs} paquet${m.packs > 1 ? 's' : ''}` : '', m.title ? `titre « ${m.title} »` : '', m.perk ? 'avantage permanent' : ''].filter(Boolean).join(' · ');
       return `<section class="gl-card ${done ? 'gl-done' : ''}"><div class="gl-ico gl-num">${m.id}</div><div class="gl-info"><h3>${m.name}</h3><p>${m.text}</p><div class="gl-stats"><span>${rew}</span></div><div class="gl-stats">${status}</div>${ready ? `<div class="gl-btns"><button data-claim="${m.id}">Récupérer la prime</button></div>` : ''}</div></section>`;
     }).join('');
   }
@@ -127,7 +127,7 @@ export function startGulag(host, opts = {}) {
       const r = await opts.api('/camp/claim', { id, p: progressP() }); camp0.claimed.push(id); if (r.perk) camp0.perks = [...(camp0.perks || []), r.perk];
       opts.onReward?.();
       log(`Prime n° ${id} (« ${m.name} ») récupérée : ${m.coins} wikibidou.`);
-      popup(`<div class="gl-event"><div class="gl-stamp ok">PRIME DU PARTI</div><h2>${m.name}</h2><p>${m.text}</p><p class="gl-fx">${[`+${fmt(r.coins)} wikibidou`, r.packs ? `+${r.packs} paquet${r.packs > 1 ? 's' : ''}` : '', r.title ? `titre « ${r.title} »` : '', r.perk ? 'thème rouge « Camarade » débloqué (Réglages → Thème)' : ''].filter(Boolean).join(' · ')}</p><button data-close>Pour la gloire du Plan</button></div>`, () => { if (tab === 'p') renderBody(); });
+      popup(`<div class="gl-event"><div class="gl-stamp ok">PRIME DU PARTI</div><h2>${m.name}</h2><p>${m.text}</p><p class="gl-fx">${[`+${fmt(r.coins)} wikibidou`, r.packs ? `+${r.packs} paquet${r.packs > 1 ? 's' : ''}` : '', r.title ? `titre « ${r.title} »` : '', r.perk ? 'avantage permanent débloqué' : ''].filter(Boolean).join(' · ')}</p><button data-close>Pour la gloire du Plan</button></div>`, () => { if (tab === 'p') renderBody(); });
     } catch (e) { toast(e.message || 'Le Parti refuse', 'bad'); if (tab === 'p') renderBody(); }
   }
   function refresh() {

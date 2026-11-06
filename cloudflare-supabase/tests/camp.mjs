@@ -20,8 +20,8 @@ ok('le titre est dans la collection du joueur', (await q("SELECT 1 x FROM user_t
 [s, r] = await call(A, 'POST', '/api/camp/claim', { id: 4, p: 5 }); ok('palier 4 (12 h) refusé à 2 h même avec une progression énorme', s === 400 && /délai/.test(r.error), J([s, r]));
 await q('UPDATE camp_progress SET start = ? WHERE user_id = ?', Date.now() - 13 * 3600e3, alice);
 const c1 = await coins(), p1 = await packs(); [s, r] = await call(A, 'POST', '/api/camp/claim', { id: 2, p: 1 }); ok('palier 2 : 100 wikibidou + 1 paquet', s === 200 && await coins() === c1 + 100 && await packs() === p1 + 1, J([s, r]));
-[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 4, p: 2.1 }); ok('palier 4 : thème rouge débloqué à vie', s === 200 && r.perk === 'theme_urss', J([s, r]));
-[s, r] = await call(A, 'GET', '/api/camp'); ok('état : paliers 1, 2 et 4 réclamés, thème dans les avantages', J(r.claimed) === '[1,2,4]' && r.perks.includes('theme_urss'), J(r));
+[s, r] = await call(A, 'POST', '/api/camp/claim', { id: 4, p: 2.1 }); ok('palier 4 : 200 wikibidou et titre (le thème rouge se gagne avec l\'événement communiste, pas ici)', s === 200 && r.coins === 200 && r.title === 'Directeur adjoint' && r.perk === null, J([s, r]));
+[s, r] = await call(A, 'GET', '/api/camp'); ok('état : paliers 1, 2 et 4 réclamés, aucun avantage de thème', J(r.claimed) === '[1,2,4]' && r.perks.length === 0, J(r));
 // concurrence : deux appareils réclament le même palier en même temps
 await q('UPDATE camp_progress SET start = ? WHERE user_id = ?', Date.now() - 100 * 3600e3, alice);
 const c2 = await coins(); const both = await Promise.all([call(A, 'POST', '/api/camp/claim', { id: 3, p: 2 }), call(A, 'POST', '/api/camp/claim', { id: 3, p: 2 })]);
