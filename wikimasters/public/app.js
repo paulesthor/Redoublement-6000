@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '9.0';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '9.1';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
@@ -1459,9 +1459,9 @@ views.player = async v => {
     $('#vc-rm').onclick = () => { close(); save(ids().filter(i => i !== c.id)); };
   });
 };
-let lastRenderKey = '';
+let lastRenderKey = '', viewCleanup = null;
 const render = safe(async () => {
-  clearInterval(tick); markTab(); liveSoft = null;
+  clearInterval(tick); markTab(); liveSoft = null; if (viewCleanup) { try { viewCleanup(); } catch { /* ignoré */ } viewCleanup = null; }
   const key = tab + ':' + (tab === 'player' ? playerId : ''), keepY = key === lastRenderKey ? window.scrollY : 0;   // même page qui se rafraîchit (enchère, évènement serveur) : on ne remonte pas en haut
   const prevKey = lastRenderKey; lastRenderKey = key;
   if (tab === 'duel' && game) return renderGame();
@@ -2201,6 +2201,20 @@ views.feed = async v => {
     finally { inp.disabled = false; inp.focus(); }
   }));
 };
+// ---------- jeu 3D des patates (aperçu réservé à l'administrateur) ----------
+views.potato = async v => {
+  if (!me.admin) { tab = 'packs'; return render(); }
+  v.innerHTML = `${pageHead('Patates', 'Aperçu du jeu 3D (administrateur)')}<div class="ptwrap"><div class="pthost" id="pt-host"><div class="pt-loading">Chargement du kolkhoze…</div></div></div>`;
+  let game = null, gone = false;
+  viewCleanup = () => { gone = true; game?.stop(); };
+  try {
+    const mod = await import('/potato.js?v=' + encodeURIComponent(BUILD));
+    if (gone) return;
+    $('#pt-host .pt-loading')?.remove();
+    game = mod.startPotato($('#pt-host'), {});
+    window.__potato = game;
+  } catch (e) { jlog('patates : ' + e.message); $('#pt-host').innerHTML = `<div class="empty">Impossible de charger le jeu 3D (${esc(e.message)}).</div>`; }
+};
 // ---------- page des nouveautés (à chaque mise à jour) ----------
 // ---------- combats en direct et paris ----------
 async function liveFights(v) {
@@ -2384,7 +2398,7 @@ function moreSheet() {
     <h3>Gagner des pièces</h3><div class="mgrid">${T('events', 'spark', 'Événements', 'Défis, saison, surprises', (me.ev || []).length)}${T('bourse', 'market', 'Bourse', 'Paris sur les vues')}${T('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${T('trends', 'trophy', 'Tendances', 'Cours et alertes')}${T('bank', 'building', 'Banque', 'Épargne et dividendes')}${T('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires')}${T('albums', 'album', 'Albums', 'Séries de cartes à compléter')}${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
-    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
+    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin ? T('potato', 'shield', 'Patates (test)', 'Jeu 3D, aperçu admin') + T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const k = b.dataset.go; close();
