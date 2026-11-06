@@ -25,3 +25,5 @@
   Cache-Control: no-cache
 /potato.js
   Cache-Control: no-cache
+/gulag.js
+  Cache-Control: no-cache

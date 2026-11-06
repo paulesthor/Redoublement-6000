@@ -7,7 +7,7 @@ const TARGET = 0.95;                       // part de la peau à enlever pour qu
 const TEX_W = 1024, TEX_H = 512;           // peau de la patate (texture peinte au doigt)
 const GRID_W = 128, GRID_H = 64;           // grille de suivi de ce qui est épluché
 const BRUSH = 30;                          // rayon de l'éplucheur (pixels de la texture) : large, pour éplucher sans s'y reprendre dix fois
-const GOAL = 450;                          // le « plan » : points à atteindre pour le quota du quart de travail
+const GOAL = 200;                          // le « plan » : points à atteindre pour le quota du quart de travail
 
 const PH_CALM = ['Du pain, camarade !', 'Mes enfants ont faim…', 'Une patate, juste une !', 'Il fait −24 °C ici, camarade…', 'Pitié pour la babouchka !', 'J\'ai ma carte de rationnement !', 'On n\'a rien mangé depuis hier…', 'Le Parti avait promis des patates…', 'Camarade, un petit effort pour le peuple !'];
 const PH_MID = ['Plus vite, camarade !', 'Trois heures qu\'on attend !', 'Mon voisin en a eu deux !', 'C\'est une patate, pas un tableau !', 'Même ma babouchka épluche plus vite !', 'Tu comptes finir avant le prochain plan quinquennal ?', 'Un peu de nerf, camarade !', 'La queue ne recule pas toute seule !', 'Camarade, on a faim, pas le temps de rêver !'];
