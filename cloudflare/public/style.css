@@ -1325,3 +1325,27 @@ html[data-theme=urss]{--bg:#16070a;--bg2:#1e0a0e;--panel:#2a0f14;--panel2:#38141
 .ussr-stamp{position:absolute;right:8px;bottom:56px;border:3px solid #b3262d;color:#b3262d;padding:3px 9px;font-weight:900;letter-spacing:.1em;text-align:center;transform:rotate(-11deg) scale(2.6);opacity:0;animation:usStamp2 .5s .55s cubic-bezier(.2,1.6,.4,1) forwards;background:#efe6cccc;pointer-events:none}
 .ussr-stamp b{display:block;font-size:19px}.ussr-stamp small{font-size:9px;letter-spacing:.06em}
 @keyframes usStamp2{to{opacity:.92;transform:rotate(-11deg) scale(1)}}
+
+/* interface URSS complète (aperçu admin) */
+body.ussr-ui{background-image:repeating-linear-gradient(115deg,transparent 0 72px,rgba(244,213,107,.035) 72px 76px)}
+body.ussr-ui::after{content:"";position:fixed;right:-70px;top:130px;width:300px;height:300px;background:#c0161d;opacity:.07;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);pointer-events:none;z-index:0}
+.us-news{display:flex;align-items:center;gap:10px;margin:0 16px 8px;padding:7px 12px;background:#2a0a0e;border:1px solid #f4d56b44;border-left:4px solid #c0161d;font-size:12.5px;color:#f6efd8;overflow:hidden;min-height:34px}
+.us-news b{color:#f4d56b;letter-spacing:.16em;font-size:11px;flex:none}.us-news span{opacity:0;transform:translateY(5px)}.us-news span.in{animation:glnews .6s forwards}
+body.ussr-ui #topbar{background:linear-gradient(#5c0c12 72%,transparent);border-bottom:2px solid #f4d56b55}
+body.ussr-ui .wordmark span,body.ussr-ui .wordmark b{font-family:Impact,'Arial Narrow',sans-serif;letter-spacing:.14em}
+body.ussr-ui .wordmark b{color:#f4d56b}
+body.ussr-ui #hits{background:#2a0a0e;border:1px solid #f4d56b44;border-radius:3px}
+body.ussr-ui aside nav{background:#4a0a10f2;border-top:2px solid #f4d56b}
+body.ussr-ui aside nav button em{letter-spacing:0;font-size:9px;white-space:nowrap}
+body.ussr-ui .pagehead h1{font-family:Impact,'Arial Narrow Bold','Arial Narrow',sans-serif;text-transform:uppercase;letter-spacing:.07em;color:#f6efd8;position:relative;padding-left:16px;font-weight:400}
+body.ussr-ui .pagehead h1::before{content:"";position:absolute;left:0;top:.1em;bottom:.1em;width:6px;background:#c0161d;box-shadow:8px 0 0 #f4d56b}
+body.ussr-ui .pagehead p{color:#e8c35a;text-transform:uppercase;letter-spacing:.09em;font-size:11px;padding-left:16px}
+body.ussr-ui h3.sec{text-transform:uppercase;letter-spacing:.1em;font-size:12px;color:#f4d56b;border-bottom:1px solid #f4d56b55;padding-bottom:5px}
+body.ussr-ui .panel,body.ussr-ui .item,body.ussr-ui .mtile,body.ussr-ui .theme{border-radius:3px;border:1px solid #f4d56b3a;box-shadow:inset 0 0 0 3px #00000038,0 3px 0 #0006}
+body.ussr-ui .mtile b,body.ussr-ui .item .nm{text-transform:uppercase;letter-spacing:.03em}
+body.ussr-ui button:not(.plain):not(.theme):not(.mtile):not(.starbtn):not([data-tab]):not(.info){text-transform:uppercase;letter-spacing:.05em;font-weight:800;border-radius:3px}
+body.ussr-ui #toast div{background:#7d1118;color:#f6efd8;border:2px solid #f4d56b;border-radius:2px;text-transform:uppercase;letter-spacing:.05em;font-weight:800}
+body.ussr-ui .rar{letter-spacing:.14em;text-transform:uppercase}
+body.ussr-ui .card .t{text-transform:uppercase;letter-spacing:.02em}
+body.ussr-ui .empty{border-color:#f4d56b55;color:#e8c35a;text-transform:uppercase;letter-spacing:.06em}
+.us-home{width:100%;height:100%;display:grid;place-items:center}.us-home .us-svg{width:min(78%,300px);height:auto;filter:none;animation:usBob 3.2s ease-in-out infinite}
