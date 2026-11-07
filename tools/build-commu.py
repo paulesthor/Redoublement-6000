@@ -22,7 +22,7 @@ ALIAS = {
     'Kalinka (chanson)': 'Kalinka', 'Gopak': 'Hopak', 'Bataille du lac Peipous': 'Bataille du lac Peïpous', 'Saint Serge de Radonège': 'Serge de Radonège', 'Vladimir Ier de Kiev': 'Vladimir Ier', 'Gorki Park': 'Parc Gorki',
 }
 # fiches sans rapport avec la Russie ou l'URSS (faux amis du catalogue, ou autres pays) : exclues du réservoir
-EXCLUDE = {'Pelote basque', 'Deep Blue', 'Emir Kusturica', 'Zviad Gamsakhourdia', 'Trabant', 'Wladimir Klitschko', 'Hopak', 'Halva', 'Hetman'}
+EXCLUDE = {'Isaac Asimov', 'Le Cinquième Élément', 'Un bonheur', 'Le Jour de la fête', 'Le Maître', 'Poutine (plat)', 'Kharkiv', 'Moonshine', 'Vichy Anand', 'Fabio Capello', 'Vitali Klitchko', 'Nadia Comaneci', 'Julius Fučík', 'Prix Nobel de littérature', 'Prix Nobel de la paix', 'Les Bras croisés', 'Brat', 'Ladoga', 'Pelote basque', 'Deep Blue', 'Emir Kusturica', 'Zviad Gamsakhourdia', 'Trabant', 'Wladimir Klitschko', 'Hopak', 'Halva', 'Hetman'}
 want = {}
 for r in ORDER:
     for t in TITLES[r]:
@@ -33,7 +33,25 @@ for p in shards:
     for row in json.load(open(p)):
         k = row[1].lower()
         if k in want and want[k][0] not in found: found[want[k][0]] = {'id': row[0], 't': row[1], 'r': want[k][1], 'v': row[2]}
+# titres supplémentaires (tools/commu-extra.txt) : ils élargissent les raretés inférieures ; leur rareté dépend de la popularité
+EXTRA = [t.strip() for t in open(os.path.join(ROOT, 'tools/commu-extra.txt')).read().replace('\n', '|').split('|') if t.strip()]
+extra_want = {t.lower(): t for t in EXTRA}
+extra_found = {}
+for p in shards:
+    for row in json.load(open(p)):
+        k = row[1].lower()
+        if k in extra_want and row[1] not in found and row[1] not in extra_found: extra_found[row[1]] = {'id': row[0], 't': row[1], 'r': 'common', 'v': row[2]}
 found = {k: v for k, v in found.items() if k not in EXCLUDE}
+extra_found = {k: v for k, v in extra_found.items() if k not in EXCLUDE}
+others = [c for c in list(found.values()) if c['r'] != 'legendary'] + list(extra_found.values())
+others.sort(key=lambda c: -c['v'])
+SHARE = [('ultra', .10), ('super', .14), ('rare', .22), ('uncommon', .26), ('common', .28)]
+i = 0
+for r, sh in SHARE:
+    n = round(len(others) * sh) if r != 'common' else len(others) - i
+    for c in others[i:i + n]: c['r'] = r
+    i += n
+found = {**{k: v for k, v in found.items() if v['r'] == 'legendary'}, **{c['t']: c for c in others}}
 cards = sorted(found.values(), key=lambda c: (ORDER.index(c['r']), -c['v']))
 # le trou laissé chez les légendaires est comblé par la fiche « ultra » la plus populaire
 while sum(1 for c in cards if c['r'] == 'legendary') < 150:

@@ -7,6 +7,7 @@ import { stats, RANK, urlOf, cardRows } from './util.js';
 export const EVENT_OFFSET = 200000000;
 export const EVENT_WEIGHTS = { common: 55, uncommon: 20, rare: 14, super: 6, ultra: 4.5, legendary: 0.5 };   // légendaire : 0,5 % par carte (150 cartes dans le réservoir)
 export const PACK = 10;
+export const NEW_POINTS = { common: 1, uncommon: 2, rare: 4, super: 7, ultra: 12, legendary: 25 }, COLLECTION_BONUS = 20;   // points de palier par première obtention d'une fiche ; bonus par tranche de 50 fiches différentes
 const RARITIES = ['common', 'uncommon', 'rare', 'super', 'ultra', 'legendary'];
 let poolCache = null;
 
@@ -60,10 +61,14 @@ export function installCommuCards(d, h) {
       won = !!upd.meta.changes;
     }
     if (!won) { await run(env, 'UPDATE plan_progress SET packs = packs + 1 WHERE user_id = ?', user.id); bad('Trop d\'ouvertures en même temps, réessaie', 409); }
+    // collection = progression : chaque fiche NOUVELLE rapporte des points de palier (sans ₽ à dépenser), plus un bonus tous les 50 fiches différentes
+    let points = 0; { const fresh = new Set(); for (const c of drawn) if (!before[EVENT_OFFSET + c.id] && !fresh.has(c.id)) { fresh.add(c.id); points += NEW_POINTS[c.r] || 1; }
+      const had = Object.keys(before).length; points += (Math.floor((had + fresh.size) / 50) - Math.floor(had / 50)) * COLLECTION_BONUS;
+      if (points) await run(env, 'UPDATE plan_progress SET earned = earned + ?, earn_ts = ? WHERE user_id = ?', points, Date.now(), user.id); }
     const seen = new Set(), ids = drawn.map(c => EVENT_OFFSET + c.id), rows = new Map((await cardRows(env, ids)).map(r => [r.id, r]));
     const cards = drawn.map(c => { const id = EVENT_OFFSET + c.id, isNew = !before[id] && !seen.has(id); seen.add(id); return { ...rows.get(id), isNew, fav: 0 }; }).sort((a, b) => RANK[b.rarity] - RANK[a.rarity]);
     const left = +(await h.rowOf(env, user.id)).packs;
-    return { cards, packs: left, event: true };
+    return { cards, packs: left, event: true, points };
   });
   // collection de l'événement : cartes possédées et avancement par rareté
   route('GET', '/api/commu/cards', async ({ env, origin, user }) => {

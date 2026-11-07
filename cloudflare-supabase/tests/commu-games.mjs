@@ -8,12 +8,13 @@ await call(null, 'POST', '/api/register', { name: 'Chef', password: 'secret1' })
 await call(ADM, 'POST', '/api/commu/set', { on: true, scope: 'all' });
 for (const n of ['Ana', 'Boris', 'Clara']) await call(tok[n], 'POST', '/api/commu/join', {});   // Dmitri reste un joueur classique
 const POOL = JSON.parse((await import('node:fs')).readFileSync(new URL('../../cloudflare/public/catalog/commu.json', import.meta.url), 'utf8')).cards;
-ok('réservoir : 150 légendaires et au moins 380 cartes, uniquement des identifiants uniques', POOL.filter(c => c.r === 'legendary').length === 150 && POOL.length >= 380 && new Set(POOL.map(c => c.id)).size === POOL.length, `${POOL.length} cartes`);
+ok('réservoir : 150 légendaires et au moins 1 000 cartes, uniquement des identifiants uniques', POOL.filter(c => c.r === 'legendary').length === 150 && POOL.length >= 1000 && new Set(POOL.map(c => c.id)).size === POOL.length, `${POOL.length} cartes`);
 
 // ---------- colis du Parti ----------
 let [s, v] = await call(tok.Ana, 'POST', '/api/commu/open', {}); ok('sans colis : ouverture refusée', s === 400, s);
 await call(tok.Ana, 'POST', '/api/commu/buy', { n: 2 }); [, v] = await call(tok.Ana, 'GET', '/api/commu'); ok('2 colis achetés : 100 ₽, solde 400', v.packs === 2 && v.wr === 400, J(v).slice(0, 90));
 [s, v] = await call(tok.Ana, 'POST', '/api/commu/open', {}); ok('un colis = 10 fiches du réservoir soviétique', s === 200 && v.cards.length === 10 && v.packs === 1 && v.cards.every(c => c.id > 200000000 && POOL.some(p => p.t === c.title)), J(v).slice(0, 120));
+{ const W = { common: 1, uncommon: 2, rare: 4, super: 7, ultra: 12, legendary: 25 }; const exp = v.cards.reduce((t, c) => t + W[c.rarity], 0); const [, vv] = await call(tok.Ana, 'GET', '/api/commu'); ok('collection = progression : les 10 fiches nouvelles rapportent leurs points de palier (sans ₽)', v.points === exp && vv.earned === exp && vv.wr === 400, J({ p: v.points, exp, e: vv.earned, wr: vv.wr })); }
 ok('aucune fiche en double dans un colis', new Set(v.cards.map(c => c.id)).size === 10);
 const [, col] = await call(tok.Ana, 'GET', '/api/commu/cards'); ok('Archives : fiches possédées, avancement par rareté', col.owned === 10 && col.copies === 10 && col.total.legendary === 150 && col.opened === 1, J({ o: col.owned, t: col.total }));
 ok('collection indépendante : rien dans la collection normale', (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Ana))[0].n === 0);
