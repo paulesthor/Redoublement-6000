@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.31';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.32';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2451,9 +2451,10 @@ views.commustart = async v => {
     <section class="plan-sum"><ul class="ru-list"><li>Tu joues au <b>Camp</b>, aux <b>Patates</b>, au <b>Dernier Tsar</b>, au quiz du jour et au Marché noir pour gagner des <b>wikiroubles</b>.</li><li><b>12 paliers</b> de récompenses : colis, titres, cadres, thèmes, wikibidou pour ton jeu normal et des cartes souvenir à garder pour toujours.</li><li>Le camarade qui gagne le plus remporte la <b>cagnotte</b> (${fmt(c.pot || 0)} wikibidou) et devient Staline.</li></ul></section>
     <section class="plan-sum cs-tax"><div class="plan-top"><b>${fmt(c.tax)}</b><span>wikibidou de taxe d'État, une seule fois</span></div>
       <p class="plan-wallet">Tu repars avec <b>${fmt(c.startWr)} ₽</b>. Tu as <b>${fmt(me.coins)}</b> wikibidou. ${rich ? 'Le Parti accepte les paiements en retard, jamais les remboursements.' : 'Il t\'en manque : le Parti ne fait pas crédit.'}</p></section>
-    <div style="padding:6px 16px 18px;display:grid;gap:8px"><button id="cs-join" ${rich ? '' : 'disabled'}>Payer la taxe et entrer</button><button class="plain" id="cs-rules">Lire le règlement du Parti</button><button class="plain" id="cs-later">Plus tard</button></div>`;
+    <div style="padding:6px 16px 18px;display:grid;gap:8px"><button id="cs-join" ${rich ? '' : 'disabled'}>Payer la taxe et entrer</button><button class="plain" id="cs-rules">Lire le règlement du Parti</button><button class="plain" id="cs-icon">Nouvelle icône : comment l'obtenir</button><button class="plain" id="cs-later">Plus tard</button></div>`;
   $('#cs-join').onclick = safe(async () => { await api('/commu/join', {}); await loadCommu(true); await refreshMe(); toast('Bienvenue, camarade !', 'ok'); await syncUssrUi(); tab = 'packs'; render(); });
   $('#cs-rules').onclick = () => { tab = 'commurules'; render(); };
+  $('#cs-icon').onclick = iconSheet;
   $('#cs-later').onclick = () => { tab = 'packs'; render(); };
 };
 // ---------- fin de l'événement : bilan, gagnant et choix des souvenirs ----------
@@ -2799,8 +2800,10 @@ function moreSheet() {
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
       <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') + T('commutop', 'trophy', 'Classement général', 'Qui avance, qui traîne') + T('commurules', 'book', 'Règlement du Parti', 'À lire. Personne ne lit.') : ''}${commu?.done && (commu.joined || me.admin) ? T('commuend', 'trophy', 'Fin de l\'événement', commu.chosen.length ? 'Tes souvenirs' : 'Choisis tes souvenirs') : ''}</div>
+      <button class="plain" id="mo-icon" style="width:100%;margin-top:10px">Nouvelle icône : comment l'obtenir</button>
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retourner chialer chez les capitalistes</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    $('#mo-icon').onclick = iconSheet;
     $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };
     m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; gulagTab = null; tab = b.dataset.go; render(); });
     return;

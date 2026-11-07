@@ -40,6 +40,7 @@ const pb = await mkS(B); await pb.waitForTimeout(1500);
 ok('annonce affichée automatiquement sur l\'accueil', await pb.evaluate(() => tab === 'commustart') && !!(await pb.$('.cs-hero')));
 await pb.screenshot({ path: SHT + 'start-1-annonce.png' });
 ok('page : taxe de 300 et bouton d\'entrée actif', (await pb.textContent('#view')).includes('300') && !(await pb.$eval('#cs-join', b => b.disabled)));
+await pb.click('#cs-icon'); await pb.waitForSelector('.iconsheet #ic-go', { timeout: 5000 }); ok('annonce : bouton « nouvelle icône » avec lien Safari vers le site', (await pb.getAttribute('#ic-go', 'href')).includes('wikimasters.clodowiki.workers.dev/install.html')); await pb.click('#ic-x'); await pb.waitForTimeout(300);
 await pb.click('#cs-later'); await pb.waitForTimeout(800);
 ok('« Plus tard » : retour à la distribution, bandeau d\'inscription présent', await pb.evaluate(() => tab === 'packs') && !!(await pb.$('#commu-join')));
 await pb.click('#commu-join'); await pb.waitForTimeout(800);
