@@ -27,6 +27,11 @@ ok('taxe payée : 300 wikibidou prélevés', c0 - c1 === 300, c0 - c1);
 const [, cj] = await call(B, 'GET', '/api/commu'); ok('joueur inscrit avec 500 ₽', cj.joined && cj.wr === 500, J(cj).slice(0, 80));
 ok('retour sur la distribution soviétique', await pb.evaluate(() => tab === 'packs'));
 await pb.screenshot({ path: SHT + 'start-2-inscrit.png' });
+// retour au mode classique : un bouton sur l'accueil permet de revenir au mode communiste
+await pb.evaluate(async () => { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); await syncUssrUi(); tab = 'packs'; await render(); }); await pb.waitForTimeout(800);
+ok('accueil classique : bouton pour accéder au mode communiste', !!(await pb.$('#commu-enter')));
+await pb.click('#commu-enter'); await pb.waitForTimeout(1500);
+ok('le bouton rétablit le mode communiste (colis du Parti, plus de bouton)', await pb.evaluate(() => ussrUiOn() && eventUi()) && !(await pb.$('#commu-enter')));
 // 3. un joueur qui rouvre l'appli ne revoit pas l'annonce une seconde fois (déjà inscrit) ; l'annonce n'est montrée qu'une fois pour les autres
 await call(null, 'POST', '/api/register', { name: 'Dora', password: 'secret4' }); const [, ld] = await call(null, 'POST', '/api/login', { name: 'Dora', password: 'secret4' });
 await DB.prepare("UPDATE users SET coins = 100 WHERE name = 'Dora'").run();
