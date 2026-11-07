@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.39';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.41';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -453,7 +453,7 @@ function jeuxHub(v) {
   const cap = g => (commu && commu.caps && commu.caps[g] ? ` · ${fmt(commu.today?.[g] || 0)} / ${commu.caps[g]} ₽ aujourd\'hui` : '');
   const T = (key, icon, label, sub) => `<button class="mtile" data-jeu="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
   const ev = eventOn();
-  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science' + (eventAccess() ? cap('camp') : '')) + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis' + (eventAccess() ? cap('potato') : '')) + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit' + (eventAccess() ? cap('tsar') : '')) : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('bourse', 'market', 'Marché noir', 'Parie sur les vues, vends ta grand-mère' + (eventAccess() ? cap('bourse') : ''))}${ev ? '' : T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
+  v.innerHTML = `${pauseNote()}${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science' + (eventAccess() ? cap('camp') : '')) + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis' + (eventAccess() ? cap('potato') : '')) + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit' + (eventAccess() ? cap('tsar') : '')) : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('bourse', 'market', 'Marché noir', 'Parie sur les vues, vends ta grand-mère' + (eventAccess() ? cap('bourse') : ''))}${ev ? '' : T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
   v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
 }
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
@@ -1339,17 +1339,22 @@ views.admin = async v => {
       box.innerHTML = `<div class="admgrid">${rows.map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>`;
     } else if (adminTab === 'event') {
       const c = await loadCommu(true), st = await api('/commu/standings').catch(() => ({ players: 0, pot: 0 }));
-      const state = c.done ? 'Terminé' : c.on ? (c.scope === 'all' ? 'En cours, ouvert à tous' : 'Ouvert pour toi seul (test)') : 'Fermé';
+      const state = c.done ? 'Terminé' : c.paused ? 'EN PAUSE' : c.on ? (c.scope === 'all' ? 'En cours, ouvert à tous' : 'Ouvert pour toi seul (test)') : 'Fermé';
       box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Événement communiste</h3><div class="admgrid"><div><span>État</span><b>${state}</b></div><div><span>Inscrits</span><b>${fmt(st.players || 0)}</b></div><div><span>Cagnotte</span><b>${fmt(st.pot || 0)}</b></div><div><span>Taxe</span><b>${c.tax}</b></div></div>
         <p class="mut" style="margin:10px 0">Lancer l'événement ouvre une page d'annonce sur l'accueil de chaque joueur, avec le bouton pour payer la taxe (${c.tax} wikibidou) et entrer.</p>
         <button id="ev-all" style="width:100%">${c.on && c.scope === 'all' ? 'L\'événement est lancé pour tous' : 'Lancer l\'événement pour TOUS'}</button>
+        <button class="plain" id="ev-pause" style="width:100%;margin-top:10px" ${c.on ? '' : 'disabled'}>${c.paused ? 'Reprendre l\'événement' : 'Mettre l\'événement en pause'}</button><p class="mut" style="margin:6px 0 0;font-size:12px">La pause bloque les gains, achats, ouvertures et inscriptions. Rien n'est coupé ni remis à zéro : tout reprend tel quel.</p>
         <div class="row" style="margin-top:10px"><button class="plain" id="ev-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="ev-off" style="flex:1">Fermer</button></div>
         <div class="row" style="margin-top:10px"><button class="plain" id="ev-reset" style="flex:1">Repartir de zéro (mon compte)</button><button class="plain" id="ev-end" style="flex:1">Clore + gagnant</button><button class="plain" id="ev-souv" style="flex:1">Clore les souvenirs</button></div></div>`;
-      const act = (id, fn) => $(id).onclick = safe(async () => { await fn(); await loadCommu(true); await syncUssrUi(); adminBody(); });
-      if (c.on && c.scope === 'all') $('#ev-all').disabled = true;
-      act('#ev-all', async () => { if (!(await ask('Lancer l\'événement pour TOUS les joueurs ?', [], { text: 'Chaque joueur verra l\'annonce sur son accueil et pourra payer la taxe pour entrer.', ok: 'Lancer' }))) throw new Error('annulé'); await api('/commu/set', { on: true, scope: 'all' }); toast('Événement lancé pour tous', 'ok'); });
+      const act = (id, fn) => { const el = $(id); if (el) el.onclick = safe(async () => { await fn(); await loadCommu(true); await syncUssrUi(); if ($('#adm')) adminBody(); }); };
+      if (c.on && c.scope === 'all' && $('#ev-all')) $('#ev-all').disabled = true;
+      act('#ev-all', async () => { if (!(await ask('Lancer l\'événement pour TOUS les joueurs ?', [], { text: 'Chaque joueur verra l\'annonce sur son accueil et pourra payer la taxe pour entrer.', ok: 'Lancer' }))) throw new Error('annulé'); await api('/commu/set', { on: true, scope: 'all' }); toast('Événement lancé : envoi des notifications…', 'ok');
+        // « La Mère patrie t'appelle » : message en direct aux joueurs connectés, puis notification push par tranches de 20
+        let sent = 0; try { for (let off = 0; off < 4000; off += 20) { const r = await api('/admin/announce', { text: 'La Mère patrie t\'appelle, camarade ! Le Plan quinquennal commence : viens payer ta taxe.', offset: off }); sent += r.push || 0; if (!r.more) break; } } catch (e) { jlog('notification de lancement : ' + e.message); }
+        toast(`Événement lancé pour tous (${sent} notification${sent > 1 ? 's' : ''} envoyée${sent > 1 ? 's' : ''})`, 'ok'); });
+      act('#ev-pause', async () => { await api('/commu/pause', { paused: !c.paused }); toast(c.paused ? 'Événement relancé' : 'Événement en pause', 'ok'); });
       act('#ev-me', async () => { await api('/commu/set', { on: true, scope: 'admin' }); toast('Ouvert pour toi seul', 'ok'); });
-      act('#ev-reset', async () => { if (!(await ask('Remettre ton compte à zéro dans l\'événement ?', [], { text: 'Tes ₽, colis, cartes et paliers de l\'événement sont effacés. Tu pourras payer la taxe et entrer comme un nouveau joueur (500 ₽ et 10 colis).', ok: 'Repartir de zéro' }))) throw new Error('annulé'); await api('/plan/reset', {}); toast('Compte remis à zéro', 'ok'); });
+      act('#ev-reset', async () => { if (!(await ask('Remettre ton compte à zéro dans l\'événement ?', [], { text: 'Tes ₽, colis, cartes et paliers de l\'événement sont effacés. Tu pourras payer la taxe et entrer comme un nouveau joueur (500 ₽ et 10 colis).', ok: 'Repartir de zéro' }))) throw new Error('annulé'); await api('/plan/reset', {}); commu = null; setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); try { localStorage.removeItem('wm_commu_start'); } catch { /* stockage indisponible */ } toast('Compte remis à zéro : tu es sorti du mode communiste', 'ok'); });
       act('#ev-off', async () => { await api('/commu/set', { on: false }); toast('Événement fermé', 'ok'); });
       act('#ev-end', async () => { const r = await api('/commu/finish', {}); toast(r.winner ? `Gagnant : ${r.winner.name}` : 'Événement clos', 'ok'); });
       act('#ev-souv', async () => { const r = await api('/commu/souvenirs/close', {}); toast(`${r.given} souvenir(s) attribué(s)`, 'ok'); });
@@ -2345,12 +2350,13 @@ views.potato = async v => {
 
 // ---------- événement communiste : colis du Parti et Archives ----------
 const eventUi = () => eventOn() && ussrUiOn();
+const pauseNote = () => commu?.paused ? '<div class="commu-pause"><b>Événement en pause</b><span>Le Parti fait une sieste. Rien n\'est perdu : les gains et les colis reprennent bientôt.</span></div>' : '';
 async function eventPacks(v) {
   if (ussrOn()) await loadUssr().catch(() => {});
   await loadCommu(true); const c = commu;
-  v.innerHTML = `<div class="hero"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
+  v.innerHTML = `${pauseNote()}<div class="hero"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
     <div class="packart" id="packart">${window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
-    <div class="pk-actions"><button id="open" ${c.packs > 0 ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${c.packs >= 10 ? '' : 'disabled'}>Ouvrir ×10</button></div>
+    <div class="pk-actions"><button id="open" ${c.packs > 0 && !c.paused ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${c.packs >= 10 && !c.paused ? '' : 'disabled'}>Ouvrir ×10</button></div>
     <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · solde <b>${fmt(c.wr)} ₽</b></p></div>
     <button id="buy" class="plain buy" ${c.wr >= c.packPrice ? '' : 'disabled'}>Faire la queue et ouvrir · ${c.packPrice} ₽</button>
     <button id="buy10" class="plain buy" ${c.wr >= c.packPrice * 10 ? '' : 'disabled'}>Faire la queue ×10 · ${fmt(c.packPrice * 10)} ₽</button></div>`;
@@ -2560,7 +2566,7 @@ views.plan = async v => {
   const draw = () => {
     const next = d.milestones.find(m => d.earned < m.at), pct = Math.min(100, Math.round(d.earned / d.totals.max * 100));
     const ready = d.milestones.filter(m => d.earned >= m.at && !d.claimed.includes(m.id)).length;
-    v.innerHTML = `${pageHead('Plan quinquennal', 'Douze paliers pour mériter ton caca de pigeon en or')}
+    v.innerHTML = `${pauseNote()}${pageHead('Plan quinquennal', 'Douze paliers pour mériter ton caca de pigeon en or')}
       <section class="plan-sum"><div class="plan-top"><b>${fmtR(d.earned)}</b><span>gagnés sur ${fmtR(d.totals.max)}</span></div><div class="plan-bar"><i style="width:${pct}%"></i></div>
         <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}. Courage, sac à merde.` : 'Plan accompli. Va te laver, tu pues la victoire.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
         <p class="plan-wallet">Solde : <b>${fmtR(d.wr)}</b>${commu ? ` · cagnotte : <b>${fmt(commu.pot)}</b> wikibidou · ${commu.players} camarade${commu.players > 1 ? 's' : ''}` : ''}</p>
@@ -2811,7 +2817,7 @@ function moreSheet() {
   if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') + T('commutop', 'trophy', 'Classement général', 'Qui avance, qui traîne') + T('commurules', 'book', 'Règlement du Parti', 'À lire. Personne ne lit.') : ''}${commu?.done && (commu.joined || me.admin) ? T('commuend', 'trophy', 'Fin de l\'événement', commu.chosen.length ? 'Tes souvenirs' : 'Choisis tes souvenirs') : ''}</div>
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') + T('commutop', 'trophy', 'Classement général', 'Qui avance, qui traîne') + T('commurules', 'book', 'Règlement du Parti', 'À lire. Personne ne lit.') : ''}${me.admin ? T('admin', 'shield', 'Administration', 'Réservé au Politburo') : ''}${commu?.done && (commu.joined || me.admin) ? T('commuend', 'trophy', 'Fin de l\'événement', commu.chosen.length ? 'Tes souvenirs' : 'Choisis tes souvenirs') : ''}</div>
       <button class="plain" id="mo-icon" style="width:100%;margin-top:10px">Nouvelle icône : comment l'obtenir</button>
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retourner chialer chez les capitalistes</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };

@@ -59,6 +59,22 @@ await pb.evaluate(async () => { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '
 ok('accueil classique : bouton pour accéder au mode communiste', !!(await pb.$('#commu-enter')));
 await pb.click('#commu-enter'); await pb.waitForTimeout(1500);
 ok('le bouton rétablit le mode communiste (colis du Parti, plus de bouton)', await pb.evaluate(() => ussrUiOn() && eventUi()) && !(await pb.$('#commu-enter')));
+// pause depuis le menu admin : bandeau côté joueur, boutons d'ouverture désactivés, reprise
+await pa.evaluate(async () => { adminTab = 'event'; tab = 'admin'; await render(); }); await pa.waitForSelector('#ev-pause', { timeout: 8000 });
+await pa.click('#ev-pause'); await pa.waitForTimeout(1500);
+ok('menu admin : état EN PAUSE et bouton « Reprendre »', (await pa.textContent('#adm')).includes('EN PAUSE') && (await pa.textContent('#ev-pause')).includes('Reprendre'));
+await pb.evaluate(async () => { await loadCommu(true); tab = 'packs'; await render(); }); await pb.waitForTimeout(800);
+ok('joueur : bandeau « Événement en pause » et ouverture désactivée', !!(await pb.$('.commu-pause')) && await pb.$eval('#open', b => b.disabled));
+await pa.click('#ev-pause'); await pa.waitForTimeout(1500);
+await pb.evaluate(async () => { await loadCommu(true); tab = 'packs'; await render(); }); await pb.waitForTimeout(800);
+ok('reprise : bandeau disparu', !(await pb.$('.commu-pause')));
+// remise à zéro du compte admin : rien dans la collection, sortie automatique du mode communiste
+await call(A, 'POST', '/api/commu/join', {}); await pa.evaluate(async () => { await refreshMe(); await loadCommu(true); await syncUssrUi(); adminTab = 'event'; tab = 'admin'; await render(); }); await pa.waitForTimeout(1500); await pa.evaluate(async () => { await render(); }); await pa.waitForSelector('#ev-reset', { timeout: 8000 });
+await pa.click('#ev-reset'); await pa.waitForTimeout(500);
+await pa.evaluate(() => { const b = [...document.querySelectorAll('#modal button')].find(x => /Repartir de zéro/.test(x.textContent)); b?.click(); }); await pa.waitForTimeout(2500);
+ok('remise à zéro : l\'administrateur sort tout seul du mode communiste', await pa.evaluate(() => !ussrUiOn() && !document.body.classList.contains('ussr-ui')));
+const [, cz] = await call(A, 'GET', '/api/commu'); ok('remise à zéro : collection, colis et paliers vides, non inscrit', !cz.joined && cz.packs === 0 && cz.wr === 0 && cz.earned === 0, J(cz).slice(0, 120));
+const pz = (await DB.prepare("SELECT claimed, cards FROM plan_progress WHERE user_id = (SELECT id FROM users WHERE name = 'Alice')").all()).results[0]; ok('remise à zéro : aucune récompense réclamée, aucune carte', pz.claimed === '[]' && pz.cards === '{}', J(pz));
 // 3. un joueur qui rouvre l'appli ne revoit pas l'annonce une seconde fois (déjà inscrit) ; l'annonce n'est montrée qu'une fois pour les autres
 await call(null, 'POST', '/api/register', { name: 'Dora', password: 'secret4' }); const [, ld] = await call(null, 'POST', '/api/login', { name: 'Dora', password: 'secret4' });
 await DB.prepare("UPDATE users SET coins = 100 WHERE name = 'Dora'").run();

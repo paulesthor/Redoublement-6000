@@ -70,6 +70,7 @@ export function installPlan(d) {
     }
     if (!joinedReal(r)) bad('Tu n\'es pas inscrit à l\'événement communiste', 403);
     if (play && !on) bad('L\'événement communiste est terminé', 403);
+    if (play && !user.is_admin && (await setting(env, 'commu_paused')) === '1') bad('L\'événement est en pause, camarade : le Parti fait une sieste. Rien n\'est perdu, reviens bientôt.', 423);
     return { r, on, admin: !!user.is_admin };
   }
   // crédit de wikiroubles gagnés, plafonné par jeu et par jour (compare-and-swap : deux appareils ne dépassent jamais le plafond)
@@ -91,13 +92,14 @@ export function installPlan(d) {
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
     return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
-      scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
+      paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
   route('GET', '/api/commu', async ({ env, user }) => commuView(env, user));
   // inscription : taxe d'État versée à la cagnotte, 500 wikiroubles de départ
   route('POST', '/api/commu/join', async ({ env, user }) => {
     const on = await isOn(env, user); if (!on) bad('L\'événement communiste n\'est pas ouvert', 403);
+    if (!user.is_admin && (await setting(env, 'commu_paused')) === '1') bad('L\'événement est en pause : les inscriptions reprendront avec lui', 423);
     const r = await rowOf(env, user.id); if (joinedReal(r)) bad('Tu es déjà inscrit, camarade', 409);
     // un administrateur qui n'avait qu'un aperçu repart de zéro : même parcours qu'un joueur (taxe, 500 ₽, paliers vierges)
     const claim = await run(env, "UPDATE plan_progress SET joined = ?, wr = ?, earned = 0, claimed = '[]', perks = '[]', packs = ?, cards = '{}', opened = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]' WHERE user_id = ? AND joined <= 1", Date.now(), COMMU.START_WR, COMMU.START_PACKS, user.id);
@@ -150,7 +152,14 @@ export function installPlan(d) {
   route('POST', '/api/commu/set', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
     await ensureGameSchema(env); await putSetting(env, 'commu_on', body.on ? '1' : '0'); await putSetting(env, 'commu_scope', body.scope === 'all' ? 'all' : 'admin'); if (body.on) { await putSetting(env, 'commu_done', '0'); if ((await setting(env, 'commu_on_prev')) !== '1') await putSetting(env, 'commu_start', String(Date.now())); }
-    await putSetting(env, 'commu_on_prev', body.on ? '1' : '0');
+    await putSetting(env, 'commu_on_prev', body.on ? '1' : '0'); if (!body.on) await putSetting(env, 'commu_paused', '0');
+    return commuView(env, user);
+  });
+  // pause : plus aucun gain, achat, ouverture, réclamation ni inscription ; rien n'est coupé ni remis à zéro, l'état reprend tel quel
+  route('POST', '/api/commu/pause', async ({ env, user, body }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env); if (!(await rawOn(env))) bad('L\'événement n\'est pas ouvert', 409);
+    await putSetting(env, 'commu_paused', body.paused ? '1' : '0');
     return commuView(env, user);
   });
   // fin de l'événement : la cagnotte au meilleur, titre « Staline » et contour doré ; les avantages gagnés restent
@@ -182,6 +191,7 @@ export function installPlan(d) {
   route('POST', '/api/plan/reset', async ({ env, user }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403); await rowOf(env, user.id);
     await run(env, "UPDATE plan_progress SET earned = 0, wr = 0, claimed = '[]', perks = '[]', joined = 0, packs = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]', cards = '{}', opened = 0, souvenirs = '[]' WHERE user_id = ?", user.id);
+    await run(env, "DELETE FROM event_progress WHERE user_id = ? AND key LIKE 'cm:%'", user.id);   // plafonds du jour remis à zéro aussi
     return view(await rowOf(env, user.id));
   });
   route('POST', '/api/plan/claim', async ({ env, user, body }) => {

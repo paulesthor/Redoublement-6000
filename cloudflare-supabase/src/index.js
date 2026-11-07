@@ -1910,13 +1910,14 @@ route('GET', '/api/admin/logs', admin(async ({ env, query }) => { await flushLog
 route('GET', '/api/admin/fights', admin(async ({ env }) => ({ events: await all(env, 'SELECT ts, battle, players, kind, detail FROM fight_events ORDER BY id DESC LIMIT 80') })));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
   const text = String(body.text || '').trim().slice(0, 180); if (!text) bad('Message vide');
-  notify(env, ctx, { t: 'notify', msg: text });
-  let sent = 0;
+  const off = Math.max(0, Math.floor(+body.offset) || 0);   // envoi par tranches de 20 : l'appelant relance avec offset tant que `more` est vrai
+  if (!off) notify(env, ctx, { t: 'notify', msg: text });
+  let sent = 0, more = false;
   if (body.push !== false) {
-    const ids = (await all(env, 'SELECT DISTINCT user_id FROM push_subs LIMIT 20')).map(r => r.user_id);   // 20 joueurs max par envoi (limite de requêtes d'un Worker)
+    const ids = (await all(env, 'SELECT DISTINCT user_id FROM push_subs ORDER BY user_id LIMIT 20 OFFSET ?', off)).map(r => r.user_id); more = ids.length === 20;   // 20 joueurs max par envoi (limite de requêtes d'un Worker)
     for (const uid of ids) sent += await pushTo(env, uid, 'Clodo Wiki', text, 'announce').catch(() => 0);
   }
-  return { ok: true, push: sent };
+  return { ok: true, push: sent, more };
 }));
 route('POST', '/api/admin/run', admin(async ({ env, ctx, body }) => {
   if (body.action === 'bots') await botTick(env, ctx, true);
