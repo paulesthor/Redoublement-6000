@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.6';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.7';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 /** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
 const ussrUiOn = () => { try { return !!me?.admin && localStorage.getItem('wm_ussr_ui') === '1'; } catch { return false; } };
 const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src + '?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error(src)); document.head.append(s); });
@@ -1807,7 +1807,7 @@ async function previewUssr(best) {
   finally { if (prevOn === null) localStorage.removeItem('wm_ussr'); else localStorage.setItem('wm_ussr', prevOn); }
 }
 views.settings = async v => {
-  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = (await api('/camp').catch(() => null))?.perks || [];
+  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await api('/plan').catch(() => null))?.perks || [])];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
   v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
     <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.filter(t => t[0] !== 'urss' || perks.includes('theme_urss') || th === 'urss').map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
@@ -2261,6 +2261,34 @@ views.potato = async v => {
     window.__potato = game;
   } catch (e) { jlog('patates : ' + e.message); full.querySelector('#pt-host').innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger le jeu 3D (${esc(e.message)}).<br><button onclick="this.closest('.ptfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
+// ---------- Plan quinquennal : les 12 paliers du mode communiste (aperçu administrateur) ----------
+views.plan = async v => {
+  if (!me.admin) { tab = 'packs'; return render(); }
+  let d = await api('/plan');
+  const fmtR = n => fmt(n) + ' ₽';
+  const rewardOf = m => [m.packs ? `${m.packs} colis` : '', m.wr ? fmtR(m.wr) : '', m.title ? `titre « ${m.title} »` : '', m.perk === 'theme_urss' ? 'thème rouge conservé à vie' : m.perk?.startsWith('frame_') ? 'cadre de profil' : m.perk?.startsWith('souvenir_') ? 'carte souvenir à garder' : ''].filter(Boolean);
+  const draw = () => {
+    const next = d.milestones.find(m => d.earned < m.at), pct = Math.min(100, Math.round(d.earned / d.totals.max * 100));
+    const ready = d.milestones.filter(m => d.earned >= m.at && !d.claimed.includes(m.id)).length;
+    v.innerHTML = `${pageHead('Plan quinquennal', 'Les 12 paliers du Parti')}
+      <section class="plan-sum"><div class="plan-top"><b>${fmtR(d.earned)}</b><span>gagnés sur ${fmtR(d.totals.max)}</span></div><div class="plan-bar"><i style="width:${pct}%"></i></div>
+        <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}.` : 'Plan accompli, camarade.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
+        <div class="plan-demo"><button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button></div></section>
+      <div class="plan-list">${d.milestones.map(m => {
+        const done = d.claimed.includes(m.id), reached = d.earned >= m.at, rw = rewardOf(m);
+        return `<section class="plan-row ${done ? 'done' : reached ? 'ready' : ''}"><div class="plan-n">${m.id}</div><div class="plan-txt"><h3>${esc(m.name)}</h3><p>${esc(m.text)}</p><div class="plan-rw">${rw.map(x => `<span>${esc(x)}</span>`).join('')}</div>
+          <div class="plan-st">${done ? '<span class="ok">Récompense récupérée</span>' : reached ? `<button data-claim="${m.id}">Récupérer</button>` : `<span>À ${fmtR(m.at)} · encore ${fmtR(m.at - d.earned)}</span>`}</div></div></section>`;
+      }).join('')}</div>`;
+    v.querySelectorAll('[data-earn]').forEach(b => b.onclick = safe(async () => { d = await api('/plan/earn', { amount: +b.dataset.earn }); draw(); }));
+    v.querySelector('#plan-reset').onclick = safe(async () => { d = await api('/plan/reset', {}); draw(); });
+    v.querySelectorAll('[data-claim]').forEach(b => b.onclick = safe(async () => {
+      const r = await api('/plan/claim', { id: +b.dataset.claim }); d = await api('/plan');
+      toast(['Récompense récupérée', r.packs ? `+${r.packs} colis` : '', r.wr ? `+${r.wr} ₽` : '', r.title ? `titre « ${r.title} »` : '', r.perk === 'theme_urss' ? 'thème rouge conservé' : ''].filter(Boolean).join(' · '), 'ok');
+      refreshMe().catch(() => {}); draw();
+    }));
+  };
+  draw();
+};
 // ---------- démo « Directeur du Camp » (aperçu réservé à l'administrateur) ----------
 views.gulag = async v => {
   if (!me.admin) { tab = 'packs'; return render(); }
@@ -2456,11 +2484,11 @@ function moreSheet() {
   if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs camarades')}${me.admin ? T('gulag', 'medal', 'Paliers du Plan', 'Primes du Parti') : ''}</div>
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs camarades')}${me.admin ? T('plan', 'medal', 'Paliers du Plan', '12 paliers et récompenses') : ''}</div>
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retour au capitalisme</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };
-    m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; gulagTab = b.dataset.go === 'gulag' ? 'p' : null; tab = b.dataset.go; render(); });
+    m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; gulagTab = null; tab = b.dataset.go; render(); });
     return;
   }
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>

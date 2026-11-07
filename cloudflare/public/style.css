@@ -1374,3 +1374,15 @@ body.ussr-ui .us-news span{min-width:0;line-height:1.25}
 
 /* mode communiste : seulement Distribution, Archives, Les Jeux, Plan */
 body.ussr-ui aside nav button[data-tab=market],body.ussr-ui aside nav button[data-tab=feed],body.ussr-ui aside nav button[data-tab=search],body.ussr-ui aside nav button[data-tab=rank],body.ussr-ui aside nav button[data-tab=msg],body.ussr-ui aside nav button[data-tab=friends]{display:none!important}
+
+/* Plan quinquennal : 12 paliers */
+.plan-sum,.plan-row{box-sizing:border-box;margin:0 16px 10px;border:1px solid #f4d56b44;background:#2a0a0e;border-radius:4px;padding:12px}
+.plan-top{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}.plan-top b{font-size:22px;color:#f4d56b}.plan-top span{color:var(--mut);font-size:13px}
+.plan-bar{height:8px;border-radius:99px;background:#ffffff14;margin:8px 0;overflow:hidden}.plan-bar i{display:block;height:100%;background:linear-gradient(90deg,#c0161d,#f4d56b)}
+.plan-sum p{margin:4px 0 8px;font-size:13px;line-height:1.35}.plan-ready{color:#f4d56b}
+.plan-demo{display:flex;flex-wrap:wrap;gap:8px}.plan-demo button{flex:0 1 auto;min-height:38px;font-size:13px;max-width:100%}
+.plan-row{display:flex;gap:12px;align-items:flex-start}.plan-row.done{opacity:.62}.plan-row.ready{border-color:#f4d56b;box-shadow:0 0 0 1px #f4d56b55}
+.plan-n{flex:none;width:34px;height:34px;border-radius:50%;background:#c0161d;color:#f4d56b;display:grid;place-items:center;font-weight:800}
+.plan-txt{flex:1;min-width:0}.plan-txt h3{margin:0 0 3px;font-size:15px}.plan-txt p{margin:0 0 6px;font-size:12.5px;line-height:1.35;color:#e8dfc7;overflow-wrap:break-word}
+.plan-rw{display:flex;flex-wrap:wrap;gap:5px}.plan-rw span{font-size:11.5px;padding:3px 8px;border-radius:99px;background:#f4d56b1f;color:#f4d56b}
+.plan-st{margin-top:8px;font-size:12.5px;color:var(--mut)}.plan-st .ok{color:#7ad88b}.plan-st button{min-height:38px;font-size:13px}
