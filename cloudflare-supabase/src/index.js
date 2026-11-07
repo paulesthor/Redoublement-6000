@@ -982,7 +982,7 @@ const economy = installEconomy({ route, savingsFrozen: (env, u) => sanctions.unt
 const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, placeholders });
 const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
 const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
-installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle });
+installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle, canPlay: async (env, user) => { await commu.access(env, user, { play: true }); return true; } });   // pendant l'événement, les joueurs inscrits ont accès au camp
 const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle, assetJson, addCard, dayKey, msToMidnight, hash, now });
 const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,

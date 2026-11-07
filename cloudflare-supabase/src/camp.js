@@ -26,7 +26,7 @@ export const CAMP_TABLES = [
 ];
 
 export function installCamp(d) {
-  const { route, bad, one, run, st, now, ensureGameSchema, grantTitle } = d;
+  const { route, bad, one, run, st, now, ensureGameSchema, grantTitle, canPlay } = d;
   const list = s => { try { const a = JSON.parse(s || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
   async function rowOf(env, uid) {
     await ensureGameSchema(env);
@@ -36,11 +36,12 @@ export function installCamp(d) {
   }
   const view = r => ({ milestones: MILESTONES.map(m => ({ id: m.id, p: m.p, minH: m.minH, name: m.name, text: m.text, coins: m.coins, packs: m.packs, title: m.title ? CAMP_TITLES.find(t => t.id === m.title)?.label : null, perk: m.perk ?? null })),
     claimed: list(r.claimed), perks: list(r.perks), hours: Math.max(0, (now() - +r.start) / 3600000), totalCoins: MILESTONES.reduce((t, m) => t + m.coins, 0), totalPacks: MILESTONES.reduce((t, m) => t + m.packs, 0) });
-  const gate = user => { if (!user.is_admin) bad('Le camp est en aperçu : réservé à l\'administrateur pour l\'instant', 403); };
+  // le camp est un aperçu pour l'administrateur ; pendant l'événement communiste, les joueurs inscrits y ont accès (ses primes comprises)
+  const gate = async (env, user) => { if (user.is_admin) return; let ok = false; try { ok = !!(await canPlay?.(env, user)); } catch { ok = false; } if (!ok) bad('Le camp est en aperçu : réservé à l\'administrateur pour l\'instant', 403); };
 
-  route('GET', '/api/camp', async ({ env, user }) => { gate(user); return view(await rowOf(env, user.id)); });
+  route('GET', '/api/camp', async ({ env, user }) => { await gate(env, user); return view(await rowOf(env, user.id)); });
   route('POST', '/api/camp/claim', async ({ env, user, body }) => {
-    gate(user);
+    await gate(env, user);
     const m = MILESTONES.find(x => x.id === Math.floor(+body.id)); if (!m) bad('Palier inconnu', 404);
     let r, won = false;
     for (let essai = 0; essai < 12 && !won; essai++) {

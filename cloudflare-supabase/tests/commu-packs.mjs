@@ -34,4 +34,9 @@ await q("UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?
 await q('UPDATE plan_progress SET packs = 0 WHERE user_id = ?', ana); await q("UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", nowS - 35 * 60, ana);
 await call(ADM, 'POST', '/api/commu/pause', { paused: true }); [, v] = await call(ANA, 'GET', '/api/commu'); ok('pause : le compte à rebours est gelé', v.packs === 0, v.packs);
 await call(ADM, 'POST', '/api/commu/pause', { paused: false }); [, v] = await call(ANA, 'GET', '/api/commu'); ok('reprise : le compte à rebours repart de zéro (pas de colis pour la durée de la pause)', v.packs === 0 && v.nextPackIn > 9 * 60000, J({ p: v.packs, n: v.nextPackIn }));
+// primes du Camp : visibles par les joueurs inscrits pendant l'événement, pas par les autres
+[, r] = await call(null, 'POST', '/api/register', { name: 'Zoe', password: 'secret4' }); const ZOE = r.token;
+[s, v] = await call(ANA, 'GET', '/api/camp'); ok('primes du Camp : visibles par un joueur inscrit à l\'événement', s === 200 && v.milestones.length === 10, s);
+[s] = await call(ZOE, 'GET', '/api/camp'); ok('primes du Camp : refusées à un joueur non inscrit', s === 403, s);
+await call(ADM, 'POST', '/api/commu/set', { on: false }); [s] = await call(ANA, 'GET', '/api/camp'); ok('événement fermé : le Camp redevient réservé à l\'administrateur', s === 403, s);
 done();
