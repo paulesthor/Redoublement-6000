@@ -1328,7 +1328,7 @@ html[data-theme=urss]{--bg:#16070a;--bg2:#1e0a0e;--panel:#2a0f14;--panel2:#38141
 
 /* interface URSS complète (aperçu admin) */
 body.ussr-ui{background-image:repeating-linear-gradient(115deg,transparent 0 72px,rgba(244,213,107,.035) 72px 76px)}
-body.ussr-ui::after{content:"";position:fixed;right:-70px;top:130px;width:300px;height:300px;background:#c0161d;opacity:.07;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);pointer-events:none;z-index:0}
+body.ussr-ui::after{content:"";position:fixed;right:0;top:130px;width:200px;height:200px;background:#c0161d;opacity:.07;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);pointer-events:none;z-index:0}
 .us-news{display:flex;align-items:center;gap:10px;margin:0 16px 8px;padding:7px 12px;background:#2a0a0e;border:1px solid #f4d56b44;border-left:4px solid #c0161d;font-size:12.5px;color:#f6efd8;overflow:hidden;min-height:34px}
 .us-news b{color:#f4d56b;letter-spacing:.16em;font-size:11px;flex:none}.us-news span{opacity:0;transform:translateY(5px)}.us-news span.in{animation:glnews .6s forwards}
 body.ussr-ui #topbar{background:linear-gradient(#5c0c12 72%,transparent);border-bottom:2px solid #f4d56b55}
@@ -1362,3 +1362,12 @@ body.ussr-ui .us-news{margin-left:max(12px,env(safe-area-inset-left));margin-rig
 .row>button{max-width:100%;flex-shrink:1}
 
 @media(max-width:360px){body.ussr-ui .mgrid{grid-template-columns:1fr}body.ussr-ui .mtile b{font-size:13px;letter-spacing:0}body.ussr-ui .hero h1{padding-right:36px}}
+
+body.ussr-ui #hits-text{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.3}
+
+/* iPhone : aucun débordement horizontal, bandeaux alignés */
+html:has(body.ussr-ui),body.ussr-ui{overflow-x:hidden;max-width:100vw}
+body.ussr-ui #hits,body.ussr-ui .us-news{box-sizing:border-box;margin-left:max(16px,env(safe-area-inset-left));margin-right:max(16px,env(safe-area-inset-right));width:auto;min-width:0;max-width:calc(100% - 32px)}
+body.ussr-ui #hits{height:auto;min-height:34px;padding-top:6px;padding-bottom:6px}
+body.ussr-ui #hits-text{min-width:0;flex:1 1 auto}
+body.ussr-ui .us-news span{min-width:0;line-height:1.25}
