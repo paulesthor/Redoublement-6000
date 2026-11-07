@@ -28,6 +28,11 @@ const [, cj] = await call(B, 'GET', '/api/commu'); ok('joueur inscrit avec 500 �
 ok('retour sur la distribution soviétique', await pb.evaluate(() => tab === 'packs'));
 const pills = await pb.$$eval('#me .pill', e => e.map(x => x.textContent.trim()));
 ok('bandeau du haut : 10 colis et 500 ₽ du Plan (pas ceux du jeu normal)', pills[0] === '10' && /^500\s*₽$/.test(pills[1]), J(pills));
+await DB.prepare("UPDATE plan_progress SET packs = 2 WHERE user_id = (SELECT id FROM users WHERE name = 'Bob')").run(); await pb.evaluate(async () => { await loadCommu(true); tab = 'packs'; await render(); }); await pb.waitForTimeout(800);
+ok('colis du Parti : décompte avant le prochain colis offert', /prochain (colis )?dans/.test(await pb.textContent('.stock')) && !!(await pb.$('#cd')) && /^\d+:\d\d$/.test((await pb.textContent('#cd')).trim()), await pb.textContent('.stock'));
+await pb.evaluate(async () => { tab = 'dquiz'; await render(); }); await pb.waitForTimeout(1000);
+ok('quiz en mode communiste : colis du Parti et ₽, pas de minuteur de paquet', /colis du Parti/.test(await pb.textContent('#view')) && !/minuteur remis/.test(await pb.textContent('#view')), (await pb.textContent('#view')).slice(0, 200));
+await pb.evaluate(async () => { tab = 'packs'; await render(); }); await pb.waitForTimeout(500);
 await pb.screenshot({ path: SHT + 'start-2-inscrit.png' });
 // retour au mode classique : un bouton sur l'accueil permet de revenir au mode communiste
 await pb.evaluate(async () => { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); await syncUssrUi(); tab = 'packs'; await render(); }); await pb.waitForTimeout(800);

@@ -339,6 +339,7 @@ export function startTsar(host, opts = {}) {
     p.innerHTML = `<div class="ts-name">${esc(c.name)}</div><p class="ts-say">${esc(c.text)}</p>
       <div class="ts-choices"><button id="ts-l" data-i="0"><span>${esc(c.L[0])}</span></button><button id="ts-r" data-i="1"><span>${esc(c.R[0])}</span></button></div>
       <div class="ts-hint">${HINTS[Math.floor(Math.random() * HINTS.length)]}</div>`;
+    void p.offsetWidth;   // force la mise en page complète avant l'apparition (iPhone : évite un rendu partiel de la carte)
     let x0 = 0, dx = 0, drag = false;
     p.onpointerdown = e => { if (busy) return; if (e.target.closest('button')) { const i = +e.target.closest('button').dataset.i; preview((i ? c.R : c.L)[1]); } drag = true; x0 = e.clientX; dx = 0; };
     p.onpointermove = e => { if (!drag || busy) return; dx = e.clientX - x0; if (Math.abs(dx) > 8) { p.style.transform = `translateX(${dx * .4}px) rotate(${dx / 60}deg)`; preview((dx < 0 ? c.L : c.R)[1]); p.classList.toggle('left', dx < 0); p.classList.toggle('right', dx > 0); } };

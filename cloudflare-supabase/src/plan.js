@@ -34,7 +34,7 @@ export const PLAN_TABLES = [
 ];
 
 // ---- économie de l'événement communiste ----
-export const COMMU = { START_WR: 500, START_PACKS: 10, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
+export const COMMU = { START_WR: 500, START_PACKS: 10, FREE_EVERY_MS: 30 * 60000, FREE_MAX: 5, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
   ENDINGS: ['samovar', 'train', 'bear', 'x_samovar', 'x_train', 'x_bear', 'late', 'rave', 'capi', 'vodka', 'babouchka', 'cat', 'strike', 'c0', 'c1', 'd0', 'd1', 'a0', 'a1', 'f0', 'f1'] };
 const dayOf = () => new Date().toISOString().slice(0, 10);
 
@@ -61,6 +61,23 @@ export function installPlan(d) {
     earned: +r.earned, wr: +r.wr, packs: +(r.packs || 0), joined: +(r.joined || 0), claimed: list(r.claimed), perks: list(r.perks),
     totals: { coins: PLAN_MILESTONES.reduce((t, m) => t + (m.coins || 0), 0), packs: PLAN_MILESTONES.reduce((t, m) => t + m.packs, 0), wr: PLAN_MILESTONES.reduce((t, m) => t + m.wr, 0), max: PLAN_MILESTONES[PLAN_MILESTONES.length - 1].at },
   });
+  /** Colis gratuits du Parti : un toutes les 30 minutes, jusqu'à 5 en réserve (au-delà, rien ne se recharge). Horodatage rangé dans event_progress (en secondes), sans nouvelle colonne. */
+  async function regen(env, uid, r) {
+    if ((await setting(env, 'commu_paused')) === '1') return { r, nextIn: 0, frozen: true };   // pause : le compte à rebours est gelé
+    const key = 'cm:packts', nowS = Math.floor(Date.now() / 1000), every = COMMU.FREE_EVERY_MS / 1000;
+    const row = await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', key, uid);
+    if (!row) { await run(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,?) ON CONFLICT DO NOTHING', key, uid, nowS); return { r, nextIn: COMMU.FREE_EVERY_MS }; }
+    let ts = +row.n, packs = +(r.packs || 0);
+    if (packs >= COMMU.FREE_MAX) { if (nowS - ts > 0) await run(env, 'UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ?', nowS, key, uid); return { r, nextIn: 0 }; }
+    const elapsed = Math.floor((nowS - ts) / every);
+    if (elapsed > 0) {
+      const gain = Math.min(COMMU.FREE_MAX - packs, elapsed), newTs = packs + elapsed >= COMMU.FREE_MAX ? nowS : ts + elapsed * every;
+      const upd = await run(env, 'UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n = ?', newTs, key, uid, ts);   // un seul appareil encaisse la recharge
+      if (upd.meta.changes) { await run(env, 'UPDATE plan_progress SET packs = packs + ? WHERE user_id = ?', gain, uid); r = await rowOf(env, uid); ts = newTs; packs = +(r.packs || 0); }
+      else { r = await rowOf(env, uid); const again = await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', key, uid); ts = +again.n; packs = +(r.packs || 0); }
+    }
+    return { r, nextIn: packs >= COMMU.FREE_MAX ? 0 : Math.max(0, (ts + every - nowS) * 1000) };
+  }
   // qui peut voir / jouer : l'administrateur toujours ; un joueur seulement s'il est inscrit (voir) et si l'événement est ouvert (jouer)
   async function access(env, user, { play = false } = {}) {
     const r = await rowOf(env, user.id), on = await isOn(env, user);
@@ -71,6 +88,7 @@ export function installPlan(d) {
     if (!joinedReal(r)) bad('Tu n\'es pas inscrit à l\'événement communiste', 403);
     if (play && !on) bad('L\'événement communiste est terminé', 403);
     if (play && !user.is_admin && (await setting(env, 'commu_paused')) === '1') bad('L\'événement est en pause, camarade : le Parti fait une sieste. Rien n\'est perdu, reviens bientôt.', 423);
+    if (on) { const g = await regen(env, user.id, r); return { r: g.r, on, admin: !!user.is_admin, nextIn: g.nextIn }; }
     return { r, on, admin: !!user.is_admin };
   }
   // crédit de wikiroubles gagnés, plafonné par jeu et par jour (compare-and-swap : deux appareils ne dépassent jamais le plafond)
@@ -88,11 +106,12 @@ export function installPlan(d) {
     return allowed;
   }
   const commuView = async (env, user) => {
-    const r = await rowOf(env, user.id), on = await isOn(env, user), day = dayOf();
+    let r = await rowOf(env, user.id); const on = await isOn(env, user), day = dayOf(); let nextIn = 0;
+    if (on && +r.joined >= 1) { const g = await regen(env, user.id, r); r = g.r; nextIn = g.nextIn; }
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
     return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
-      paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
+      paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, quizPer: COMMU.QUIZ_PER_ANSWER, nextPackIn: nextIn, freeEveryMin: COMMU.FREE_EVERY_MS / 60000, freeMax: COMMU.FREE_MAX, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
   route('GET', '/api/commu', async ({ env, user }) => commuView(env, user));
@@ -160,6 +179,7 @@ export function installPlan(d) {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
     await ensureGameSchema(env); if (!(await rawOn(env))) bad('L\'événement n\'est pas ouvert', 409);
     await putSetting(env, 'commu_paused', body.paused ? '1' : '0');
+    if (!body.paused) await run(env, "UPDATE event_progress SET n = ? WHERE key = 'cm:packts'", Math.floor(Date.now() / 1000));   // reprise : le compte à rebours repart de maintenant
     return commuView(env, user);
   });
   // fin de l'événement : la cagnotte au meilleur, titre « Staline » et contour doré ; les avantages gagnés restent

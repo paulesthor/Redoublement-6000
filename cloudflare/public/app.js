@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.42';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.44';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1778,15 +1778,18 @@ views.quests = async v => {
 
 let dqRun = null;   // quiz en cours : { day, qs, i, answers, endAt }
 const dqRecap = (v, rc, d) => {
+  const ev = eventUi(), PK = ev ? 'colis' : 'paquet';
+  if (ev) loadCommu(true).catch(() => {});
   const verdict = rc.correct === rc.total ? 'Sans faute !' : rc.correct >= 3 ? 'Bien joué !' : rc.correct > 0 ? 'Pas mal !' : 'Aïe…';
-  const gain = rc.delta > 0 ? `<div class="dqgain">${Array.from({ length: rc.delta }, (_, i) => `<span style="--i:${i}">${ico('packs')}</span>`).join('')}<b>+${rc.delta} paquet${rc.delta > 1 ? 's' : ''}</b></div>`
-    : rc.penalty === 'pack' ? `<div class="dqgain bad"><b>−1 paquet</b><small>Aucune bonne réponse : un paquet t'est retiré.</small></div>`
+  const gain = rc.delta > 0 ? `<div class="dqgain">${Array.from({ length: rc.delta }, (_, i) => `<span style="--i:${i}">${ico('packs')}</span>`).join('')}<b>+${rc.delta} ${PK}${rc.delta > 1 ? 's' : ''}</b></div>`
+    : rc.penalty === 'pack' ? `<div class="dqgain bad"><b>−1 ${PK}</b><small>Aucune bonne réponse : un ${PK} t'est retiré.</small></div>`
+    : rc.penalty === 'timer' && ev ? `<div class="dqgain bad"><b>Aucun colis gagné</b><small>Aucune bonne réponse, mais plus de colis à perdre : le Parti est clément pour cette fois.</small></div>`
     : rc.penalty === 'timer' ? `<div class="dqgain bad"><b>Minuteur remis à 10 min</b><small>Aucune bonne réponse et plus de paquet à perdre : le prochain arrive dans 10 minutes.</small></div>` : '';
   v.innerHTML = `<div class="dqend"><span class="halo" aria-hidden="true"></span><p class="dk">Quiz du jour · ${esc(rc.title)}</p><div class="dqscore"><b>${rc.correct}</b><span>/ ${rc.total}</span></div><h2>${verdict}</h2>${gain}
     <div class="dqlist">${rc.questions.map((q, i) => `<div class="dqrow ${q.ok ? 'ok' : 'ko'}"><span class="dqn">${q.ok ? '✓' : '✗'}</span><div><b>${esc(q.text)}</b>
       <small>${q.ok ? '' : q.given >= 0 ? `Ta réponse : ${esc(q.options[q.given])}<br>` : 'Pas de réponse<br>'}Bonne réponse : <em>${esc(q.options[q.answer])}</em></small></div></div>`).join('')}</div>
     <p class="mut dsmall">Prochain quiz à minuit${d?.resetIn ? ` (dans ${hmLeft(d.resetIn)})` : ''}.</p>
-    <div class="row"><button class="primary" id="dq-packs">Ouvrir mes paquets</button><button class="plain" id="dq-quests">Mes quêtes</button></div></div>`;
+    <div class="row"><button class="primary" id="dq-packs">Ouvrir mes ${PK}s</button><button class="plain" id="dq-quests">Mes quêtes</button></div></div>`;
   $('#dq-packs').onclick = () => { tab = 'packs'; render(); }; $('#dq-quests').onclick = () => { tab = 'quests'; render(); };
   api('/daily-quiz/ranking').then(rk => {
     const t = ms => ms >= 60000 ? `${Math.floor(ms / 60000)} min ${String(Math.round(ms % 60000 / 1000)).padStart(2, '0')} s` : `${(ms / 1000).toFixed(1)} s`;
@@ -1826,7 +1829,7 @@ views.dquiz = async v => {
     dqRun.endAt = Date.now() + d.secs * 1000; return dqQuestion(v);
   }
   v.innerHTML = `<div class="dqintro"><span class="halo" aria-hidden="true"></span><p class="dk">Défi du jour</p><h1>Quiz du jour</h1><p class="mut">Le même quiz pour tous les joueurs, sur un article tiré au hasard.</p>
-    <ul class="dqrules"><li><b>${d.n} questions</b> à choix multiples, ${d.secs / 60} minutes en tout</li><li>${ico('packs')}<span><b>+1 paquet</b> par bonne réponse</span></li><li class="bad">${ico('shield')}<span>Aucune bonne réponse : <b>−1 paquet</b> (ou minuteur remis à 10 min si tu n'en as plus)</span></li><li>Un seul essai par jour</li></ul>
+    <ul class="dqrules"><li><b>${d.n} questions</b> à choix multiples, ${d.secs / 60} minutes en tout</li>${eventUi() ? `<li>${ico('packs')}<span><b>+1 colis du Parti</b> et <b>+${commu?.quizPer || 20} ₽</b> par bonne réponse</span></li><li class="bad">${ico('shield')}<span>Aucune bonne réponse : <b>−1 colis</b> (rien si tu n'en as plus)</span></li>` : `<li>${ico('packs')}<span><b>+1 paquet</b> par bonne réponse</span></li><li class="bad">${ico('shield')}<span>Aucune bonne réponse : <b>−1 paquet</b> (ou minuteur remis à 10 min si tu n'en as plus)</span></li>`}<li>Un seul essai par jour</li></ul>
     <button id="dq-go" class="primary big">Commencer</button><p class="mut dsmall">Nouveau quiz à minuit (dans ${hmLeft(d.resetIn)}).</p></div>`;
   $('#dq-go').onclick = safe(async () => {
     $('#dq-go').disabled = true; const s = await api('/daily-quiz/start', {});
@@ -2360,7 +2363,7 @@ async function eventPacks(v) {
   v.innerHTML = `${pauseNote()}<div class="hero"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
     <div class="packart" id="packart">${window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
     <div class="pk-actions"><button id="open" ${c.packs > 0 && !c.paused ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${c.packs >= 10 && !c.paused ? '' : 'disabled'}>Ouvrir ×10</button></div>
-    <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · solde <b>${fmt(c.wr)} ₽</b></p></div>
+    <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · ${c.paused ? 'compte à rebours gelé' : c.packs >= (c.freeMax || 5) ? 'réserve pleine' : 'prochain dans <b id="cd"></b>'}</p><p class="mut" style="margin:2px 0 0">Un colis offert toutes les ${c.freeEveryMin || 30} min (${c.freeMax || 5} en réserve) · solde <b>${fmt(c.wr)} ₽</b></p></div>
     <button id="buy" class="plain buy" ${c.wr >= c.packPrice ? '' : 'disabled'}>Faire la queue et ouvrir · ${c.packPrice} ₽</button>
     <button id="buy10" class="plain buy" ${c.wr >= c.packPrice * 10 ? '' : 'disabled'}>Faire la queue ×10 · ${fmt(c.packPrice * 10)} ₽</button></div>`;
   const again = (n) => () => ({ ok: commu.packs >= n, label: n > 1 ? `Ouvrir 10 autres (${commu.packs})` : `Ouvrir un autre colis (${commu.packs})` });
@@ -2377,6 +2380,8 @@ async function eventPacks(v) {
     if (rr === 'again') setTimeout(() => $('#open10')?.click(), 60);
   });
   $('#open').onclick = one; $('#open10').onclick = ten;
+  { const t0 = Date.now(), next = c.nextPackIn || 0; clearInterval(tick);
+    tick = setInterval(() => { const cd = $('#cd'); if (!cd) return; const s = Math.max(0, Math.round((next - (Date.now() - t0)) / 1000)); cd.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; if (s === 0) { clearInterval(tick); loadCommu(true).then(() => { if (tab === 'packs') render(); }); } }, 500); }
   $('#buy').onclick = safe(async () => { await api('/commu/buy', { n: 1 }); await loadCommu(true); await one(); });
   $('#buy10').onclick = safe(async () => { if (!(await ask('Faire la queue pour 10 colis ?', [], { text: `${fmt(commu.packPrice * 10)} ₽ pour 10 colis du Parti.`, ok: 'Acheter' }))) return; await api('/commu/buy', { n: 10 }); await loadCommu(true); await ten(); });
 }

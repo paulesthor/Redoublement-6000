@@ -1566,7 +1566,11 @@ route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
   const claim = await run(env, 'UPDATE daily_quiz_runs SET answers = ?, correct = ?, delta = ?, finished = ? WHERE user_id = ? AND day = ? AND finished IS NULL', JSON.stringify(given), correct, correct, now(), user.id, day);
   if (!claim.meta.changes) { const r2 = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day); return { ok: true, status: 'done', recap: recap(quiz, r2) }; }
   let u = await one(env, 'SELECT * FROM users WHERE id = ?', user.id);
-  if (correct > 0) await run(env, 'UPDATE users SET pack_stock = pack_stock + ? WHERE id = ?', correct, user.id);
+  const inEvent = day.startsWith('cm:');   // quiz de l'événement : les colis gagnés ou perdus sont ceux du mode communiste, jamais ceux du jeu normal
+  if (inEvent) {
+    if (correct > 0) await run(env, 'UPDATE plan_progress SET packs = packs + ? WHERE user_id = ?', correct, user.id);
+    else { const lost = await run(env, 'UPDATE plan_progress SET packs = packs - 1 WHERE user_id = ? AND packs >= 1', user.id); delta = lost.meta.changes ? -1 : 0; await run(env, 'UPDATE daily_quiz_runs SET delta = ? WHERE user_id = ? AND day = ?', delta, user.id, day); }
+  } else if (correct > 0) await run(env, 'UPDATE users SET pack_stock = pack_stock + ? WHERE id = ?', correct, user.id);
   else {                                                     // aucune bonne réponse : un paquet en moins, ou à défaut le minuteur repart à 10 minutes
     u = await refreshPacks(env, u);
     const lost = u.pack_stock >= 1 ? await run(env, 'UPDATE users SET pack_stock = pack_stock - 1 WHERE id = ? AND pack_stock >= 1', user.id) : null;

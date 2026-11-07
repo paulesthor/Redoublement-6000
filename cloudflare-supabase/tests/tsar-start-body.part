@@ -1,0 +1,11 @@
+const SH = '/tmp/claude-0/-home-user-Redoublement-6000/37801998-3ced-5dcb-85ba-95e236d12c04/scratchpad/';
+for (const [w, h] of [[390, 844]]) {
+  const p = await mk(w, h); await p.waitForTimeout(1200); await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });
+  await p.evaluate(async () => { setPref('wm_theme', 'urss'); setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); setPref('wm_sound', '0'); await syncUssrUi(); tab = 'duel'; render(); });
+  await p.waitForSelector('[data-jeu=tsar]'); await p.click('[data-jeu=tsar]'); await p.waitForSelector('#ts-go', { timeout: 8000 });
+  await p.click('#ts-go');
+  for (let k = 0; k < 24; k++) { await p.waitForTimeout(120); await p.screenshot({ path: SH + `tsar-start-${w}-f${String(k).padStart(2, '0')}.png` }); }
+  const info = await p.evaluate(() => { const r = e => { const b = document.querySelector(e)?.getBoundingClientRect(); return b && { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; }; return { vh: innerHeight, panel: r('.ts-panel'), card: r('.ts-card'), btns: r('.ts-choices') || r('.ts-btns'), root: r('.ts-root') }; });
+  console.log(w, JSON.stringify(info));
+}
+process.exit(0);

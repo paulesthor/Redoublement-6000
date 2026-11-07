@@ -1633,3 +1633,8 @@ body.ussr-ui button.avatar{width:38px;height:38px;min-width:38px;min-height:38px
 .ev-chips{margin-bottom:18px}.ev-grid{padding-top:6px;margin-top:6px}
 
 .commu-pause{margin:10px 16px 0;padding:10px 14px;border:2px solid #f4d56b;border-radius:10px;background:#5c1016;display:flex;flex-direction:column;gap:2px;text-align:center}.commu-pause b{color:#f4d56b;text-transform:uppercase;letter-spacing:.12em;font-size:13px}.commu-pause span{font-size:12px;color:#ffe9b0}
+
+/* jeu du Tsar : le panneau a sa propre couche de rendu (évite le rendu partiel du texte et des boutons sur iPhone à l'apparition de la première carte) */
+.ts-panel{transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden;will-change:opacity,transform;isolation:isolate}
+.ts-panel .ts-say,.ts-panel .ts-choices,.ts-panel .ts-name,.ts-panel .ts-hint{min-width:0;max-width:100%}
+.ts-panel .ts-say{align-self:stretch}
