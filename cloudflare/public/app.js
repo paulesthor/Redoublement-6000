@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.25';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.26';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2441,12 +2441,12 @@ views.plan = async v => {
         <div class="plan-demo"><button class="plain" id="plan-top">Classement général et avance des paliers</button>${me.admin ? '<button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button>' : ''}</div></section>
       <div class="road" style="--fill:${roadFill(d)}%">${d.milestones.map(m => {
         const done = d.claimed.includes(m.id), reached = d.earned >= m.at, isNext = next && next.id === m.id, rw = planChips(m), pc = Math.min(100, Math.floor(d.earned / m.at * 100));
-        return `<section class="rd ${done ? 'claimed' : reached ? 'reached' : ''} ${isNext ? 'next' : ''}" data-id="${m.id}"><div class="rd-n"><b>${m.id}</b><i></i><i></i><i></i></div>
-          <div class="rd-card"><h3>${esc(m.name)}</h3><p>${esc(m.text)}</p>
-            <div class="rd-req"><span class="rd-lbl">Prérequis</span><b>${fmtR(m.at)} gagnés</b><div class="ct-bar"><i style="width:${reached ? 100 : Math.max(2, pc)}%"></i></div>${reached ? '' : `<small>${isNext ? 'Prochain palier · ' : ''}encore ${fmtR(m.at - d.earned)}</small>`}</div>
-            <div class="rd-rw"><span class="rd-lbl">Récompenses</span><div>${rw}</div></div>
+        return `<section class="plr ${done ? 'claimed' : reached ? 'reached' : ''} ${isNext ? 'next' : ''}" data-id="${m.id}"><div class="plr-n"><b>${m.id}</b><i></i><i></i><i></i></div>
+          <div class="plr-card"><h3>${esc(m.name)}</h3><p>${esc(m.text)}</p>
+            <div class="plr-req"><span class="plr-lbl">Prérequis</span><b>${fmtR(m.at)} gagnés</b><div class="ct-bar"><i style="width:${reached ? 100 : Math.max(2, pc)}%"></i></div>${reached ? '' : `<small>${isNext ? 'Prochain palier · ' : ''}encore ${fmtR(m.at - d.earned)}</small>`}</div>
+            <div class="plr-rw"><span class="plr-lbl">Récompenses</span><div>${rw}</div></div>
             <div class="plan-st">${done ? '<span class="ok">Récompense récupérée</span>' : reached ? (commu && !commu.on && !me.admin ? '<span>Événement terminé</span>' : `<button data-claim="${m.id}">Récupérer</button>`) : ''}</div>
-            ${done ? '<div class="rd-stamp">ПРИНЯТО</div>' : ''}</div></section>`;
+            ${done ? '<div class="plr-stamp">ПРИНЯТО</div>' : ''}</div></section>`;
       }).join('')}</div>`;
     v.querySelectorAll('[data-earn]').forEach(b => b.onclick = safe(async () => { d = await api('/plan/earn', { amount: +b.dataset.earn }); draw(); }));
     v.querySelector('#plan-reset') && (v.querySelector('#plan-reset').onclick = safe(async () => { d = await api('/plan/reset', {}); await loadCommu(true); draw(); }));

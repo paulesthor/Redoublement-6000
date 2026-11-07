@@ -29,10 +29,10 @@ await p.waitForTimeout(1200); await p.evaluate(() => { const m = document.queryS
 await p.evaluate(async () => { setPref('wm_theme', 'urss'); setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); await syncUssrUi(); tab = 'packs'; render(); });
 await p.waitForTimeout(800);
 await p.click('nav [data-tab=duel]'); await p.waitForTimeout(1500); console.log(await p.evaluate(() => JSON.stringify({tab, u: ussrUiOn(), t: document.querySelector('#view').innerText.slice(0,120)}))); await p.waitForSelector('[data-jeu]'); await p.screenshot({ path: SH + 'jeux-hub.png' });
-ok('hub : camp, patates, tsar, quiz, duels', (await p.$$('[data-jeu]')).length === 5);
+ok('hub : camp, patates, tsar, quiz, duels', (await p.$$('[data-jeu]')).length === 6);
 await p.click('[data-jeu=dquiz]'); await p.waitForTimeout(1000); ok('quiz du jour ouvert', await p.evaluate(() => tab === 'dquiz'));
-await p.click('nav [data-tab=more]'); await p.waitForSelector('.moresheet'); await p.click('[data-go=plan]'); await p.waitForSelector('.rd', { timeout: 8000 }); await p.waitForTimeout(500);
-ok('paliers : écran des 12 paliers', (await p.$$('.rd')).length === 12);
+await p.click('nav [data-tab=more]'); await p.waitForSelector('.moresheet'); await p.click('[data-go=plan]'); await p.waitForSelector('.plr', { timeout: 8000 }); await p.waitForTimeout(500);
+ok('paliers : écran des 12 paliers', (await p.$$('.plr')).length === 12);
 await p.screenshot({ path: SH + 'jeux-paliers.png' });
 ok('aucune erreur JS', errs.length === 0, J(errs));
 process.exit(0);

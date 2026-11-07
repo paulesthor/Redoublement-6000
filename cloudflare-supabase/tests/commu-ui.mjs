@@ -36,7 +36,7 @@ ok('fermé : pas de thème rouge ni d\'onglets du Parti', await pb.evaluate(() =
 ok('fermé : le Camp et le Plan sont inaccessibles à Bob', await pb.evaluate(async () => { tab = 'plan'; await render(); const a = tab; tab = 'gulag'; await render(); return a === 'packs' && tab === 'packs'; }));
 await pb.context().close();
 // 2. l'administrateur ouvre l'événement (via l'API, comme le fera le bouton de lancement)
-const [s0] = await call(A, 'POST', '/api/commu/set', { on: true }); ok('l\'administrateur ouvre l\'événement', s0 === 200);
+const [s0] = await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); ok('l\'administrateur ouvre l\'événement', s0 === 200);
 pb = await mkAs(B); await pb.waitForTimeout(1200);
 ok('ouvert : bandeau d\'inscription sur l\'accueil', !!(await pb.$('#commu-join')));
 await pb.screenshot({ path: SHS + 'commu-1-bandeau.png' });
@@ -50,8 +50,8 @@ await pb.screenshot({ path: SHS + 'commu-3-inscrit.png' });
 // 3. jeux et Plan accessibles à un simple joueur
 await pb.evaluate(async () => { duelDirect = false; tab = 'duel'; await render(); }); await pb.waitForSelector('[data-jeu]');
 ok('Les Jeux : Camp, Patates et Tsar visibles pour un joueur inscrit', (await pb.$$('[data-jeu=gulag],[data-jeu=potato],[data-jeu=tsar]')).length === 3);
-await pb.evaluate(async () => { tab = 'plan'; await render(); }); await pb.waitForSelector('.rd');
-ok('Plan : 12 paliers, solde 500 ₽, boutons de démo cachés', (await pb.$$('.rd')).length === 12 && (await pb.textContent('.plan-wallet')).includes('500') && !(await pb.$('[data-earn]')));
+await pb.evaluate(async () => { tab = 'plan'; await render(); }); await pb.waitForSelector('.plr');
+ok('Plan : 12 paliers, solde 500 ₽, boutons de démo cachés', (await pb.$$('.plr')).length === 12 && (await pb.textContent('.plan-wallet')).includes('500') && !(await pb.$('[data-earn]')));
 await pb.screenshot({ path: SHS + 'commu-4-plan.png' });
 // 4. un jeu rapporte des wikiroubles (calculés par le serveur)
 await pb.evaluate(async () => { await commuEarn('tsar', { ending: 'samovar' }); }); await pb.waitForTimeout(800);
@@ -79,7 +79,7 @@ await pb.evaluate(async () => { await loadCommu(true); await syncUssrUi(); tab =
 ok('fin : Bob (sous le palier 6) retrouve son thème d\'origine', await pb.evaluate(() => document.documentElement.dataset.theme !== 'urss' && !document.body.classList.contains('ussr-ui')));
 await pb.context().close();
 // 8. un joueur qui avait atteint le palier 6 garde le thème rouge dans ses réglages
-await call(A, 'POST', '/api/commu/set', { on: true });
+await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' });
 await DB.prepare("UPDATE plan_progress SET earned = 3000 WHERE user_id = (SELECT id FROM users WHERE name = 'Bob')").run();
 const [sc] = await call(B, 'POST', '/api/plan/claim', { id: 6 }); ok('Bob atteint le palier 6 : récompense réclamée', sc === 200, sc);
 await call(A, 'POST', '/api/commu/finish', {}); const pb2 = await mkAs(B); await pb2.evaluate(async () => { await loadCommu(true); tab = 'settings'; await render(); }); await pb2.waitForTimeout(1200);
