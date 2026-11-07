@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.17';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.18';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2255,7 +2255,7 @@ views.potato = async v => {
   $('#pt-reopen').onclick = () => render();
   const full = document.createElement('div'); full.className = 'ptfull'; full.innerHTML = '<div class="pthost" id="pt-host"><div class="pt-loading">Chargement du kolkhoze…</div></div>'; document.body.append(full); document.body.classList.add('ptlock');
   let game = null, gone = false;
-  viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); };
+  window.UssrSkin?.hymnHold?.(true); viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); window.UssrSkin?.hymnHold?.(false); };
   try {
     const mod = await import('/potato.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
@@ -2299,7 +2299,7 @@ views.tsar = async v => {
   $('#ts-reopen').onclick = () => render();
   const full = document.createElement('div'); full.className = 'tsfull'; full.innerHTML = '<div id="ts-host" style="position:absolute;inset:0"></div>'; document.body.append(full); document.body.classList.add('ptlock');
   let game = null, gone = false;
-  viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); };
+  window.UssrSkin?.hymnHold?.(true); viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); window.UssrSkin?.hymnHold?.(false); };
   try {
     const mod = await import('/reigns.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
@@ -2314,7 +2314,7 @@ views.gulag = async v => {
   $('#gl-reopen').onclick = () => render();
   const full = document.createElement('div'); full.className = 'glfull'; full.innerHTML = '<div id="gl-host"></div>'; document.body.append(full); document.body.classList.add('ptlock');
   let game = null, gone = false;
-  viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); };
+  window.UssrSkin?.hymnHold?.(true); viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); window.UssrSkin?.hymnHold?.(false); };
   try {
     const mod = await import('/gulag.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
