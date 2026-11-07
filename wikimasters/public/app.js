@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.34';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.35';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -891,10 +891,12 @@ const views = {
 
   async rank(v) {
     const { players } = await api('/leaderboard');
+    if (ussrUiOn()) await loadCommu().catch(() => {});
     if (ussrUiOn()) {   // mode communiste : podium (le premier reçoit l'effet Staline), puis le tableau complet avec les points
       const top = players.slice(0, 3), ord = [top[1], top[0], top[2]].map((p, k) => p && { p, r: [2, 1, 3][k] }).filter(Boolean);
       const star = '<svg viewBox="0 0 24 24" class="pd-star" aria-hidden="true"><path d="M12 1.5l3 6.8 7.4.7-5.6 4.9 1.7 7.2L12 17.3 5.5 21.1l1.7-7.2L1.600 9l7.400-.7z" fill="currentColor"/></svg>';
       v.innerHTML = `${pageHead('Tableau d\'honneur', 'Les camarades que le Parti regarde de moins mauvais œil')}${seg(RANK_SEG, 'rank')}
+        <div class="pd-pot"><small>Le premier du classement remporte la cagnotte</small><b>${fmt(commu?.pot || 0)} wikibidou</b><span>et le titre de Staline, avec son contour doré</span></div>
         <div class="podium">${ord.map(({ p, r }) => `<button class="pd pd${r} ${p.id === me.id ? 'me' : ''}" data-pl="${p.id}">
           ${r === 1 ? '<div class="pd-rays" aria-hidden="true"></div><div class="pd-rib">СТАЛИН</div>' : ''}
           <div class="pd-av">${avatar(p.name, online.has(p.id))}${star}</div>
@@ -2495,6 +2497,7 @@ views.commutop = async v => {
   const total = s.players || 1, bar = (n, cls = '') => `<div class="ct-bar ${cls}"><i style="width:${Math.max(2, Math.round(n / max * 100))}%"></i></div>`;
   v.innerHTML = `${pageHead('Classement général', 'Qui avance, qui traîne, qui triche')}
     <section class="plan-sum"><div class="plan-top"><b>${fmt(s.pot)}</b><span>wikibidou dans la cagnotte · ${s.players} camarade${s.players > 1 ? 's' : ''}</span></div>
+      <p class="plan-wallet"><b>Le premier du classement remporte toute la cagnotte</b> et devient Staline. Égalité : le premier arrivé à ce total l'emporte.</p>
       <p class="plan-wallet">Palier moyen : <b>${s.avgLevel.toFixed(1)}</b> / ${max} · thème rouge gardé (palier 6) : <b>${s.atLeast6}</b> · Plan accompli : <b>${s.done}</b></p>
       ${me_ ? `<p class="plan-wallet">Toi : rang <b>${me_.rank}</b> · <b>${me_.level}</b> palier${me_.level > 1 ? 's' : ''} sur ${max} · ${fmt(me_.earned)} ₽ gagnés</p>` : ''}</section>
     <h3 class="sec" style="padding:0 16px">Avance des paliers</h3>
