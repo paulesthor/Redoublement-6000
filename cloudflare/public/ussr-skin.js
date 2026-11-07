@@ -70,11 +70,14 @@
     const view = document.querySelector('#view'); view?.parentNode?.insertBefore(ticker, view);
     const set = () => { const sp = ticker.querySelector('span'); sp.classList.remove('in'); sp.textContent = NEWS[newsI++ % NEWS.length]; void sp.offsetWidth; sp.classList.add('in'); }; set(); tickT = setInterval(set, 9000);
   };
+  // icône de l'appli pendant l'événement : onglet, favoris et icône d'écran d'accueil (iOS ne la lit qu'à l'ajout à l'écran d'accueil)
+  const ICONS = { 'link[rel="icon"][sizes="32x32"]': 'ussr-icon-48.png', 'link[rel="icon"][sizes="48x48"]': 'ussr-icon-48.png', 'link[rel="apple-touch-icon"]': 'ussr-icon-180.png' }, iconOrig = new Map();
+  const setIcons = on => { for (const [sel, url] of Object.entries(ICONS)) { const l = document.querySelector(sel); if (!l) continue; if (on) { if (!iconOrig.has(l)) iconOrig.set(l, [l.getAttribute('href'), l.getAttribute('type')]); l.setAttribute('href', url); l.setAttribute('type', 'image/png'); } else if (iconOrig.has(l)) { const [h, t] = iconOrig.get(l); l.setAttribute('href', h); t ? l.setAttribute('type', t) : l.removeAttribute('type'); iconOrig.delete(l); } } };
   const on = () => {
-    if (active) return; active = true; document.body.classList.add('ussr-ui'); mountTicker(); walk(document.body);
+    if (active) return; active = true; setIcons(true); document.body.classList.add('ussr-ui'); mountTicker(); walk(document.body);
     obs = new MutationObserver(muts => { if (!active) return; obs.disconnect(); for (const m of muts) { if (m.type === 'characterData') skinText(m.target); else m.addedNodes.forEach(walk); } mountTicker(); obs.takeRecords(); obs.observe(document.body, { childList: true, subtree: true, characterData: true }); });
     obs.observe(document.body, { childList: true, subtree: true, characterData: true });
   };
-  const off = () => { if (!active) return; active = false; obs?.disconnect(); obs = null; clearInterval(tickT); ticker?.remove(); ticker = null; document.body.classList.remove('ussr-ui'); for (const r of changed) { const n = r.deref(); if (n && orig.has(n)) n.nodeValue = orig.get(n); } changed.clear(); };
+  const off = () => { if (!active) return; active = false; setIcons(false); obs?.disconnect(); obs = null; clearInterval(tickT); ticker?.remove(); ticker = null; document.body.classList.remove('ussr-ui'); for (const r of changed) { const n = r.deref(); if (n && orig.has(n)) n.nodeValue = orig.get(n); } changed.clear(); };
   window.UssrSkin = { on, off, isOn: () => active, EXACT };
 })();
