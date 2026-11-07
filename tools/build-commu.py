@@ -21,6 +21,8 @@ ALIAS = {
     'Expédition de Napoléon en Russie': 'Campagne de Russie', 'Bataille de la Berezina': 'Bataille de la Bérézina', 'Incendie de Moscou de 1812': 'Incendie de Moscou (1812)', 'Radio Free Europe': 'Radio Free Europe/Radio Liberty',
     'Kalinka (chanson)': 'Kalinka', 'Gopak': 'Hopak', 'Bataille du lac Peipous': 'Bataille du lac Peïpous', 'Saint Serge de Radonège': 'Serge de Radonège', 'Vladimir Ier de Kiev': 'Vladimir Ier', 'Gorki Park': 'Parc Gorki',
 }
+# fiches sans rapport avec la Russie ou l'URSS (faux amis du catalogue, ou autres pays) : exclues du réservoir
+EXCLUDE = {'Pelote basque', 'Deep Blue', 'Emir Kusturica', 'Zviad Gamsakhourdia', 'Trabant', 'Wladimir Klitschko', 'Hopak', 'Halva', 'Hetman'}
 want = {}
 for r in ORDER:
     for t in TITLES[r]:
@@ -31,7 +33,11 @@ for p in shards:
     for row in json.load(open(p)):
         k = row[1].lower()
         if k in want and want[k][0] not in found: found[want[k][0]] = {'id': row[0], 't': row[1], 'r': want[k][1], 'v': row[2]}
+found = {k: v for k, v in found.items() if k not in EXCLUDE}
 cards = sorted(found.values(), key=lambda c: (ORDER.index(c['r']), -c['v']))
+# le trou laissé chez les légendaires est comblé par la fiche « ultra » la plus populaire
+while sum(1 for c in cards if c['r'] == 'legendary') < 150:
+    max((c for c in cards if c['r'] == 'ultra'), key=lambda c: c['v'])['r'] = 'legendary'
 legend = [c for c in cards if c['r'] == 'legendary']
 # au-delà de 150 légendaires, les moins populaires redeviennent des « ultra »
 for c in legend[150:]: c['r'] = 'ultra'
