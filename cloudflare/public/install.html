@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clodo Wiki : nouvelle icône</title>
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Clodo Wiki"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#4a0a10">
+<link rel="manifest" href="manifest-evenement.webmanifest">
+<link rel="icon" href="ussr-icon-48.png" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="ussr-icon-180.png">
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:radial-gradient(120% 70% at 50% 0%,#6a1420,#1a0d10 70%);color:#f6efd8;font:16px/1.45 -apple-system,system-ui,sans-serif;padding:calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px}
+img{width:112px;height:112px;border-radius:26px;box-shadow:0 0 0 3px #f4d56b,0 12px 30px #000a}
+h1{margin:6px 0 0;font-size:24px}p{margin:0;max-width:360px}
+ol{text-align:left;max-width:360px;margin:0;padding-left:22px}li{margin:6px 0}
+.btn{display:block;width:100%;max-width:360px;padding:15px;border-radius:14px;background:linear-gradient(#ffe48a,#f4d56b);color:#2a0a0e;font-weight:800;text-decoration:none;font-size:17px}
+.mut{opacity:.7;font-size:13px}
+</style></head><body>
+<img src="ussr-icon-180.png" alt="" width="112" height="112">
+<h1>Ta nouvelle icône, camarade</h1>
+<p>Un ouvrier à toque qui bave de bonheur. Tu ne pouvais pas rêver mieux, alors ne rêve pas.</p>
+<ol><li>Touche <b>Partager</b> (le carré avec une flèche, en bas de Safari).</li><li>Choisis <b>Sur l'écran d'accueil</b>, puis <b>Ajouter</b>.</li><li>Supprime l'ancienne icône : elle a fait son temps, la salope.</li></ol>
+<a class="btn" href="/">Ouvrir l'appli</a>
+<p class="mut">Cette page n'est utile qu'une fois : après l'ajout, l'appli se lance toute seule.</p>
+<script>
+// installée sur l'écran d'accueil : on file directement dans l'appli
+if (navigator.standalone || matchMedia('(display-mode: standalone)').matches) location.replace('/');
+</script></body></html>

@@ -1445,3 +1445,8 @@ body.ussr-ui aside nav button[data-tab=market],body.ussr-ui aside nav button[dat
 aside nav button,aside nav button:focus,aside nav button:active,aside nav button:focus-visible{-webkit-tap-highlight-color:transparent;outline:none!important;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 body.ussr-ui #hits{margin-top:12px;margin-bottom:8px}
 body.ussr-ui .us-news{margin-bottom:12px}
+/* écran « nouvelle icône » */
+.iconsheet{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px}.iconsheet .grab{display:block;width:42px;height:4px;border-radius:99px;background:#ffffff2e;margin:0 auto 4px}
+.iconsheet .ic-img{border-radius:22px;box-shadow:0 0 0 3px #f4d56b,0 8px 20px #0008}.iconsheet h2{margin:2px 0 0;font-size:20px}.iconsheet p{margin:0;font-size:13.5px;line-height:1.4;color:#e8dfc7}
+.ic-steps{text-align:left;margin:0;padding-left:20px;font-size:13.5px;line-height:1.4}.ic-steps li{margin:5px 0}
+.iconsheet .ic-go{display:block;width:100%;box-sizing:border-box;text-align:center;text-decoration:none;padding:13px;border-radius:12px;background:var(--grad-gold);color:#111114;font-weight:800;margin-top:4px}

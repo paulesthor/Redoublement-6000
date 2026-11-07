@@ -40,7 +40,7 @@ await goto('packs', 'packs'); ok('accueil : colis à la place du paquet noir', a
 ok('accueil : boutons renommés', (await p.textContent('#open')).includes('colis'), await p.textContent('#open'));
 await goto('album', 'archives'); await goto('market', 'marche'); await goto('feed', 'pravda'); await goto('duel', 'front'); await goto('rank', 'honneur');
 await p.evaluate(() => moreSheet()); await p.waitForSelector('.moresheet'); await p.waitForTimeout(500); await p.screenshot({ path: '/tmp/claude-0/-home-user-Redoublement-6000/37801998-3ced-5dcb-85ba-95e236d12c04/scratchpad/pt/skin-plan.png' });
-ok('menu Plan : tuiles renommées', (await p.textContent('.moresheet')).includes('Dossier personnel') || (await p.textContent('.moresheet')).includes('Décorations'));
+ok('menu Plan : tuiles renommées', (await p.textContent('.moresheet')).includes('Tableau d\'honneur') && (await p.textContent('.moresheet')).includes('capitalistes'));
 await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });
 // retour : l'habillage se coupe et les textes d'origine reviennent
 await p.evaluate(() => { tab = 'settings'; render(); }); await p.waitForSelector('#st-ussrui'); await p.click('#st-ussrui'); await p.waitForTimeout(1500);

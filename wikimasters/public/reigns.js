@@ -91,6 +91,7 @@ const SAMOVAR = `<svg viewBox="0 0 70 90" class="ts-svg"><rect x="28" y="2" widt
 const TRAIN = `<svg viewBox="0 0 150 60" class="ts-svg"><rect x="4" y="22" width="86" height="26" rx="4" fill="#2a3a52"/><rect x="90" y="12" width="40" height="36" rx="4" fill="#c0161d"/><rect x="98" y="2" width="12" height="14" fill="#14100f"/><rect x="96" y="18" width="14" height="12" fill="#f4d56b"/><circle cx="22" cy="50" r="8" fill="#14100f"/><circle cx="52" cy="50" r="8" fill="#14100f"/><circle cx="108" cy="50" r="8" fill="#14100f"/><circle cx="124" cy="50" r="8" fill="#14100f"/><path d="M130 30l14 14v6h-14z" fill="#8a6a2a"/></svg>`;
 const CROWN = `<svg viewBox="0 0 60 40" class="ts-svg"><path d="M4 36V10l14 12 12-18 12 18 14-12v26z" fill="#f4d56b" stroke="#b8902a" stroke-width="2.500"/><circle cx="30" cy="12" r="3" fill="#c0161d"/></svg>`;
 const GOLD = '#f4d56b';
+const HINTS = ['← glisse ou touche un choix →', 'Choisis vite, le tsar a de l\'appétit et les gardes de la gâchette.', 'Une mauvaise décision, un petit voyage en Sibérie. Bonne chance, couillon.', 'Tu peux aussi attendre la mort naturelle du tsar, mais elle est lente.', 'Réfléchis bien : ici, une connerie se paie cash.', 'Le complot, c\'est comme la vodka : trop tôt ou trop tard, ça finit mal.', 'Glisse, camarade. Ce n\'est pas plus compliqué que de te faire dénoncer.', 'Les murs ont des oreilles. Les oreilles ont des yeux. Les yeux ont des fusils.'];
 
 export function startTsar(host, opts = {}) {
   let found = []; try { found = JSON.parse(localStorage.getItem(ENDS_KEY) || '[]'); } catch {}
@@ -185,7 +186,7 @@ export function startTsar(host, opts = {}) {
     $('ts-panel').className = 'ts-panel';
     $('ts-panel').innerHTML = `<div class="ts-name">${esc(c.name)}</div><p class="ts-say">${esc(c.text)}</p>
       <div class="ts-choices"><button id="ts-l" data-i="0"><span>${esc(c.L[0])}</span><em>${pips(c.L[1])}</em></button><button id="ts-r" data-i="1"><span>${esc(c.R[0])}</span><em>${pips(c.R[1])}</em></button></div>
-      <div class="ts-hint">← glisse ou touche un choix →</div>`;
+      <div class="ts-hint">${HINTS[Math.floor(Math.random() * HINTS.length)]}</div>`;
     const p = $('ts-panel'); let x0 = 0, dx = 0, drag = false;
     p.onpointerdown = e => { if (busy) return; if (e.target.closest('button')) { const i = +e.target.closest('button').dataset.i; preview((i ? c.R : c.L)[1]); } drag = true; x0 = e.clientX; dx = 0; };
     p.onpointermove = e => { if (!drag || busy) return; dx = e.clientX - x0; if (Math.abs(dx) > 8) { p.style.transform = `translateX(${dx * .4}px) rotate(${dx / 60}deg)`; preview((dx < 0 ? c.L : c.R)[1]); p.classList.toggle('left', dx < 0); p.classList.toggle('right', dx > 0); } };
