@@ -36,7 +36,10 @@ ok('récompenses classiques : wikibidou versés (20 + 40 + 120)', await coinsOf(
 await call(B, 'POST', '/api/commu/buy', { n: 3 }); for (let i = 0; i < 3; i++) await call(B, 'POST', '/api/commu/open', {});
 await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(A, 'POST', '/api/commu/finish', {});
 const pb = await mkE(B); await pb.waitForTimeout(1500);
-ok('la page de fin s\'ouvre toute seule pour le joueur concerné', await pb.evaluate(() => tab === 'commuend'), await pb.evaluate(() => tab));
+ok('plus d\'ouverture automatique : un tambour soviétique à contour rouge attend le joueur', await pb.evaluate(() => tab !== 'commuend') && !!(await pb.$('#commu-drum svg')) && /rgb\(192, 22, 29\)/.test(await pb.evaluate(() => getComputedStyle(document.querySelector('#commu-drum')).borderColor)));
+await pb.screenshot({ path: SHE + 'end-0-tambour.png' });
+await pb.click('#commu-drum'); await pb.waitForTimeout(800);
+ok('toucher le tambour ouvre le bilan de fin, et le tambour disparaît', await pb.evaluate(() => tab === 'commuend') && !(await pb.$('#commu-drum')));
 await pb.waitForSelector('.souvgrid .card', { timeout: 10000 }); await pb.screenshot({ path: SHE + 'end-1-choix.png' });
 const txt = await pb.textContent('#view');
 ok('bilan : gagnant, tes paliers, ce que tu gardes (thème Sibérie, titre)', txt.includes('Fin du Plan quinquennal') && txt.includes('Sibérie') && /palier/.test(txt) && txt.includes('Choisis'), txt.slice(0, 160));
@@ -45,6 +48,7 @@ await pb.click('.souvgrid .card'); await pb.waitForTimeout(300); ok('la fiche to
 await pb.click('.souvgrid .card:nth-of-type(2)'); await pb.waitForTimeout(300); ok('un seul choix possible : le second remplace le premier', (await pb.$$('.souvgrid .card.souvpick')).length === 1);
 await pb.click('#sv-ok'); await pb.waitForSelector('.modal button, #modal button', { timeout: 5000 }); await pb.screenshot({ path: SHE + 'end-2-confirm.png' });
 await pb.evaluate(() => { const b = [...document.querySelectorAll('#modal button')].find(x => /Confirmer/.test(x.textContent)); b?.click(); }); await pb.waitForTimeout(1800);
+ok('une fois les souvenirs choisis, le tambour ne revient pas', !(await pb.$('#commu-drum')));
 ok('souvenir rangé : message et écran mis à jour', (await pb.textContent('#view')).includes('sont dans ta collection') || (await pb.textContent('#view')).includes('est dans ta collection') || (await pb.textContent('#view')).includes('souvenir'), (await pb.textContent('#view')).slice(300, 460));
 ok('la fiche gardée porte le contour « souvenir »', !!(await pb.$('.souvgrid .card.souv')));
 await pb.screenshot({ path: SHE + 'end-3-souvenir.png' });

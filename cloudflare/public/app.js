@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.27';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.28';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1219,7 +1219,8 @@ const recentHits = [];
 
 // ---------- squelette ----------
 const EXTRA = new Set(['search', 'rank', 'msg', 'friends', 'more']);   // onglets rangés sous « Plus » sur téléphone
-function markTab() { const g = GROUP[tab]; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === g || (b.dataset.tab === 'more' && EXTRA.has(g)))); }
+function markTab() { try { syncEventDrum(); } catch { /* tambour indisponible */ }
+  const g = GROUP[tab]; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === g || (b.dataset.tab === 'more' && EXTRA.has(g)))); }
 /** Copie l'en-tête de chaque colonne dans les cellules (data-label) : le CSS mobile affiche les lignes comme des fiches. */
 function labelTables(root) {
   root.querySelectorAll('table').forEach(t => {
@@ -1520,7 +1521,7 @@ async function refreshMe() {
   syncUssrUi().catch(() => {});
   { const sig = () => commu ? `${commu.on}:${commu.joined}` : ''; const before = sig();
     loadCommu().then(() => { syncUssrUi(); if (cfg && sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) render();
-      if (commu?.done && commu.joined && commu.souvenirOpen && commu.entitled > 0 && !commu.chosen.length && prefOf('wm_commu_end') !== String(commu.winner?.name || '-') + commu.players && $('#modal').hidden) { try { localStorage.setItem('wm_commu_end', String(commu.winner?.name || '-') + commu.players); } catch {} tab = 'commuend'; render(); } }).catch(() => {}); }   // la fin de l'événement s'ouvre toute seule, une fois   // l'événement s'ouvre ou se ferme : l'écran suit
+      syncEventDrum(); }).catch(() => {}); }   // la fin de l'événement s'ouvre toute seule, une fois   // l'événement s'ouvre ou se ferme : l'écran suit
   if (me.maintenance === true) maintenanceScreen();
   { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }
   loadCosmetics();
@@ -2377,6 +2378,26 @@ async function commuEarn(game, data) {
 }
 
 
+
+// ---------- le tambour de la fin de l'événement : il bat tant que les souvenirs n'ont pas été choisis ----------
+const DRUM_SVG = `<svg viewBox="0 0 120 120" aria-hidden="true">
+  <g class="dr-sticks"><path d="M28 18l34 34" stroke="#d9b680" stroke-width="6" stroke-linecap="round"/><path d="M92 18L58 52" stroke="#d9b680" stroke-width="6" stroke-linecap="round"/><circle cx="26" cy="16" r="6" fill="#f4d56b"/><circle cx="94" cy="16" r="6" fill="#f4d56b"/></g>
+  <ellipse cx="60" cy="58" rx="42" ry="14" fill="#f6efd8" stroke="#8a7a52" stroke-width="2.500"/>
+  <path d="M18 58v30c0 8 19 14 42 14s42-6 42-14V58c0 8-19 14-42 14S18 66 18 58z" fill="#b3262d" stroke="#4a0b10" stroke-width="3"/>
+  <path d="M18 70c0 8 19 14 42 14s42-6 42-14M18 82c0 8 19 14 42 14s42-6 42-14" fill="none" stroke="#f4d56b" stroke-width="3"/>
+  <g stroke="#f4d56b" stroke-width="2.600">${Array.from({ length: 9 }, (_, k) => `<path d="M${22 + k * 9.500} ${66 + (k % 2) * 3}l${k % 2 ? 5 : -5} 26"/>`).join('')}</g>
+  <path d="M60 74l3.600 7.400 8.100 1.100-5.900 5.700 1.400 8.100L60 92.400l-7.200 3.900 1.400-8.100-5.900-5.700 8.100-1.100z" fill="#f4d56b" stroke="#8a6a1a" stroke-width="1.400"/>
+</svg>`;
+function syncEventDrum() {
+  let el = document.getElementById('commu-drum');
+  const wanted = !!(commu && commu.done && commu.joined && commu.souvenirOpen && commu.entitled > 0 && !commu.chosen.length) && tab !== 'commuend';
+  if (!wanted) { el?.remove(); return; }
+  if (el) return;
+  el = document.createElement('button'); el.id = 'commu-drum'; el.className = 'commu-drum'; el.setAttribute('aria-label', 'Fin de l\'événement : choisis tes souvenirs');
+  el.innerHTML = `${DRUM_SVG}<span>Souvenirs</span>`;
+  el.onclick = () => { el.remove(); tab = 'commuend'; render(); };
+  document.body.append(el);
+}
 // ---------- fin de l'événement : bilan, gagnant et choix des souvenirs ----------
 views.commuend = async v => {
   await loadCommu(true); const c = commu;
