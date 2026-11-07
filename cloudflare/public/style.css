@@ -1482,3 +1482,32 @@ body.ussr-ui .us-news{margin-bottom:12px}
 .ts-scene.capi .ts-bg,.ts-scene.capi .ts-win,.ts-scene.capi .ts-board,.ts-scene.capi .ts-portrait,.ts-scene.capi .ts-chand,.ts-scene.capi .ts-candle,.ts-scene.capi .ts-eagle,.ts-scene.capi .ts-clock,.ts-scene.capi .ts-cat,.ts-scene.capi .ts-chest,.ts-scene.capi #ts-plotters,.ts-scene.capi #ts-eyes,.ts-scene.capi .ts-table,.ts-scene.capi .ts-actor.guard{display:none}
 .ts-flag{transform-box:fill-box;transform-origin:0 50%;animation:tswave 1.6s ease-in-out infinite}@keyframes tswave{50%{transform:skewY(-4deg) scaleX(.96)}}
 .ts-stamp.fun{color:#7aeaff;border-color:#7aeaff}
+/* Le Dernier Tsar : lieux, objets dessinés, plus aucune émoticône */
+.ts-ico{width:100%;height:100%;display:block}
+.ts-g span{top:8px;color:#f6efd8}.ts-g span svg{width:20px;height:20px}
+.ts-x svg{display:block;margin:auto}
+.ts-loc{position:absolute;inset:0;display:none;z-index:0}.ts-loc>svg{position:absolute;inset:0;width:100%;height:100%}
+.ts-scene[data-loc=kitchen] .ts-loc[data-l=kitchen],.ts-scene[data-loc=station] .ts-loc[data-l=station],.ts-scene[data-loc=menagerie] .ts-loc[data-l=menagerie],.ts-scene[data-loc=dining] .ts-loc[data-l=dining],.ts-scene[data-loc=capi] .ts-loc[data-l=capi]{display:block;animation:tsin2 .5s both}
+.ts-scene:not([data-loc=throne]) .thr{display:none!important}
+.ts-actor.tsar.away{display:none}
+.ts-wipe{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:9;transition:opacity .45s}.ts-wipe.on{opacity:1}
+.ts-table{left:70%;bottom:1.5%;width:22%;height:11%;opacity:1;transform:none;z-index:3}
+.ts-prop{position:absolute;opacity:0;transform:scale(.3);transition:opacity .3s,transform .4s cubic-bezier(.3,1.6,.5,1)}.ts-prop.on{opacity:1;transform:none}.ts-prop svg{width:100%;height:100%;display:block}
+.ts-prop.vial{left:6%;bottom:62%;width:11%;height:70%}.ts-prop.timetable{left:62%;bottom:58%;width:16%;height:80%;transform-origin:50% 100%}.ts-prop.invite{left:78%;bottom:58%;width:20%;height:50%}
+.ts-table .ts-sam{left:30%;bottom:62%;width:30%}
+.ts-hold{position:absolute;left:70%;top:58%;width:22%;display:none;z-index:6}.ts-actor.holding .ts-hold{display:block}.ts-hold svg{width:100%;height:auto;display:block}
+.ts-candle{width:4%;font-size:0}.ts-candle svg{width:100%;height:auto;display:block}.ts-eagle{left:80.5%;top:24%;width:9%;font-size:0;filter:none}.ts-eagle svg{width:100%;height:auto;display:block}
+.ts-cat{left:72%;bottom:6%;width:10%;font-size:0}.ts-cat svg{width:100%;height:auto;display:block}.ts-cat span{position:absolute;left:68%;top:-70%;font-size:10px;color:#f6efd8;animation:tszz 2.4s ease-in-out infinite}
+.ts-eye{width:6.5%;font-size:0}.ts-eye svg{width:100%;height:auto;display:block}
+.ts-shelfvial{position:absolute;left:63%;top:14%;width:3.6%;transition:opacity .3s}.ts-shelfvial svg{width:100%;height:auto;display:block}.ts-shelfvial.gone{opacity:0}
+.ts-stntrain{position:absolute;left:-62%;bottom:31%;width:58%;transition:left 1.6s ease-out,transform .8s ease-in,bottom .8s ease-in}.ts-stntrain svg{width:100%;height:auto;display:block}
+.ts-stntrain.arrive{left:36%}.ts-stntrain.run{left:24%;transition:left 1.8s ease-out}.ts-stntrain.stall{left:14%}.ts-stntrain.fall{transform:rotate(38deg) translateX(10%);bottom:-24%}
+.ts-carface{position:absolute;left:61%;top:18%;width:12%;aspect-ratio:1;background:#fff6c2;border-radius:3px;overflow:hidden}.ts-carface svg{width:100%;height:100%;display:block}
+.ts-cow{position:absolute;left:52%;bottom:31%;width:15%;display:none;z-index:2}.ts-cow.on{display:block}.ts-cow svg{width:100%;height:auto;display:block}
+.ts-bars{position:absolute;left:5.6%;top:29%;width:38.5%;height:40%;z-index:2;transition:transform .9s ease-in}.ts-bars svg{width:100%;height:100%;display:block}.ts-bars.open{transform:translateY(-96%)}
+.ts-cp{position:absolute;bottom:35.5%}.ts-cp svg{width:100%;height:auto;display:block}.ts-cp.b1{left:62%;width:9%}.ts-cp.b2{left:75%;width:7%}.ts-cp.b3{left:87%;width:6%}
+.ts-spk{position:absolute;bottom:14%;width:9%;animation:tspump .4s ease-in-out infinite;z-index:6}.ts-spk svg{width:100%;height:auto;display:block}
+.ts-disco{position:absolute;left:44%;top:0;width:11%;z-index:8;animation:tssway 3s ease-in-out infinite;transform-origin:50% 0}.ts-disco svg{width:100%;height:auto;display:block}
+.ts-shades{position:absolute;left:62%;top:10%;width:32%;height:9%;background:#111;border-radius:4px;box-shadow:0 0 0 2px #333}
+.ts-brief{max-width:380px;text-align:left}.ts-brief p{margin:6px 0;font-size:13.5px;line-height:1.4}
+.ts-hold svg,.ts-prop svg{overflow:visible}

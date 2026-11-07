@@ -29,32 +29,41 @@ await p.waitForTimeout(1200); await p.evaluate(() => { const m = document.queryS
 await p.evaluate(async () => { setPref('wm_theme', 'urss'); setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); setPref('wm_sound', '0'); await syncUssrUi(); tab = 'duel'; render(); });
 await p.waitForSelector('[data-jeu=tsar]'); await p.click('[data-jeu=tsar]'); await p.waitForSelector('.ts-actor', { timeout: 8000 }); await p.waitForSelector('#ts-go', { timeout: 8000 });
 await p.screenshot({ path: SH + 'tsar-0-briefing.png' });
-ok('briefing : objectif, 3 étapes et bouton', (await p.textContent('.ts-panel')).includes('Prendre la place du tsar') && (await p.$$('.ts-brief li')).length === 3);
-ok('bandeau des 3 pistes (Samovar, Train, Ours)', (await p.$$('.ts-route')).length === 3);
-ok('décor détaillé : lustre, bougies, aigle, tapis, chat, gardes', await p.evaluate(() => ['.ts-chand', '.ts-candle', '.ts-eagle', '.ts-cat', '.ts-actor.guard', '.ts-snow', '.ts-clock'].every(s => document.querySelector(s))));
-await p.click('#ts-go'); await p.waitForSelector('.ts-choices button', { timeout: 8000 }); await p.waitForTimeout(400);
-await p.screenshot({ path: SH + 'tsar-2-dialogue.png' });
-ok('le visiteur est arrivé, choix et étiquettes affichés', (await p.$$('.ts-choices button')).length === 2);
-// piste prête → la fenêtre de tir est proposée avec ses chances
-await p.evaluate(() => { const S = window.__tsar.state(); S.flags.poison = true; S.flags.access = true; S.day = 4; });
-await p.click('#ts-l'); await p.waitForSelector('.ts-choices button', { timeout: 15000 }); await p.waitForTimeout(500);
-ok('carte finale : « Chances » affichées', /Chances : \d+ %/.test(await p.textContent('#ts-r')), await p.textContent('.ts-panel'));
-await p.screenshot({ path: SH + 'tsar-3-signal.png' });
-let acted = false;
-for (let i = 0; i < 60 && !(await p.$('.ts-panel.end')); i++) {
-  await p.waitForSelector('.ts-choices button', { timeout: 15000 }).catch(() => {});
-  if (await p.$('.ts-panel.end')) break;
-  await p.click(i % 3 ? '#ts-r' : '#ts-l', { timeout: 5000 }).catch(() => {});
-  if (!acted) { await p.waitForTimeout(700); await p.screenshot({ path: SH + 'tsar-3-action.png' }); acted = true; }
-  await p.waitForTimeout(2800);
-}
-ok('une partie va jusqu\'à une fin avec bilan', !!(await p.$('.ts-panel.end')), J(await p.evaluate(() => window.__tsar.state())));
-await p.screenshot({ path: SH + 'tsar-4-fin.png' });
+ok('briefing : objectif et bouton', (await p.textContent('.ts-panel')).includes('Prendre la place du tsar'));
+ok('aucune émoticône, aucun bandeau de pistes', !(await p.$('.ts-route')) && !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(await p.evaluate(() => document.querySelector('.ts-root').textContent)));
+ok('décor dessiné : lustre, bougies, aigle, chat, gardes, table', await p.evaluate(() => ['.ts-chand', '.ts-candle svg', '.ts-eagle svg', '.ts-cat svg', '.ts-actor.guard', '.ts-snow', '.ts-clock', '#ts-table .ts-prop.vial'].every(s => document.querySelector(s))));
+const state = () => p.evaluate(() => { const t = document.querySelector('#ts-table'); return { loc: document.querySelector('#ts-scene').dataset.loc, vial: t.querySelector('.vial').classList.contains('on'), tt: t.querySelector('.timetable').classList.contains('on'), inv: t.querySelector('.invite').classList.contains('on'), bear: !!document.querySelector('[data-role=bear]'), ally: !!document.querySelector('.ts-actor.ally'), flags: Object.keys(window.__tsar.state().flags) }; });
+const card = name => p.waitForFunction(n => !document.querySelector('.ts-panel.hide') && (document.querySelector('.ts-name')?.textContent || '').includes(n), name, { timeout: 60000 });
+const deal = id => p.evaluate(x => window.__tsar.deal(x), id);
+// 1. cuisinier : on va en cuisine, la fiole est posée sur la table du salon
+await deal('cook'); await p.click('#ts-go'); await card('Ivan'); await p.waitForTimeout(400);
+await p.screenshot({ path: SH + 'tsar-1-dialogue.png' });
+await deal('general'); await p.click('#ts-r'); await p.waitForTimeout(4200); await p.screenshot({ path: SH + 'tsar-2-cuisine.png' });
+ok('le décor change : la cuisine', (await state()).loc === 'kitchen', J(await state()));
+await card('Orlov'); let st = await state(); ok('cuisinier : retour au salon, fiole posée sur la table', st.loc === 'throne' && st.vial && st.flags.includes('poison'), J(st)); await p.screenshot({ path: SH + 'tsar-3-fiole.png' });
+// 2. général : gare, puis l'horaire sur la table
+await deal('tamer'); await p.click('#ts-r'); await p.waitForTimeout(4600); await p.screenshot({ path: SH + 'tsar-4-gare.png' });
+ok('le décor change : la gare', (await state()).loc === 'station');
+await card('Piotr'); st = await state(); ok('général : horaire posé sur la table', st.loc === 'throne' && st.tt && st.flags.includes('train'), J(st));
+// 3. dresseur : ménagerie, puis l'ours s'installe dans le salon
+await deal('tsar'); await p.click('#ts-r'); await p.waitForTimeout(5200); await p.screenshot({ path: SH + 'tsar-5-menagerie.png' });
+ok('le décor change : la ménagerie', (await state()).loc === 'menagerie');
+await card('Majesté'); st = await state(); ok('dresseur : l\'ours attend dans le salon', st.loc === 'throne' && st.bear && st.flags.includes('bear'), J(st)); await p.screenshot({ path: SH + 'tsar-6-ours.png' });
+// 4. le tsar : dîner dans une autre salle, puis l'invitation est posée sur la table
+await deal('guard'); await p.click('#ts-r'); await p.waitForTimeout(5200); await p.screenshot({ path: SH + 'tsar-7-diner.png' });
+ok('le décor change : la salle à manger', (await state()).loc === 'dining');
+await card('Dimitri'); st = await state(); ok('dîner : invitation posée sur la table', st.loc === 'throne' && st.inv && st.flags.includes('access'), J(st));
+// 5. le garde payé reste dans la salle, puis la fenêtre de tir est proposée
+await p.click('#ts-r'); await p.waitForFunction(() => (document.querySelector('#ts-r')?.textContent || '').includes('signal') && !document.querySelector('.ts-panel.hide'), null, { timeout: 60000 });
+st = await state(); ok('garde acheté : il reste dans la salle ; toutes les pistes sont prêtes', st.ally && ['poison', 'train', 'bear', 'access', 'guard'].every(f => st.flags.includes(f)), J(st));
+await p.screenshot({ path: SH + 'tsar-8-signal.png' });
+await p.click('#ts-r'); await p.waitForSelector('.ts-panel.end', { timeout: 60000 });
+ok('le signal donné mène à une fin avec bilan', true); await p.screenshot({ path: SH + 'tsar-9-fin.png' });
 for (const k of ['samovar', 'x_samovar', 'train', 'x_train', 'bear', 'x_bear', 'late', 'rave', 'capi', 'c0', 'f0', 'd1', 'f1']) {
-  await p.evaluate(() => document.querySelector('#ts-again')?.click()); await p.waitForTimeout(500);
-  await p.evaluate(key => window.__tsar.forceEnd(key), k); await p.waitForTimeout((k === 'rave' || k === 'capi') ? 3200 : 2600);
+  await p.evaluate(() => document.querySelector('#ts-again')?.click()); await p.waitForTimeout(600);
+  await p.evaluate(key => window.__tsar.forceEnd(key), k); await p.waitForTimeout(['rave', 'capi', 'train', 'x_train'].includes(k) ? 4200 : 2800);
   await p.screenshot({ path: SH + `tsar-fin-${k}.png` });
-  await p.waitForSelector('.ts-panel.end', { timeout: 14000 }).catch(() => {});
+  await p.waitForSelector('.ts-panel.end', { timeout: 30000 }).catch(() => {});
   ok('scène de fin ' + k, !!(await p.$('.ts-panel.end h2')));
 }
 await p.evaluate(() => document.querySelector('#ts-again')?.click()); await p.waitForSelector('#ts-go', { timeout: 8000 }); ok('rejouer : retour au briefing', true);
