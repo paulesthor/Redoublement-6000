@@ -80,7 +80,8 @@
   // hymne : joue en boucle, doucement, tant que le thème est actif (le fichier ussr-hymne.mp3 est fourni à part ; sans fichier, rien ne se passe).
   // iOS exige un geste de l'utilisateur : la lecture démarre au premier toucher. Coupable dans Réglages (wm_hymn) ou avec les sons (wm_sound).
   let hymn = null, hymnTouch = null, hymnVis = null, hymnMissing = false;
-  const hymnWanted = () => { try { return localStorage.getItem('wm_hymn') !== '0' && localStorage.getItem('wm_sound') !== '0'; } catch { return true; } };
+  let hymnHeld = false;
+  const hymnWanted = () => { if (hymnHeld) return false; try { return localStorage.getItem('wm_hymn') !== '0' && localStorage.getItem('wm_sound') !== '0'; } catch { return true; } };
   const hymnStart = async () => {
     if (!active || hymnMissing || !hymnWanted()) return;
     if (!hymn) {
@@ -102,5 +103,5 @@
     obs.observe(document.body, { childList: true, subtree: true, characterData: true });
   };
   const off = () => { if (!active) return; active = false; setIcons(false); hymnOff(); obs?.disconnect(); obs = null; clearInterval(tickT); ticker?.remove(); ticker = null; document.body.classList.remove('ussr-ui'); for (const r of changed) { const n = r.deref(); if (n && orig.has(n)) n.nodeValue = orig.get(n); } changed.clear(); };
-  window.UssrSkin = { on, off, hymnState: () => ({ chargé: !!hymn, enLecture: !!hymn && !hymn.paused, manquant: hymnMissing, durée: hymn?.duration || 0 }), hymnRefresh: () => (hymnWanted() ? hymnStart() : hymn?.pause()), isOn: () => active, EXACT };
+  window.UssrSkin = { on, off, hymnHold: v => { hymnHeld = !!v; if (hymnHeld) hymn?.pause(); else if (active) hymnStart(); }, hymnState: () => ({ chargé: !!hymn, enLecture: !!hymn && !hymn.paused, manquant: hymnMissing, durée: hymn?.duration || 0 }), hymnRefresh: () => (hymnWanted() ? hymnStart() : hymn?.pause()), isOn: () => active, EXACT };
 })();

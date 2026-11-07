@@ -187,7 +187,11 @@ const THRONE = `<svg class="ts-bg thr" viewBox="0 0 390 380" preserveAspectRatio
 export function startTsar(host, opts = {}) {
   let found = []; try { found = JSON.parse(localStorage.getItem(ENDS_KEY) || '[]'); } catch {}
   let AC = null;
-  const ctx = () => { if (opts.sound === false) return null; try { AC ||= new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); return AC; } catch { return null; } };
+  let unlocked = false, music = null;
+  const unlock = () => { if (unlocked) return; unlocked = true; try { const a = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='); a.loop = true; a.volume = .01; a.play().catch(() => { unlocked = false; }); } catch { /* audio indisponible */ } };
+  const stopMusic = () => { if (music) { try { music.pause(); } catch {} music = null; } };
+  const playMusic = (src, { loop = false, volume = .8, fallback } = {}) => { if (opts.sound === false) return; stopMusic(); try { const a = new Audio(src); a.loop = loop; a.volume = volume; music = a; a.addEventListener('error', () => { if (music === a) { music = null; fallback?.(); } }); a.play().catch(() => fallback?.()); } catch { fallback?.(); } };
+  const ctx = () => { if (opts.sound === false) return null; unlock(); try { AC ||= new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); return AC; } catch { return null; } };
   const tone = (f, t, d, { type = 'sine', g = .2, to = 0, at = 0 } = {}) => { const c = ctx(); if (!c) return; const o = c.createOscillator(), gn = c.createGain(), s = c.currentTime + at + t; o.type = type; o.frequency.setValueAtTime(f, s); if (to) o.frequency.exponentialRampToValueAtTime(to, s + d); gn.gain.setValueAtTime(.0001, s); gn.gain.linearRampToValueAtTime(g, s + Math.min(.02, d / 4)); gn.gain.exponentialRampToValueAtTime(.0001, s + d); o.connect(gn).connect(c.destination); o.start(s); o.stop(s + d + .05); };
   const noise = (t, d, { g = .3, lp = 1800 } = {}) => { const c = ctx(); if (!c) return; const n = Math.floor(c.sampleRate * d), buf = c.createBuffer(1, n, c.sampleRate), ch = buf.getChannelData(0); for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n); const s = c.createBufferSource(), f = c.createBiquadFilter(), gn = c.createGain(); f.type = 'lowpass'; f.frequency.value = lp; gn.gain.value = g; s.buffer = buf; s.connect(f).connect(gn).connect(c.destination); s.start(c.currentTime + t); };
   const SFX = {
@@ -203,10 +207,13 @@ export function startTsar(host, opts = {}) {
     lose: () => [392, 370, 349, 330].forEach((f, i) => tone(f, i * .32, i === 3 ? 1 : .32, { type: 'sawtooth', to: f * .94, g: .1 })),
     funeral: () => [196, 196, 196, 233, 208, 208, 196, 196].forEach((f, i) => tone(f, i * .55, .5, { type: 'triangle', g: .18 })),
     cash: () => { [1318, 1760, 2093].forEach((f, i) => tone(f, i * .09, .35, { type: 'triangle', g: .12 })); noise(0, .05, { g: .15, lp: 6000 }); },
-    // hymne américain (domaine public) : les deux premières phrases, en cuivres synthétiques
-    anthem: () => { const N = { C4: 261.63, E4: 329.63, Fs4: 369.99, G4: 392, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A4: 440, B4: 493.88 }, sc = [['G4', .75], ['E4', .25], ['C4', 1], ['E4', 1], ['G4', 1], ['C5', 2], ['E5', .75], ['D5', .25], ['C5', 1], ['E4', 1], ['Fs4', 1], ['G4', 2], ['G4', .5], ['G4', .5], ['E5', 1.5], ['D5', .5], ['C5', 1], ['B4', 1], ['A4', 1], ['B4', 1], ['C5', 2], ['C5', 3]]; let t = 0; for (const [n, b] of sc) { tone(N[n], t, b * .5 * .95, { type: 'sawtooth', g: .09 }); tone(N[n] / 2, t, b * .5 * .95, { type: 'square', g: .05 }); t += b * .5; } },
+    // hymne américain : enregistrement de l'US Army Field Band (domaine public) ; en secours, une version synthétisée
+    anthem: () => playMusic('tsar-usa.mp3', { volume: .85, fallback: () => SFX.anthemSynth() }),
+    anthemSynth: () => { const N = { C4: 261.63, E4: 329.63, Fs4: 369.99, G4: 392, C5: 523.25, D5: 587.33, E5: 659.25, A4: 440, B4: 493.88 }, sc = [['G4', .75], ['E4', .25], ['C4', 1], ['E4', 1], ['G4', 1], ['C5', 2], ['E5', .75], ['D5', .25], ['C5', 1], ['E4', 1], ['Fs4', 1], ['G4', 2]]; let t = 0; for (const [n, b] of sc) { tone(N[n], t, b * .5 * .95, { type: 'sawtooth', g: .09 }); t += b * .5; } },
     cheer: () => { noise(0, 1.2, { g: .12, lp: 2500 }); },
-    beat: () => { for (let i = 0; i < 24; i++) { const t = i * .4; tone(150, t, .22, { to: 40, g: .5 }); tone([55, 55, 65, 49][i % 4], t + .2, .2, { type: 'sawtooth', g: .12 }); if (i % 2) noise(t + .2, .05, { g: .08, lp: 7000 }); } },
+    // hardbass : morceau original (grosse caisse saturée, basse sur le contre-temps, arpège de synthé) ; en secours, une grosse caisse synthétisée
+    beat: () => playMusic('tsar-hardbass.mp3', { loop: true, volume: .9, fallback: () => SFX.beatSynth() }),
+    beatSynth: () => { for (let i = 0; i < 24; i++) { const t = i * .4; tone(150, t, .22, { to: 40, g: .5 }); tone([55, 55, 65, 49][i % 4], t + .2, .2, { type: 'sawtooth', g: .12 }); if (i % 2) noise(t + .2, .05, { g: .08, lp: 7000 }); } },
   };
   const beat = () => SFX.beat();
   let S, card = null, stopped = false, busy = true, vis = null, prevCo = 0, prevEy = 0, prevMood = '', loc = 'throne';
@@ -230,7 +237,8 @@ export function startTsar(host, opts = {}) {
       <div id="ts-actors"></div><div id="ts-fx"></div><div class="ts-wipe" id="ts-wipe"></div></div>
     <div class="ts-panel" id="ts-panel"></div></div>`;
   const $ = id => host.querySelector('#' + id), scene = $('ts-scene'), actors = $('ts-actors'), fxl = $('ts-fx');
-  $('ts-x').onclick = () => { stopped = true; opts.onExit?.(); };
+  $('ts-x').onclick = () => { stopped = true; stopMusic(); opts.onExit?.(); };
+  host.addEventListener('pointerdown', () => unlock(), { once: true });
 
   // ----- personnages -----
   const mk = (o, x, { lane = FRONT, w = 90, flip = 1, cls = '' } = {}) => {
@@ -466,7 +474,7 @@ export function startTsar(host, opts = {}) {
     p.innerHTML = `<div class="ts-stamp ${e.kind}">${e.stamp || (e.kind === 'win' ? 'ВЫ ЦАРЬ' : 'КОНЕЦ')}</div><h2>${esc(e.t)}</h2><p class="ts-say">${esc(e.txt)}</p>
       <div class="ts-count">Fin n° ${Object.keys(END).indexOf(key) + 1} · ${found.length} / ${TOTAL_ENDS} fins découvertes ${isNew ? '<b>nouveau !</b>' : ''}</div>
       <div class="ts-endbtns"><button id="ts-again">Rejouer</button><button class="plain" id="ts-quit">Quitter</button></div>`;
-    $('ts-again').onclick = () => begin(); $('ts-quit').onclick = () => { stopped = true; opts.onExit?.(); };
+    $('ts-again').onclick = () => { stopMusic(); begin(); }; $('ts-quit').onclick = () => { stopped = true; stopMusic(); opts.onExit?.(); };
     $('ts-day').textContent = '';
   }
 
@@ -496,5 +504,5 @@ export function startTsar(host, opts = {}) {
     prevCo = prevEy = 0; prevMood = ''; decor(); guards(); briefing();
   }
   begin();
-  return { stop() { stopped = true; }, deal: id => { forced = id; }, state: () => S, found: () => found, finals: () => Object.keys(END), forceEnd: k => playEnd(k) };
+  return { music: () => music ? { src: music.src.split('/').pop(), playing: !music.paused } : null, stop() { stopped = true; stopMusic(); }, deal: id => { forced = id; }, state: () => S, found: () => found, finals: () => Object.keys(END), forceEnd: k => playEnd(k) };
 }
