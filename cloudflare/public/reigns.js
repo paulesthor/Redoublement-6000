@@ -197,7 +197,10 @@ export function startTsar(host, opts = {}) {
   let found = []; try { found = JSON.parse(localStorage.getItem(ENDS_KEY) || '[]'); } catch {}
   let AC = null;
   let unlocked = false, music = null;
-  const unlock = () => { if (unlocked) return; unlocked = true; try { const a = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='); a.loop = true; a.volume = .01; a.play().catch(() => { unlocked = false; }); } catch { /* audio indisponible */ } };
+  const unlock = () => { if (unlocked) return; unlocked = true; try {   // un lecteur silencieux (1 s réelle de silence) fait sortir aussi le son synthétisé quand l'iPhone est en mode silencieux
+    const n = 8000, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+    const a = new Audio(URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))); a.loop = true; a.volume = .01; a.play().catch(() => { unlocked = false; }); } catch { /* audio indisponible */ } };
   const stopMusic = () => { if (music) { try { music.pause(); } catch {} music = null; } };
   const playMusic = (src, { loop = false, volume = .8, fallback } = {}) => { if (opts.sound === false) return; stopMusic(); try { const a = new Audio(src); a.loop = loop; a.volume = volume; music = a; a.addEventListener('error', () => { if (music === a) { music = null; fallback?.(); } }); a.play().catch(() => fallback?.()); } catch { fallback?.(); } };
   const ctx = () => { if (opts.sound === false) return null; unlock(); try { AC ||= new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); return AC; } catch { return null; } };
@@ -247,7 +250,7 @@ export function startTsar(host, opts = {}) {
     <div class="ts-panel" id="ts-panel"></div></div>`;
   const $ = id => host.querySelector('#' + id), scene = $('ts-scene'), actors = $('ts-actors'), fxl = $('ts-fx');
   $('ts-x').onclick = () => { stopped = true; stopMusic(); opts.onExit?.(); };
-  host.addEventListener('pointerdown', () => unlock(), { once: true });
+  host.addEventListener('pointerdown', () => { if (opts.sound !== false) unlock(); }, { once: true });
 
   // ----- personnages -----
   const mk = (o, x, { lane = FRONT, w = 90, flip = 1, cls = '' } = {}) => {
@@ -469,7 +472,7 @@ export function startTsar(host, opts = {}) {
       const n = actor; if (n) { bubble(n, 'Il aura chaud.', 1400); await W(900); await move(n, 300, 1400, 1); }
       const sc = document.createElement('div'); sc.className = 'ts-scarf'; scene.append(sc); SFX.blip(); await W(1400); bubble(tsarEl, '!', 900); shake(); tsarEl.classList.add('slump'); await W(900); n?.remove(); await crown(); sc.remove();
     } else if (key === 'cat') {
-      const k = actor; standUp(); bubble(tsarEl, '?', 900); await W(700); tsarEl.classList.add('away'); k.style.transition = 'left 1.2s linear'; await move(k, 330, 1500, 1); k.style.transition = 'bottom .5s'; k.style.bottom = Y(240) + '%'; await W(600);
+      const k = actor || mk('cat', -50, { w: 64 }); standUp(); bubble(tsarEl, '?', 900); await W(700); tsarEl.classList.add('away'); k.style.transition = 'left 1.2s linear'; await move(k, 330, 1500, 1); k.style.transition = 'bottom .5s'; k.style.bottom = Y(240) + '%'; await W(600);
       const cr = document.createElement('div'); cr.className = 'ts-catcrown'; cr.innerHTML = CROWN; k.append(cr); await burst('star', k, 8, 22); bubble(k, 'Miaou.', 1800); await W(1800);
     } else if (key === 'strike') {
       const crowd = [[{ hat: 'toque', beard: 'mustache', extra: 'apron', coat: '#8a8a8a', skin: 1 }, -40], [{ hat: 'cap', cap: '#2a3a52', beard: 'pointy', extra: 'sash', coat: '#2a3a52', skin: 0 }, -110], [{ hat: 'mitre', beard: 'full', extra: 'cross', coat: '#4a2a5a', skin: 2, hair: '#cfc7b8' }, -180], [{ hat: 'ushanka', beard: 'full', coat: '#5a4636', skin: 3 }, -250]].map(([o, x]) => mk(o, x, { w: 80 }));
