@@ -1450,3 +1450,35 @@ body.ussr-ui .us-news{margin-bottom:12px}
 .iconsheet .ic-img{border-radius:22px;box-shadow:0 0 0 3px #f4d56b,0 8px 20px #0008}.iconsheet h2{margin:2px 0 0;font-size:20px}.iconsheet p{margin:0;font-size:13.5px;line-height:1.4;color:#e8dfc7}
 .ic-steps{text-align:left;margin:0;padding-left:20px;font-size:13.5px;line-height:1.4}.ic-steps li{margin:5px 0}
 .iconsheet .ic-go{display:block;width:100%;box-sizing:border-box;text-align:center;text-decoration:none;padding:13px;border-radius:12px;background:var(--grad-gold);color:#111114;font-weight:800;margin-top:4px}
+
+/* Tsar : décor détaillé, pistes, fin hardbass */
+.ts-chand{position:absolute;left:38%;top:-1%;width:23%;aspect-ratio:90/70;animation:tssway 5s ease-in-out infinite;transform-origin:50% 0}@keyframes tssway{50%{transform:rotate(3deg)}0%,100%{transform:rotate(-3deg)}}.ts-chand svg{width:100%;height:100%;overflow:visible}.ts-chand .fl{animation:tsfl .7s ease-in-out infinite alternate}
+@keyframes tsfl{from{transform:scaleY(.8);opacity:.8}to{transform:scaleY(1.15);opacity:1}}
+.ts-candle{position:absolute;font-size:clamp(11px,3.4cqw,16px);transform:translate(-50%,0);animation:tsfl .9s ease-in-out infinite alternate;filter:drop-shadow(0 0 6px #ffb347)}
+.ts-eagle{position:absolute;left:82%;top:24%;font-size:clamp(18px,6cqw,30px);filter:sepia(1) saturate(4) hue-rotate(-12deg) brightness(1.1)}
+.ts-clock{position:absolute;left:8%;top:34%;width:7%;aspect-ratio:1;border-radius:50%;background:#f6efd8;border:3px solid #f4d56b;box-shadow:inset 0 0 0 2px #00000030}.ts-clock i{position:absolute;left:50%;top:14%;width:2px;height:40%;background:#222;transform-origin:50% 100%;animation:tsclk 12s linear infinite}@keyframes tsclk{to{transform:rotate(360deg)}}
+.ts-cat{position:absolute;left:72%;bottom:6%;font-size:clamp(16px,5.2cqw,24px);filter:drop-shadow(0 2px 2px #0008)}.ts-cat span{position:absolute;left:70%;top:-60%;font-size:.7em;animation:tszz 2.4s ease-in-out infinite}@keyframes tszz{0%{opacity:0;transform:translateY(6px)}50%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.ts-snow{position:absolute;top:-8%;width:4px;height:4px;border-radius:50%;background:#fff;opacity:.85;animation:tsfall linear infinite}@keyframes tsfall{to{transform:translateY(900%) translateX(-14px)}}
+.ts-actor.guard{z-index:0}.ts-spear{position:absolute;right:-4%;bottom:0;width:3px;height:120%;background:#c9b27a;border-radius:2px}.ts-spear::before{content:"";position:absolute;top:-8px;left:-3px;border:4px solid transparent;border-bottom:10px solid #ddd;border-top:0}
+.ts-trainwrap.stall{left:14%;transition:left 1.3s cubic-bezier(.1,.7,.2,1)}
+.ts-routes{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px 8px;padding:7px 12px;max-width:430px;width:100%;margin:0 auto;box-sizing:border-box;flex:none;background:#00000040;border-bottom:1px solid #f4d56b33}
+.ts-rt{font-size:10px;letter-spacing:.14em;color:#f4d56b99;font-weight:800}.ts-route{display:flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid #f4d56b44;border-radius:99px;font-size:11.5px;background:#ffffff0a}.ts-route b{font-weight:700;margin-right:2px}
+.ts-route i{font-style:normal;font-size:14px;opacity:.28;filter:grayscale(1);transition:.3s}.ts-route i.on{opacity:1;filter:none;animation:tspopin .5s}.ts-route em{font-style:normal;font-size:9.5px;font-weight:900;letter-spacing:.08em;color:#1a0d10;background:#f4d56b;border-radius:99px;padding:1px 6px;margin-left:2px}
+.ts-route.ready{border-color:#f4d56b;box-shadow:0 0 10px #f4d56b66;animation:tsready 1.2s infinite alternate}@keyframes tsready{to{box-shadow:0 0 16px #f4d56bcc}}
+.ts-choices small{font-size:10.5px;color:#f6efd8aa;line-height:1.15;min-height:12px}.ts-choices small.go{color:#f4d56b}.ts-choices small:empty{display:none}
+.ts-panel.brief{gap:8px;padding-top:6px}.ts-panel.brief h2{margin:0;font-size:20px;text-align:center}.ts-brief{margin:0;padding-left:20px;font-size:13.5px;line-height:1.38;max-width:380px;text-align:left}.ts-brief li{margin:5px 0}
+#ts-go{min-height:46px;padding:10px 24px;font-size:15px}
+.ts-stamp.fun{color:#7aeaff;border-color:#7aeaff}
+.ts-scene.rave .ts-bg,.ts-scene.rave .ts-win{filter:brightness(.55) saturate(1.4)}
+.ts-lights{position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;background:conic-gradient(from 0deg at 50% 0%,#ff2d9566,transparent 12%,#2dffd566 25%,transparent 37%,#ffe02d66 50%,transparent 62%,#6a2dff66 75%,transparent 88%,#ff2d9566);animation:tsspin 2.4s linear infinite;z-index:7}@keyframes tsspin{to{transform:rotate(360deg) scale(1.6)}}
+.ts-spk{position:absolute;bottom:14%;font-size:clamp(26px,9cqw,44px);animation:tspump .4s ease-in-out infinite;z-index:6}@keyframes tspump{50%{transform:scale(1.25)}}
+.ts-actor.dance .bob{animation:tsdance .4s ease-in-out infinite}.ts-actor.dance .arm.l{animation:tsarmL .4s ease-in-out infinite}.ts-actor.dance .arm.r{animation:tsarmR .4s ease-in-out infinite}.ts-actor.dance .leg.l{animation:tsswingA .8s ease-in-out infinite}.ts-actor.dance .leg.r{animation:tsswingB .8s ease-in-out infinite}
+@keyframes tsdance{0%,100%{transform:translateY(0)}50%{transform:translateY(7px) scaleY(.94)}}@keyframes tsarmL{0%,100%{transform:rotate(-150deg)}50%{transform:rotate(-30deg)}}@keyframes tsarmR{0%,100%{transform:rotate(-30deg)}50%{transform:rotate(-150deg)}}
+.ts-shades{position:absolute;left:68%;top:6%;font-size:22px}
+
+/* Tsar : fin capitaliste (fast-food) */
+.ts-capi{position:absolute;inset:0;display:none;z-index:1}.ts-capi svg{position:absolute;inset:0;width:100%;height:100%}
+.ts-scene.capi .ts-capi{display:block;animation:tsin2 .6s both}@keyframes tsin2{from{opacity:0;transform:scale(1.08)}to{opacity:1;transform:none}}
+.ts-scene.capi .ts-bg,.ts-scene.capi .ts-win,.ts-scene.capi .ts-board,.ts-scene.capi .ts-portrait,.ts-scene.capi .ts-chand,.ts-scene.capi .ts-candle,.ts-scene.capi .ts-eagle,.ts-scene.capi .ts-clock,.ts-scene.capi .ts-cat,.ts-scene.capi .ts-chest,.ts-scene.capi #ts-plotters,.ts-scene.capi #ts-eyes,.ts-scene.capi .ts-table,.ts-scene.capi .ts-actor.guard{display:none}
+.ts-flag{transform-box:fill-box;transform-origin:0 50%;animation:tswave 1.6s ease-in-out infinite}@keyframes tswave{50%{transform:skewY(-4deg) scaleX(.96)}}
+.ts-stamp.fun{color:#7aeaff;border-color:#7aeaff}

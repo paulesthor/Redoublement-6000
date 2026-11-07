@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.12';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.13';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1814,6 +1814,7 @@ views.settings = async v => {
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
       ${sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
+      ${th === 'urss' ? sw('st-hymn', 'Hymne de l\'URSS', 'Joue en fond pendant le thème rouge', pref('wm_hymn', '1') !== '0') : ''}
       ${sw('st-vib', 'Vibrations', 'Combats, ouvertures, récompenses', pref('wm_vibe', '1') !== '0')}
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
@@ -1834,7 +1835,8 @@ views.settings = async v => {
   $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
   $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
   v.querySelectorAll('[data-ussr-test]').forEach(b => b.onclick = safe(async () => { await previewUssr(b.dataset.ussrTest); render(); }));
-  $('#st-snd').onchange = e => setPref('wm_sound', e.target.checked ? '1' : '0');
+  $('#st-snd').onchange = e => { setPref('wm_sound', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); };
+  $('#st-hymn')?.addEventListener('change', e => { setPref('wm_hymn', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); });
   $('#st-vib').onchange = e => { setPref('wm_vibe', e.target.checked ? '1' : '0'); if (e.target.checked) { toast('Vibrations activées (rechargement conseillé)'); try { navigator.vibrate?.(40); } catch { /* non supporté */ } } };
   $('#st-mot').onchange = e => setPref('wm_motion', e.target.checked ? '1' : '0');
   $('#st-fast').onchange = e => setPref('wm_fast', e.target.checked ? '1' : '0');
@@ -2301,7 +2303,7 @@ views.tsar = async v => {
   try {
     const mod = await import('/reigns.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
-    game = mod.startTsar(full.querySelector('#ts-host'), { onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
+    game = mod.startTsar(full.querySelector('#ts-host'), { sound: pref('wm_sound', '1') !== '0', onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
     window.__tsar = game;
   } catch (e) { jlog('tsar : ' + e.message); full.innerHTML = `<div class="empty" style="padding:40px 20px;color:#fff">Impossible de charger la démo (${esc(e.message)}).<br><button onclick="this.closest('.tsfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
