@@ -34,7 +34,7 @@ export const PLAN_TABLES = [
 ];
 
 // ---- économie de l'événement communiste ----
-export const COMMU = { START_WR: 500, START_PACKS: 10, FREE_EVERY_MS: 30 * 60000, FREE_MAX: 5, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
+export const COMMU = { START_WR: 500, START_PACKS: 10, FREE_EVERY_MS: 10 * 60000, FREE_MAX: 30, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
   ENDINGS: ['samovar', 'train', 'bear', 'x_samovar', 'x_train', 'x_bear', 'late', 'rave', 'capi', 'vodka', 'babouchka', 'cat', 'strike', 'c0', 'c1', 'd0', 'd1', 'a0', 'a1', 'f0', 'f1'] };
 const dayOf = () => new Date().toISOString().slice(0, 10);
 
@@ -61,7 +61,7 @@ export function installPlan(d) {
     earned: +r.earned, wr: +r.wr, packs: +(r.packs || 0), joined: +(r.joined || 0), claimed: list(r.claimed), perks: list(r.perks),
     totals: { coins: PLAN_MILESTONES.reduce((t, m) => t + (m.coins || 0), 0), packs: PLAN_MILESTONES.reduce((t, m) => t + m.packs, 0), wr: PLAN_MILESTONES.reduce((t, m) => t + m.wr, 0), max: PLAN_MILESTONES[PLAN_MILESTONES.length - 1].at },
   });
-  /** Colis gratuits du Parti : un toutes les 30 minutes, jusqu'à 5 en réserve (au-delà, rien ne se recharge). Horodatage rangé dans event_progress (en secondes), sans nouvelle colonne. */
+  /** Colis gratuits du Parti : un toutes les 10 minutes, jusqu'à 30 en réserve (au-delà, rien ne se recharge). Horodatage rangé dans event_progress (en secondes), sans nouvelle colonne. */
   async function regen(env, uid, r) {
     if ((await setting(env, 'commu_paused')) === '1') return { r, nextIn: 0, frozen: true };   // pause : le compte à rebours est gelé
     const key = 'cm:packts', nowS = Math.floor(Date.now() / 1000), every = COMMU.FREE_EVERY_MS / 1000;

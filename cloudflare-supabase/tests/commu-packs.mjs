@@ -26,12 +26,12 @@ const cn1 = await classic(nina); ok('quiz raté : jeu classique intact (stock et
 // 3. colis offerts : un toutes les 30 minutes, 5 en réserve, compte à rebours
 await q('UPDATE plan_progress SET packs = 0 WHERE user_id = ?', ana);
 const nowS = Math.floor(Date.now() / 1000);
-await q("UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", nowS - 95 * 60, ana);
-[, v] = await call(ANA, 'GET', '/api/commu'); ok('95 minutes : 3 colis offerts, prochain dans 25 min environ', v.packs === 3 && v.nextPackIn > 24 * 60000 && v.nextPackIn <= 25 * 60000 + 2000, J({ p: v.packs, n: v.nextPackIn }));
+await q("UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", nowS - 35 * 60, ana);
+[, v] = await call(ANA, 'GET', '/api/commu'); ok('35 minutes : 3 colis offerts, prochain dans 5 min environ', v.packs === 3 && v.nextPackIn > 4 * 60000 && v.nextPackIn <= 5 * 60000 + 2000, J({ p: v.packs, n: v.nextPackIn }));
 await q("UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", nowS - 600 * 60, ana);
-[, v] = await call(ANA, 'GET', '/api/commu'); ok('réserve plafonnée à 5, plus de compte à rebours', v.packs === 5 && v.nextPackIn === 0, J({ p: v.packs, n: v.nextPackIn }));
-[, v] = await call(ANA, 'GET', '/api/commu'); ok('réserve pleine : aucune accumulation', v.packs === 5);
-await q('UPDATE plan_progress SET packs = 0 WHERE user_id = ?', ana); await q("UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", nowS - 95 * 60, ana);
+[, v] = await call(ANA, 'GET', '/api/commu'); ok('réserve plafonnée à 30, plus de compte à rebours', v.packs === 30 && v.nextPackIn === 0, J({ p: v.packs, n: v.nextPackIn }));
+[, v] = await call(ANA, 'GET', '/api/commu'); ok('réserve pleine : aucune accumulation', v.packs === 30);
+await q('UPDATE plan_progress SET packs = 0 WHERE user_id = ?', ana); await q("UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", nowS - 35 * 60, ana);
 await call(ADM, 'POST', '/api/commu/pause', { paused: true }); [, v] = await call(ANA, 'GET', '/api/commu'); ok('pause : le compte à rebours est gelé', v.packs === 0, v.packs);
-await call(ADM, 'POST', '/api/commu/pause', { paused: false }); [, v] = await call(ANA, 'GET', '/api/commu'); ok('reprise : le compte à rebours repart de zéro (pas de colis pour la durée de la pause)', v.packs === 0 && v.nextPackIn > 29 * 60000, J({ p: v.packs, n: v.nextPackIn }));
+await call(ADM, 'POST', '/api/commu/pause', { paused: false }); [, v] = await call(ANA, 'GET', '/api/commu'); ok('reprise : le compte à rebours repart de zéro (pas de colis pour la durée de la pause)', v.packs === 0 && v.nextPackIn > 9 * 60000, J({ p: v.packs, n: v.nextPackIn }));
 done();

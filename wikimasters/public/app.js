@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.44';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.45';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2363,7 +2363,7 @@ async function eventPacks(v) {
   v.innerHTML = `${pauseNote()}<div class="hero"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
     <div class="packart" id="packart">${window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
     <div class="pk-actions"><button id="open" ${c.packs > 0 && !c.paused ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${c.packs >= 10 && !c.paused ? '' : 'disabled'}>Ouvrir ×10</button></div>
-    <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · ${c.paused ? 'compte à rebours gelé' : c.packs >= (c.freeMax || 5) ? 'réserve pleine' : 'prochain dans <b id="cd"></b>'}</p><p class="mut" style="margin:2px 0 0">Un colis offert toutes les ${c.freeEveryMin || 30} min (${c.freeMax || 5} en réserve) · solde <b>${fmt(c.wr)} ₽</b></p></div>
+    <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · ${c.paused ? 'compte à rebours gelé' : c.packs >= (c.freeMax || 30) ? 'réserve pleine' : 'prochain dans <b id="cd"></b>'}</p><p class="mut" style="margin:2px 0 0">Un colis offert toutes les ${c.freeEveryMin || 10} min (${c.freeMax || 30} en réserve) · solde <b>${fmt(c.wr)} ₽</b></p></div>
     <button id="buy" class="plain buy" ${c.wr >= c.packPrice ? '' : 'disabled'}>Faire la queue et ouvrir · ${c.packPrice} ₽</button>
     <button id="buy10" class="plain buy" ${c.wr >= c.packPrice * 10 ? '' : 'disabled'}>Faire la queue ×10 · ${fmt(c.packPrice * 10)} ₽</button></div>`;
   const again = (n) => () => ({ ok: commu.packs >= n, label: n > 1 ? `Ouvrir 10 autres (${commu.packs})` : `Ouvrir un autre colis (${commu.packs})` });
