@@ -146,7 +146,7 @@ export function installPlan(d) {
     for (const x of all_) levels[lvl(x.earned)]++;
     const full = query?.get?.('all') === '1', rows = all_.slice(0, full ? 50 : 20), me = all_.findIndex(x => +x.id === user.id);
     return { pot: await pot(env), players: all_.length, levels, avgLevel: all_.length ? all_.reduce((t, x) => t + lvl(x.earned), 0) / all_.length : 0, atLeast6: all_.filter(x => lvl(x.earned) >= 6).length, done: levels[max],
-      top: rows.map((x, i) => ({ rank: i + 1, name: x.name, earned: +x.earned, level: lvl(x.earned), me: +x.id === user.id })), myRank: me >= 0 ? me + 1 : null };
+      top: rows.map((x, i) => ({ rank: i + 1, id: +x.id, name: x.name, earned: +x.earned, level: lvl(x.earned), me: +x.id === user.id })), myRank: me >= 0 ? me + 1 : null };
   });
   // administrateur : ouvre / ferme l'événement (le bouton de lancement viendra plus tard)
   route('POST', '/api/commu/set', async ({ env, user, body }) => {

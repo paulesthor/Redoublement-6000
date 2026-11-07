@@ -2,13 +2,21 @@ const mkP = async token => { const c = await browser.newContext({ viewport: { wi
 for (const n of ['Carole', 'Dimitri', 'Eva']) { await call(null, 'POST', '/api/register', { name: n, password: 'secret3' }); }
 await DB.prepare("UPDATE users SET coins = 1000 WHERE name = 'Bob'").run();
 await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(B, 'POST', '/api/commu/join', {});
+await DB.prepare("UPDATE users SET coins = 1000 WHERE name IN ('Carole','Dimitri','Eva')").run();
+for (const n of ['Carole', 'Dimitri', 'Eva']) { const [, lg] = await call(null, 'POST', '/api/login', { name: n, password: 'secret3' }); await call(lg.token, 'POST', '/api/commu/join', {}); }
+await DB.prepare("UPDATE plan_progress SET earned = 500, earn_ts = 1 WHERE user_id = (SELECT id FROM users WHERE name = 'Carole')").run();
+await DB.prepare("UPDATE plan_progress SET earned = 300, earn_ts = 2 WHERE user_id = (SELECT id FROM users WHERE name = 'Dimitri')").run();
+await DB.prepare("UPDATE plan_progress SET earned = 100, earn_ts = 3 WHERE user_id = (SELECT id FROM users WHERE name = 'Bob')").run();
+await DB.prepare("UPDATE plan_progress SET earned = 50, earn_ts = 4 WHERE user_id = (SELECT id FROM users WHERE name = 'Eva')").run();
 const pb = await mkP(B);
 await pb.evaluate(async () => { tab = 'rank'; await render(); }); await pb.waitForTimeout(1200);
 ok('podium : 3 marches, le 1er avec le ruban Staline', (await pb.$$('.podium .pd')).length === 3 && !!(await pb.$('.pd1 .pd-rib')));
-ok('le reste du tableau liste les autres joueurs avec leurs points', (await pb.$$('.list .item')).length >= 1 && /points/.test(await pb.textContent('#view')));
+ok('le reste du tableau liste les autres joueurs avec leurs points de Plan', (await pb.$$('.list .item')).length === 1 && /Eva/.test(await pb.textContent('.list')) && /paliers/.test(await pb.textContent('.list')));
 ok('podium : la cagnotte et « le premier la remporte » sont affichés', /remporte la cagnotte/.test(await pb.textContent('.pd-pot')));
 await pb.evaluate(async () => { tab = 'commutop'; await render(); }); await pb.waitForTimeout(1000); ok('classement général : précise que le premier remporte la cagnotte', /remporte toute la cagnotte/.test(await pb.textContent('#view')));
 await pb.evaluate(async () => { tab = 'rank'; await render(); }); await pb.waitForTimeout(800);
+const names = await pb.$$eval('.podium .pd', e => e.map(x => x.querySelector('.pd-nm').textContent + ' ' + x.querySelector('.pd-sc').textContent));
+ok('podium : classement sur le score de l\'événement (Carole 500, Dimitri 300, Bob 100), pas sur le compte', names.some(x => /Carole 500 pts/.test(x)) && names.some(x => /Dimitri 300 pts/.test(x)) && names.some(x => /Bob 100 pts/.test(x)) && !names.some(x => /Alice/.test(x)), J(names));
 const box = await pb.$eval('.podium', e => { const r = e.getBoundingClientRect(); return r.right <= innerWidth && r.left >= 0; }); ok('podium dans l\'écran', box);
 await pb.screenshot({ path: '/tmp/claude-0/-home-user-Redoublement-6000/37801998-3ced-5dcb-85ba-95e236d12c04/scratchpad/podium.png' });
 ok('aucune erreur JS', pb.errs.length === 0, J(pb.errs));

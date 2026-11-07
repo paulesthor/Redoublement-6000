@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.41';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.42';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -897,12 +897,15 @@ const views = {
   },
 
   async rank(v) {
-    const { players } = await api('/leaderboard');
+    let players;
     if (ussrUiOn()) await loadCommu().catch(() => {});
+    if (ussrUiOn() && eventUi()) {   // en événement : classement sur le score de l'événement uniquement (points de Plan), pas sur le compte
+      const s = await api('/commu/standings?all=1'); players = s.top.map(x => ({ id: x.id, name: x.name, score: x.earned, level: x.level }));
+    } else players = (await api('/leaderboard')).players;
     if (ussrUiOn()) {   // mode communiste : podium (le premier reçoit l'effet Staline), puis le tableau complet avec les points
       const top = players.slice(0, 3), ord = [top[1], top[0], top[2]].map((p, k) => p && { p, r: [2, 1, 3][k] }).filter(Boolean);
       const star = '<svg viewBox="0 0 24 24" class="pd-star" aria-hidden="true"><path d="M12 1.5l3 6.8 7.4.7-5.6 4.9 1.7 7.2L12 17.3 5.5 21.1l1.7-7.2L1.600 9l7.400-.7z" fill="currentColor"/></svg>';
-      v.innerHTML = `${pageHead('Tableau d\'honneur', 'Les camarades que le Parti regarde de moins mauvais œil')}${seg(RANK_SEG, 'rank')}
+      v.innerHTML = `${pageHead('Tableau d\'honneur', 'Classement de l\'événement : seuls comptent tes points de Plan')}${seg(RANK_SEG, 'rank')}
         <div class="pd-pot"><small>Le premier du classement remporte la cagnotte</small><b>${fmt(commu?.pot || 0)} wikibidou</b><span>et le titre de Staline, avec son contour doré</span></div>
         <div class="podium">${ord.map(({ p, r }) => `<button class="pd pd${r} ${p.id === me.id ? 'me' : ''}" data-pl="${p.id}">
           ${r === 1 ? '<div class="pd-rays" aria-hidden="true"></div><div class="pd-rib">СТАЛИН</div>' : ''}
@@ -911,7 +914,7 @@ const views = {
           <div class="pd-step"><i>${r}</i></div></button>`).join('')}</div>
         <h3 class="sec" style="padding:0 16px">Le reste du tableau</h3>
         <div class="list">${players.slice(3).map((p, i) => `<div class="item tap ${p.id === me.id ? 'me' : ''}" data-pl="${p.id}"><span class="rank-n">${i + 4}</span>${avatar(p.name, online.has(p.id))}
-          <div class="grow"><div class="nm">${esc(p.name)}${ttl(p.name)}</div><div class="sub"><span>${p.uniques} cartes</span><span>${p.wins} V / ${p.losses} D</span></div></div>
+          <div class="grow"><div class="nm">${esc(p.name)}${ttl(p.name)}</div><div class="sub"><span>${p.level != null ? `${p.level} / 12 paliers` : `${p.uniques} cartes`}</span></div></div>
           <div class="score">${fmt(p.score)}<small>points</small></div></div>`).join('') || '<p class="mut" style="padding:0 16px">Personne derrière. Le Parti s\'en réjouit.</p>'}</div>`;
       bindSeg(v); bindPlayers(v); return;
     }
