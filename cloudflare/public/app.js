@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.30';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.31';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { commuend: 'more', commurules: 'more', commutop: 'more', tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { commustart: 'packs', commuend: 'more', commurules: 'more', commutop: 'more', tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 /** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
 // ---------- événement communiste : état du joueur, droits, thème ----------
 let commu = null, commuAt = 0;
@@ -581,7 +581,7 @@ const views = {
       const again = await tenFlow('/packs/buy', {}, () => ({ ok: me.coins >= total, label: `Acheter 10 autres (${fmt(total)})` }));
       if (again === 'again') setTimeout(() => $('#buy10')?.click(), 60);
     });
-    $('#commu-join')?.addEventListener('click', joinSheet);
+    $('#commu-join')?.addEventListener('click', () => { tab = 'commustart'; render(); });
     $('#rates-btn').onclick = () => {
       const m = $('#modal'); m.hidden = false;
       m.innerHTML = `<div><h2>Taux de drop</h2><div class="ratelist">${cfg.rarities.map(r => `<div><span class="rar ${r}">${RAR[r]}</span><b>${pct(d[r])} %</b></div>`).join('')}</div>
@@ -1315,7 +1315,7 @@ let adminTab = 'overview';   // l'onglet « Joueurs » (pièces, paquets, cartes
 views.admin = async v => {
   jlog('ouverture de l\'administration');
   if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
-  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['eco', 'Économie'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['tools', 'Outils']];
+  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['eco', 'Économie'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['event', 'Événement'], ['tools', 'Outils']];
   v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips wrap" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
   const adminBody = async () => {
@@ -1328,6 +1328,21 @@ views.admin = async v => {
       const rows = [['Joueurs', o.users], ['En ligne maintenant', o.online], ['Joueurs simulés', o.bots], ['Paquets ouverts', fmt(o.packs)], ['Cartes possédées', fmt(o.owned)], ['Cartes en base', fmt(o.cards)], ['Pièces en circulation', fmt(o.coins)],
         ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['Questions IA aujourd\'hui', `${o.aiToday} / ≈ 250`], ['Dernière erreur IA', o.aiErr || 'aucune'], ['Version serveur', o.version]];
       box.innerHTML = `<div class="admgrid">${rows.map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>`;
+    } else if (adminTab === 'event') {
+      const c = await loadCommu(true), st = await api('/commu/standings').catch(() => ({ players: 0, pot: 0 }));
+      const state = c.done ? 'Terminé' : c.on ? (c.scope === 'all' ? 'En cours, ouvert à tous' : 'Ouvert pour toi seul (test)') : 'Fermé';
+      box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Événement communiste</h3><div class="admgrid"><div><span>État</span><b>${state}</b></div><div><span>Inscrits</span><b>${fmt(st.players || 0)}</b></div><div><span>Cagnotte</span><b>${fmt(st.pot || 0)}</b></div><div><span>Taxe</span><b>${c.tax}</b></div></div>
+        <p class="mut" style="margin:10px 0">Lancer l'événement ouvre une page d'annonce sur l'accueil de chaque joueur, avec le bouton pour payer la taxe (${c.tax} wikibidou) et entrer.</p>
+        <button id="ev-all" style="width:100%">${c.on && c.scope === 'all' ? 'L\'événement est lancé pour tous' : 'Lancer l\'événement pour TOUS'}</button>
+        <div class="row" style="margin-top:10px"><button class="plain" id="ev-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="ev-off" style="flex:1">Fermer</button></div>
+        <div class="row" style="margin-top:10px"><button class="plain" id="ev-end" style="flex:1">Clore + gagnant</button><button class="plain" id="ev-souv" style="flex:1">Clore les souvenirs</button></div></div>`;
+      const act = (id, fn) => $(id).onclick = safe(async () => { await fn(); await loadCommu(true); await syncUssrUi(); adminBody(); });
+      if (c.on && c.scope === 'all') $('#ev-all').disabled = true;
+      act('#ev-all', async () => { if (!(await ask('Lancer l\'événement pour TOUS les joueurs ?', [], { text: 'Chaque joueur verra l\'annonce sur son accueil et pourra payer la taxe pour entrer.', ok: 'Lancer' }))) throw new Error('annulé'); await api('/commu/set', { on: true, scope: 'all' }); toast('Événement lancé pour tous', 'ok'); });
+      act('#ev-me', async () => { await api('/commu/set', { on: true, scope: 'admin' }); toast('Ouvert pour toi seul', 'ok'); });
+      act('#ev-off', async () => { await api('/commu/set', { on: false }); toast('Événement fermé', 'ok'); });
+      act('#ev-end', async () => { const r = await api('/commu/finish', {}); toast(r.winner ? `Gagnant : ${r.winner.name}` : 'Événement clos', 'ok'); });
+      act('#ev-souv', async () => { const r = await api('/commu/souvenirs/close', {}); toast(`${r.given} souvenir(s) attribué(s)`, 'ok'); });
     } else if (adminTab === 'users') {
       const { users, defaults, rarities, labels } = await api('/admin/users');
       const pct = w => { const t = rarities.reduce((s, r) => s + (+w[r] || 0), 0) || 1; return r => +((+w[r] || 0) / t * 100).toFixed(2); };
@@ -1541,7 +1556,7 @@ async function refreshMe() {
   await syncUssrUi().catch(() => {});
   { const sig = () => commu ? `${commu.on}:${commu.joined}` : ''; const before = sig();
     loadCommu().then(() => { syncUssrUi(); if (sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) { const go = n => (cfg ? render() : n > 0 && setTimeout(() => go(n - 1), 300)); go(20); }   // si la configuration n'est pas encore là, on réessaie un instant
-      syncEventDrum(); }).catch(() => {}); }   // la fin de l'événement s'ouvre toute seule, une fois   // l'événement s'ouvre ou se ferme : l'écran suit
+      syncEventDrum(); syncEventStart(); }).catch(() => {}); }   // la fin de l'événement s'ouvre toute seule, une fois   // l'événement s'ouvre ou se ferme : l'écran suit
   if (me.maintenance === true) maintenanceScreen();
   { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }
   loadCosmetics();
@@ -2418,6 +2433,29 @@ function syncEventDrum() {
   el.onclick = () => { el.remove(); tab = 'commuend'; render(); };
   document.body.append(el);
 }
+
+// ---------- annonce du début de l'événement : page d'accueil, taxe et entrée ----------
+function syncEventStart() {
+  if (!commu || !commu.on || commu.joined || commu.scope !== 'all' || !commu.since || me.admin && commu.scope !== 'all') return;
+  if (prefOf('wm_commu_start') === String(commu.since) || game || $('#modal') && !$('#modal').hidden || tab === 'commustart') return;
+  try { localStorage.setItem('wm_commu_start', String(commu.since)); } catch { /* stockage indisponible */ }
+  tab = 'commustart'; render();
+}
+views.commustart = async v => {
+  await loadCommu(true); const c = commu;
+  if (!c || !c.on || c.joined) { tab = 'packs'; return render(); }
+  const rich = me.coins >= c.tax;
+  v.innerHTML = `<section class="cs-hero"><svg class="cs-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.500l3 6.800 7.400.7-5.600 4.900 1.700 7.200L12 17.300 5.500 21.100l1.700-7.200L1.600 9l7.400-.7z" fill="currentColor"/></svg>
+      <small class="cs-kick">ПЛАН ПЯТИЛЕТКА</small><h1>L'événement communiste commence</h1>
+      <p>Le Parti a pris le contrôle de l'appli. Pendant quelques jours : thème rouge, hymne, colis du Parti et <b>150 fiches légendaires</b> soviétiques à collectionner.</p></section>
+    <section class="plan-sum"><ul class="ru-list"><li>Tu joues au <b>Camp</b>, aux <b>Patates</b>, au <b>Dernier Tsar</b>, au quiz du jour et au Marché noir pour gagner des <b>wikiroubles</b>.</li><li><b>12 paliers</b> de récompenses : colis, titres, cadres, thèmes, wikibidou pour ton jeu normal et des cartes souvenir à garder pour toujours.</li><li>Le camarade qui gagne le plus remporte la <b>cagnotte</b> (${fmt(c.pot || 0)} wikibidou) et devient Staline.</li></ul></section>
+    <section class="plan-sum cs-tax"><div class="plan-top"><b>${fmt(c.tax)}</b><span>wikibidou de taxe d'État, une seule fois</span></div>
+      <p class="plan-wallet">Tu repars avec <b>${fmt(c.startWr)} ₽</b>. Tu as <b>${fmt(me.coins)}</b> wikibidou. ${rich ? 'Le Parti accepte les paiements en retard, jamais les remboursements.' : 'Il t\'en manque : le Parti ne fait pas crédit.'}</p></section>
+    <div style="padding:6px 16px 18px;display:grid;gap:8px"><button id="cs-join" ${rich ? '' : 'disabled'}>Payer la taxe et entrer</button><button class="plain" id="cs-rules">Lire le règlement du Parti</button><button class="plain" id="cs-later">Plus tard</button></div>`;
+  $('#cs-join').onclick = safe(async () => { await api('/commu/join', {}); await loadCommu(true); await refreshMe(); toast('Bienvenue, camarade !', 'ok'); await syncUssrUi(); tab = 'packs'; render(); });
+  $('#cs-rules').onclick = () => { tab = 'commurules'; render(); };
+  $('#cs-later').onclick = () => { tab = 'packs'; render(); };
+};
 // ---------- fin de l'événement : bilan, gagnant et choix des souvenirs ----------
 views.commuend = async v => {
   await loadCommu(true); const c = commu;

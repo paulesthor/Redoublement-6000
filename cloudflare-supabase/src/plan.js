@@ -91,7 +91,7 @@ export function installPlan(d) {
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
     return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
-      tax: COMMU.TAX, startWr: COMMU.START_WR, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
+      scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
   route('GET', '/api/commu', async ({ env, user }) => commuView(env, user));
@@ -149,7 +149,8 @@ export function installPlan(d) {
   // administrateur : ouvre / ferme l'événement (le bouton de lancement viendra plus tard)
   route('POST', '/api/commu/set', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
-    await ensureGameSchema(env); await putSetting(env, 'commu_on', body.on ? '1' : '0'); await putSetting(env, 'commu_scope', body.scope === 'all' ? 'all' : 'admin'); if (body.on) await putSetting(env, 'commu_done', '0');
+    await ensureGameSchema(env); await putSetting(env, 'commu_on', body.on ? '1' : '0'); await putSetting(env, 'commu_scope', body.scope === 'all' ? 'all' : 'admin'); if (body.on) { await putSetting(env, 'commu_done', '0'); if ((await setting(env, 'commu_on_prev')) !== '1') await putSetting(env, 'commu_start', String(Date.now())); }
+    await putSetting(env, 'commu_on_prev', body.on ? '1' : '0');
     return commuView(env, user);
   });
   // fin de l'événement : la cagnotte au meilleur, titre « Staline » et contour doré ; les avantages gagnés restent

@@ -1612,3 +1612,9 @@ html[data-theme=or]{--bg:#110d04;--bg2:#181206;--panel:#1e1708;--panel2:#2a210d;
 .pd-rays{position:absolute;left:50%;top:-6px;width:230px;height:230px;margin-left:-115px;z-index:-1;border-radius:50%;background:repeating-conic-gradient(from 0deg,#f4d56b40 0 8deg,transparent 8deg 20deg);-webkit-mask:radial-gradient(circle,#000 20%,transparent 68%);mask:radial-gradient(circle,#000 20%,transparent 68%);animation:pdspin 28s linear infinite}
 @keyframes pdspin{to{transform:rotate(360deg)}}.pd.me .pd-nm{text-decoration:underline}
 @media(prefers-reduced-motion:reduce){.pd-rays{animation:none}}
+
+/* annonce du début de l'événement */
+.cs-hero{position:relative;overflow:hidden;margin:12px 16px;padding:26px 18px 20px;text-align:center;border:2px solid #f4d56b;border-radius:14px;background:radial-gradient(circle at 50% 0,#c0161d,#4a0b10 70%)}
+.cs-star{width:54px;height:54px;color:#f4d56b;filter:drop-shadow(0 2px 8px #000a);animation:csbeat 2s ease-in-out infinite}.cs-kick{display:block;margin-top:4px;color:#f4d56b;letter-spacing:.3em;font-weight:800;font-size:11px}
+.cs-hero h1{margin:6px 0 8px;font-size:24px;line-height:1.15;text-transform:uppercase;color:#fff}.cs-hero p{margin:0;font-size:14px;color:#ffe9b0}
+@keyframes csbeat{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}@media(prefers-reduced-motion:reduce){.cs-star{animation:none}}

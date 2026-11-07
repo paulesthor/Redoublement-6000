@@ -38,11 +38,12 @@ await pb.context().close();
 // 2. l'administrateur ouvre l'événement (via l'API, comme le fera le bouton de lancement)
 const [s0] = await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); ok('l\'administrateur ouvre l\'événement', s0 === 200);
 pb = await mkAs(B); await pb.waitForTimeout(1200);
+if (await pb.$('#cs-later')) { await pb.click('#cs-later'); await pb.waitForTimeout(600); }
 ok('ouvert : bandeau d\'inscription sur l\'accueil', !!(await pb.$('#commu-join')));
 await pb.screenshot({ path: SHS + 'commu-1-bandeau.png' });
-await pb.click('#commu-join'); await pb.waitForSelector('#cm-join'); await pb.screenshot({ path: SHS + 'commu-2-inscription.png' });
-ok('fenêtre d\'inscription : taxe de 300 wikibidou, 500 ₽ de départ, cagnotte', (await pb.textContent('.iconsheet')).includes('300') && (await pb.textContent('.iconsheet')).includes('500'));
-await pb.click('#cm-join'); await pb.waitForTimeout(2000);
+await pb.click('#commu-join'); await pb.waitForSelector('#cs-join'); await pb.screenshot({ path: SHS + 'commu-2-inscription.png' });
+ok('fenêtre d\'inscription : taxe de 300 wikibidou, 500 ₽ de départ, cagnotte', (await pb.textContent('#view')).includes('300') && (await pb.textContent('#view')).includes('500'));
+await pb.click('#cs-join'); await pb.waitForTimeout(2000);
 ok('inscription : 300 wikibidou prélevés', await coinsOf('Bob') === 700, await coinsOf('Bob'));
 ok('inscrit : thème rouge et habillage appliqués automatiquement', await pb.evaluate(() => document.documentElement.dataset.theme === 'urss' && document.body.classList.contains('ussr-ui')));
 ok('inscrit : la barre du bas passe à 4 onglets', await pb.evaluate(() => [...document.querySelectorAll('aside nav button')].filter(b => getComputedStyle(b).display !== 'none').length === 4));

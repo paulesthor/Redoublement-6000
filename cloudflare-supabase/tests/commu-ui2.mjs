@@ -33,7 +33,7 @@ await call(A, 'POST', '/api/commu/set', { on: true });
 let pb = await mkAs2(B); ok('test réel : un joueur ordinaire ne voit aucun bandeau', !(await pb.$('#commu-join'))); await pb.context().close();
 let pa = await mkAs2(A); await pa.waitForTimeout(800);
 ok('test réel : l\'administrateur voit le bandeau d\'inscription', !!(await pa.$('#commu-join')));
-await pa.click('#commu-join'); await pa.waitForSelector('#cm-rules'); await pa.click('#cm-rules'); await pa.waitForSelector('.rules', { timeout: 8000 }); await pa.waitForTimeout(500);
+await pa.click('#commu-join'); await pa.waitForSelector('#cs-rules'); await pa.click('#cs-rules'); await pa.waitForSelector('.rules', { timeout: 8000 }); await pa.waitForTimeout(500);
 const rulesTxt = await pa.textContent('#view');
 ok('règlement du Parti : taxe, ₽ de départ, plafonds, colis, paliers, Staline, ton du Parti', ['300 wikibidou', '500 ₽', '150 fiches', '12 paliers', 'Staline', 'camarade'].every(t => rulesTxt.includes(t)), rulesTxt.slice(0, 140));
 await pa.screenshot({ path: SHP + 'commu2-1-reglement.png' });
