@@ -1511,3 +1511,9 @@ body.ussr-ui .us-news{margin-bottom:12px}
 .ts-shades{position:absolute;left:62%;top:10%;width:32%;height:9%;background:#111;border-radius:4px;box-shadow:0 0 0 2px #333}
 .ts-brief{max-width:380px;text-align:left}.ts-brief p{margin:6px 0;font-size:13.5px;line-height:1.4}
 .ts-hold svg,.ts-prop svg{overflow:visible}
+/* écrans tactiles : le « survol » reste collé après un toucher (iOS) et laissait un rectangle bleuté sur l'onglet touché */
+@media (hover:none){
+  aside nav button:hover:not(:disabled),aside nav button.on:hover:not(:disabled),body.ussr-ui aside nav button:hover:not(:disabled){background:none!important;filter:none!important;box-shadow:none!important;color:inherit}
+  aside nav button.on,aside nav button.on:hover{color:var(--gold)!important}
+  button:hover:not(:disabled){filter:none}
+}
