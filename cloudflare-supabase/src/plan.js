@@ -27,17 +27,8 @@ export const PLAN_TITLES = [
 ];
 export const PLAN_TABLES = [
   'CREATE TABLE IF NOT EXISTS plan_progress (user_id BIGINT PRIMARY KEY, earned BIGINT NOT NULL DEFAULT 0, wr BIGINT NOT NULL DEFAULT 0, claimed TEXT NOT NULL DEFAULT \'[]\', perks TEXT NOT NULL DEFAULT \'[]\')',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS joined BIGINT NOT NULL DEFAULT 0',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS packs BIGINT NOT NULL DEFAULT 0',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS earn_ts BIGINT NOT NULL DEFAULT 0',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS camp_plans INTEGER NOT NULL DEFAULT 0',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS last_camp BIGINT NOT NULL DEFAULT 0',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS last_tsar BIGINT NOT NULL DEFAULT 0',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS last_potato BIGINT NOT NULL DEFAULT 0',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS tsar_ends TEXT NOT NULL DEFAULT \'[]\'',
+  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS joined BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS packs BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS earn_ts BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS camp_plans INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_camp BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_tsar BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_potato BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS tsar_ends TEXT NOT NULL DEFAULT \'[]\'',
   'ALTER TABLE plan_progress ENABLE ROW LEVEL SECURITY',
-  'CREATE TABLE IF NOT EXISTS commu_day (user_id BIGINT NOT NULL, day TEXT NOT NULL, game TEXT NOT NULL, got BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day, game))',
-  'ALTER TABLE commu_day ENABLE ROW LEVEL SECURITY',
 ];
 
 // ---- économie de l'événement communiste ----
@@ -75,12 +66,12 @@ export function installPlan(d) {
   // crédit de wikiroubles gagnés, plafonné par jeu et par jour (compare-and-swap : deux appareils ne dépassent jamais le plafond)
   async function credit(env, uid, game, amount) {
     const cap = COMMU.CAPS[game]; if (!cap || !(amount > 0)) return 0;
-    const day = dayOf(); await run(env, 'INSERT INTO commu_day (user_id, day, game, got) VALUES (?,?,?,0) ON CONFLICT DO NOTHING', uid, day, game);
+    const key = 'cm:' + dayOf() + ':' + game; await run(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', key, uid);   // plafond du jour : même table que les autres événements, aucune table en plus
     let allowed = 0;
     for (let essai = 0; essai < 12; essai++) {
-      const row = await one(env, 'SELECT got FROM commu_day WHERE user_id = ? AND day = ? AND game = ?', uid, day, game), got = +row.got;
+      const row = await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', key, uid), got = +row.n;
       allowed = Math.max(0, Math.min(Math.floor(amount), cap - got)); if (!allowed) return 0;
-      const upd = await run(env, 'UPDATE commu_day SET got = ? WHERE user_id = ? AND day = ? AND game = ? AND got = ?', got + allowed, uid, day, game, got);
+      const upd = await run(env, 'UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n = ?', got + allowed, key, uid, got);
       if (upd.meta.changes) break; if (essai === 11) return 0;
     }
     await run(env, 'UPDATE plan_progress SET earned = earned + ?, wr = wr + ?, earn_ts = ? WHERE user_id = ?', allowed, allowed, Date.now(), uid);
@@ -88,7 +79,7 @@ export function installPlan(d) {
   }
   const commuView = async (env, user) => {
     const r = await rowOf(env, user.id), on = await isOn(env), day = dayOf();
-    const today = Object.fromEntries((await d.all(env, 'SELECT game, got FROM commu_day WHERE user_id = ? AND day = ?', user.id, day)).map(x => [x.game, +x.got]));
+    const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     return { on, done: (await setting(env, 'commu_done')) === '1', admin: !!user.is_admin, joined: +r.joined > 0, wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
       tax: COMMU.TAX, startWr: COMMU.START_WR, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
