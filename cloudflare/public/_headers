@@ -35,3 +35,7 @@
   Cache-Control: no-cache
 /reigns.js
   Cache-Control: no-cache
+/install.html
+  Cache-Control: no-cache
+/manifest-evenement.webmanifest
+  Cache-Control: no-cache

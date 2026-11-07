@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.11';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.12';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -429,7 +429,7 @@ let duelDirect = false, gulagTab = null;
 /** Mode communiste : écran « Les Jeux du Peuple » qui regroupe les jeux. */
 function jeuxHub(v) {
   const T = (key, icon, label, sub) => `<button class="mtile" data-jeu="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
-  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit')}<div class="mgrid" style="padding:0 16px">${me.admin ? T('gulag', 'shield', 'Le Camp', 'Gestion et primes') + T('potato', 'shield', 'Kolkhoze', 'Le jeu des patates en 3D') + T('tsar', 'shield', 'Le Dernier Tsar', 'Cartes à glisser') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets')}${T('duel', 'duel', 'Duels', 'Quiz, combats et mises')}</div>`;
+  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${me.admin ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science') + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis') + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
   v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
 }
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
@@ -1819,7 +1819,7 @@ views.settings = async v => {
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
     ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussrui', 'Interface URSS complète', 'Menus, textes, rarités en grades, bandeau Pravda, décor rouge', pref('wm_ussr_ui', '0') === '1')}${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div></div></div>` : ''}
+      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div></div></div>` : ''}
     <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
     <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
@@ -1830,6 +1830,7 @@ views.settings = async v => {
     else { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); }
     await syncUssrUi(); render();
   });
+  $('#st-iconsheet')?.addEventListener('click', iconSheet);
   $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
   $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
   v.querySelectorAll('[data-ussr-test]').forEach(b => b.onclick = safe(async () => { await previewUssr(b.dataset.ussrTest); render(); }));
@@ -2270,9 +2271,9 @@ views.plan = async v => {
   const draw = () => {
     const next = d.milestones.find(m => d.earned < m.at), pct = Math.min(100, Math.round(d.earned / d.totals.max * 100));
     const ready = d.milestones.filter(m => d.earned >= m.at && !d.claimed.includes(m.id)).length;
-    v.innerHTML = `${pageHead('Plan quinquennal', 'Les 12 paliers du Parti')}
+    v.innerHTML = `${pageHead('Plan quinquennal', 'Douze paliers pour mériter ton caca de pigeon en or')}
       <section class="plan-sum"><div class="plan-top"><b>${fmtR(d.earned)}</b><span>gagnés sur ${fmtR(d.totals.max)}</span></div><div class="plan-bar"><i style="width:${pct}%"></i></div>
-        <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}.` : 'Plan accompli, camarade.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
+        <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}. Courage, sac à merde.` : 'Plan accompli. Va te laver, tu pues la victoire.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
         <div class="plan-demo"><button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button></div></section>
       <div class="plan-list">${d.milestones.map(m => {
         const done = d.claimed.includes(m.id), reached = d.earned >= m.at, rw = rewardOf(m);
@@ -2490,6 +2491,22 @@ function recapScreen(then) {
   })();
   return true;
 }
+/** Écran « nouvelle icône » : un bouton qui ouvre la page d'installation dans Safari (iOS ne change l'icône d'écran d'accueil qu'à la réinstallation). Aperçu administrateur. */
+function iconSheet() {
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+  const link = 'https://wikimasters.clodowiki.workers.dev/install.html', safari = 'x-safari-' + link;
+  m.hidden = false;
+  m.innerHTML = `<div class="iconsheet" role="dialog" aria-label="Nouvelle icône"><span class="grab" aria-hidden="true"></span>
+    <img src="ussr-icon-180.png" alt="" class="ic-img" width="96" height="96">
+    <h2>Une nouvelle icône, camarade</h2>
+    <p>Pour l'événement, le Parti te fournit une icône fraîche : un ouvrier à toque, baveux de bonheur. iPhone oblige, il faut réinstaller l'appli pour la voir, comme une vieille épouse qu'on remplace.</p>
+    <ol class="ic-steps"><li>Touche le bouton : la page s'ouvre dans <b>Safari</b>.</li><li>Appuie sur <b>Partager</b>, puis <b>Sur l'écran d'accueil</b>.</li><li>Supprime l'ancienne icône. Elle a eu une belle vie, elle va crever.</li></ol>
+    <a class="btn ic-go" id="ic-go" href="${safari}">Ouvrir dans Safari</a>
+    <button class="plain" id="ic-copy" style="width:100%;margin-top:8px">Copier le lien</button>
+    <button class="plain" id="ic-x" style="width:100%;margin-top:8px">Plus tard, j'ai la flemme</button></div>`;
+  $('#ic-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  $('#ic-copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Lien copié, colle-le dans Safari', 'ok'); } catch { toast(link); } };
+}
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -2499,8 +2516,8 @@ function moreSheet() {
   if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs camarades')}${me.admin ? T('plan', 'medal', 'Paliers du Plan', '12 paliers et récompenses') : ''}</div>
-      <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retour au capitalisme</button></div>`;
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${me.admin ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') : ''}</div>
+      <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retourner chialer chez les capitalistes</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };
     m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; gulagTab = null; tab = b.dataset.go; render(); });
