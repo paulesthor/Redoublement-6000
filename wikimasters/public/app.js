@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.18';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.19';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -413,14 +413,30 @@ async function fillMissing(r) {
 
 const GROUP = { tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 /** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
-const ussrUiOn = () => { try { return !!me?.admin && localStorage.getItem('wm_ussr_ui') === '1'; } catch { return false; } };
+// ---------- événement communiste : état du joueur, droits, thème ----------
+let commu = null, commuAt = 0;
+const prefOf = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const eventOn = () => !!commu && commu.on && commu.joined;                       // inscrit et événement ouvert
+const eventAccess = () => !!me?.admin || eventOn();                               // l'administrateur garde l'aperçu
+async function loadCommu(force) {
+  if (!force && commu && Date.now() - commuAt < 25000) return commu;
+  commuAt = Date.now(); try { commu = await api('/commu'); } catch { commu = null; }
+  syncEventTheme(); return commu;
+}
+/** Le thème rouge suit l'événement : appliqué à l'entrée, retiré à la fin (sauf si le joueur a gagné le palier 6). */
+function syncEventTheme() {
+  const optOut = prefOf('wm_ussr_ui') === '0', th = prefOf('wm_theme');
+  if (eventOn() && !optOut && th !== 'urss') { if (th) setPref('wm_theme_prev', th); setPref('wm_theme', 'urss'); setPref('wm_theme_auto', '1'); }
+  else if (prefOf('wm_theme_auto') === '1' && (!eventOn() || optOut)) { if (optOut || !(commu?.perks || []).includes('theme_urss')) setPref('wm_theme', prefOf('wm_theme_prev') || 'dark'); setPref('wm_theme_auto', '0'); }
+}
+const ussrUiOn = () => { try { return (!!me?.admin && localStorage.getItem('wm_ussr_ui') === '1') || (eventOn() && localStorage.getItem('wm_ussr_ui') !== '0'); } catch { return false; } };
 const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src + '?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error(src)); document.head.append(s); });
 /** Habillage URSS de toute l'interface (aperçu admin) : charge le script au besoin, l'allume ou l'éteint selon le réglage. */
 async function syncUssrUi() {
   if (ussrUiOn()) { try { if (!window.UssrSkin) await loadScript('/ussr-skin.js'); if (!window.ussrParcelSvg) await loadScript('/ussrpack.js').catch(() => {}); window.UssrSkin.on(); } catch { /* aperçu indisponible */ } }
   else window.UssrSkin?.off();
 }
-const ussrOn = () => { try { return !!me?.admin && localStorage.getItem('wm_ussr') === '1'; } catch { return false; } };
+const ussrOn = () => { try { return (!!me?.admin && localStorage.getItem('wm_ussr') === '1') || (eventOn() && localStorage.getItem('wm_ussr_ui') !== '0'); } catch { return false; } };
 const loadUssr = () => window.ussrPackStage ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ussrpack.js?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error('ussrpack')); document.head.append(s); });
 const ussrOpts = () => ussrOn() && window.ussrPackStage ? { ussr: true, stage: window.ussrPackStage, shape: (() => { try { return localStorage.getItem('wm_ussr_shape') || 'auto'; } catch { return 'auto'; } })() } : {};
 const ussrLabels = () => ussrOn() && window.USSR_GRADES ? window.USSR_GRADES : RAR;
@@ -429,7 +445,7 @@ let duelDirect = false, gulagTab = null;
 /** Mode communiste : écran « Les Jeux du Peuple » qui regroupe les jeux. */
 function jeuxHub(v) {
   const T = (key, icon, label, sub) => `<button class="mtile" data-jeu="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
-  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${me.admin ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science') + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis') + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
+  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science') + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis') + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
   v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
 }
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
@@ -501,7 +517,7 @@ function cardPicker(title, { user } = {}) {
 const views = {
   async packs(v) {
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
-    v.innerHTML = `<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
+    v.innerHTML = `${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${ussrUiOn() && window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
@@ -560,6 +576,7 @@ const views = {
       const again = await tenFlow('/packs/buy', {}, () => ({ ok: me.coins >= total, label: `Acheter 10 autres (${fmt(total)})` }));
       if (again === 'again') setTimeout(() => $('#buy10')?.click(), 60);
     });
+    $('#commu-join')?.addEventListener('click', joinSheet);
     $('#rates-btn').onclick = () => {
       const m = $('#modal'); m.hidden = false;
       m.innerHTML = `<div><h2>Taux de drop</h2><div class="ratelist">${cfg.rarities.map(r => `<div><span class="rar ${r}">${RAR[r]}</span><b>${pct(d[r])} %</b></div>`).join('')}</div>
@@ -1497,6 +1514,8 @@ const render = safe(async () => {
 async function refreshMe() {
   me = await api('/me');
   syncUssrUi().catch(() => {});
+  { const sig = () => commu ? `${commu.on}:${commu.joined}` : ''; const before = sig();
+    loadCommu().then(() => { syncUssrUi(); if (sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) render(); }).catch(() => {}); }   // l'événement s'ouvre ou se ferme : l'écran suit
   if (me.maintenance === true) maintenanceScreen();
   { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }
   loadCosmetics();
@@ -1807,20 +1826,21 @@ async function previewUssr(best) {
   finally { if (prevOn === null) localStorage.removeItem('wm_ussr'); else localStorage.setItem('wm_ussr', prevOn); }
 }
 views.settings = async v => {
-  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await api('/plan').catch(() => null))?.perks || [])];
+  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await loadCommu(true))?.perks || [])];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
   v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
     <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.filter(t => t[0] !== 'urss' || perks.includes('theme_urss') || th === 'urss').map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
       ${sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
+      ${commu?.on && commu.joined ? sw('st-commu', 'Mode communiste', 'Thème rouge, menus du Parti et jeux de l\'événement', prefOf('wm_ussr_ui') !== '0') : ''}
       ${th === 'urss' ? sw('st-hymn', 'Hymne de l\'URSS', 'Joue en fond pendant le thème rouge', pref('wm_hymn', '1') !== '0') : ''}
       ${sw('st-vib', 'Vibrations', 'Combats, ouvertures, récompenses', pref('wm_vibe', '1') !== '0')}
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
     ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussrui', 'Interface URSS complète', 'Menus, textes, rarités en grades, bandeau Pravda, décor rouge', pref('wm_ussr_ui', '0') === '1')}${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div></div></div>` : ''}
+      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-cm-on" style="flex:1">Ouvrir l\'événement (test)</button><button class="plain" id="st-cm-off" style="flex:1">Fermer</button><button class="plain" id="st-cm-end" style="flex:1">Clore + gagnant</button></div></div></div>` : ''}
     <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
     <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
@@ -1832,10 +1852,14 @@ views.settings = async v => {
     await syncUssrUi(); render();
   });
   $('#st-iconsheet')?.addEventListener('click', iconSheet);
+  $('#st-cm-on')?.addEventListener('click', safe(async () => { await api('/commu/set', { on: true }); await loadCommu(true); toast('Événement ouvert (test)', 'ok'); render(); }));
+  $('#st-cm-off')?.addEventListener('click', safe(async () => { await api('/commu/set', { on: false }); await loadCommu(true); await syncUssrUi(); toast('Événement fermé', 'ok'); render(); }));
+  $('#st-cm-end')?.addEventListener('click', safe(async () => { const r = await api('/commu/finish', {}); await loadCommu(true); await syncUssrUi(); toast(r.winner ? `Gagnant : ${r.winner.name} (${fmt(r.winner.prize)} wikibidou)` : 'Événement clos, aucun gagnant', 'ok'); render(); }));
   $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
   $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
   v.querySelectorAll('[data-ussr-test]').forEach(b => b.onclick = safe(async () => { await previewUssr(b.dataset.ussrTest); render(); }));
   $('#st-snd').onchange = e => { setPref('wm_sound', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); };
+  $('#st-commu')?.addEventListener('change', async e => { setPref('wm_ussr_ui', e.target.checked ? '1' : '0'); setPref('wm_ussr', e.target.checked ? '1' : '0'); syncEventTheme(); await syncUssrUi(); render(); });
   $('#st-hymn')?.addEventListener('change', e => { setPref('wm_hymn', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); });
   $('#st-vib').onchange = e => { setPref('wm_vibe', e.target.checked ? '1' : '0'); if (e.target.checked) { toast('Vibrations activées (rechargement conseillé)'); try { navigator.vibrate?.(40); } catch { /* non supporté */ } } };
   $('#st-mot').onchange = e => setPref('wm_motion', e.target.checked ? '1' : '0');
@@ -2250,7 +2274,7 @@ views.feed = async v => {
 };
 // ---------- jeu 3D des patates (aperçu réservé à l'administrateur) ----------
 views.potato = async v => {
-  if (!me.admin) { tab = 'packs'; return render(); }
+  await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
   v.innerHTML = `${pageHead('Patates', 'Aperçu du jeu 3D (administrateur)')}<div class="empty">Le jeu tourne en plein écran.<br><button id="pt-reopen" style="margin-top:10px">Rouvrir le jeu</button></div>`;
   $('#pt-reopen').onclick = () => render();
   const full = document.createElement('div'); full.className = 'ptfull'; full.innerHTML = '<div class="pthost" id="pt-host"><div class="pt-loading">Chargement du kolkhoze…</div></div>'; document.body.append(full); document.body.classList.add('ptlock');
@@ -2260,13 +2284,40 @@ views.potato = async v => {
     const mod = await import('/potato.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
     full.querySelector('.pt-loading')?.remove();
-    game = mod.startPotato(full.querySelector('#pt-host'), { onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
+    game = mod.startPotato(full.querySelector('#pt-host'), { onEnd: r => commuEarn('potato', { score: r.score }), onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
     window.__potato = game;
   } catch (e) { jlog('patates : ' + e.message); full.querySelector('#pt-host').innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger le jeu 3D (${esc(e.message)}).<br><button onclick="this.closest('.ptfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
+/** Classement des wikiroubles gagnés et cagnotte. */
+async function standingsSheet() {
+  const s = await api('/commu/standings'), m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+  m.hidden = false;
+  m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Classement"><span class="grab" aria-hidden="true"></span><h2 style="margin:0 0 4px;font-size:19px">Tableau d'honneur de l'événement</h2>
+    <p class="mut" style="margin:0 0 10px;font-size:13px">Cagnotte : <b>${fmt(s.pot)}</b> wikibidou, versée au camarade qui aura gagné le plus de ₽ (il devient Staline). ${s.players} inscrit${s.players > 1 ? 's' : ''}.</p>
+    <div class="st-list">${s.top.map(x => `<div class="st-row ${x.me ? 'me' : ''}"><b>${x.rank}</b><span>${esc(x.name)}</span><em>${fmt(x.earned)} ₽</em></div>`).join('') || '<p class="mut">Personne n\'a encore gagné de wikiroubles.</p>'}</div>
+    ${s.myRank && s.myRank > s.top.length ? `<p class="mut">Ton rang : ${s.myRank}</p>` : ''}<button class="plain" id="st-x" style="width:100%;margin-top:12px">Fermer</button></div>`;
+  $('#st-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+}
+/** Fenêtre d'inscription : la taxe de l'État finance la cagnotte. */
+function joinSheet() {
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; }, c = commu || {};
+  m.hidden = false;
+  m.innerHTML = `<div class="iconsheet" role="dialog" aria-label="Événement communiste"><span class="grab" aria-hidden="true"></span>
+    <h2>L'événement communiste est ouvert</h2>
+    <p>Pendant quelques jours, l'appli devient rouge, l'hymne se lance, et tu joues au Camp, aux Patates et au Dernier Tsar pour gagner des <b>wikiroubles</b>. Douze paliers de récompenses t'attendent.</p>
+    <ol class="ic-steps"><li>Taxe de l'État : <b>${c.tax || 300} wikibidou</b>, non remboursables, versées à la cagnotte (${fmt(c.pot || 0)} actuellement).</li><li>Tu démarres avec <b>${c.startWr || 500} ₽</b>.</li><li>Le camarade qui gagne le plus de ₽ remporte la cagnotte et devient <b>Staline</b>.</li></ol>
+    <button class="ic-go" id="cm-join" style="width:100%">Payer la taxe et entrer</button><button class="plain" id="cm-x" style="width:100%;margin-top:8px">Pas maintenant</button></div>`;
+  $('#cm-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  $('#cm-join').onclick = safe(async () => { await api('/commu/join', {}); await loadCommu(true); await refreshMe(); close(); toast('Bienvenue, camarade !', 'ok'); await syncUssrUi(); render(); });
+}
+/** Envoie le résultat d'un jeu au serveur, qui calcule seul le gain en wikiroubles. */
+async function commuEarn(game, data) {
+  if (!eventAccess()) return;
+  try { const r = await api('/commu/earn', { game, ...data }); if (r.gained > 0) toast(`+${r.gained} ₽ pour le Plan`, 'ok'); await loadCommu(true); } catch (e) { jlog('gain : ' + e.message); }
+}
 // ---------- Plan quinquennal : les 12 paliers du mode communiste (aperçu administrateur) ----------
 views.plan = async v => {
-  if (!me.admin) { tab = 'packs'; return render(); }
+  await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
   let d = await api('/plan');
   const fmtR = n => fmt(n) + ' ₽';
   const rewardOf = m => [m.packs ? `${m.packs} colis` : '', m.wr ? fmtR(m.wr) : '', m.title ? `titre « ${m.title} »` : '', m.perk === 'theme_urss' ? 'thème rouge conservé à vie' : m.perk?.startsWith('frame_') ? 'cadre de profil' : m.perk?.startsWith('souvenir_') ? 'carte souvenir à garder' : ''].filter(Boolean);
@@ -2276,14 +2327,16 @@ views.plan = async v => {
     v.innerHTML = `${pageHead('Plan quinquennal', 'Douze paliers pour mériter ton caca de pigeon en or')}
       <section class="plan-sum"><div class="plan-top"><b>${fmtR(d.earned)}</b><span>gagnés sur ${fmtR(d.totals.max)}</span></div><div class="plan-bar"><i style="width:${pct}%"></i></div>
         <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}. Courage, sac à merde.` : 'Plan accompli. Va te laver, tu pues la victoire.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
-        <div class="plan-demo"><button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button></div></section>
+        <p class="plan-wallet">Solde : <b>${fmtR(d.wr)}</b>${commu ? ` · cagnotte : <b>${fmt(commu.pot)}</b> wikibidou · ${commu.players} camarade${commu.players > 1 ? 's' : ''}` : ''}</p>
+        <div class="plan-demo"><button class="plain" id="plan-top">Classement de l'événement</button>${me.admin ? '<button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button>' : ''}</div></section>
       <div class="plan-list">${d.milestones.map(m => {
         const done = d.claimed.includes(m.id), reached = d.earned >= m.at, rw = rewardOf(m);
         return `<section class="plan-row ${done ? 'done' : reached ? 'ready' : ''}"><div class="plan-n">${m.id}</div><div class="plan-txt"><h3>${esc(m.name)}</h3><p>${esc(m.text)}</p><div class="plan-rw">${rw.map(x => `<span>${esc(x)}</span>`).join('')}</div>
-          <div class="plan-st">${done ? '<span class="ok">Récompense récupérée</span>' : reached ? `<button data-claim="${m.id}">Récupérer</button>` : `<span>À ${fmtR(m.at)} · encore ${fmtR(m.at - d.earned)}</span>`}</div></div></section>`;
+          <div class="plan-st">${done ? '<span class="ok">Récompense récupérée</span>' : reached ? (commu && !commu.on && !me.admin ? '<span>Événement terminé</span>' : `<button data-claim="${m.id}">Récupérer</button>`) : `<span>À ${fmtR(m.at)} · encore ${fmtR(m.at - d.earned)}</span>`}</div></div></section>`;
       }).join('')}</div>`;
     v.querySelectorAll('[data-earn]').forEach(b => b.onclick = safe(async () => { d = await api('/plan/earn', { amount: +b.dataset.earn }); draw(); }));
-    v.querySelector('#plan-reset').onclick = safe(async () => { d = await api('/plan/reset', {}); draw(); });
+    v.querySelector('#plan-reset') && (v.querySelector('#plan-reset').onclick = safe(async () => { d = await api('/plan/reset', {}); await loadCommu(true); draw(); }));
+    v.querySelector('#plan-top').onclick = safe(async () => standingsSheet());
     v.querySelectorAll('[data-claim]').forEach(b => b.onclick = safe(async () => {
       const r = await api('/plan/claim', { id: +b.dataset.claim }); d = await api('/plan');
       toast(['Récompense récupérée', r.packs ? `+${r.packs} colis` : '', r.wr ? `+${r.wr} ₽` : '', r.title ? `titre « ${r.title} »` : '', r.perk === 'theme_urss' ? 'thème rouge conservé' : ''].filter(Boolean).join(' · '), 'ok');
@@ -2294,7 +2347,7 @@ views.plan = async v => {
 };
 // ---------- « Le Dernier Tsar » : démo style Reigns (aperçu administrateur) ----------
 views.tsar = async v => {
-  if (!me.admin) { tab = 'packs'; return render(); }
+  await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
   v.innerHTML = `${pageHead('Le Dernier Tsar', 'Démo du jeu de cartes (administrateur)')}<div class="empty">Le jeu tourne en plein écran.<br><button id="ts-reopen" style="margin-top:10px">Rouvrir le jeu</button></div>`;
   $('#ts-reopen').onclick = () => render();
   const full = document.createElement('div'); full.className = 'tsfull'; full.innerHTML = '<div id="ts-host" style="position:absolute;inset:0"></div>'; document.body.append(full); document.body.classList.add('ptlock');
@@ -2303,13 +2356,13 @@ views.tsar = async v => {
   try {
     const mod = await import('/reigns.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
-    game = mod.startTsar(full.querySelector('#ts-host'), { sound: pref('wm_sound', '1') !== '0', onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
+    game = mod.startTsar(full.querySelector('#ts-host'), { sound: pref('wm_sound', '1') !== '0', onEnd: (key) => commuEarn('tsar', { ending: key }), onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
     window.__tsar = game;
   } catch (e) { jlog('tsar : ' + e.message); full.innerHTML = `<div class="empty" style="padding:40px 20px;color:#fff">Impossible de charger la démo (${esc(e.message)}).<br><button onclick="this.closest('.tsfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
 // ---------- démo « Directeur du Camp » (aperçu réservé à l'administrateur) ----------
 views.gulag = async v => {
-  if (!me.admin) { tab = 'packs'; return render(); }
+  await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
   v.innerHTML = `${pageHead('Camp', 'Démo du jeu de gestion (administrateur)')}<div class="empty">Le jeu tourne en plein écran.<br><button id="gl-reopen" style="margin-top:10px">Rouvrir le jeu</button></div>`;
   $('#gl-reopen').onclick = () => render();
   const full = document.createElement('div'); full.className = 'glfull'; full.innerHTML = '<div id="gl-host"></div>'; document.body.append(full); document.body.classList.add('ptlock');
@@ -2318,7 +2371,7 @@ views.gulag = async v => {
   try {
     const mod = await import('/gulag.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
-    game = mod.startGulag(full.querySelector('#gl-host'), { api, tab: gulagTab, onReward: () => { refreshMe().catch(() => {}); }, onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
+    game = mod.startGulag(full.querySelector('#gl-host'), { api, tab: gulagTab, onPlans: n => commuEarn('camp', { plans: n }), onReward: () => { refreshMe().catch(() => {}); }, onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
     window.__gulag = game;
   } catch (e) { jlog('camp : ' + e.message); full.innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger la démo (${esc(e.message)}).<br><button onclick="this.closest('.glfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
@@ -2518,7 +2571,7 @@ function moreSheet() {
   if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${me.admin ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') : ''}</div>
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') : ''}</div>
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retourner chialer chez les capitalistes</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };

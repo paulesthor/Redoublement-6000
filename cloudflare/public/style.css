@@ -1517,3 +1517,9 @@ body.ussr-ui .us-news{margin-bottom:12px}
   aside nav button.on,aside nav button.on:hover{color:var(--gold)!important}
   button:hover:not(:disabled){filter:none}
 }
+
+/* événement communiste : inscription, solde, classement */
+.commu-banner{display:flex;flex-direction:column;gap:3px;width:calc(100% - 32px);margin:10px 16px 0;padding:12px 14px;text-align:left;background:#2a0a0e;border:1px solid #f4d56b;border-left:4px solid #c0161d;color:#f6efd8;border-radius:4px;box-shadow:0 0 14px #f4d56b33;font-weight:500;box-sizing:border-box}
+.commu-banner b{color:#f4d56b;letter-spacing:.08em;text-transform:uppercase;font-size:12px}.commu-banner span{font-size:13.5px;line-height:1.35;overflow-wrap:break-word}
+.plan-wallet{margin:2px 0 8px;font-size:13px;color:#e8dfc7}.plan-wallet b{color:#f4d56b}
+.st-list{display:flex;flex-direction:column;gap:4px;max-height:46vh;overflow:auto}.st-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:#ffffff0a}.st-row b{width:24px;color:#f4d56b}.st-row span{flex:1;min-width:0;overflow-wrap:break-word}.st-row em{font-style:normal;color:#f4d56b;white-space:nowrap}.st-row.me{background:#c0161d33;box-shadow:inset 0 0 0 1px #f4d56b}

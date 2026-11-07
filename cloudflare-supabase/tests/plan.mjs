@@ -24,7 +24,7 @@ for (let id = 3; id <= 12; id++) { [s] = await call(A, 'POST', '/api/plan/claim'
 [s, r] = await call(A, 'GET', '/api/plan');
 ok('12 paliers réclamés', r.claimed.length === 12, J(r.claimed));
 ok('avantages : thème rouge, 2 souvenirs, 3 cadres', r.perks.includes('theme_urss') && r.perks.includes('souvenir_1') && r.perks.includes('souvenir_2') && r.perks.filter(p => p.startsWith('frame_')).length === 3, J(r.perks));
-ok('wikiroubles et paquets = totaux annoncés', r.wr === r.totals.wr && await packs() === p0 + r.totals.packs, `${r.wr} / ${r.totals.wr}`);
+ok('wikiroubles et paquets = totaux annoncés', r.wr === r.totals.wr + 500 && await packs() === p0 + r.totals.packs, `${r.wr} / ${r.totals.wr}`);
 ok('6 titres du Plan attribués', (await q("SELECT COUNT(*) n FROM user_titles WHERE user_id = ? AND tid LIKE 'plan_%'", alice))[0].n === 6);
 [s, r] = await call(A, 'POST', '/api/plan/reset', {}); ok('démo : remise à zéro', s === 200 && r.earned === 0 && r.claimed.length === 0 && r.perks.length === 0, J(r).slice(0, 80));
 done();
