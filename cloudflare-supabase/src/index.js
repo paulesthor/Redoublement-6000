@@ -11,7 +11,7 @@ import { installMarket, MARKET } from './market.js';
 import { installSeasonZero } from './seasonzero.js';
 import { installFeed } from './feed.js';
 import { installCamp } from './camp.js';
-import { installPlan } from './plan.js';
+import { installPlan, COMMU } from './plan.js';
 import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
@@ -981,7 +981,7 @@ const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, p
 const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
 const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
 installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle });
-installPlan({ route, bad, one, run, st, ensureGameSchema, grantTitle });
+const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle });
 const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
@@ -1569,6 +1569,7 @@ route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
     else { delta = 0; await run(env, 'UPDATE users SET pack_ts = ? WHERE id = ?', now(), user.id); }
     await run(env, 'UPDATE daily_quiz_runs SET delta = ? WHERE user_id = ? AND day = ?', delta, user.id, day);
   }
+  if (correct > 0) ctx.waitUntil((async () => { try { if (await commu.isOn(env) && +(await commu.rowOf(env, user.id)).joined) await commu.credit(env, user.id, 'quiz', correct * COMMU.QUIZ_PER_ANSWER); } catch (e) { console.error('commu quiz', e); } })());   // événement communiste : la Leçon du Parti rapporte des wikiroubles
   bq(env, ctx, user.id, { quiz_daily: 1, quiz_correct: correct });
   if (correct === QUIZ_N) ctx.waitUntil(grantTitle(env, user.id, 'quiz_perfect').then(n => n && notify(env, ctx, { t: 'notify', msg: 'Nouveau titre débloqué : « Sans faute » !' }, user.id)));
   return { ok: true, status: 'done', recap: recap(quiz, { ...r, answers: JSON.stringify(given), correct, delta }) };

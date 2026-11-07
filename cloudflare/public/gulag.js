@@ -175,7 +175,7 @@ export function startGulag(host, opts = {}) {
     const m = popup(`<div class="gl-event"><div class="gl-stamp ok">PLAN ACCOMPLI</div><h2>Plan quinquennal n° ${S.plan + 1} rempli</h2><p>Terminé en quatre ans et onze mois, à ce que dit le rapport. Le Parti vous décore et transfère votre camp : <b>${region}</b>. Rien n'est perdu, tout est « réaffecté ».</p><p>Production +25 % pour toujours. Nouveau grade : <b>${GRADES[Math.min(GRADES.length - 1, next)]}</b>.${news.length ? ` Nouveaux ateliers : ${news.join(', ')}.` : ''}</p><button data-close>${next >= PLAN_TARGETS.length ? 'Continuer à produire (sans fin, camarade)' : `En route pour le plan n° ${next + 1} !`}</button></div>`);
     camp?.celebrate();
     if (next >= PLAN_TARGETS.length) m.querySelector('.gl-stamp').textContent = 'ÉDITION TERMINÉE';
-    m.querySelector('[data-close]').addEventListener('click', () => { S.plan = next; S.planProd = 0; S.planStart = Date.now(); S.favor = Math.min(100, S.favor + 15); S.risk = Math.max(0, S.risk - 20); log(`Plan n° ${next} accompli. Le camp est transféré : ${region}. Médaille reçue, et aussitôt reprise pour inventaire.`); saveNow(); renderBody(); });
+    m.querySelector('[data-close]').addEventListener('click', () => { S.plan = next; opts.onPlans?.(S.plan); S.planProd = 0; S.planStart = Date.now(); S.favor = Math.min(100, S.favor + 15); S.risk = Math.max(0, S.risk - 20); log(`Plan n° ${next} accompli. Le camp est transféré : ${region}. Médaille reçue, et aussitôt reprise pour inventaire.`); saveNow(); renderBody(); });
   }
 
   // ---------- actions ----------
