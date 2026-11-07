@@ -92,6 +92,7 @@ export function startGulag(host, opts = {}) {
     <main class="gl-body" id="gl-body"></main><footer class="gl-ticker"><span id="gl-news"></span></footer><div class="gl-modal" id="gl-modal"></div></div>`;
   const $ = id => host.querySelector('#' + id);
   let tab = 'w', stopped = false, eventOpen = false, newsI = 0;
+  if (opts.tab) setTimeout(() => host.querySelector('#gl-tab' + opts.tab)?.click(), 60);
   const log = (txt) => { S.history.unshift(txt); S.history = S.history.slice(0, 18); if (tab === 'd') renderBody(); };
 
   function renderBody() {

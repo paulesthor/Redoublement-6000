@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.5';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.6';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -425,6 +425,13 @@ const loadUssr = () => window.ussrPackStage ? Promise.resolve() : new Promise((o
 const ussrOpts = () => ussrOn() && window.ussrPackStage ? { ussr: true, stage: window.ussrPackStage, shape: (() => { try { return localStorage.getItem('wm_ussr_shape') || 'auto'; } catch { return 'auto'; } })() } : {};
 const ussrLabels = () => ussrOn() && window.USSR_GRADES ? window.USSR_GRADES : RAR;
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
+let duelDirect = false, gulagTab = null;
+/** Mode communiste : écran « Les Jeux du Peuple » qui regroupe les jeux. */
+function jeuxHub(v) {
+  const T = (key, icon, label, sub) => `<button class="mtile" data-jeu="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
+  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit')}<div class="mgrid" style="padding:0 16px">${me.admin ? T('gulag', 'shield', 'Le Camp', 'Gestion et primes') + T('potato', 'shield', 'Kolkhoze', 'Le jeu des patates en 3D') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets')}${T('duel', 'duel', 'Duels', 'Quiz, combats et mises')}</div>`;
+  v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
+}
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
 const seg = (items, current) => `<div class="seg">${items.map(([k, label]) => `<button class="${k === current ? 'on' : ''}" data-seg="${k}">${esc(label)}</button>`).join('')}</div>`;
@@ -704,6 +711,7 @@ const views = {
   },
 
   async duel(v) {
+    if (ussrUiOn() && !duelDirect) return jeuxHub(v);
     if (duelMode === 'live') return liveFights(v);
     const { users } = await api('/users');
     const MODES = [['quiz', 'Quiz'], ['battle', 'Combat'], ['stake', 'Mise'], ['live', '🎲 En direct']];
@@ -2249,7 +2257,7 @@ views.potato = async v => {
     const mod = await import('/potato.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
     full.querySelector('.pt-loading')?.remove();
-    game = mod.startPotato(full.querySelector('#pt-host'), { onExit: () => { tab = 'packs'; render(); setTimeout(() => moreSheet(), 120); } });
+    game = mod.startPotato(full.querySelector('#pt-host'), { onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
     window.__potato = game;
   } catch (e) { jlog('patates : ' + e.message); full.querySelector('#pt-host').innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger le jeu 3D (${esc(e.message)}).<br><button onclick="this.closest('.ptfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
@@ -2264,7 +2272,7 @@ views.gulag = async v => {
   try {
     const mod = await import('/gulag.js?v=' + encodeURIComponent(BUILD));
     if (gone) return;
-    game = mod.startGulag(full.querySelector('#gl-host'), { api, onReward: () => { refreshMe().catch(() => {}); }, onExit: () => { tab = 'packs'; render(); setTimeout(() => moreSheet(), 120); } });
+    game = mod.startGulag(full.querySelector('#gl-host'), { api, tab: gulagTab, onReward: () => { refreshMe().catch(() => {}); }, onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
     window.__gulag = game;
   } catch (e) { jlog('camp : ' + e.message); full.innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger la démo (${esc(e.message)}).<br><button onclick="this.closest('.glfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
@@ -2448,11 +2456,11 @@ function moreSheet() {
   if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs camarades')}${T('ach', 'medal', 'Paliers du Plan', 'Objectifs et primes')}</div>
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs camarades')}${me.admin ? T('gulag', 'medal', 'Paliers du Plan', 'Primes du Parti') : ''}</div>
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retour au capitalisme</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };
-    m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; tab = b.dataset.go; render(); });
+    m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; gulagTab = b.dataset.go === 'gulag' ? 'p' : null; tab = b.dataset.go; render(); });
     return;
   }
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
@@ -2470,7 +2478,7 @@ function moreSheet() {
     lastPack = null; tab = k; if (game?.view === 'end') game = null; render();
   });
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (b.dataset.tab === 'more') return moreSheet(); if (tab !== b.dataset.tab) lastPack = null; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (b.dataset.tab === 'more') return moreSheet(); if (tab !== b.dataset.tab) lastPack = null; duelDirect = false; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
 async function start() {
   $('#auth').hidden = true;                       // pas de formulaire de connexion qui clignote quand on est déjà connecté
   $('#boot').hidden = false;
