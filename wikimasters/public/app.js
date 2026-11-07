@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.21';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.22';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1978,6 +1978,7 @@ views.albums = async v => {
 // ---------- paquets thématiques ----------
 /** Dix paquets d'un coup (ouverture, achat ou paquets du jour) : demande au serveur, puis animation « pile de dix boosters ». again() décrit le bouton « en rouvrir dix » ; renvoie 'again' si le joueur le choisit. */
 async function tenFlow(path, body, again) {
+  if (ussrOn()) await loadUssr().catch(() => {});
   // dix requêtes normales à la suite (une seule requête pour dix paquets dépasserait les limites du serveur) ; si l'une échoue en route, on montre ce qui a été ouvert
   const packsPromise = (async () => {
     const out = [];
@@ -2001,7 +2002,7 @@ async function tenFlow(path, body, again) {
     return out;
   })();
   packsPromise.catch(() => {});
-  try { return await playTen(packsPromise, { labels: RAR, rank: RANK, fmt, cardHtml, again }); }
+  try { return await playTen(packsPromise, { ussr: ussrOn() && !!window.ussrTenKit, labels: ussrLabels(), rank: RANK, fmt, cardHtml, again }); }
   catch (e) { report('x10 affichage', e); throw e; }
   finally { await render(); }
 }

@@ -128,5 +128,23 @@
     await sleep(lvl >= 4 ? 900 : 650); stage.classList.add('fly'); await sleep(420);
     cleanup(); return cards;
   }
+
+  // ---------- ouverture de 10 colis : camion du Parti, colis lancés un à un, tampon sur chaque colis ----------
+  const truckSvg = () => `<svg class="us-truck" viewBox="0 0 330 150" aria-hidden="true">
+    <g class="tk-body"><rect x="6" y="38" width="196" height="72" rx="4" fill="#6a4a2c" stroke="#2c1a0c" stroke-width="3"/>${Array.from({ length: 7 }, (_, i) => `<path d="M${22 + i * 27} 40v68" stroke="#2c1a0c" stroke-width="2.5" opacity=".7"/>`).join('')}
+      <rect x="6" y="100" width="196" height="12" fill="#3b2a18"/>
+      <path d="M206 54h58l32 30v28h-90z" fill="#b3262d" stroke="#4a0b10" stroke-width="3"/><path d="M236 62h26l20 22h-46z" fill="#cfe3ee" stroke="#4a0b10" stroke-width="2.4"/>
+      <rect x="296" y="96" width="26" height="14" rx="3" fill="#3b3b3b"/>${star(236, 98, 11, '#f4d56b')}</g>
+    <g class="tk-wheel" style="transform-origin:62px 122px"><circle cx="62" cy="122" r="20" fill="#16161a" stroke="#555" stroke-width="3"/><circle cx="62" cy="122" r="7" fill="#999"/><path d="M62 104v36M44 122h36" stroke="#444" stroke-width="3"/></g>
+    <g class="tk-wheel" style="transform-origin:150px 122px"><circle cx="150" cy="122" r="20" fill="#16161a" stroke="#555" stroke-width="3"/><circle cx="150" cy="122" r="7" fill="#999"/><path d="M150 104v36M132 122h36" stroke="#444" stroke-width="3"/></g>
+    <g class="tk-wheel" style="transform-origin:262px 122px"><circle cx="262" cy="122" r="20" fill="#16161a" stroke="#555" stroke-width="3"/><circle cx="262" cy="122" r="7" fill="#999"/><path d="M262 104v36M244 122h36" stroke="#444" stroke-width="3"/></g></svg>`;
+  const miniParcel = () => `<svg viewBox="0 0 120 100" aria-hidden="true"><rect x="10" y="30" width="100" height="62" rx="3" fill="#b08457" stroke="#6a4a2c" stroke-width="2"/><polygon points="10,30 110,30 104,16 16,16" fill="#d0a876" stroke="#6a4a2c" stroke-width="2"/><rect x="54" y="16" width="12" height="76" fill="#efe3c2" opacity=".8"/><circle cx="84" cy="62" r="11" fill="none" stroke="#b3262d" stroke-width="2.4"/>${star(84, 62, 6, '#b3262d')}</svg>`;
+  const miniFolder = () => `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M10 28h34l8-9h58v73H10z" fill="#7d858d" stroke="#3c4249" stroke-width="2.4"/><rect x="22" y="48" width="76" height="22" fill="none" stroke="#b3262d" stroke-width="2.6" transform="rotate(-6 60 59)"/><rect x="20" y="76" width="80" height="7" fill="#2f3338"/><rect x="54" y="73" width="14" height="13" rx="2" fill="#c9a43a"/></svg>`;
+  const miniDoll = () => `<svg viewBox="0 0 100 130" aria-hidden="true"><path d="M16 66C10 104 22 126 50 126S90 104 84 66Z" fill="#b3262d" stroke="#4a0b10" stroke-width="2"/><path d="M16 66C12 30 28 8 50 8S88 30 84 66Z" fill="#c0161d" stroke="#4a0b10" stroke-width="2"/><circle cx="50" cy="44" r="17" fill="#f3d2b0" stroke="#4a0b10" stroke-width="1.5"/><path d="M33 40q17-18 34 0v-6q-17-16-34 0z" fill="#f4d56b"/>${star(50, 96, 11, '#f4d56b')}</svg>`;
+  window.ussrTenKit = {
+    truck: truckSvg, parcel: parcelSvg,
+    shapeOf: key => key === 'ultra' ? 'dossier' : ['legendary', 'shiny', 'god'].includes(key) ? 'matriochka' : 'colis',   // même logique que l'ouverture d'un seul colis
+    mini: shape => shape === 'dossier' ? miniFolder() : shape === 'matriochka' ? miniDoll() : miniParcel(),
+  };
   window.ussrPackStage = ussrPackStage; window.ussrParcelSvg = parcelSvg;
 })();

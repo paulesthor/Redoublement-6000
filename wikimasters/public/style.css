@@ -1529,3 +1529,18 @@ body.ussr-ui .us-news{margin-bottom:12px}
 .ts-catcrown{position:absolute;left:46%;top:-30%;width:40%}.ts-catcrown svg{width:100%;height:auto}
 .ts-scarf{position:absolute;left:20%;bottom:38%;height:11px;width:0;background:repeating-linear-gradient(90deg,#c0161d 0 10px,#f4d56b 10px 20px,#2a3a8a 20px 30px);border-radius:6px;animation:tsscarf 1.4s ease-out forwards;z-index:7}@keyframes tsscarf{to{width:68%}}
 .ts-banner{position:absolute;left:34%;top:26%;width:30%;padding:10px 0;text-align:center;background:#c0161d;color:#f4d56b;font-weight:900;letter-spacing:.2em;border:3px solid #f4d56b;transform:scale(0);transition:transform .4s cubic-bezier(.3,1.6,.5,1);z-index:6}.ts-banner.on{transform:rotate(-4deg) scale(1)}
+
+/* ouverture de 10 colis (ambiance URSS) : camion, colis lancés, tampon sur chaque colis */
+#reveal.r-ten.ussr .bg{background:radial-gradient(120% 80% at 50% 0%,#6a1420,#1a0a0d 70%)}
+.r-ten.ussr .tn-head b{color:#f4d56b;letter-spacing:.06em;text-transform:uppercase}
+.r-ten.ussr .tn-stack{aspect-ratio:240/300;width:min(78vw,320px)}
+.tn-truck{position:absolute;left:-6%;right:-6%;bottom:-4%;z-index:1;animation:tntruckin 1.1s cubic-bezier(.2,.9,.3,1) both}.tn-truck svg{width:100%;height:auto;display:block}.tn-truck .tk-wheel{animation:tkspin .5s linear 2}
+@keyframes tntruckin{from{transform:translateX(-130%)}70%{transform:translateX(4%)}to{transform:none}}@keyframes tkspin{to{transform:rotate(540deg)}}
+.tn-stack.out .tn-truck{transition:transform .5s ease-in;transform:translateX(130%)}
+.r-ten.ussr .sl{aspect-ratio:240/220;bottom:22%;left:4%;right:34%;z-index:calc(20 - var(--d))}.r-ten.ussr .sl-body{inset:0}.us-crate svg{width:100%;height:auto;display:block}.us-crate .us-lid,.us-crate .us-string{display:block}
+.r-ten.ussr .sl.toss .sl-body{animation:tntoss .62s cubic-bezier(.3,.1,.6,1) both}.r-ten.ussr .sl.toss .sl-top{display:none}
+@keyframes tntoss{0%{transform:none}35%{transform:translate(40%,-130%) rotate(14deg)}100%{transform:translate(120%,60%) rotate(34deg);opacity:0}}
+.r-ten.ussr .tn-pack{aspect-ratio:1/1.1}.r-ten.ussr .tn-art svg{width:100%;height:100%}.r-ten.ussr .tn-pack .tn-mini{background:linear-gradient(160deg,#f4d56b,#c9a43a);color:#3a0a0e}
+.tn-ustamp{position:absolute;left:50%;top:38%;padding:3px 16px;border:4px solid #c0161d;border-radius:6px;color:#c0161d;background:#f6efd8cc;font-weight:900;letter-spacing:.16em;font-size:clamp(22px,7vw,34px);transform:translate(-50%,-50%) rotate(-10deg) scale(2.4);opacity:0;animation:tnustamp .45s .25s cubic-bezier(.2,1.4,.4,1) forwards;pointer-events:none;z-index:5}
+@keyframes tnustamp{to{transform:translate(-50%,-50%) rotate(-10deg) scale(1);opacity:.95}}
+.r-ten.ussr .tn-stage{position:relative}

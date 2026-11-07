@@ -48,7 +48,8 @@
    */
   window.playTen = async function playTen(source, o) {
     let N = 10; const root = document.createElement('div');
-    root.id = 'reveal'; root.className = 'r-ten'; document.body.append(root); document.body.classList.add('noscroll');
+    const U = o.ussr && window.ussrTenKit ? window.ussrTenKit : null;
+    root.id = 'reveal'; root.className = 'r-ten' + (U ? ' ussr' : ''); document.body.append(root); document.body.classList.add('noscroll');
     const AURA = { common: '#a4b5a0', uncommon: '#86c4f5', rare: '#c09aec', super: '#ee91bc', ultra: '#f2a34f', legendary: '#fff1b8', shiny: '#bff5ff', god: '#ffd37a' };
     const HEIGHT = { common: 16, uncommon: 24, rare: 34, super: 46, ultra: 60, legendary: 78, shiny: 78, god: 82 };   // hauteur de la colonne de lumière (en % de l'écran)
     const FEEL = { common: [20], uncommon: [25], rare: [35], super: [50, 30], ultra: [70, 40, 70], legendary: [110, 40, 110, 40, 160], shiny: [110, 40, 110, 40, 160], god: [150, 40, 150, 40, 300] };
@@ -58,6 +59,12 @@
       <div class="tn-row">${Array.from({ length: N }, (_, i) => `<button class="tn-pack" data-i="${i}" style="--i:${i}" disabled aria-label="Paquet ${i + 1}"><i class="tn-beam"></i><i class="tn-halo"></i><span class="tn-art"><span class="tn-back"><b>W</b></span></span><span class="tn-mini"></span></button>`).join('')}</div>
       <div class="tn-actions"><button class="tn-all" disabled>Tout ouvrir</button><button class="plain tn-skip" disabled>Résumé direct</button></div></div>`;
     const sub = root.querySelector('.tn-sub'), stage = root.querySelector('.tn-stage'), stack = root.querySelector('.tn-stack'), rowEl = root.querySelector('.tn-row'), layers = [...root.querySelectorAll('.sl')], packsEl = [...root.querySelectorAll('.tn-pack')], allBtn = root.querySelector('.tn-all'), skipBtn = root.querySelector('.tn-skip');
+    if (U) {   // ambiance URSS : un camion apporte les dix colis, ils sont lancés l'un après l'autre
+      root.querySelector('.tn-head b').textContent = 'Livraison de dix colis'; root.querySelector('.tn-sub').textContent = 'Le camion du Parti arrive…';
+      stack.insertAdjacentHTML('afterbegin', `<div class="tn-truck">${U.truck()}</div>`);
+      layers.forEach(l => { l.querySelector('.sl-body').innerHTML = `<div class="us-crate">${U.parcel()}</div>`; l.querySelector('.sl-top').innerHTML = ''; });
+      packsEl.forEach(el => { el.querySelector('.tn-art').innerHTML = U.mini('colis'); });
+    }
     for (const el of packsEl) { el.style.setProperty('--a', '#ffffff55'); }
     let packs; const t0 = Date.now();
     try { packs = await source; } catch (e) { kill(); throw e; }
@@ -69,11 +76,11 @@
     // 1) la pile de dix boosters est déchirée l'un après l'autre (languette arrachée + éclair de la couleur de la meilleure carte du paquet)
     if (!reduceNow()) {
       await sleep(Math.max(0, 1200 - (Date.now() - t0)));                              // la pile reste un instant, le temps de bien la voir
-      sub.textContent = 'Ouverture des paquets…';
+      sub.textContent = U ? 'Déchargement des colis…' : 'Ouverture des paquets…';
       for (let i = 0; i < N && root.isConnected; i++) {
         const p = info[i], col = AURA[p.key], big = p.key === 'legendary' || p.key === 'shiny' || p.key === 'god', mid = p.key === 'ultra' || p.key === 'super';
         layers.forEach((l, k) => l.style.setProperty('--d', Math.max(0, k - i)));
-        layers[i].classList.add('tear'); buzz(FEEL[p.key]);
+        layers[i].classList.add(U ? 'toss' : 'tear'); buzz(FEEL[p.key]);
         const b = document.createElement('i'); b.className = 'tn-burst' + (big ? ' big' : mid ? ' mid' : ''); b.style.setProperty('--a', col); stack.append(b); setTimeout(() => b.remove(), 900);
         root.style.setProperty('--flash', col); root.classList.remove('flash'); void root.offsetWidth; root.classList.add('flash');
         await sleep(big ? 460 : mid ? 340 : 240);
@@ -86,11 +93,11 @@
     await sleep(reduceNow() ? 0 : 450);
     for (let i = 0; i < N && root.isConnected; i++) {
       const el = packsEl[i], p = info[i];
-      el.style.setProperty('--a', AURA[p.key]); el.style.setProperty('--bh', HEIGHT[p.key] + 'vh'); el.classList.add('lit', 'k-' + p.key);
+      el.style.setProperty('--a', AURA[p.key]); el.style.setProperty('--bh', HEIGHT[p.key] + 'vh'); el.classList.add('lit', 'k-' + p.key); if (U) el.querySelector('.tn-art').innerHTML = U.mini(U.shapeOf(p.key));
       if (!reduceNow()) await sleep(p.key === 'common' || p.key === 'uncommon' ? 110 : 200);
     }
     if (!root.isConnected) return;
-    sub.textContent = 'Touche un paquet, ou ouvre-les tous'; allBtn.disabled = skipBtn.disabled = false; packsEl.forEach(el => { el.disabled = false; });
+    sub.textContent = U ? 'Touche un colis, ou ouvre-les tous' : 'Touche un paquet, ou ouvre-les tous'; allBtn.disabled = skipBtn.disabled = false; packsEl.forEach(el => { el.disabled = false; });
 
     let busy = false, finished;
     const done = new Promise(r => { finished = r; });
@@ -106,8 +113,8 @@
       el.classList.remove('opening'); el.classList.add('opened');
       const mini = el.querySelector('.tn-mini'); mini.textContent = (o.labels?.[p.top.rarity] || '').slice(0, 2) || '★'; mini.style.setProperty('--m', AURA[p.top.shiny ? 'shiny' : p.top.rarity]);
       root.style.setProperty('--flash', col); root.classList.remove('flash'); void root.offsetWidth; root.classList.add('flash');
-      stage.innerHTML = `<div class="tn-card" style="--a:${col}">${o.cardHtml(c, { star: true })}<small>Paquet ${i + 1} · ${p.cs.length} cartes${p.cs.some(x => x.isNew) ? ` · ${p.cs.filter(x => x.isNew).length} nouvelle${p.cs.filter(x => x.isNew).length > 1 ? 's' : ''}` : ''}</small></div>`;
-      sub.textContent = `${info.filter(x => x.opened).length} / ${N} ouverts`;
+      stage.innerHTML = `<div class="tn-card" style="--a:${col}">${o.cardHtml(c, { star: true })}<small>${U ? 'Colis' : 'Paquet'} ${i + 1} · ${p.cs.length} ${U ? 'fiches' : 'cartes'}${p.cs.some(x => x.isNew) ? ` · ${p.cs.filter(x => x.isNew).length} nouvelle${p.cs.filter(x => x.isNew).length > 1 ? 's' : ''}` : ''}</small></div>`;
+      sub.textContent = `${info.filter(x => x.opened).length} / ${N} ouverts`; if (U) { stage.insertAdjacentHTML('beforeend', '<div class="tn-ustamp">ПРИНЯТО</div>'); }
     }
     const finishIfAll = async () => { if (info.every(p => p.opened)) { await sleep(reduceNow() ? 0 : 900); summary(); } };
     async function openAll() {
@@ -126,7 +133,7 @@
       const count = {}; for (const c of cards) count[c.rarity] = (count[c.rarity] || 0) + 1;
       const again = typeof o.again === 'function' ? o.again() : null;
       root.className = ''; root.removeAttribute('style');
-      root.innerHTML = `<div class="bg"></div><div class="sum"><h2>10 paquets ouverts</h2>
+      root.innerHTML = `<div class="bg"></div><div class="sum"><h2>${U ? '10 colis distribués' : '10 paquets ouverts'}</h2>
         <div class="tn-count">${Object.keys(o.rank).sort((a, b) => o.rank[b] - o.rank[a]).filter(r => count[r]).map(r => `<span class="rar ${r}">${count[r]} ${esc(o.labels?.[r] || r)}</span>`).join('')}${cards.some(c => c.shiny) ? `<span class="rar shiny">${cards.filter(c => c.shiny).length} shiny</span>` : ''}</div>
         <div class="grid">${cards.map(c => o.cardHtml(c, { star: true })).join('')}</div>
         <div class="sticky-bar ${again ? 'split' : ''}"><button class="finish ${again ? 'plain' : ''}">Continuer</button>${again ? `<button class="again" ${again.ok ? '' : 'disabled'}>${esc(again.label)}</button>` : ''}</div></div>`;
