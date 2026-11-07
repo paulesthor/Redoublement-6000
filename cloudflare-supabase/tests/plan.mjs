@@ -5,7 +5,7 @@ const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
 [s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
 await q('UPDATE users SET is_admin = 1 WHERE name = ?', 'Alice');
-const alice = (await q("SELECT id FROM users WHERE name = 'Alice'"))[0].id, packs = async () => +(await q('SELECT pack_stock p FROM users WHERE id = ?', alice))[0].p;
+const alice = (await q("SELECT id FROM users WHERE name = 'Alice'"))[0].id, packs = async () => +(await q('SELECT COALESCE((SELECT packs FROM plan_progress WHERE user_id = ?), 0) p', alice))[0].p;
 [s] = await call(B, 'GET', '/api/plan'); ok('refusé à un joueur ordinaire', s === 403, s);
 [s] = await call(B, 'POST', '/api/plan/claim', { id: 1 }); ok('réclamer refusé à un joueur ordinaire', s === 403, s);
 [s, r] = await call(A, 'GET', '/api/plan'); ok('12 paliers, rien gagné', s === 200 && r.milestones.length === 12 && r.earned === 0 && r.claimed.length === 0, J(r).slice(0, 120));

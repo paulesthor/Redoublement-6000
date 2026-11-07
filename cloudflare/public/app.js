@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.20';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.21';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -516,6 +516,7 @@ function cardPicker(title, { user } = {}) {
 }
 const views = {
   async packs(v) {
+    if (eventUi()) return eventPacks(v);
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
     v.innerHTML = `${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
@@ -597,6 +598,7 @@ const views = {
   },
 
   async album(v) {
+    if (eventUi()) return eventAlbum(v);
     const S = await api('/album/stats');
     const { uniques, copies, dupes, worth, have, tiers, total, rarityAvg } = S;
     const bulkDefault = (tiers.filter((t, i) => i <= 1 && t.n).at(-1) || tiers.find(t => t.n) || tiers[0]).r;
@@ -2288,6 +2290,56 @@ views.potato = async v => {
     window.__potato = game;
   } catch (e) { jlog('patates : ' + e.message); full.querySelector('#pt-host').innerHTML = `<div class="empty" style="padding:40px 20px">Impossible de charger le jeu 3D (${esc(e.message)}).<br><button onclick="this.closest('.ptfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
 };
+
+// ---------- événement communiste : colis du Parti et Archives ----------
+const eventUi = () => eventOn() && ussrUiOn();
+async function eventPacks(v) {
+  if (ussrOn()) await loadUssr().catch(() => {});
+  await loadCommu(true); const c = commu;
+  v.innerHTML = `<div class="hero"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
+    <div class="packart" id="packart">${window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
+    <div class="pk-actions"><button id="open" ${c.packs > 0 ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${c.packs >= 10 ? '' : 'disabled'}>Ouvrir ×10</button></div>
+    <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · solde <b>${fmt(c.wr)} ₽</b></p></div>
+    <button id="buy" class="plain buy" ${c.wr >= c.packPrice ? '' : 'disabled'}>Faire la queue et ouvrir · ${c.packPrice} ₽</button>
+    <button id="buy10" class="plain buy" ${c.wr >= c.packPrice * 10 ? '' : 'disabled'}>Faire la queue ×10 · ${fmt(c.packPrice * 10)} ₽</button></div>`;
+  const again = (n) => () => ({ ok: commu.packs >= n, label: n > 1 ? `Ouvrir 10 autres (${commu.packs})` : `Ouvrir un autre colis (${commu.packs})` });
+  const one = safe(async () => {
+    v.querySelectorAll('button').forEach(b => b.disabled = true);
+    const cardsPromise = (async () => { const r = await api('/commu/open', {}); await loadProgressive(r); lastPack = r; await loadCommu(true); r.cards.god = false; r.cards.fake = false; return r.cards; })();
+    cardsPromise.catch(() => {});
+    let rr; try { rr = await playReveal(cardsPromise, { ...ussrOpts(), labels: ussrLabels(), rank: RANK, fmt, cardHtml, noimg, again: again(1) }); } finally { await render(); }
+    if (rr === 'again') setTimeout(() => $('#open')?.click(), 60);
+  });
+  const ten = safe(async () => {
+    v.querySelectorAll('button').forEach(b => b.disabled = true);
+    let rr; try { rr = await tenFlow('/commu/open', {}, again(10)); } finally { await loadCommu(true); }
+    if (rr === 'again') setTimeout(() => $('#open10')?.click(), 60);
+  });
+  $('#open').onclick = one; $('#open10').onclick = ten;
+  $('#buy').onclick = safe(async () => { await api('/commu/buy', { n: 1 }); await loadCommu(true); await one(); });
+  $('#buy10').onclick = safe(async () => { if (!(await ask('Faire la queue pour 10 colis ?', [], { text: `${fmt(commu.packPrice * 10)} ₽ pour 10 colis du Parti.`, ok: 'Acheter' }))) return; await api('/commu/buy', { n: 10 }); await loadCommu(true); await ten(); });
+}
+async function eventAlbum(v) {
+  const S = await api('/commu/cards'), RARS = ['legendary', 'ultra', 'super', 'rare', 'uncommon', 'common'];
+  let rar = 'all';
+  const draw = () => {
+    const list = S.cards.filter(c => rar === 'all' || c.rarity === rar);
+    v.innerHTML = `${pageHead('Archives', `${S.owned} fiches différentes · ${S.copies} exemplaires · ${S.opened} colis ouverts`)}
+      <div class="chips ev-chips"><button class="${rar === 'all' ? 'on' : ''}" data-r="all">Toutes</button>${RARS.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}">${esc(ussrLabels()[r] || RAR[r])} ${S.have[r]} / ${S.total[r] || 0}</button>`).join('')}</div>
+      <div class="grid ev-grid">${list.map(c => cardHtml(c, { extra: c.qty > 1 ? `<div class="mut" style="font-size:11px">×${c.qty}</div>` : '' })).join('') || '<div class="empty">Aucune fiche ici pour l\'instant. Fais la queue, camarade.</div>'}</div>`;
+    v.querySelectorAll('.ev-chips [data-r]').forEach(b => b.onclick = () => { rar = b.dataset.r; draw(); });
+    v.querySelectorAll('.ev-grid .card').forEach(el => el.onclick = () => eventCardSheet(S.cards.find(c => String(c.id) === el.dataset.id)));
+  };
+  draw();
+}
+function eventCardSheet(c) {
+  if (!c) return; const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+  m.hidden = false;
+  m.innerHTML = `<div class="moresheet" role="dialog" aria-label="${esc(c.title)}"><span class="grab" aria-hidden="true"></span>
+    ${cardHtml(c, { cls: 'big' })}<h2 style="margin:10px 0 4px;font-size:19px">${esc(c.title)}</h2><p class="mut" style="margin:0 0 8px;font-size:12.5px">${esc(ussrLabels()[c.rarity] || RAR[c.rarity])} · exemplaires : ${c.qty}</p>
+    <p style="margin:0 0 12px;font-size:13.5px;line-height:1.45">${esc(c.extract || '')}</p><button class="plain" id="ec-x" style="width:100%">Fermer</button></div>`;
+  $('#ec-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+}
 /** Classement des wikiroubles gagnés et cagnotte. */
 async function standingsSheet() {
   const s = await api('/commu/standings'), m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };

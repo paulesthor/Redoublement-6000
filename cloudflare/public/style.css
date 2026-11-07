@@ -1523,3 +1523,9 @@ body.ussr-ui .us-news{margin-bottom:12px}
 .commu-banner b{color:#f4d56b;letter-spacing:.08em;text-transform:uppercase;font-size:12px}.commu-banner span{font-size:13.5px;line-height:1.35;overflow-wrap:break-word}
 .plan-wallet{margin:2px 0 8px;font-size:13px;color:#e8dfc7}.plan-wallet b{color:#f4d56b}
 .st-list{display:flex;flex-direction:column;gap:4px;max-height:46vh;overflow:auto}.st-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:#ffffff0a}.st-row b{width:24px;color:#f4d56b}.st-row span{flex:1;min-width:0;overflow-wrap:break-word}.st-row em{font-style:normal;color:#f4d56b;white-space:nowrap}.st-row.me{background:#c0161d33;box-shadow:inset 0 0 0 1px #f4d56b}
+
+/* Dernier Tsar : nouvelles fins */
+.ts-catwalk{width:100%}.ts-catwalk svg{width:100%;height:auto;display:block}.ts-actor:has(.ts-catwalk){aspect-ratio:auto}
+.ts-catcrown{position:absolute;left:46%;top:-30%;width:40%}.ts-catcrown svg{width:100%;height:auto}
+.ts-scarf{position:absolute;left:20%;bottom:38%;height:11px;width:0;background:repeating-linear-gradient(90deg,#c0161d 0 10px,#f4d56b 10px 20px,#2a3a8a 20px 30px);border-radius:6px;animation:tsscarf 1.4s ease-out forwards;z-index:7}@keyframes tsscarf{to{width:68%}}
+.ts-banner{position:absolute;left:34%;top:26%;width:30%;padding:10px 0;text-align:center;background:#c0161d;color:#f4d56b;font-weight:900;letter-spacing:.2em;border:3px solid #f4d56b;transform:scale(0);transition:transform .4s cubic-bezier(.3,1.6,.5,1);z-index:6}.ts-banner.on{transform:rotate(-4deg) scale(1)}

@@ -6,7 +6,7 @@ const N = 8, names = Array.from({ length: N }, (_, i) => 'Joueur' + (i + 1)), to
 for (const n of names) { const [, r] = await call(null, 'POST', '/api/register', { name: n, password: 'secret1' }); tok[n] = r.token; }
 for (const n of names) { await q('UPDATE users SET is_admin = 1 WHERE name = ?', n); id[n] = (await q('SELECT id FROM users WHERE name = ?', n))[0].id; }
 await call(null, 'POST', '/api/register', { name: 'Simple', password: 'secret1' }); const [, rs] = await call(null, 'POST', '/api/login', { name: 'Simple', password: 'secret1' }); const SIMPLE = rs.token;
-const packs = async n => +(await q('SELECT pack_stock p FROM users WHERE id = ?', id[n]))[0].p;
+const packs = async n => +(await q('SELECT COALESCE((SELECT packs FROM plan_progress WHERE user_id = ?), 0) p', id[n]))[0].p;
 const p0 = {}; for (const n of names) p0[n] = await packs(n);
 
 // 1. chaque joueur gagne des wikiroubles à son rythme, en parallèle

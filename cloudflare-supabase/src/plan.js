@@ -2,6 +2,7 @@
 // Les paliers se calculent sur le total de wikiroubles GAGNÉS depuis le début de l'événement (les 500 de départ ne comptent pas). Seuils calés par simulation : un joueur régulier (~30 min/jour) finit les 12 paliers en 4 à 5 jours.
 // L'économie en wikiroubles n'existe pas encore : en attendant, l'administrateur dispose d'un bouton de démonstration qui ajoute des wikiroubles gagnés.
 // Récompenses : paquets, wikiroubles, titres de profil, cadres, souvenirs (cartes à garder après l'événement) et, au palier 6, le thème rouge conservé.
+import { installCommuCards } from './commu-cards.js';
 export const PLAN_MILESTONES = [
   { id: 1, at: 120, name: 'Camarade', text: 'Première distribution : le Parti note ton nom, avec une faute, et le jette dans un tiroir à côté des autres cons.', packs: 1, wr: 0, title: 'plan_1' },
   { id: 2, at: 400, name: 'Premier souvenir', text: 'Une fiche rare sort des archives, un peu poisseuse. Elle est à toi pour toujours, même quand le Plan sera mort et enterré.', packs: 0, wr: 100, perk: 'souvenir_1' },
@@ -27,13 +28,13 @@ export const PLAN_TITLES = [
 ];
 export const PLAN_TABLES = [
   'CREATE TABLE IF NOT EXISTS plan_progress (user_id BIGINT PRIMARY KEY, earned BIGINT NOT NULL DEFAULT 0, wr BIGINT NOT NULL DEFAULT 0, claimed TEXT NOT NULL DEFAULT \'[]\', perks TEXT NOT NULL DEFAULT \'[]\')',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS joined BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS packs BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS earn_ts BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS camp_plans INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_camp BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_tsar BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_potato BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS tsar_ends TEXT NOT NULL DEFAULT \'[]\'',
+  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS joined BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS packs BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS earn_ts BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS camp_plans INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_camp BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_tsar BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_potato BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS tsar_ends TEXT NOT NULL DEFAULT \'[]\', ADD COLUMN IF NOT EXISTS cards TEXT NOT NULL DEFAULT \'{}\', ADD COLUMN IF NOT EXISTS opened INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE plan_progress ENABLE ROW LEVEL SECURITY',
 ];
 
 // ---- économie de l'événement communiste ----
 export const COMMU = { START_WR: 500, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, duel: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
-  ENDINGS: ['samovar', 'train', 'bear', 'x_samovar', 'x_train', 'x_bear', 'late', 'rave', 'capi', 'c0', 'c1', 'd0', 'd1', 'a0', 'a1', 'f0', 'f1'] };
+  ENDINGS: ['samovar', 'train', 'bear', 'x_samovar', 'x_train', 'x_bear', 'late', 'rave', 'capi', 'vodka', 'babouchka', 'cat', 'strike', 'c0', 'c1', 'd0', 'd1', 'a0', 'a1', 'f0', 'f1'] };
 const dayOf = () => new Date().toISOString().slice(0, 10);
 
 export function installPlan(d) {
@@ -149,8 +150,9 @@ export function installPlan(d) {
       if (prize > 0) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', prize, +win.id);
       await grantTitle(env, +win.id, 'commu_staline'); winner = { id: +win.id, name: win.name, earned: +win.earned, prize };
     }
+    const souv = await cc.souvenirs(env);
     await putSetting(env, 'commu_done', '1'); await putSetting(env, 'commu_on', '0'); await putSetting(env, 'commu_pot', 0);
-    return { ok: true, winner, players: await players(env) };
+    return { ok: true, winner, souvenirs: souv, players: await players(env) };
   });
 
   route('GET', '/api/plan', async ({ env, user }) => { const { r } = await access(env, user); return view(r); });
@@ -163,7 +165,7 @@ export function installPlan(d) {
   });
   route('POST', '/api/plan/reset', async ({ env, user }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403); await rowOf(env, user.id);
-    await run(env, "UPDATE plan_progress SET earned = 0, wr = 0, claimed = '[]', perks = '[]', joined = 0, packs = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]' WHERE user_id = ?", user.id);
+    await run(env, "UPDATE plan_progress SET earned = 0, wr = 0, claimed = '[]', perks = '[]', joined = 0, packs = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]', cards = '{}', opened = 0 WHERE user_id = ?", user.id);
     return view(await rowOf(env, user.id));
   });
   route('POST', '/api/plan/claim', async ({ env, user, body }) => {
@@ -181,9 +183,10 @@ export function installPlan(d) {
       won = !!upd.meta.changes;
     }
     if (!won) bad('Trop de réclamations en même temps, réessaie', 409);
-    if (m.packs) await env.DB.batch([st(env, 'UPDATE users SET pack_stock = pack_stock + ? WHERE id = ?', m.packs, user.id)]);
+    if (m.packs) await run(env, 'UPDATE plan_progress SET packs = packs + ? WHERE user_id = ?', m.packs, user.id);   // les colis des paliers rejoignent le stock de colis de l\'événement
     const titleNew = m.title ? await grantTitle(env, user.id, m.title) : false;
     return { ok: true, id: m.id, packs: m.packs, wr: m.wr, title: m.title ? PLAN_TITLES.find(t => t.id === m.title).label : null, titleNew, perk: m.perk ?? null };
   });
-  return { PLAN_MILESTONES, credit, isOn, rowOf, access };
+  const cc = installCommuCards(d, { access, rowOf });
+  return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc };
 }

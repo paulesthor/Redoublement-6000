@@ -1,7 +1,7 @@
 // « Le Dernier Tsar » : démo d'un jeu de cartes à glisser (style Reigns). Tu joues un courtisan qui veut prendre la place du tsar.
 // Tout est local : texte, SVG et animations CSS. Aperçu réservé à l'administrateur.
 const ENDS_KEY = 'wm_tsar_ends';
-const TOTAL_ENDS = 20;
+const TOTAL_ENDS = 21;
 const clamp = v => Math.max(0, Math.min(100, v));
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -60,6 +60,10 @@ const END = {
   late: { kind: 'lose', t: 'Mort naturelle', txt: 'Le tsar meurt de vieillesse pendant votre réunion de planification. Quelqu\'un d\'autre prend le trône. Ce con.' },
   capi: { kind: 'fun', stamp: 'USA ! USA !', t: 'Le Tsar Burger', txt: 'Le tsar découvre le capitalisme, ouvre 4 000 franchises de burgers et loue le Kremlin sur Airbnb. Le palais devient un fast-food, la vodka un soda, et vous, le manager de nuit. Salaire : une frite par jour. God bless Russia.' },
   rave: { kind: 'fun', stamp: 'ХАРДБАС', t: 'Hardbass au palais', txt: 'Tout le monde est content. Le tsar, les gardes, l\'ours et même le prêtre dansent en survêt Adidas sur de la techno russe. Personne n\'est mort, personne n\'est tsar. La Russie est sauvée par un caisson de basse.' },
+  vodka: { kind: 'fun', stamp: 'ЗА ЗДОРОВЬЕ', t: 'Concours de vodka', txt: 'Le tsar vous défie à la vodka. À la huitième tournée, vous dansez sur la table ; à la douzième, plus personne ne sait qui est tsar. Le cuisinier s\'assoit sur le trône pendant que vous ronflez tous les deux.' },
+  babouchka: { kind: 'win', t: 'Le tricot fatal', txt: 'Une babouchka tricote une écharpe de douze mètres pour le tsar. Elle la lui enroule autour du cou avec beaucoup d\'amour et très peu de rigueur. Vous héritez de la couronne, et de l\'écharpe.' },
+  cat: { kind: 'fun', stamp: 'МЯУ', t: 'Le chat du palais', txt: 'Le chat fixe la couronne depuis trois ans. Vous la lui donnez. Il s\'assoit sur le trône, daigne vous regarder et vous nomme valet de pied. Personne ne remarque la différence avec le tsar précédent.' },
+  strike: { kind: 'win', t: 'Grève générale', txt: 'Le cuisinier, le général, le prêtre et même l\'ours entrent dans la salle avec des pancartes. Le tsar signe l\'abdication pour qu\'on le laisse déjeuner. Vous vous proclamez successeur, à l\'unanimité de ceux qui n\'ont pas osé dire non.' },
   c0: { kind: 'lose', t: 'Seul au palais', txt: 'Plus un complice. Le tsar découvre que vous complotez tout seul, ce qu\'il juge presque touchant, avant de vous envoyer en Sibérie.' },
   c1: { kind: 'lose', t: 'Trop de monde', txt: 'Vous avez tellement de complices que l\'un d\'eux, par inadvertance, parle à un journaliste.' },
   d0: { kind: 'lose', t: 'Démasqué', txt: 'Tout le palais sait. Même le chat impérial vous regarde de travers. On vous invite à une « conversation » avec l\'Okhrana.' },
@@ -169,6 +173,11 @@ const C = [
   { id: 'lady', who: { hat: 'none', beard: 'none', extra: 'none', coat: '#7a2a52', skin: 2, hair: '#2a1a14' }, name: 'Comtesse Vera', text: 'Les murs du palais ont des oreilles. J\'ai les yeux, les oreilles et un éventail.', L: ['Éviter', [0, 5, 0, 0]], R: ['Séduire l\'info', [8, -8, 0, 6]] },
   { id: 'accountant', who: { hat: 'none', beard: 'none', extra: 'none', coat: '#8a7a5a', skin: 1, hair: '#6a6a6a' }, name: 'Le comptable', text: 'Les caisses sont vides. Je précise qu\'elles l\'étaient déjà hier, mais plus sincèrement.', L: ['Fermez les yeux', [0, 0, -6, 5]], R: ['Faire une quête', [-4, 0, 14, -6]] },
 ];
+const EXTRA = [
+  { id: 'vodka', who: { hat: 'crown', beard: 'pointy', extra: 'medals', coat: '#7a1620', skin: 0, hair: '#8a6a3a' }, name: 'Sa Majesté le Tsar', text: 'Courtisan ! Un concours de vodka, vous et moi. Le dernier debout garde la couronne, l\'autre garde le seau.', L: ['Refuser poliment', [0, 4, 0, -10]], R: ['Relever le défi', [0, 0, 0, 0]] },
+  { id: 'babouchka', who: { hat: 'none', beard: 'none', extra: 'none', coat: '#6a3a5a', skin: 2, hair: '#d8d8d8' }, name: 'Babouchka Nadia', text: 'Mon petit, j\'ai tricoté une écharpe pour notre père le tsar. Douze mètres. Il aura chaud, il aura très chaud. Tu la lui offres de ma part ?', L: ['Pas maintenant', [0, 4, 0, 0]], R: ['Je m\'en charge', [0, 0, 0, 0]] },
+  { id: 'catcard', who: 'cat', name: 'Le chat du palais', text: 'Miaou. (Il fixe la couronne du tsar depuis trois ans, sans cligner des yeux.)', L: ['Le chasser', [0, 3, 0, 4]], R: ['Lui donner la couronne', [0, 0, 0, 0]] },
+];
 const DJ = { id: 'dj', who: { hat: 'cap', cap: NAVY, adidas: true, coat: NAVY, beard: 'none', skin: 0, hair: '#222' }, name: 'DJ Vlad le Squatteur', text: 'Camarade, j\'ai des enceintes, 40 kilos de hardbass et un tsar qui s\'ennuie. On fait une fête ?', L: ['Pas ce soir', [0, 5, 0, -2]], R: ['Balance le son !', [0, 0, 0, 0]] };
 const BROKER = { id: 'broker', who: { hat: 'tophat', coat: '#1a1a2a', extra: 'tie', beard: 'none', skin: 2 }, name: 'Brad, de Wall Street', text: 'Sire, j\'ai une idée : privatisons tout. La Russie, mais en franchise. Avec des frites et un drapeau en plus.', L: ['Jamais !', [0, 4, 0, -2]], R: ['Privatise tout !', [0, 0, 0, 0]] };
 const ROUTES = { samovar: ['poison', 'access'], train: ['train', 'guard'], bear: ['bear', 'access'] };
@@ -243,7 +252,7 @@ export function startTsar(host, opts = {}) {
   // ----- personnages -----
   const mk = (o, x, { lane = FRONT, w = 90, flip = 1, cls = '' } = {}) => {
     const e = document.createElement('div'); e.className = 'ts-actor ' + cls; e.style.cssText = `left:${X(x)}%;bottom:${Y(lane)}%;width:${w / SW * 100}%;--f:${flip};z-index:${lane >= FRONT - 20 ? 5 : 1}`;
-    e.innerHTML = o === 'bear' ? BEAR : body(o); actors.append(e); return e;
+    e.innerHTML = o === 'bear' ? BEAR : o === 'cat' ? `<div class="ts-catwalk">${PROP.cat}</div>` : body(o); actors.append(e); return e;
   };
   const move = async (e, x, ms, flip) => { if (flip) e.style.setProperty('--f', flip); e.classList.add('walk'); e.style.transition = `left ${ms}ms linear`; e.style.left = X(x) + '%'; await W(ms); e.classList.remove('walk'); };
   const centre = e => { const r = e.getBoundingClientRect(), s = scene.getBoundingClientRect(); return { x: r.left + r.width / 2 - s.left, y: r.top + r.height * .45 - s.top }; };
@@ -305,12 +314,12 @@ export function startTsar(host, opts = {}) {
   const readyRoutes = () => Object.entries(ROUTES).filter(([, need]) => need.every(n => S.flags[n])).map(([k]) => k);
   let forced = null;
   const pickCard = () => {
-    if (forced) { const f = [...C, DJ, BROKER].find(x => x.id === forced); forced = null; if (f) return f; }
+    if (forced) { const f = [...C, ...EXTRA, DJ, BROKER].find(x => x.id === forced); forced = null; if (f) return f; }
     const ready = readyRoutes();
     if (ready.length && S.day >= S.nextFinal) return { final: ready[Math.floor(Math.random() * ready.length)] };
     if (!S.dj && S.day >= 4 && Math.random() < .15) { S.dj = true; return DJ; }
     if (!S.bro && S.day >= 4 && Math.random() < .15) { S.bro = true; return BROKER; }
-    let pool = C.filter(c => !S.seen.includes(c.id));
+    let pool = [...C, ...EXTRA].filter(c => !S.seen.includes(c.id) && (!['vodka', 'babouchka', 'catcard'].includes(c.id) || S.day >= 3));
     if (!pool.length) { S.seen = []; pool = C.filter(c => c.id !== S.last); }
     if (S.day <= 7) { const en = pool.filter(c => ['cook', 'general', 'tamer', 'guard', 'tsar'].includes(c.id)); if (en.length && Math.random() < .7) pool = en; }
     return pool[Math.floor(Math.random() * pool.length)];
@@ -339,6 +348,9 @@ export function startTsar(host, opts = {}) {
   const EXIT = async (v, flip = 1) => { if (!v) return; await move(v, -70, 1300, flip); v.remove(); };
   const settle = e => { e.classList.add('thr'); };
   const ACT = {
+    async vodka(v, c, ap) { ap(); vis = null; v?.remove(); await playEnd('vodka'); },
+    async scarf(v, c, ap) { ap(); vis = null; await playEnd('babouchka', v); },
+    async catend(v, c, ap) { ap(); vis = null; await playEnd('cat', v); },
     async rave(v, c, ap) { ap(); vis = null; v?.remove(); await playEnd('rave'); },
     async capi(v, c, ap) { ap(); vis = null; v?.remove(); await playEnd('capi'); },
     async leave(v, c, ap, i) { ap(); bubble(v, i ? 'Da.' : 'Hm.'); await W(500); await EXIT(v, 1); },
@@ -392,7 +404,7 @@ export function startTsar(host, opts = {}) {
       const page = mk({ hat: 'cap', cap: '#7a1620', coat: '#7a1620', extra: 'none', beard: 'none', skin: 0 }, -60, { lane: BACK, w: 56 }); hold(page, 'invite'); await dropOnTable(page, 'invite');
     },
   };
-  const ACTS = { dj: ['leave', 'rave'], broker: ['leave', 'capi'], cook: ['leave', 'cook'], guard: ['leave', 'pay'], priest: ['leave', 'bless'], general: ['leave', 'general'], tamer: ['leave', 'tamer'], tsar: ['turn', 'dine'], spy: ['denounce', 'pay'], peasant: ['leave', 'feed'], banker: ['leave', 'gain'], student: ['flee', 'join'], lady: ['leave', 'chat'], accountant: ['leave', 'gain'] };
+  const ACTS = { vodka: ['leave', 'vodka'], babouchka: ['leave', 'scarf'], catcard: ['leave', 'catend'], dj: ['leave', 'rave'], broker: ['leave', 'capi'], cook: ['leave', 'cook'], guard: ['leave', 'pay'], priest: ['leave', 'bless'], general: ['leave', 'general'], tamer: ['leave', 'tamer'], tsar: ['turn', 'dine'], spy: ['denounce', 'pay'], peasant: ['leave', 'feed'], banker: ['leave', 'gain'], student: ['flee', 'join'], lady: ['leave', 'chat'], accountant: ['leave', 'gain'] };
   async function choose(i) {
     if (busy) return; busy = true; SFX.blip();
     const c = card, side = i ? c.R : c.L;
@@ -407,13 +419,15 @@ export function startTsar(host, opts = {}) {
     await (ACT[kind] || ACT.leave)(v, c, ap, i);
     if (stopped || S.dead) return;
     if (S.day > S.max) return playEnd('late');
+    if (S.g[0] >= 80 && S.g[3] <= 30) return playEnd('strike');                       // le peuple descend dans la salle : grève générale
+    S.g[1] = Math.min(S.g[1], 94); if (S.g[1] >= 94 && S.g[0] <= 25) return playEnd('d1');   // trop discret, seul au fond de la salle
     for (let k = 0; k < 4; k++) { if (S.g[k] <= 0) return playEnd(LOSE_KEY[k][0]); if (S.g[k] >= 100) return playEnd(LOSE_KEY[k][1]); }
     next();
   }
 
   // ----- fins : la scène se joue, puis le bilan -----
-  async function playEnd(key) {
-    const e = END[key]; S.dead = true; S.end = key; $('ts-panel').classList.add('hide'); vis?.remove(); vis = null;
+  async function playEnd(key, actor) {
+    const e = END[key]; S.dead = true; S.end = key; $('ts-panel').classList.add('hide'); if (!actor) vis?.remove(); vis = null;
     if (loc !== 'throne' && key !== 'capi' && !['train', 'x_train'].includes(key)) { setLoc('throne'); toThrone(); }
     const standUp = () => { tsarEl.classList.remove('sit'); tsarEl.style.transition = 'bottom .3s'; tsarEl.style.bottom = Y(FRONT) + '%'; };
     const crown = async (from = tsarEl) => { await fly('star', from, player, 900, 28); await fly('coin', from, player, 700, 24); player.querySelector('.ts-crown').classList.add('on'); tsarEl.querySelector('.ts-crown').classList.remove('on'); await burst('spark', player, 10); };
@@ -446,6 +460,22 @@ export function startTsar(host, opts = {}) {
     } else if (key === 'late') {
       bubble(tsarEl, 'Zzz...', 1200); await W(1300); dead(); bubble(player, 'Hm.', 1200); await W(900);
       const u = mk({ hat: 'none', hair: '#222', coat: '#2a2a3a', beard: 'mustache', skin: 2 }, -60, { w: 86 }); await move(u, 150, 1500, 1); bubble(u, 'Pratique.', 1300); await fly('star', tsarEl, u, 1000, 30); await W(500);
+    } else if (key === 'vodka') {
+      $('ts-table').classList.add('on'); await move(player, 262, 900, -1); bubble(tsarEl, 'За здоровье !', 1400); bubble(player, 'Na zdorovie !', 1400); act(tsarEl, 'raise', 1000); act(player, 'raise', 1000); SFX.coin(); await W(1400);
+      for (let i = 0; i < 3; i++) { SFX.blip(); await burst('spark', i % 2 ? tsarEl : player, 5, 20); await W(500); }
+      bubble(tsarEl, '...', 1000); await W(900); tsarEl.classList.add('slump'); player.classList.add('slump'); shake();
+      const cook = mk({ hat: 'toque', beard: 'mustache', extra: 'apron', coat: '#8a8a8a', skin: 1 }, -50, { w: 84 }); await move(cook, 342, 1700, 1); bubble(cook, 'À moi.', 1200); await W(900);
+    } else if (key === 'babouchka') {
+      const n = actor; if (n) { bubble(n, 'Il aura chaud.', 1400); await W(900); await move(n, 300, 1400, 1); }
+      const sc = document.createElement('div'); sc.className = 'ts-scarf'; scene.append(sc); SFX.blip(); await W(1400); bubble(tsarEl, '!', 900); shake(); tsarEl.classList.add('slump'); await W(900); n?.remove(); await crown(); sc.remove();
+    } else if (key === 'cat') {
+      const k = actor; standUp(); bubble(tsarEl, '?', 900); await W(700); tsarEl.classList.add('away'); k.style.transition = 'left 1.2s linear'; await move(k, 330, 1500, 1); k.style.transition = 'bottom .5s'; k.style.bottom = Y(240) + '%'; await W(600);
+      const cr = document.createElement('div'); cr.className = 'ts-catcrown'; cr.innerHTML = CROWN; k.append(cr); await burst('star', k, 8, 22); bubble(k, 'Miaou.', 1800); await W(1800);
+    } else if (key === 'strike') {
+      const crowd = [[{ hat: 'toque', beard: 'mustache', extra: 'apron', coat: '#8a8a8a', skin: 1 }, -40], [{ hat: 'cap', cap: '#2a3a52', beard: 'pointy', extra: 'sash', coat: '#2a3a52', skin: 0 }, -110], [{ hat: 'mitre', beard: 'full', extra: 'cross', coat: '#4a2a5a', skin: 2, hair: '#cfc7b8' }, -180], [{ hat: 'ushanka', beard: 'full', coat: '#5a4636', skin: 3 }, -250]].map(([o, x]) => mk(o, x, { w: 80 }));
+      const bear = mk('bear', -340, { w: 100 }); const sign = document.createElement('div'); sign.className = 'ts-banner'; sign.textContent = 'ПЛАН'; scene.append(sign);
+      crowd.forEach((c, i) => { act(c, 'raise', 3000); move(c, 60 + i * 55, 2100 + i * 150, 1); }); await move(bear, 20, 2300, 1); sign.classList.add('on'); bubble(crowd[0], 'Grève !', 1600); bubble(crowd[2], 'Nous voulons du pain.', 1800); await W(1800);
+      bubble(tsarEl, 'Je signe.', 1400); await W(1500); standUp(); await move(tsarEl, 470, 1700, 1); await crown({ x: scene.clientWidth * .9, y: scene.clientHeight * .5 }); sign.remove();
     } else if (key === 'rave') {
       scene.classList.add('rave'); const lights = document.createElement('div'); lights.className = 'ts-lights'; scene.append(lights);
       const spk = ['4%', '84%'].map(l => { const d = document.createElement('div'); d.className = 'ts-spk'; d.style.left = l; d.innerHTML = PROP.speaker; scene.append(d); return d; });
