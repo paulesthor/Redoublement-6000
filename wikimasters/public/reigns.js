@@ -405,7 +405,7 @@ export function startTsar(host, opts = {}) {
 
   // ----- fins : la scène se joue, puis le bilan -----
   async function playEnd(key) {
-    const e = END[key]; S.dead = true; $('ts-panel').classList.add('hide'); vis?.remove(); vis = null;
+    const e = END[key]; S.dead = true; S.end = key; $('ts-panel').classList.add('hide'); vis?.remove(); vis = null;
     if (loc !== 'throne' && key !== 'capi' && !['train', 'x_train'].includes(key)) { setLoc('throne'); toThrone(); }
     const standUp = () => { tsarEl.classList.remove('sit'); tsarEl.style.transition = 'bottom .3s'; tsarEl.style.bottom = Y(FRONT) + '%'; };
     const crown = async (from = tsarEl) => { await fly('star', from, player, 900, 28); await fly('coin', from, player, 700, 24); player.querySelector('.ts-crown').classList.add('on'); tsarEl.querySelector('.ts-crown').classList.remove('on'); await burst('spark', player, 10); };
