@@ -1595,3 +1595,20 @@ html[data-theme=or]{--bg:#110d04;--bg2:#181206;--panel:#1e1708;--panel2:#2a210d;
 @keyframes drumbeat{0%,100%{transform:scale(1);box-shadow:0 0 0 2px #f4d56b66,0 0 14px #c0161d88,0 8px 20px #000a}15%{transform:scale(1.07);box-shadow:0 0 0 4px #f4d56b88,0 0 28px #c0161d,0 8px 20px #000a}30%{transform:scale(1)}}
 @keyframes drumsticks{0%,100%{transform:rotate(0)}15%{transform:rotate(-7deg)}30%{transform:rotate(0)}}
 @media(prefers-reduced-motion:reduce){.commu-drum,.commu-drum .dr-sticks{animation:none}}
+
+/* podium du tableau d'honneur (mode communiste) */
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:8px;padding:34px 12px 8px;margin:0 8px}
+.pd{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;background:none;border:0;color:inherit;padding:0;font:inherit;-webkit-tap-highlight-color:transparent}
+.pd-av{position:relative;width:62px;height:62px}.pd-av .av{width:62px;height:62px;border:3px solid #b9bcc4;box-shadow:0 0 0 2px #0006}
+.pd1 .pd-av,.pd1 .pd-av .av{width:84px;height:84px}.pd1 .pd-av .av{border-color:#f4d56b;box-shadow:0 0 0 3px #c0161d,0 0 26px #f4d56bcc}
+.pd3 .pd-av .av{border-color:#c98a4b}
+.pd-star{position:absolute;right:-6px;bottom:-4px;width:24px;height:24px;color:#c0161d;filter:drop-shadow(0 1px 2px #000a)}.pd1 .pd-star{color:#f4d56b;width:30px;height:30px}
+.pd-nm{margin-top:7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.pd-sc{font-size:12px;color:var(--gold,#f4d56b);font-weight:800}
+.pd-step{width:100%;margin-top:6px;border-radius:8px 8px 0 0;background:linear-gradient(180deg,#3a1015,#1d0709);border:2px solid #5c1a20;border-bottom:0;display:flex;align-items:center;justify-content:center}
+.pd-step i{font:900 30px/1 'Oswald',Impact,sans-serif;color:#f4d56b;font-style:normal;opacity:.85}
+.pd1 .pd-step{height:96px;background:linear-gradient(180deg,#c0161d,#6c0b10);border-color:#f4d56b}.pd2 .pd-step{height:68px}.pd3 .pd-step{height:50px}
+.pd1{z-index:1}.pd1 .pd-nm{font-size:15px;color:#f4d56b;font-weight:900}
+.pd-rib{position:absolute;top:-24px;padding:2px 12px;background:#c0161d;color:#f4d56b;border:2px solid #f4d56b;font-size:11px;font-weight:900;letter-spacing:.22em;box-shadow:0 3px 10px #000a;z-index:2}
+.pd-rays{position:absolute;left:50%;top:-6px;width:230px;height:230px;margin-left:-115px;z-index:-1;border-radius:50%;background:repeating-conic-gradient(from 0deg,#f4d56b40 0 8deg,transparent 8deg 20deg);-webkit-mask:radial-gradient(circle,#000 20%,transparent 68%);mask:radial-gradient(circle,#000 20%,transparent 68%);animation:pdspin 28s linear infinite}
+@keyframes pdspin{to{transform:rotate(360deg)}}.pd.me .pd-nm{text-decoration:underline}
+@media(prefers-reduced-motion:reduce){.pd-rays{animation:none}}

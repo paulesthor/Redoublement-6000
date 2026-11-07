@@ -5,18 +5,18 @@
 import { installCommuCards } from './commu-cards.js';
 import { installCommuBourse } from './commu-bourse.js';
 export const PLAN_MILESTONES = [
-  { id: 1, at: 120, coins: 20, name: 'Camarade', text: 'Première distribution : le Parti note ton nom, avec une faute, et le jette dans un tiroir à côté des autres cons.', packs: 1, wr: 0, title: 'plan_1' },
-  { id: 2, at: 400, coins: 40, name: 'Premier souvenir', text: 'Une fiche rare sort des archives, un peu poisseuse. Elle est à toi pour toujours, même quand le Plan sera mort et enterré.', packs: 0, wr: 100, perk: 'souvenir_1' },
-  { id: 3, at: 720, coins: 40, name: 'Cadre de l\'Étoile rouge', text: 'Un cadre rouge pour ton profil : l\'étoile brille, le budget aussi, mais pas pour toi, connard.', packs: 2, wr: 0, perk: 'frame_star' },
-  { id: 4, at: 1100, coins: 60, name: 'Brigadier', text: 'Tu encadres maintenant d\'autres camarades. Ils n\'ont rien demandé, et ils te détestent déjà. C\'est ça, la promotion.', packs: 0, wr: 150, title: 'plan_2' },
-  { id: 5, at: 1600, coins: 60, name: 'Colis de ravitaillement', text: 'Trois colis, une saucisse suspecte et une lettre d\'excuses signée « va te faire voir, cordialement ».', packs: 3, wr: 0 },
-  { id: 6, at: 2100, coins: 100, name: 'Héros du Plan', text: 'Le Parti te laisse le drapeau : le thème rouge « Camarade » reste dans tes Réglages après l\'événement. Plante-le où tu veux.', packs: 0, wr: 200, title: 'plan_3', perk: 'theme_urss' },
-  { id: 7, at: 2550, coins: 80, name: 'Cadre Faucille et Marteau', text: 'Un deuxième cadre, plus lourd. Il ne se porte pas à la légère, ni sans un petit coup de vodka avant.', packs: 0, wr: 200, perk: 'frame_hammer' },
-  { id: 8, at: 3050, coins: 100, name: 'Stakhanoviste', text: 'Tu as dépassé la norme de 300 %. Le Parti relève la norme, et ton cul avec.', packs: 3, wr: 0, title: 'plan_4' },
-  { id: 9, at: 3500, coins: 120, name: 'Prime du Politburo', text: 'Une enveloppe épaisse, prise sur la prime de quelqu\'un d\'autre. Ne pose pas de questions, il ne pose plus rien non plus.', packs: 0, wr: 300, perk: 'theme_siberie' },
-  { id: 10, at: 3900, coins: 150, name: 'Cadre du Politburo', text: 'Cadre doré. Il est en plastique, mais la dorure est réglementaire. Comme ta dignité, il est en option.', packs: 4, wr: 0, perk: 'frame_gold' },
-  { id: 11, at: 4300, coins: 200, name: 'Second souvenir', text: 'Une carte légendaire sortie des archives secrètes. On ne pose pas de questions, on se les pose, en silence, aux chiottes.', packs: 0, wr: 0, title: 'plan_5', perk: 'souvenir_2' },
-  { id: 12, at: 4800, coins: 300, name: 'Héros de l\'Union soviétique', text: 'Le Plan est accompli. Tu entres dans les manuels, au chapitre des remerciements, entre le tampon et la tache de graisse.', packs: 5, wr: 500, title: 'plan_6', perk: 'theme_or' },
+  { id: 1, at: 120, coins: 30, name: 'Camarade', text: 'Première distribution : le Parti note ton nom, avec une faute, et le jette dans un tiroir à côté des autres cons.', packs: 1, wr: 0, title: 'plan_1' },
+  { id: 2, at: 400, coins: 60, name: 'Premier souvenir', text: 'Une fiche rare sort des archives, un peu poisseuse. Elle est à toi pour toujours, même quand le Plan sera mort et enterré.', packs: 0, wr: 100, perk: 'souvenir_1' },
+  { id: 3, at: 720, coins: 60, name: 'Cadre de l\'Étoile rouge', text: 'Un cadre rouge pour ton profil : l\'étoile brille, le budget aussi, mais pas pour toi, connard.', packs: 2, wr: 0, perk: 'frame_star' },
+  { id: 4, at: 1100, coins: 90, name: 'Brigadier', text: 'Tu encadres maintenant d\'autres camarades. Ils n\'ont rien demandé, et ils te détestent déjà. C\'est ça, la promotion.', packs: 0, wr: 150, title: 'plan_2' },
+  { id: 5, at: 1600, coins: 90, name: 'Colis de ravitaillement', text: 'Trois colis, une saucisse suspecte et une lettre d\'excuses signée « va te faire voir, cordialement ».', packs: 3, wr: 0 },
+  { id: 6, at: 2100, coins: 150, name: 'Héros du Plan', text: 'Le Parti te laisse le drapeau : le thème rouge « Camarade » reste dans tes Réglages après l\'événement. Plante-le où tu veux.', packs: 0, wr: 200, title: 'plan_3', perk: 'theme_urss' },
+  { id: 7, at: 2550, coins: 120, name: 'Cadre Faucille et Marteau', text: 'Un deuxième cadre, plus lourd. Il ne se porte pas à la légère, ni sans un petit coup de vodka avant.', packs: 0, wr: 200, perk: 'frame_hammer' },
+  { id: 8, at: 3050, coins: 150, name: 'Stakhanoviste', text: 'Tu as dépassé la norme de 300 %. Le Parti relève la norme, et ton cul avec.', packs: 3, wr: 0, title: 'plan_4' },
+  { id: 9, at: 3500, coins: 180, name: 'Prime du Politburo', text: 'Une enveloppe épaisse, prise sur la prime de quelqu\'un d\'autre. Ne pose pas de questions, il ne pose plus rien non plus.', packs: 0, wr: 300, perk: 'theme_siberie' },
+  { id: 10, at: 3900, coins: 225, name: 'Cadre du Politburo', text: 'Cadre doré. Il est en plastique, mais la dorure est réglementaire. Comme ta dignité, il est en option.', packs: 4, wr: 0, perk: 'frame_gold' },
+  { id: 11, at: 4300, coins: 300, name: 'Second souvenir', text: 'Une carte légendaire sortie des archives secrètes. On ne pose pas de questions, on se les pose, en silence, aux chiottes.', packs: 0, wr: 0, title: 'plan_5', perk: 'souvenir_2' },
+  { id: 12, at: 4800, coins: 450, name: 'Héros de l\'Union soviétique', text: 'Le Plan est accompli. Tu entres dans les manuels, au chapitre des remerciements, entre le tampon et la tache de graisse.', packs: 5, wr: 500, title: 'plan_6', perk: 'theme_or' },
 ];
 export const PLAN_TITLES = [
   { id: 'plan_1', label: 'Camarade', desc: 'Plan quinquennal : atteins le palier 1' },
