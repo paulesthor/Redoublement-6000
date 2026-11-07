@@ -33,3 +33,5 @@
   Cache-Control: no-cache
 /ussr-skin.js
   Cache-Control: no-cache
+/reigns.js
+  Cache-Control: no-cache

@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.8';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.9';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 /** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
 const ussrUiOn = () => { try { return !!me?.admin && localStorage.getItem('wm_ussr_ui') === '1'; } catch { return false; } };
 const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src + '?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error(src)); document.head.append(s); });
@@ -429,7 +429,7 @@ let duelDirect = false, gulagTab = null;
 /** Mode communiste : écran « Les Jeux du Peuple » qui regroupe les jeux. */
 function jeuxHub(v) {
   const T = (key, icon, label, sub) => `<button class="mtile" data-jeu="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
-  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit')}<div class="mgrid" style="padding:0 16px">${me.admin ? T('gulag', 'shield', 'Le Camp', 'Gestion et primes') + T('potato', 'shield', 'Kolkhoze', 'Le jeu des patates en 3D') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets')}${T('duel', 'duel', 'Duels', 'Quiz, combats et mises')}</div>`;
+  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit')}<div class="mgrid" style="padding:0 16px">${me.admin ? T('gulag', 'shield', 'Le Camp', 'Gestion et primes') + T('potato', 'shield', 'Kolkhoze', 'Le jeu des patates en 3D') + T('tsar', 'shield', 'Le Dernier Tsar', 'Cartes à glisser') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets')}${T('duel', 'duel', 'Duels', 'Quiz, combats et mises')}</div>`;
   v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
 }
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
@@ -2289,6 +2289,21 @@ views.plan = async v => {
   };
   draw();
 };
+// ---------- « Le Dernier Tsar » : démo style Reigns (aperçu administrateur) ----------
+views.tsar = async v => {
+  if (!me.admin) { tab = 'packs'; return render(); }
+  v.innerHTML = `${pageHead('Le Dernier Tsar', 'Démo du jeu de cartes (administrateur)')}<div class="empty">Le jeu tourne en plein écran.<br><button id="ts-reopen" style="margin-top:10px">Rouvrir le jeu</button></div>`;
+  $('#ts-reopen').onclick = () => render();
+  const full = document.createElement('div'); full.className = 'tsfull'; full.innerHTML = '<div id="ts-host" style="position:absolute;inset:0"></div>'; document.body.append(full); document.body.classList.add('ptlock');
+  let game = null, gone = false;
+  viewCleanup = () => { gone = true; game?.stop(); full.remove(); document.body.classList.remove('ptlock'); };
+  try {
+    const mod = await import('/reigns.js?v=' + encodeURIComponent(BUILD));
+    if (gone) return;
+    game = mod.startTsar(full.querySelector('#ts-host'), { onExit: () => { tab = ussrUiOn() ? 'duel' : 'packs'; duelDirect = false; render(); if (!ussrUiOn()) setTimeout(() => moreSheet(), 120); } });
+    window.__tsar = game;
+  } catch (e) { jlog('tsar : ' + e.message); full.innerHTML = `<div class="empty" style="padding:40px 20px;color:#fff">Impossible de charger la démo (${esc(e.message)}).<br><button onclick="this.closest('.tsfull').remove();document.body.classList.remove('ptlock')">Fermer</button></div>`; }
+};
 // ---------- démo « Directeur du Camp » (aperçu réservé à l'administrateur) ----------
 views.gulag = async v => {
   if (!me.admin) { tab = 'packs'; return render(); }
@@ -2497,7 +2512,7 @@ function moreSheet() {
     <h3>Gagner des pièces</h3><div class="mgrid">${T('events', 'spark', 'Événements', 'Défis, saison, surprises', (me.ev || []).length)}${T('bourse', 'market', 'Bourse', 'Paris sur les vues')}${T('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${T('trends', 'trophy', 'Tendances', 'Cours et alertes')}${T('bank', 'building', 'Banque', 'Épargne et dividendes')}${T('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires')}${T('albums', 'album', 'Albums', 'Séries de cartes à compléter')}${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
-    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin && !ussrUiOn() ? T('potato', 'shield', 'Patates (test)', 'Jeu 3D, aperçu admin') + T('gulag', 'shield', 'Camp (démo)', 'Gestion, aperçu admin') + T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
+    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin && !ussrUiOn() ? T('potato', 'shield', 'Patates (test)', 'Jeu 3D, aperçu admin') + T('gulag', 'shield', 'Camp (démo)', 'Gestion, aperçu admin') + T('tsar', 'shield', 'Le Dernier Tsar (démo)', 'Cartes à glisser, aperçu admin') + T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const k = b.dataset.go; close();
