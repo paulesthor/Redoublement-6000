@@ -42,13 +42,17 @@ export function installCamp(d) {
   route('POST', '/api/camp/claim', async ({ env, user, body }) => {
     gate(user);
     const m = MILESTONES.find(x => x.id === Math.floor(+body.id)); if (!m) bad('Palier inconnu', 404);
-    const r = await rowOf(env, user.id), claimed = list(r.claimed);
-    if (claimed.includes(m.id)) bad('Prime déjà récupérée', 409);
-    const p = +body.p; if (!Number.isFinite(p) || p < m.p) bad('Progression insuffisante pour ce palier', 400);
-    const hours = (now() - +r.start) / 3600000; if (hours < m.minH) bad(`Le Parti exige un délai : encore ${Math.ceil((m.minH - hours) * 60)} min avant cette prime`, 400);
-    const next = JSON.stringify([...claimed, m.id].sort((a, b) => a - b));
-    const upd = await run(env, 'UPDATE camp_progress SET claimed = ? WHERE user_id = ? AND claimed = ?', next, user.id, r.claimed);      // une seule fois, même si deux appareils réclament en même temps
-    if (!upd.meta.changes) bad('Prime déjà récupérée', 409);
+    let r, won = false;
+    for (let essai = 0; essai < 12 && !won; essai++) {
+      r = await rowOf(env, user.id); const claimed = list(r.claimed);
+      if (claimed.includes(m.id)) bad('Prime déjà récupérée', 409);
+      const p = +body.p; if (!Number.isFinite(p) || p < m.p) bad('Progression insuffisante pour ce palier', 400);
+      const hours = (now() - +r.start) / 3600000; if (hours < m.minH) bad(`Le Parti exige un délai : encore ${Math.ceil((m.minH - hours) * 60)} min avant cette prime`, 400);
+      const next = JSON.stringify([...claimed, m.id].sort((a, b) => a - b));
+      const upd = await run(env, 'UPDATE camp_progress SET claimed = ? WHERE user_id = ? AND claimed = ?', next, user.id, r.claimed);      // une seule fois, même si deux appareils réclament en même temps
+      won = !!upd.meta.changes;
+    }
+    if (!won) bad('Trop de réclamations en même temps, réessaie', 409);
     const ops = [];
     if (m.coins || m.packs) ops.push(st(env, 'UPDATE users SET coins = coins + ?, pack_stock = pack_stock + ? WHERE id = ?', m.coins, m.packs, user.id));
     if (m.perk) ops.push(st(env, 'UPDATE camp_progress SET perks = ? WHERE user_id = ?', JSON.stringify([...new Set([...list(r.perks), m.perk])]), user.id));

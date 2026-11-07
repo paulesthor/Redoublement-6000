@@ -62,13 +62,18 @@ export function installPlan(d) {
   route('POST', '/api/plan/claim', async ({ env, user, body }) => {
     gate(user);
     const m = PLAN_MILESTONES.find(x => x.id === Math.floor(+body.id)); if (!m) bad('Palier inconnu', 404);
-    const r = await rowOf(env, user.id), claimed = list(r.claimed);
-    if (claimed.includes(m.id)) bad('Récompense déjà récupérée', 409);
-    if (+r.earned < m.at) bad('Pas assez de wikiroubles gagnés pour ce palier', 400);
-    const next = JSON.stringify([...claimed, m.id].sort((a, b) => a - b));
-    const perks = m.perk ? JSON.stringify([...new Set([...list(r.perks), m.perk])]) : r.perks;
-    const upd = await run(env, 'UPDATE plan_progress SET claimed = ?, wr = wr + ?, perks = ? WHERE user_id = ? AND claimed = ?', next, m.wr, perks, user.id, r.claimed);   // une seule fois, même depuis deux appareils
-    if (!upd.meta.changes) bad('Récompense déjà récupérée', 409);
+    // compare-and-swap sur la liste réclamée : si une autre réclamation (autre palier, autre appareil) passe en même temps, on relit et on réessaie
+    let won = false, perks;
+    for (let essai = 0; essai < 12 && !won; essai++) {
+      const r = await rowOf(env, user.id), claimed = list(r.claimed);
+      if (claimed.includes(m.id)) bad('Récompense déjà récupérée', 409);
+      if (+r.earned < m.at) bad('Pas assez de wikiroubles gagnés pour ce palier', 400);
+      const next = JSON.stringify([...claimed, m.id].sort((a, b) => a - b));
+      perks = m.perk ? JSON.stringify([...new Set([...list(r.perks), m.perk])]) : r.perks;
+      const upd = await run(env, 'UPDATE plan_progress SET claimed = ?, wr = wr + ?, perks = ? WHERE user_id = ? AND claimed = ?', next, m.wr, perks, user.id, r.claimed);
+      won = !!upd.meta.changes;
+    }
+    if (!won) bad('Trop de réclamations en même temps, réessaie', 409);
     if (m.packs) await env.DB.batch([st(env, 'UPDATE users SET pack_stock = pack_stock + ? WHERE id = ?', m.packs, user.id)]);
     const titleNew = m.title ? await grantTitle(env, user.id, m.title) : false;
     return { ok: true, id: m.id, packs: m.packs, wr: m.wr, title: m.title ? PLAN_TITLES.find(t => t.id === m.title).label : null, titleNew, perk: m.perk ?? null };
