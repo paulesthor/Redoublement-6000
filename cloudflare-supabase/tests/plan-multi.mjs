@@ -27,7 +27,7 @@ for (const n of names) {
   const [, r] = await call(tok[n], 'GET', '/api/plan'); const due = MS.filter(m => gains[n] >= m.at);
   ok(`${n} : ${due.length} paliers reçus exactement`, r.claimed.length === due.length && J(r.claimed) === J(due.map(m => m.id)), J(r.claimed));
   const expPacks = due.reduce((t, m) => t + m.packs, 0), expWr = due.reduce((t, m) => t + m.wr, 0);
-  ok(`${n} : colis et wikiroubles = somme des paliers (pas de doublon, pas de perte)`, await packs(n) - p0[n] === expPacks && r.wr === expWr + 500, `colis ${await packs(n) - p0[n]}/${expPacks} · ₽ ${r.wr - 500}/${expWr}`);
+  ok(`${n} : colis et wikiroubles = somme des paliers (pas de doublon, pas de perte)`, await packs(n) - p0[n] === expPacks + 10 && r.wr === expWr + 500, `colis ${await packs(n) - p0[n]}/${expPacks + 10} · ₽ ${r.wr - 500}/${expWr}`);
   ok(`${n} : thème rouge uniquement s'il a atteint le palier 6`, r.perks.includes('theme_urss') === (gains[n] >= 2100));
 }
 // 2 bis. rafale : un même joueur réclame 4 paliers différents d'un seul coup (deux onglets, deux appareils)

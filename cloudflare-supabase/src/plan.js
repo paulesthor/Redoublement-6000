@@ -34,7 +34,7 @@ export const PLAN_TABLES = [
 ];
 
 // ---- économie de l'événement communiste ----
-export const COMMU = { START_WR: 500, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
+export const COMMU = { START_WR: 500, START_PACKS: 10, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
   ENDINGS: ['samovar', 'train', 'bear', 'x_samovar', 'x_train', 'x_bear', 'late', 'rave', 'capi', 'vodka', 'babouchka', 'cat', 'strike', 'c0', 'c1', 'd0', 'd1', 'a0', 'a1', 'f0', 'f1'] };
 const dayOf = () => new Date().toISOString().slice(0, 10);
 
@@ -65,7 +65,7 @@ export function installPlan(d) {
   async function access(env, user, { play = false } = {}) {
     const r = await rowOf(env, user.id), on = await isOn(env, user);
     if (user.is_admin && !on) {                                   // événement fermé : l'administrateur garde un aperçu gratuit
-      if (!+r.joined) await run(env, 'UPDATE plan_progress SET joined = 1, wr = wr + ? WHERE user_id = ? AND joined = 0', COMMU.START_WR, user.id);
+      if (!+r.joined) await run(env, 'UPDATE plan_progress SET joined = 1, wr = wr + ?, packs = packs + ? WHERE user_id = ? AND joined = 0', COMMU.START_WR, COMMU.START_PACKS, user.id);
       return { r: await rowOf(env, user.id), on, admin: true };
     }
     if (!joinedReal(r)) bad('Tu n\'es pas inscrit à l\'événement communiste', 403);
@@ -91,7 +91,7 @@ export function installPlan(d) {
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
     return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
-      scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
+      scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
   route('GET', '/api/commu', async ({ env, user }) => commuView(env, user));
@@ -100,7 +100,7 @@ export function installPlan(d) {
     const on = await isOn(env, user); if (!on) bad('L\'événement communiste n\'est pas ouvert', 403);
     const r = await rowOf(env, user.id); if (joinedReal(r)) bad('Tu es déjà inscrit, camarade', 409);
     // un administrateur qui n'avait qu'un aperçu repart de zéro : même parcours qu'un joueur (taxe, 500 ₽, paliers vierges)
-    const claim = await run(env, "UPDATE plan_progress SET joined = ?, wr = ?, earned = 0, claimed = '[]', perks = '[]', packs = 0, cards = '{}', opened = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]' WHERE user_id = ? AND joined <= 1", Date.now(), COMMU.START_WR, user.id);
+    const claim = await run(env, "UPDATE plan_progress SET joined = ?, wr = ?, earned = 0, claimed = '[]', perks = '[]', packs = ?, cards = '{}', opened = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]' WHERE user_id = ? AND joined <= 1", Date.now(), COMMU.START_WR, COMMU.START_PACKS, user.id);
     if (!claim.meta.changes) bad('Tu es déjà inscrit, camarade', 409);
     {
       const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', COMMU.TAX, user.id, COMMU.TAX);

@@ -51,6 +51,8 @@ const c1 = +(await DB.prepare("SELECT coins c FROM users WHERE name = 'Bob'").al
 ok('taxe payée : 300 wikibidou prélevés', c0 - c1 === 300, c0 - c1);
 const [, cj] = await call(B, 'GET', '/api/commu'); ok('joueur inscrit avec 500 ₽', cj.joined && cj.wr === 500, J(cj).slice(0, 80));
 ok('retour sur la distribution soviétique', await pb.evaluate(() => tab === 'packs'));
+const pills = await pb.$$eval('#me .pill', e => e.map(x => x.textContent.trim()));
+ok('bandeau du haut : 10 colis et 500 ₽ du Plan (pas ceux du jeu normal)', pills[0] === '10' && /^500\s*₽$/.test(pills[1]), J(pills));
 await pb.screenshot({ path: SHT + 'start-2-inscrit.png' });
 // retour au mode classique : un bouton sur l'accueil permet de revenir au mode communiste
 await pb.evaluate(async () => { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); await syncUssrUi(); tab = 'packs'; await render(); }); await pb.waitForTimeout(800);

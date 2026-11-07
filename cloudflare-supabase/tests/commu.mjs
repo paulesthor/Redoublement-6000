@@ -45,9 +45,9 @@ const P3 = tok.Camarade3; [s] = await call(P3, 'POST', '/api/commu/earn', { game
 [, v] = await call(P3, 'POST', '/api/commu/earn', { game: 'potato', score: 2000 }); ok('Patates : rejouer tout de suite ne rapporte rien', v.gained === 0, J(v).slice(0, 80));
 // 4. boutique
 const B = tok.Camarade4; await q('UPDATE plan_progress SET wr = 500 WHERE user_id = ?', uid.Camarade4);
-[s, v] = await call(B, 'POST', '/api/commu/buy', { n: 4 }); ok('boutique : 4 colis = 200 ₽', s === 200 && v.wr === 300 && v.packs === 4, J(v).slice(0, 100));
+[s, v] = await call(B, 'POST', '/api/commu/buy', { n: 4 }); ok('boutique : 4 colis = 200 ₽', s === 200 && v.wr === 300 && v.packs === 14, J(v).slice(0, 100));
 const buys = await Promise.all(Array.from({ length: 6 }, () => call(B, 'POST', '/api/commu/buy', { n: 1 }))); [, v] = await call(B, 'GET', '/api/commu');
-ok('boutique : 6 achats simultanés avec 300 ₽ : jamais de solde négatif', v.wr >= 0 && v.wr + v.packs * 50 === 500, J(v).slice(0, 100));
+ok('boutique : 6 achats simultanés avec 300 ₽ : jamais de solde négatif', v.wr >= 0 && v.wr + (v.packs - 10) * 50 === 500, J(v).slice(0, 100));
 [s] = await call(B, 'POST', '/api/commu/buy', { n: 50 }); ok('boutique : quantité absurde refusée', s === 400, s);
 [s] = await call(tok.Camarade10, 'POST', '/api/commu/buy', { n: 1 }); ok('boutique : un non-inscrit est refusé', s === 403, s);
 // 5. des joueurs aux rythmes différents, puis classement

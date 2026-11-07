@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.37';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.38';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -282,7 +282,7 @@ const TOPICS = [
 const topic = c => { const t = (c.extract || '').slice(0, 240); for (const [k, re] of TOPICS) if (re.test(t)) return k; return 'spark'; };
 const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.id >= 200000000 && c.id < 300000000 ? 'souv' : ''} ${c.shiny ? 'shiny' : ''} ${c.beta ? 'beta' : ''} ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" data-id="${c.id}">
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false, souv = null } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.id >= 200000000 && c.id < 300000000 && (souv ?? !eventUi()) ? 'souv' : ''} ${c.shiny ? 'shiny' : ''} ${c.beta ? 'beta' : ''} ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" data-id="${c.id}">
   <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span>${c.beta ? '<span class="betatag">BÊTA</span>' : ''}</div>
   <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/><path class="st" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/></svg></button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}${c.lvl ? `<span class="tag lvl">★${c.lvl}</span>` : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
@@ -418,10 +418,16 @@ let commu = null, commuAt = 0;
 const prefOf = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const eventOn = () => !!commu && commu.on && commu.joined;                       // inscrit et événement ouvert
 const eventAccess = () => !!me?.admin || eventOn();                               // l'administrateur garde l'aperçu
+/** Bandeau du haut : en mode événement, il affiche les colis et les ₽ du Plan (et non ceux du jeu normal). */
+function pillsSync() {
+  const ps = document.querySelectorAll('#me .pill'); if (ps.length < 2 || !me) return;
+  const ev = !!(commu && eventUi());
+  ps[0].innerHTML = ico('packs') + (ev ? commu.packs : me.test ? '∞' : me.packs); ps[1].innerHTML = ico('coin') + (ev ? fmt(commu.wr) + ' ₽' : fmt(me.coins));
+}
 async function loadCommu(force) {
   if (!force && commu && Date.now() - commuAt < 25000) return commu;
   commuAt = Date.now(); try { commu = await api('/commu'); } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
-  syncEventTheme(); return commu;
+  syncEventTheme(); try { pillsSync(); } catch { /* bandeau pas encore affiché */ } return commu;
 }
 /** Le thème rouge suit l'événement : appliqué à l'entrée, retiré à la fin (sauf si le joueur a gagné le palier 6). */
 function syncEventTheme() {
@@ -1338,11 +1344,12 @@ views.admin = async v => {
         <p class="mut" style="margin:10px 0">Lancer l'événement ouvre une page d'annonce sur l'accueil de chaque joueur, avec le bouton pour payer la taxe (${c.tax} wikibidou) et entrer.</p>
         <button id="ev-all" style="width:100%">${c.on && c.scope === 'all' ? 'L\'événement est lancé pour tous' : 'Lancer l\'événement pour TOUS'}</button>
         <div class="row" style="margin-top:10px"><button class="plain" id="ev-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="ev-off" style="flex:1">Fermer</button></div>
-        <div class="row" style="margin-top:10px"><button class="plain" id="ev-end" style="flex:1">Clore + gagnant</button><button class="plain" id="ev-souv" style="flex:1">Clore les souvenirs</button></div></div>`;
+        <div class="row" style="margin-top:10px"><button class="plain" id="ev-reset" style="flex:1">Repartir de zéro (mon compte)</button><button class="plain" id="ev-end" style="flex:1">Clore + gagnant</button><button class="plain" id="ev-souv" style="flex:1">Clore les souvenirs</button></div></div>`;
       const act = (id, fn) => $(id).onclick = safe(async () => { await fn(); await loadCommu(true); await syncUssrUi(); adminBody(); });
       if (c.on && c.scope === 'all') $('#ev-all').disabled = true;
       act('#ev-all', async () => { if (!(await ask('Lancer l\'événement pour TOUS les joueurs ?', [], { text: 'Chaque joueur verra l\'annonce sur son accueil et pourra payer la taxe pour entrer.', ok: 'Lancer' }))) throw new Error('annulé'); await api('/commu/set', { on: true, scope: 'all' }); toast('Événement lancé pour tous', 'ok'); });
       act('#ev-me', async () => { await api('/commu/set', { on: true, scope: 'admin' }); toast('Ouvert pour toi seul', 'ok'); });
+      act('#ev-reset', async () => { if (!(await ask('Remettre ton compte à zéro dans l\'événement ?', [], { text: 'Tes ₽, colis, cartes et paliers de l\'événement sont effacés. Tu pourras payer la taxe et entrer comme un nouveau joueur (500 ₽ et 10 colis).', ok: 'Repartir de zéro' }))) throw new Error('annulé'); await api('/plan/reset', {}); toast('Compte remis à zéro', 'ok'); });
       act('#ev-off', async () => { await api('/commu/set', { on: false }); toast('Événement fermé', 'ok'); });
       act('#ev-end', async () => { const r = await api('/commu/finish', {}); toast(r.winner ? `Gagnant : ${r.winner.name}` : 'Événement clos', 'ok'); });
       act('#ev-souv', async () => { const r = await api('/commu/souvenirs/close', {}); toast(`${r.given} souvenir(s) attribué(s)`, 'ok'); });
@@ -1567,6 +1574,7 @@ async function refreshMe() {
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
   document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily || me.ex > 0);
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'hasph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
+  pillsSync();
   $('#profile').onclick = profileSheet;
   paintEvBar();
 }
@@ -2403,7 +2411,7 @@ function joinSheet() {
   m.innerHTML = `<div class="iconsheet" role="dialog" aria-label="Événement communiste"><span class="grab" aria-hidden="true"></span>
     <h2>L'événement communiste est ouvert</h2>
     <p>Pendant quelques jours, l'appli devient rouge, l'hymne se lance, et tu joues au Camp, aux Patates et au Dernier Tsar pour gagner des <b>wikiroubles</b>. Douze paliers de récompenses t'attendent.</p>
-    <ol class="ic-steps"><li>Taxe de l'État : <b>${c.tax || 300} wikibidou</b>, non remboursables, versées à la cagnotte (${fmt(c.pot || 0)} actuellement).</li><li>Tu démarres avec <b>${c.startWr || 500} ₽</b>.</li><li>Le camarade qui gagne le plus de ₽ remporte la cagnotte et devient <b>Staline</b>.</li></ol>
+    <ol class="ic-steps"><li>Taxe de l'État : <b>${c.tax || 300} wikibidou</b>, non remboursables, versées à la cagnotte (${fmt(c.pot || 0)} actuellement).</li><li>Tu démarres avec <b>${c.startWr || 500} ₽</b> et <b>${c.startPacks || 10} colis</b> à ouvrir.</li><li>Le camarade qui gagne le plus de ₽ remporte la cagnotte et devient <b>Staline</b>.</li></ol>
     <button class="plain" id="cm-rules" style="width:100%;margin-bottom:8px">Lire le règlement du Parti</button><button class="ic-go" id="cm-join" style="width:100%">Payer la taxe et entrer</button><button class="plain" id="cm-x" style="width:100%;margin-top:8px">Pas maintenant</button></div>`;
   $('#cm-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   $('#cm-rules').onclick = () => { close(); tab = 'commurules'; render(); };
@@ -2453,7 +2461,7 @@ views.commustart = async v => {
       <p>Le Parti a pris le contrôle de l'appli. Pendant quelques jours : thème rouge, hymne, colis du Parti et <b>150 fiches légendaires</b> soviétiques à collectionner.</p></section>
     <section class="plan-sum"><ul class="ru-list"><li>Tu joues au <b>Camp</b>, aux <b>Patates</b>, au <b>Dernier Tsar</b>, au quiz du jour et au Marché noir pour gagner des <b>wikiroubles</b>.</li><li><b>12 paliers</b> de récompenses : colis, titres, cadres, thèmes, wikibidou pour ton jeu normal et des cartes souvenir à garder pour toujours.</li><li>Le camarade qui gagne le plus remporte la <b>cagnotte</b> (${fmt(c.pot || 0)} wikibidou) et devient Staline.</li></ul></section>
     <section class="plan-sum cs-tax"><div class="plan-top"><b>${fmt(c.tax)}</b><span>wikibidou de taxe d'État, une seule fois</span></div>
-      <p class="plan-wallet">Tu repars avec <b>${fmt(c.startWr)} ₽</b>. Tu as <b>${fmt(me.coins)}</b> wikibidou. ${rich ? 'Le Parti accepte les paiements en retard, jamais les remboursements.' : 'Il t\'en manque : le Parti ne fait pas crédit.'}</p></section>
+      <p class="plan-wallet">Tu repars avec <b>${fmt(c.startWr)} ₽</b> et <b>${c.startPacks || 10} colis</b> à ouvrir. Tu as <b>${fmt(me.coins)}</b> wikibidou. ${rich ? 'Le Parti accepte les paiements en retard, jamais les remboursements.' : 'Il t\'en manque : le Parti ne fait pas crédit.'}</p></section>
     <div style="padding:6px 16px 18px;display:grid;gap:8px"><button id="cs-join" ${rich ? '' : 'disabled'}>Payer la taxe et entrer</button><button class="plain" id="cs-rules">Lire le règlement du Parti</button><button class="plain" id="cs-icon">Nouvelle icône : comment l'obtenir</button><button class="plain" id="cs-later">Plus tard</button></div>`;
   $('#cs-join').onclick = safe(async () => { await api('/commu/join', {}); await loadCommu(true); await refreshMe(); toast('Bienvenue, camarade !', 'ok'); await syncUssrUi(); tab = 'packs'; render(); });
   $('#cs-rules').onclick = () => { tab = 'commurules'; render(); };
@@ -2476,9 +2484,9 @@ views.commuend = async v => {
       <div class="plan-sum"><ul class="ru-list">${keeps.length ? keeps.map(k => `<li>${esc(k)}</li>`).join('') : '<li>Des souvenirs, et la certitude que le Parti pense à toi (surtout la nuit).</li>'}</ul><p class="plan-wallet">Les wikibidou gagnés aux paliers sont déjà dans ta cagnotte du jeu normal.</p></div>
       <h3 class="sec" style="padding:0 16px">Tes cartes souvenir</h3>
       ${n === 0 ? '<div class="plan-sum"><p class="plan-wallet">Aucun souvenir gagné : il fallait atteindre le palier 2 (un souvenir) puis le palier 11 (un deuxième). Le Parti ne distribue pas de cadeaux aux retardataires.</p></div>'
-      : c.chosen.length ? `<div class="plan-sum"><p class="plan-wallet">Tes ${c.chosen.length} souvenir${c.chosen.length > 1 ? 's' : ''} sont dans ta collection normale, avec leur contour spécial.</p></div><div class="grid ev-grid souvgrid">${S.cards.filter(x => picked.has(String(x.id))).map(x => cardHtml(x)).join('')}</div>`
+      : c.chosen.length ? `<div class="plan-sum"><p class="plan-wallet">${c.chosen.length > 1 ? `Tes ${c.chosen.length} souvenirs sont dans ta collection normale, avec leur tampon` : 'Ton souvenir est dans ta collection normale, avec son tampon'} de l'URSS.</p></div><div class="grid ev-grid souvgrid">${S.cards.filter(x => picked.has(String(x.id))).map(x => cardHtml(x, { souv: true })).join('')}</div>`
       : open ? `<div class="plan-sum"><p class="plan-wallet">Choisis <b>${n}</b> fiche${n > 1 ? 's' : ''} parmi tes ${S.owned}. Elle${n > 1 ? 's' : ''} entrer${n > 1 ? 'ont' : 'a'} dans ta collection normale, définitivement, avec un contour de souvenir. <b>${sel.length} / ${n}</b> choisie${sel.length > 1 ? 's' : ''}.</p></div>
-        <div class="grid ev-grid souvgrid">${S.cards.map(x => cardHtml(x, { cls: sel.includes(x.id) ? 'souvpick' : '' })).join('')}</div>
+        <div class="grid ev-grid souvgrid">${S.cards.map(x => cardHtml(x, { souv: false, cls: sel.includes(x.id) ? 'souvpick' : '' })).join('')}</div>
         <div style="padding:8px 16px 18px"><button id="sv-ok" style="width:100%" ${sel.length ? '' : 'disabled'}>Confirmer mes souvenirs</button></div>`
       : '<div class="plan-sum"><p class="plan-wallet">Le choix des souvenirs est clos.</p></div>'}`;
     if (open) {
@@ -2513,7 +2521,7 @@ views.commurules = async v => {
   const sec = (t, body) => `<section class="plan-row rules"><div class="plan-txt"><h3>${t}</h3>${body}</div></section>`;
   v.innerHTML = `${pageHead('Règlement du Parti', 'À lire avant de signer. Personne ne lit. Tout le monde signe.')}
     ${sec('1. De quoi s\'agit-il, camarade ?', `<p>Pendant quelques jours, l'appli devient rouge, l'hymne se lance et le Parti organise un Plan quinquennal accéléré. Tu gagnes des <b>wikiroubles (₽)</b> en jouant, tu les dépenses en colis, et tu montes les <b>12 paliers</b> du Plan. Le but : finir premier, devenir Staline et rafler la cagnotte. Le second, lui, reçoit un joli rien.</p>`)}
-    ${sec('2. L\'entrée : la taxe de l\'État', `<p>L'État te prélève <b>${c.tax} wikibidou</b>, une seule fois, non remboursables. Ils vont dans la <b>cagnotte</b>, qui revient au vainqueur. Tu repars avec <b>${c.startWr} ₽</b> de départ : sois heureux, tu commences plus riche que ton voisin.</p><p class="mut">Ta collection normale n'est pas touchée : l'événement a ses propres cartes, ses propres colis, son propre cirque.</p>`)}
+    ${sec('2. L\'entrée : la taxe de l\'État', `<p>L'État te prélève <b>${c.tax} wikibidou</b>, une seule fois, non remboursables. Ils vont dans la <b>cagnotte</b>, qui revient au vainqueur. Tu repars avec <b>${c.startWr} ₽</b> et <b>${c.startPacks || 10} colis</b> de départ : sois heureux, tu commences plus riche que ton voisin.</p><p class="mut">Ta collection normale n'est pas touchée : l'événement a ses propres cartes, ses propres colis, son propre cirque.</p>`)}
     ${sec('3. Comment gagner des ₽', `<ul class="ru-list"><li><b>Le Dernier Tsar :</b> 40 ₽ la première fois que tu découvres une fin, 8 ₽ ensuite. Au plus ${K.tsar} ₽ par jour. Oui, on te paie pour assassiner le chef de l'État : c'est ça, le socialisme.</li><li><b>Le Camp :</b> 90 ₽ par plan quinquennal accompli (il faut quelques heures de vrai travail), au plus ${K.camp} ₽ par jour.</li><li><b>Le Kolkhoze (patates) :</b> jusqu'à 60 ₽ par quart de travail, au plus ${K.potato} ₽ par jour.</li><li><b>Le quiz du jour :</b> 20 ₽ par bonne réponse, au plus ${K.quiz} ₽ par jour. Les questions portent sur la Russie et l'URSS : prépare ton accent.</li><li><b>Le Marché noir :</b> tu paries des ₽ sur les vues d'articles soviétiques. Pari gagné : mise rendue + 80 % de gain (au plus ${K.bourse} ₽ de gain par jour). Pari perdu : le Parti remercie ta générosité.</li></ul><p class="mut">Les plafonds sont vérifiés par le serveur. Inutile d'essayer de tricher : le Parti a l'habitude de ces petites choses, et il a le temps.</p>`)}
     ${sec('4. Les colis du Parti', `<p>Un colis coûte <b>${c.packPrice} ₽</b> (« faire la queue »). Il contient <b>10 fiches</b> d'articles russes et soviétiques : Lénine, la vodka, le Goulag, Tchernobyl et autres joyeusetés. Chaque fiche a un grade militaire, de <b>Soldat</b> à <b>Maréchal</b>. Les <b>150 fiches de Maréchal</b> sortent à <b>0,5 %</b> chacune, et elles ne sont <b>pas uniques</b> : le Parti en a imprimé pour tout le monde (sauf pour les paresseux). Tout est rangé dans tes Archives.</p><p>Collectionner, c'est le but. Le réservoir compte <b>plus de 1 200 fiches</b>, et chaque fiche <b>nouvelle</b> fait avancer le Plan : <b>1</b> point (Soldat), <b>2</b>, <b>4</b>, <b>7</b>, <b>12</b>, et <b>25</b> pour un Maréchal, plus <b>20</b> points de prime à chaque tranche de 50 fiches différentes. Les doublons ne rapportent rien, mais le Parti n'oublie pas de te les faire sentir.</p>`)}
     ${sec('5. Les 12 paliers', `<p>Tes ₽ <b>gagnés</b> font avancer le Plan (les 500 de départ ne comptent pas, la gloire se mérite). Chaque palier donne des colis, des ₽, des titres, des cadres de profil, et deux <b>souvenirs</b> (paliers 2 et 11). Au <b>palier 6</b>, le Parti te laisse le thème rouge « Camarade » pour toujours, même après l'événement. Le palier 12, à 4 800 ₽, est réservé à ceux qui ont une vie sociale très limitée.</p><p class="mut">Le Plan est calé pour qu'un joueur régulier, une petite demi-heure par jour, le termine en quatre jours et onze mois. Environ.</p>`)}

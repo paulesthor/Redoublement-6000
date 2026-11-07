@@ -11,6 +11,8 @@ const POOL = JSON.parse((await import('node:fs')).readFileSync(new URL('../../cl
 ok('réservoir : 150 légendaires et au moins 1 000 cartes, uniquement des identifiants uniques', POOL.filter(c => c.r === 'legendary').length === 150 && POOL.length >= 1000 && new Set(POOL.map(c => c.id)).size === POOL.length, `${POOL.length} cartes`);
 
 // ---------- colis du Parti ----------
+{ const [, st0] = await call(tok.Ana, 'GET', '/api/commu'); ok('entrée : 500 ₽ et 10 colis de départ', st0.wr === 500 && st0.packs === 10, J({ wr: st0.wr, p: st0.packs })); }
+await q('UPDATE plan_progress SET packs = 0 WHERE user_id = ?', uid.Ana);
 let [s, v] = await call(tok.Ana, 'POST', '/api/commu/open', {}); ok('sans colis : ouverture refusée', s === 400, s);
 await call(tok.Ana, 'POST', '/api/commu/buy', { n: 2 }); [, v] = await call(tok.Ana, 'GET', '/api/commu'); ok('2 colis achetés : 100 ₽, solde 400', v.packs === 2 && v.wr === 400, J(v).slice(0, 90));
 [s, v] = await call(tok.Ana, 'POST', '/api/commu/open', {}); ok('un colis = 10 fiches du réservoir soviétique', s === 200 && v.cards.length === 10 && v.packs === 1 && v.cards.every(c => c.id > 200000000 && POOL.some(p => p.t === c.title)), J(v).slice(0, 120));
