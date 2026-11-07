@@ -6,7 +6,7 @@
   'use strict';
   const EXACT = new Map(Object.entries({
     // barre du bas et menus
-    'Boosters': 'Distribution', 'Collection': 'Archives', 'Chercher': 'Recherches', 'Combats': 'Le Front', 'Top': 'Honneur', 'Marché': 'Marché noir', 'Messages': 'Courrier', 'Amis': 'Camarades', 'Plus': 'Plan', 'Fil': 'Pravda',
+    'Boosters': 'Distribution', 'Collection': 'Archives', 'Chercher': 'Recherches', 'Combats': 'Les Jeux', 'Top': 'Honneur', 'Marché': 'Marché noir', 'Messages': 'Courrier', 'Amis': 'Camarades', 'Plus': 'Plan', 'Fil': 'Pravda',
     'CLODO': 'КЛОДО', 'WIKI': 'ВИКИ', 'Clodo': 'КЛОДО', 'Wiki': 'ВИКИ',
     // titres de pages
     'Ouvrir un paquet': 'Distribution des colis', 'Classement': 'Tableau d\'honneur', 'Succès': 'Décorations', 'Réglages': 'Règlement intérieur', 'Bourse': 'Bourse des vivres', 'Plus ou moins': 'Plan : ça monte ou ça baisse ?',

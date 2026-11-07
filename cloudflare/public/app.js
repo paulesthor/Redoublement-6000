@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.4';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.5';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2445,6 +2445,16 @@ function moreSheet() {
   const g = GROUP[tab];
   const T = (key, icon, label, sub, badge = 0) => `<button class="mtile ${tab === key ? 'on' : ''}" data-go="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small>${badge ? `<i class="mb">${badge > 9 ? '9+' : badge}</i>` : ''}</button>`;
   m.hidden = false;
+  if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
+    m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
+      <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs camarades')}${T('ach', 'medal', 'Paliers du Plan', 'Objectifs et primes')}</div>
+      <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retour au capitalisme</button></div>`;
+    $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+    $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };
+    m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; tab = b.dataset.go; render(); });
+    return;
+  }
   m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
     <h3>Jouer</h3><div class="mgrid">${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new' ? 1 : 0)}${T('quests', 'medal', 'Quêtes', 'Défis du jour', me.qc)}${T('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')}${T('daily', 'spark', 'Récompense', me.daily ? 'À récupérer !' : 'Déjà reçue · à demain', me.daily ? 1 : 0)}</div>

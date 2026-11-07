@@ -1371,3 +1371,6 @@ body.ussr-ui #hits,body.ussr-ui .us-news{box-sizing:border-box;margin-left:max(1
 body.ussr-ui #hits{height:auto;min-height:34px;padding-top:6px;padding-bottom:6px}
 body.ussr-ui #hits-text{min-width:0;flex:1 1 auto}
 body.ussr-ui .us-news span{min-width:0;line-height:1.25}
+
+/* mode communiste : seulement Distribution, Archives, Les Jeux, Plan */
+body.ussr-ui aside nav button[data-tab=market],body.ussr-ui aside nav button[data-tab=feed],body.ussr-ui aside nav button[data-tab=search],body.ussr-ui aside nav button[data-tab=rank],body.ussr-ui aside nav button[data-tab=msg],body.ussr-ui aside nav button[data-tab=friends]{display:none!important}
