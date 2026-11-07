@@ -15,10 +15,11 @@ function faceInner(o) {
     crown: `<path d="M64 88V52l18 18 18-28 18 28 18-18v36z" fill="${trim}" stroke="#b8902a" stroke-width="3"/><circle cx="100" cy="46" r="5" fill="#c0161d"/>`,
     cap: `<path d="M58 90c0-28 18-42 42-42s42 14 42 42z" fill="${o.cap || '#3b5a3a'}"/><rect x="54" y="86" width="92" height="10" rx="4" fill="#1f2d1f"/><path d="M92 62l8-10 8 10z" fill="${trim}"/>`,
     toque: `<path d="M64 88c-14-6-14-26 2-30 2-14 20-18 34-10 14-8 32-4 34 10 16 4 16 24 2 30z" fill="#fff"/><rect x="64" y="84" width="72" height="10" fill="#e8e8e8"/>`,
+    tophat: `<rect x="62" y="30" width="76" height="58" fill="#111"/><rect x="46" y="84" width="108" height="10" rx="4" fill="#111"/><rect x="62" y="72" width="76" height="9" fill="#f4d56b"/>`,
     mitre: `<path d="M70 90c0-30 14-52 30-60 16 8 30 30 30 60z" fill="#e8dfc7" stroke="${trim}" stroke-width="4"/><path d="M100 40v44M84 62h32" stroke="${trim}" stroke-width="5"/>` }[o.hat || 'none'];
   const eyes = o.dead ? `<path d="M80 102l12 12m0-12L80 114M108 102l12 12m0-12l-12 12" stroke="#2a1a14" stroke-width="4" stroke-linecap="round"/>`
     : `<circle cx="86" cy="108" r="4.500" fill="#2a1a14"/><circle cx="114" cy="108" r="4.500" fill="#2a1a14"/>${o.brow === 'angry' ? '<path d="M76 98l20 6M124 98l-20 6" stroke="#2a1a14" stroke-width="4" stroke-linecap="round"/>' : '<path d="M78 98h16M106 98h16" stroke="#2a1a14" stroke-width="3" stroke-linecap="round"/>'}`;
-  const extra = { none: '', medals: `<circle cx="78" cy="196" r="6" fill="${trim}"/><circle cx="96" cy="200" r="6" fill="#c0161d"/><circle cx="114" cy="196" r="6" fill="${trim}"/>`, sash: `<path d="M64 168l72 40" stroke="#c0161d" stroke-width="12"/>`, apron: `<path d="M74 168h52v40H74z" fill="#f7f2e4"/>`, cross: `<path d="M100 172v22M90 180h20" stroke="${trim}" stroke-width="5"/>`, bear: '' }[o.extra || 'none'];
+  const extra = { none: '', medals: `<circle cx="78" cy="196" r="6" fill="${trim}"/><circle cx="96" cy="200" r="6" fill="#c0161d"/><circle cx="114" cy="196" r="6" fill="${trim}"/>`, sash: `<path d="M64 168l72 40" stroke="#c0161d" stroke-width="12"/>`, apron: `<path d="M74 168h52v40H74z" fill="#f7f2e4"/>`, cross: `<path d="M100 172v22M90 180h20" stroke="${trim}" stroke-width="5"/>`, tie: `<path d="M100 166l-9 14 9 28 9-28z" fill="#c0161d"/><path d="M84 160l16 14 16-14" fill="#fff"/>`, bear: '' }[o.extra || 'none'];
   return `<path d="M30 210c4-34 34-50 70-50s66 16 70 50z" fill="${coat}"/><path d="M84 160l16 16 16-16" fill="none" stroke="${trim}" stroke-width="5"/>${extra}
     <rect x="88" y="132" width="24" height="30" fill="${skin}"/><ellipse cx="100" cy="108" rx="40" ry="46" fill="${skin}"/>${eyes}${o.dead ? '' : '<path d="M92 130c5 3 11 3 16 0" stroke="#7a3b2e" stroke-width="3" fill="none" stroke-linecap="round"/>'}${beard}${hat}<circle cx="100" cy="116" r="4" fill="#00000014"/>`;
 }
@@ -46,6 +47,12 @@ const END = {
   samovar: { kind: 'win', t: 'Le thé du soir', txt: 'Le tsar boit son thé jusqu\'au bout, par politesse. La Russie vous confie la couronne le lendemain, un peu trop vite pour que ce soit un hasard.', icon: '☕', who: { hat: 'crown', beard: 'pointy', coat: '#7a1620', dead: true, hair: '#8a6a3a' } },
   train: { kind: 'win', t: 'Le train de 17 h 42', txt: 'Le train impérial arrive à l\'heure, c\'est la première fois en 40 ans. Il arrive aussi sans les voitures du tsar.', icon: '🚂', who: { hat: 'crown', beard: 'pointy', coat: '#7a1620', dead: true, hair: '#8a6a3a' } },
   bear: { kind: 'win', t: 'L\'ours du cirque', txt: 'L\'ours a très bien joué son rôle. Le dresseur sera décoré, l\'ours aussi, et vous, vous êtes couronné. Tout le monde est content, sauf le tsar.', icon: '🐻', who: { hat: 'crown', beard: 'pointy', coat: '#7a1620', dead: true, hair: '#8a6a3a' } },
+  x_samovar: { kind: 'lose', t: 'Le goûteur', txt: 'Le goûteur du tsar boit en premier. Il s\'effondre, ravi d\'avoir servi. Le tsar sourit, vous aussi, mais plus pour longtemps.', icon: '🥄', who: { hat: 'none', coat: '#555', beard: 'full', hair: '#444', dead: true } },
+  x_train: { kind: 'lose', t: 'Une vache sur les rails', txt: 'Le train freine à trois mètres du tsar. Il vous remercie pour cette belle surprise… pour la vache.', icon: '🐄', who: { hat: 'cap', cap: '#2a3a52', coat: '#2a3a52', beard: 'pointy' } },
+  x_bear: { kind: 'lose', t: 'L\'ours a un nouvel ami', txt: 'L\'ours adore le tsar. Il devient ministre de la Défense, et vous, son serveur de vodka. Bon courage.', icon: '🥰', who: { hat: 'ushanka', beard: 'full', coat: '#5a4636', skin: 3 } },
+  late: { kind: 'lose', t: 'Mort naturelle', txt: 'Le tsar meurt de vieillesse pendant votre réunion de planification. Quelqu\'un d\'autre prend le trône. Ce con.', icon: '⌛', who: { hat: 'none', coat: '#777', beard: 'full', hair: '#ccc' } },
+  capi: { kind: 'fun', stamp: 'USA ! USA !', t: 'Le Tsar Burger', txt: 'Le tsar découvre le capitalisme, ouvre 4 000 franchises de burgers et loue le Kremlin sur Airbnb. Le palais devient un fast-food, la vodka un soda, et vous, le manager de nuit. Salaire : une frite par jour. God bless Russia.', icon: '🍔', who: { hat: 'tophat', coat: '#1a1a2a', extra: 'tie', beard: 'none' } },
+  rave: { kind: 'fun', stamp: 'ХАРДБАС', t: 'Hardbass au palais', txt: 'Tout le monde est content. Le tsar, les gardes, l\'ours et même le prêtre dansent en survêt Adidas sur de la techno russe. Personne n\'est mort, personne n\'est tsar. La Russie est sauvée par un caisson de basse.', icon: '🔊', who: { hat: 'cap', cap: '#16358a', adidas: true, coat: '#16358a', beard: 'none' } },
   c0: { kind: 'lose', t: 'Seul au palais', txt: 'Plus un complice. Le tsar découvre que vous complotez tout seul, ce qu\'il juge presque touchant, avant de vous envoyer en Sibérie.', icon: '🧊', who: { hat: 'ushanka', coat: '#444', beard: 'full', hair: '#666' } },
   c1: { kind: 'lose', t: 'Trop de monde', txt: 'Vous avez tellement de complices que l\'un d\'eux, par inadvertance, parle à un journaliste.', icon: '📰', who: { hat: 'none', coat: '#444', beard: 'mustache', brow: 'angry' } },
   d0: { kind: 'lose', t: 'Démasqué', txt: 'Tout le palais sait. Même le chat impérial vous regarde de travers. On vous invite à une « conversation » avec l\'Okhrana.', icon: '👁️', who: { hat: 'none', coat: '#222', beard: 'mustache', hair: '#1a1a1a', brow: 'angry' } },
@@ -55,12 +62,18 @@ const END = {
   f0: { kind: 'lose', t: 'Disgracié', txt: 'Le tsar vous écarte de la cour. Vous passez le reste de votre règne imaginaire à vendre des cartes postales.', icon: '📉', who: { hat: 'none', coat: '#6b1d1d', beard: 'none' } },
   f1: { kind: 'lose', t: 'Favori éternel', txt: 'Le tsar vous aime tellement qu\'il vous adopte. Impossible de lui succéder : vous êtes maintenant son fils, et vous devez attendre.', icon: '🤗', who: { hat: 'crown', coat: '#7a1620', beard: 'pointy', hair: '#8a6a3a' } },
 };
+const ROUTES = { samovar: { name: 'Samovar', icon: '☕', need: ['poison', 'access'] }, train: { name: 'Train', icon: '🚂', need: ['train', 'guard'] }, bear: { name: 'Ours', icon: '🐻', need: ['bear', 'access'] } };
+const NEEDLBL = { poison: 'poison', access: 'dîner avec le tsar', train: 'train', guard: 'garde acheté', bear: 'ours' };
+// étiquette « où ça mène » affichée sous le choix
+const TAGS = { cook: [null, '🧪 Piste Samovar'], guard: [null, '🪪 Piste Train'], general: [null, '🚂 Piste Train'], tamer: [null, '🐻 Piste Ours'], tsar: ['Le tsar se vexe', '💌 Pistes Samovar + Ours'], priest: [null, 'Bénédiction : Faveur ↑'], spy: ['Complices ↓', 'Discrétion ↑'], banker: [null, 'Argent ↑'], accountant: [null, 'Argent ↑'], student: ['Tu le perds', 'Complices ↑'], peasant: [null, 'Complices ↑'], lady: [null, 'Infos : Complices ↑'] };
+const DJ = { id: 'dj', who: { hat: 'cap', cap: '#16358a', adidas: true, coat: '#16358a', beard: 'none', skin: 0, hair: '#222' }, name: 'DJ Vlad le Squatteur', text: 'Camarade, j\'ai des enceintes, 40 kilos de hardbass et un tsar qui s\'ennuie. On fait une fête ?', L: ['Pas ce soir', [0, 5, 0, -2]], R: ['Balance le son !', [0, 0, 0, 0]], tag: [null, '🔊 Fin surprise'] };
+const BROKER = { id: 'broker', who: { hat: 'tophat', coat: '#1a1a2a', extra: 'tie', beard: 'none', skin: 2 }, name: 'Brad, de Wall Street', text: 'Sire, j\'ai une idée : privatisons tout. La Russie, mais en franchise. Avec des frites et un drapeau en plus.', L: ['Jamais !', [0, 4, 0, -2]], R: ['Privatise tout !', [0, 0, 0, 0]], tag: [null, '🍔 Fin surprise'] };
 const GAUGES = [['Complices', '👥'], ['Discrétion', '🕵️'], ['Argent', '🪙'], ['Faveur', '👑']];
 const LOSE_KEY = [['c0', 'c1'], ['d0', 'd1'], ['a0', 'a1'], ['f0', 'f1']];
 
 
 // actions jouées à l'écran pour chaque choix : [gauche, droite] ; « prep:x » = un moyen préparé qui s'épingle au tableau du complot
-const ACTS = { cook: ['leave', 'prep:poison'], guard: ['leave', 'pay:guard'], priest: ['leave', 'bless'], general: ['leave', 'prep:train'], tamer: ['leave', 'prep:bear'], tsar: ['turn', 'dine'],
+const ACTS = { dj: ['leave', 'rave'], broker: ['leave', 'capi'], cook: ['leave', 'prep:poison'], guard: ['leave', 'pay:guard'], priest: ['leave', 'bless'], general: ['leave', 'prep:train'], tamer: ['leave', 'prep:bear'], tsar: ['turn', 'dine'],
   spy: ['denounce', 'pay'], peasant: ['leave', 'feed'], banker: ['leave', 'gain'], student: ['flee', 'join'], lady: ['leave', 'chat'], accountant: ['leave', 'gain'] };
 const ITEM = { poison: '🧪', guard: '🪪', train: '🚂', bear: '🐻', access: '💌' };
 const PIN_AT = { poison: [30, 62], guard: [62, 62], train: [30, 98], bear: [62, 98], access: [94, 80] };   // épingles du tableau (coordonnées de la scène 390 × 380)
@@ -68,15 +81,16 @@ const SW = 390, SH = 380, FRONT = 372, BACK = 302;
 const X = x => x / SW * 100, Y = y => (SH - y) / SH * 100;   // x, y de la scène → % gauche, % bas
 
 // ---------- personnages en pied (marchent, saluent, versent…) ----------
-const PANTS = '#2a2430', BOOT = '#14100f';
+const PANTS = '#2a2430', BOOT = '#14100f', NAVY = '#16358a';
 function body(o) {
-  const coat = o.coat || '#6b1d1d', skin = SKIN[o.skin ?? 0];
+  const coat = o.adidas ? NAVY : (o.coat || '#6b1d1d'), skin = SKIN[o.skin ?? 0], pants = o.adidas ? NAVY : PANTS;
+  const st = o.adidas ? (x, y, h) => `<rect x="${x}" y="${y}" width="2.600" height="${h}" fill="#fff"/><rect x="${x + 4.500}" y="${y}" width="2.600" height="${h}" fill="#fff"/>` : () => '';
   return `<svg viewBox="0 0 120 230" class="ts-svg" aria-hidden="true"><g class="bob">
-    <g class="leg l"><rect x="41" y="150" width="18" height="62" rx="8" fill="${PANTS}"/><rect x="36" y="204" width="28" height="14" rx="6" fill="${BOOT}"/></g>
-    <g class="leg r"><rect x="61" y="150" width="18" height="62" rx="8" fill="${PANTS}"/><rect x="56" y="204" width="28" height="14" rx="6" fill="${BOOT}"/></g>
-    <g class="arm l"><rect x="23" y="98" width="15" height="54" rx="7.500" fill="${coat}"/><circle cx="30.500" cy="154" r="7" fill="${skin}"/></g>
-    <rect x="35" y="94" width="50" height="66" rx="13" fill="${coat}"/><rect x="35" y="132" width="50" height="7" fill="#00000040"/>
-    <g class="arm r"><rect x="82" y="98" width="15" height="54" rx="7.500" fill="${coat}"/><circle cx="89.500" cy="154" r="7" fill="${skin}"/></g>
+    <g class="leg l"><rect x="41" y="150" width="18" height="62" rx="8" fill="${pants}"/>${st(47, 152, 56)}<rect x="36" y="204" width="28" height="14" rx="6" fill="${BOOT}"/></g>
+    <g class="leg r"><rect x="61" y="150" width="18" height="62" rx="8" fill="${pants}"/>${st(67, 152, 56)}<rect x="56" y="204" width="28" height="14" rx="6" fill="${BOOT}"/></g>
+    <g class="arm l"><rect x="23" y="98" width="15" height="54" rx="7.500" fill="${coat}"/>${st(27, 100, 48)}<circle cx="30.500" cy="154" r="7" fill="${skin}"/></g>
+    <rect x="35" y="94" width="50" height="66" rx="13" fill="${coat}"/>${o.adidas ? '<path d="M60 96v62" stroke="#ffffff55" stroke-width="2"/><path d="M42 118l14-8M42 126l14-8M42 134l14-8" stroke="#fff" stroke-width="3" opacity=".9"/>' : ''}<rect x="35" y="132" width="50" height="7" fill="#00000040"/>
+    <g class="arm r"><rect x="82" y="98" width="15" height="54" rx="7.500" fill="${coat}"/>${st(86, 100, 48)}<circle cx="89.500" cy="154" r="7" fill="${skin}"/></g>
     <g transform="translate(10 -8) scale(.5)">${faceInner(o)}</g></g></svg>`;
 }
 const BEAR = `<svg viewBox="0 0 170 120" class="ts-svg" aria-hidden="true"><g class="bob">
@@ -94,10 +108,33 @@ const GOLD = '#f4d56b';
 const HINTS = ['← glisse ou touche un choix →', 'Choisis vite, le tsar a de l\'appétit et les gardes de la gâchette.', 'Une mauvaise décision, un petit voyage en Sibérie. Bonne chance, couillon.', 'Tu peux aussi attendre la mort naturelle du tsar, mais elle est lente.', 'Réfléchis bien : ici, une connerie se paie cash.', 'Le complot, c\'est comme la vodka : trop tôt ou trop tard, ça finit mal.', 'Glisse, camarade. Ce n\'est pas plus compliqué que de te faire dénoncer.', 'Les murs ont des oreilles. Les oreilles ont des yeux. Les yeux ont des fusils.'];
 
 export function startTsar(host, opts = {}) {
+  let AC = null;
+  const ctx = () => { if (opts.sound === false) return null; try { AC ||= new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); return AC; } catch { return null; } };
+  const tone = (f, t, d, { type = 'sine', g = .2, to = 0, at = 0 } = {}) => { const c = ctx(); if (!c) return; const o = c.createOscillator(), gn = c.createGain(), s = c.currentTime + at + t; o.type = type; o.frequency.setValueAtTime(f, s); if (to) o.frequency.exponentialRampToValueAtTime(to, s + d); gn.gain.setValueAtTime(.0001, s); gn.gain.linearRampToValueAtTime(g, s + Math.min(.02, d / 4)); gn.gain.exponentialRampToValueAtTime(.0001, s + d); o.connect(gn).connect(c.destination); o.start(s); o.stop(s + d + .05); };
+  const noise = (t, d, { g = .3, lp = 1800 } = {}) => { const c = ctx(); if (!c) return; const n = Math.floor(c.sampleRate * d), buf = c.createBuffer(1, n, c.sampleRate), ch = buf.getChannelData(0); for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n); const s = c.createBufferSource(), f = c.createBiquadFilter(), gn = c.createGain(); f.type = 'lowpass'; f.frequency.value = lp; gn.gain.value = g; s.buffer = buf; s.connect(f).connect(gn).connect(c.destination); s.start(c.currentTime + t); };
+  const SFX = {
+    blip: () => tone(520, 0, .09, { type: 'square', g: .08 }), no: () => tone(220, 0, .12, { type: 'square', g: .08 }),
+    coin: () => { tone(988, 0, .08, { type: 'square', g: .07 }); tone(1319, .07, .22, { type: 'square', g: .07 }); },
+    poison: () => { for (let i = 0; i < 7; i++) tone(300 + Math.random() * 300, i * .09, .12, { to: 700, g: .09 }); tone(180, .6, .5, { type: 'sawtooth', to: 60, g: .1 }); },
+    boom: () => { noise(0, .7, { g: .5, lp: 700 }); tone(90, 0, .5, { to: 30, g: .5 }); },
+    zap: () => tone(1200, 0, .25, { type: 'sawtooth', to: 200, g: .08 }),
+    stamp: () => { tone(110, 0, .18, { to: 40, g: .5 }); noise(0, .1, { g: .25, lp: 3000 }); },
+    whistle: () => { tone(700, 0, .55, { type: 'sawtooth', g: .08 }); tone(880, .02, .55, { type: 'sawtooth', g: .08 }); },
+    growl: () => { tone(75, 0, .8, { type: 'sawtooth', to: 55, g: .2 }); tone(80, 0, .8, { type: 'square', to: 50, g: .08 }); },
+    win: () => [262, 330, 392, 523, 392, 523, 659].forEach((f, i) => tone(f, i * .13, i > 5 ? .6 : .16, { type: 'square', g: .1 })),
+    lose: () => [392, 370, 349, 330].forEach((f, i) => tone(f, i * .32, i === 3 ? 1 : .32, { type: 'sawtooth', to: f * .94, g: .1 })),
+    funeral: () => [196, 196, 196, 233, 208, 208, 196, 196].forEach((f, i) => tone(f, i * .55, .5, { type: 'triangle', g: .18 })),
+    cash: () => { [1318, 1760, 2093].forEach((f, i) => tone(f, i * .09, .35, { type: 'triangle', g: .12 })); noise(0, .05, { g: .15, lp: 6000 }); },
+    // hymne américain (domaine public) : les deux premières phrases, en cuivres synthétiques
+    anthem: () => { const N = { C4: 261.63, E4: 329.63, Fs4: 369.99, G4: 392, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A4: 440, B4: 493.88 }, sc = [['G4', .75], ['E4', .25], ['C4', 1], ['E4', 1], ['G4', 1], ['C5', 2], ['E5', .75], ['D5', .25], ['C5', 1], ['E4', 1], ['Fs4', 1], ['G4', 2], ['G4', .5], ['G4', .5], ['E5', 1.5], ['D5', .5], ['C5', 1], ['B4', 1], ['A4', 1], ['B4', 1], ['C5', 2], ['C5', 3]]; let t = 0; for (const [n, b] of sc) { tone(N[n], t, b * .5 * .95, { type: 'sawtooth', g: .09 }); tone(N[n] / 2, t, b * .5 * .95, { type: 'square', g: .05 }); t += b * .5; } },
+    cheer: () => { noise(0, 1.2, { g: .12, lp: 2500 }); },
+    beat: () => { for (let i = 0; i < 24; i++) { const t = i * .4; tone(150, t, .22, { to: 40, g: .5 }); tone([55, 55, 65, 49][i % 4], t + .2, .2, { type: 'sawtooth', g: .12 }); if (i % 2) noise(t + .2, .05, { g: .08, lp: 7000 }); } },
+  };
+  const beat = () => SFX.beat();
   let found = []; try { found = JSON.parse(localStorage.getItem(ENDS_KEY) || '[]'); } catch {}
   let S, card = null, stopped = false, busy = true, vis = null, prevCo = 0, prevEy = 0, prevMood = '';
   const pins = new Set();
-  const fresh = () => ({ g: [50, 55, 50, 55], day: 1, flags: {}, seen: [], last: null });
+  const fresh = () => ({ g: [50, 55, 50, 55], day: 1, max: 14, flags: {}, seen: [], last: null, nextFinal: 3, dj: false, bro: false });
   const save = () => { try { localStorage.setItem(ENDS_KEY, JSON.stringify(found)); } catch {} };
   const W = ms => new Promise(r => setTimeout(r, stopped ? 0 : ms));
   host.innerHTML = `<div class="ts-root"><div class="ts-top"><button class="ts-x" id="ts-x" aria-label="Quitter">✕</button><div class="ts-gauges" id="ts-gauges"></div><div class="ts-day" id="ts-day"></div></div>
@@ -106,14 +143,29 @@ export function startTsar(host, opts = {}) {
         <rect width="390" height="262" fill="url(#tsw)"/><g stroke="#00000030" stroke-width="2">${Array.from({ length: 10 }, (_, i) => `<path d="M${i * 44} 0v262"/>`).join('')}</g>
         <rect y="256" width="390" height="10" fill="#7a5a2a"/><rect y="262" width="390" height="118" fill="url(#tsf)"/><g stroke="#00000040" stroke-width="2">${Array.from({ length: 7 }, (_, i) => `<path d="M0 ${278 + i * 17}h390"/>`).join('')}</g>
         <rect x="118" y="26" width="8" height="236" fill="#2a0a10"/><rect x="238" y="26" width="8" height="236" fill="#2a0a10"/><path d="M0 0h390v24l-20 8-20-8-20 8-20-8-20 8-20-8-20 8-20-8-20 8-20-8-20 8-20-8-20 8-20-8-20 8-20-8-20 8-20-8-20 8-20-8z" fill="#c0161d"/>
-        <path d="M290 262v-90q0-30 30-30h50q20 0 20 30v90z" fill="#2a0a10" stroke="${GOLD}" stroke-width="3"/><rect x="300" y="196" width="80" height="14" rx="4" fill="#7a1620"/></svg>
-      <div class="ts-win" id="ts-win"><svg viewBox="0 0 100 130" preserveAspectRatio="none"><rect width="100" height="130" fill="#0d1a38"/><circle cx="78" cy="26" r="11" fill="#f6efd8"/><path d="M0 110q20-24 36-6t30-8 34 10v24H0z" fill="#e8eef8"/><path d="M14 110v-22q8-14 16 0v22zM50 110v-30q9-16 18 0v30z" fill="#1a1230"/></svg><div class="ts-trainwrap" id="ts-trainwrap">${TRAIN}</div></div>
+        <path d="M290 262v-90q0-30 30-30h50q20 0 20 30v90z" fill="#2a0a10" stroke="${GOLD}" stroke-width="3"/><rect x="300" y="196" width="80" height="14" rx="4" fill="#7a1620"/>
+        <rect x="30" y="316" width="320" height="56" rx="3" fill="#6a1420" stroke="#f4d56b99" stroke-width="3"/><rect x="40" y="324" width="300" height="40" fill="none" stroke="#f4d56b55" stroke-width="2" stroke-dasharray="10 6"/>
+        <path d="M98 24h18v70l-9 12-9-12z" fill="#c0161d" stroke="#f4d56b" stroke-width="2"/><path d="M248 24h18v70l-9 12-9-12z" fill="#c0161d" stroke="#f4d56b" stroke-width="2"/><circle cx="107" cy="52" r="4" fill="#f4d56b"/><circle cx="257" cy="52" r="4" fill="#f4d56b"/>
+        <path d="M0 250h390" stroke="#f4d56b55" stroke-width="2"/><g stroke="#00000055" stroke-width="2"><rect x="8" y="150" width="10" height="26" rx="2" fill="#4a2f14"/></g></svg>
+      <div class="ts-chand"><svg viewBox="0 0 90 70"><path d="M45 0v20M10 40q35 22 70 0" stroke="#f4d56b" stroke-width="3" fill="none"/><rect x="38" y="16" width="14" height="10" rx="3" fill="#f4d56b"/>${[10, 27, 45, 63, 80].map((x, i) => `<rect x="${x - 3}" y="${i % 2 ? 34 : 38}" width="6" height="12" fill="#f6efd8"/><ellipse class="fl" cx="${x}" cy="${i % 2 ? 30 : 34}" rx="3.500" ry="6" fill="#ffb347" style="animation-delay:${i * .3}s"/>`).join('')}</svg></div>
+      <div class="ts-candle" style="left:${X(112)}%;top:${(125 / SH) * 100}%">🕯️</div><div class="ts-candle" style="left:${X(252)}%;top:${(125 / SH) * 100}%">🕯️</div>
+      <div class="ts-eagle">🦅</div><div class="ts-clock"><i></i></div><div class="ts-cat">🐈<span>💤</span></div>
+      <div class="ts-win" id="ts-win"><svg viewBox="0 0 100 130" preserveAspectRatio="none"><rect width="100" height="130" fill="#0d1a38"/><circle cx="78" cy="26" r="11" fill="#f6efd8"/><path d="M0 110q20-24 36-6t30-8 34 10v24H0z" fill="#e8eef8"/><path d="M14 110v-22q8-14 16 0v22zM50 110v-30q9-16 18 0v30z" fill="#1a1230"/></svg><div class="ts-trainwrap" id="ts-trainwrap">${TRAIN}</div>${Array.from({ length: 12 }, (_, i) => `<b class="ts-snow" style="left:${(i * 83) % 96}%;animation-delay:${(i * .37) % 3}s;animation-duration:${2.6 + (i % 4) * .6}s"></b>`).join('')}</div>
       <div class="ts-board" id="ts-board"><b>COMPLOT</b></div>
       <div class="ts-portrait" id="ts-portrait"></div>
       <div class="ts-chest" id="ts-chest"></div>
       <div id="ts-plotters"></div><div id="ts-eyes"></div>
       <div class="ts-table" id="ts-table"><div class="ts-top2"></div><span class="ts-sam">${SAMOVAR}</span><span class="ts-cup">🍵</span></div>
+      <div class="ts-capi" id="ts-capi"><svg viewBox="0 0 390 380" preserveAspectRatio="none" aria-hidden="true">
+        <defs><pattern id="tschk" width="26" height="26" patternUnits="userSpaceOnUse"><rect width="26" height="26" fill="#fff"/><rect width="13" height="13" fill="#da291c"/><rect x="13" y="13" width="13" height="13" fill="#da291c"/></pattern></defs>
+        <rect width="390" height="262" fill="#ffd23a"/><rect width="390" height="26" fill="#da291c"/><rect y="256" width="390" height="10" fill="#b01f14"/><rect y="262" width="390" height="118" fill="url(#tschk)"/>
+        <g class="ts-flag"><rect x="14" y="36" width="116" height="10" fill="#b22234"/><rect x="14" y="46" width="116" height="10" fill="#fff"/><rect x="14" y="56" width="116" height="10" fill="#b22234"/><rect x="14" y="66" width="116" height="10" fill="#fff"/><rect x="14" y="76" width="116" height="10" fill="#b22234"/><rect x="14" y="86" width="116" height="10" fill="#fff"/><rect x="14" y="96" width="116" height="10" fill="#b22234"/><rect x="14" y="36" width="52" height="40" fill="#3c3b6e"/><circle cx="22" cy="44" r="2" fill="#fff"/><circle cx="34" cy="44" r="2" fill="#fff"/><circle cx="46" cy="44" r="2" fill="#fff"/><circle cx="58" cy="44" r="2" fill="#fff"/><circle cx="22" cy="55" r="2" fill="#fff"/><circle cx="34" cy="55" r="2" fill="#fff"/><circle cx="46" cy="55" r="2" fill="#fff"/><circle cx="58" cy="55" r="2" fill="#fff"/><circle cx="22" cy="66" r="2" fill="#fff"/><circle cx="34" cy="66" r="2" fill="#fff"/><circle cx="46" cy="66" r="2" fill="#fff"/><circle cx="58" cy="66" r="2" fill="#fff"/><rect x="12" y="30" width="3" height="120" fill="#555"/></g>
+        <rect x="140" y="30" width="120" height="92" rx="12" fill="#da291c" stroke="#fff" stroke-width="3"/><path d="M158 100V62q0-20 17-20t20 30q3-30 20-30t17 20v38" fill="none" stroke="#ffc72c" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/><text x="200" y="118" text-anchor="middle" fill="#fff" font-size="13" font-weight="900" font-family="system-ui">MacTsar</text>
+        <rect x="278" y="34" width="98" height="92" rx="6" fill="#222" stroke="#ffc72c" stroke-width="3"/><g fill="#fff" font-family="system-ui" font-size="9.5" font-weight="700"><text x="286" y="52">BIG TSAR ...... 9 ₽</text><text x="286" y="68">FRITES KREMLIN . 4 ₽</text><text x="286" y="84">MCSAMOVAR ..... 3 ₽</text><text x="286" y="100">COCA-VODKA .... 5 ₽</text><text x="286" y="116" fill="#ffc72c">MENU GOULAG : 1 ₽</text></g>
+        <rect x="238" y="246" width="152" height="56" rx="4" fill="#da291c" stroke="#fff" stroke-width="3"/><rect x="238" y="240" width="152" height="10" fill="#fff"/><text x="258" y="236" font-size="26">🍔</text><text x="300" y="236" font-size="26">🍟</text><text x="344" y="236" font-size="26">🥤</text>
+        <g stroke="#555" stroke-width="2"><path d="M60 0v20M330 0v20"/></g><circle cx="60" cy="24" r="10" fill="#fff6c2"/><circle cx="330" cy="24" r="10" fill="#fff6c2"/></svg></div>
       <div id="ts-actors"></div><div id="ts-fx"></div></div>
+    <div class="ts-routes" id="ts-routes"></div>
     <div class="ts-panel" id="ts-panel"></div></div>`;
   const $ = id => host.querySelector('#' + id), scene = $('ts-scene'), actors = $('ts-actors'), fxl = $('ts-fx');
   $('ts-x').onclick = () => { stopped = true; opts.onExit?.(); };
@@ -127,14 +179,16 @@ export function startTsar(host, opts = {}) {
   const centre = e => { const r = e.getBoundingClientRect(), s = scene.getBoundingClientRect(); return { x: r.left + r.width / 2 - s.left, y: r.top + r.height * 0.45 - s.top }; };
   const pt = e => e && e.getBoundingClientRect ? centre(e) : e;
   const fly = (txt, from, to, ms = 800, size = 24) => {
+    if (txt === '🪙') SFX.coin(); if (txt === '💌') SFX.blip();
     const a = pt(from), b = pt(to), s = document.createElement('span'); s.className = 'ts-fly'; s.textContent = txt; s.style.cssText = `left:${a.x}px;top:${a.y}px;font-size:${size}px`; fxl.append(s);
     const an = s.animate([{ transform: 'translate(-50%,-50%) scale(.6)' }, { transform: `translate(calc(-50% + ${(b.x - a.x) / 2}px),calc(-50% + ${(b.y - a.y) / 2 - 50}px)) scale(1.2)`, offset: .5 }, { transform: `translate(calc(-50% + ${b.x - a.x}px),calc(-50% + ${b.y - a.y}px)) scale(.9)` }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
     return an.finished.catch(() => {}).then(() => s.remove());
   };
-  const burst = async (txt, at, n = 6) => { const p = pt(at); await Promise.all(Array.from({ length: n }, (_, i) => { const s = document.createElement('span'); s.className = 'ts-fly'; s.textContent = txt; s.style.cssText = `left:${p.x}px;top:${p.y}px;font-size:${18 + (i % 3) * 5}px`; fxl.append(s); const ang = i / n * Math.PI * 2; return s.animate([{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 1 }, { transform: `translate(calc(-50% + ${Math.cos(ang) * 46}px),calc(-50% + ${Math.sin(ang) * 40 - 24}px)) scale(1.1)`, opacity: 0 }], { duration: 800, easing: 'ease-out', fill: 'forwards' }).finished.catch(() => {}).then(() => s.remove()); })); };
+  const burst = async (txt, at, n = 6) => {
+    if (txt === '☠️') SFX.poison(); else if (txt === '💥') SFX.boom(); else if (txt === '🐾') SFX.growl(); else if (txt === '💵') SFX.cash(); const p = pt(at); await Promise.all(Array.from({ length: n }, (_, i) => { const s = document.createElement('span'); s.className = 'ts-fly'; s.textContent = txt; s.style.cssText = `left:${p.x}px;top:${p.y}px;font-size:${18 + (i % 3) * 5}px`; fxl.append(s); const ang = i / n * Math.PI * 2; return s.animate([{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 1 }, { transform: `translate(calc(-50% + ${Math.cos(ang) * 46}px),calc(-50% + ${Math.sin(ang) * 40 - 24}px)) scale(1.1)`, opacity: 0 }], { duration: 800, easing: 'ease-out', fill: 'forwards' }).finished.catch(() => {}).then(() => s.remove()); })); };
   const bubble = (e, txt, ms = 1100) => { if (!e) return; const b = document.createElement('div'); b.className = 'ts-bub'; b.textContent = txt; e.append(b); setTimeout(() => b.remove(), ms); };
-  const shake = () => { scene.classList.remove('shake'); void scene.offsetWidth; scene.classList.add('shake'); };
-  const flash = async () => { const f = document.createElement('div'); f.className = 'ts-flash'; scene.append(f); await W(420); f.remove(); };
+  const shake = () => { SFX.boom(); scene.classList.remove('shake'); void scene.offsetWidth; scene.classList.add('shake'); };
+  const flash = async () => { SFX.zap(); const f = document.createElement('div'); f.className = 'ts-flash'; scene.append(f); await W(420); f.remove(); };
   const act = (e, cls, ms) => { e.classList.add(cls); return W(ms).then(() => e.classList.remove(cls)); };
 
   // ----- décor vivant : il reflète les jauges et les moyens préparés -----
@@ -162,30 +216,36 @@ export function startTsar(host, opts = {}) {
     $('ts-portrait').classList.toggle('glow', fa > 68);
     if (mood !== prevMood && !S.dead) { tsarEl.querySelector('g[transform]').innerHTML = faceInner(tsarO(mood)); prevMood = mood; }
     $('ts-gauges').replaceChildren(...gaugeEls());
+    $('ts-routes').innerHTML = '<span class="ts-rt">PISTES</span>' + Object.entries(ROUTES).map(([k, rt]) => { const ok = rt.need.every(n => S.flags[n]); return `<div class="ts-route ${ok ? 'ready' : ''}" title="${rt.name}"><b>${rt.icon} ${rt.name}</b>${rt.need.map(n => `<i class="${S.flags[n] ? 'on' : ''}" title="${NEEDLBL[n]}">${ITEM[n]}</i>`).join('')}${ok ? '<em>PRÊT</em>' : ''}</div>`; }).join('');
   };
   const gaugeEls = (preview) => GAUGES.map(([n, ic], i) => { const d = document.createElement('div'), v = S.g[i], pv = preview ? preview[i] : 0; d.className = 'ts-g' + (v <= 15 || v >= 85 ? ' warn' : ''); d.innerHTML = `<div class="ts-gfill"><i style="height:${v}%"></i></div><span>${ic}</span><b class="ts-dot" style="--s:${Math.min(14, 5 + Math.abs(pv) * .35)}px;opacity:${pv ? 1 : 0}"></b>`; return d; });
   const preview = fx => $('ts-gauges').replaceChildren(...gaugeEls(fx));
 
   // ----- tirage des cartes -----
+  const readyRoutes = () => Object.entries(ROUTES).filter(([, rt]) => rt.need.every(n => S.flags[n])).map(([k]) => k);
   const pickCard = () => {
-    const f = S.flags, ready = [];
-    if (f.poison && f.access) ready.push('samovar'); if (f.train && f.guard) ready.push('train'); if (f.bear && f.access) ready.push('bear');
-    if (ready.length && S.day > 4 && Math.random() < 0.75) return { final: ready[Math.floor(Math.random() * ready.length)] };
+    const ready = readyRoutes();
+    if (ready.length && S.day >= S.nextFinal) return { final: ready[Math.floor(Math.random() * ready.length)] };   // la fenêtre de tir est toujours proposée, jamais ratée par hasard
+    if (!S.dj && S.day >= 4 && Math.random() < 0.15) { S.dj = true; return DJ; }
+    if (!S.bro && S.day >= 4 && Math.random() < 0.15) { S.bro = true; return BROKER; }
     let pool = C.filter(c => !S.seen.includes(c.id));
     if (!pool.length) { S.seen = []; pool = C.filter(c => c.id !== S.last); }
+    if (S.day <= 7) { const en = pool.filter(c => ['cook', 'general', 'tamer', 'guard', 'tsar'].includes(c.id)); if (en.length && Math.random() < 0.7) pool = en; }   // au début, on te propose surtout de quoi bâtir une piste
     return pool[Math.floor(Math.random() * pool.length)];
   };
+  const chance = () => Math.max(10, Math.min(90, Math.round((S.g[0] + S.g[1]) / 2)));
   const finalCard = k => ({ id: 'final_' + k, who: { samovar: { hat: 'toque', beard: 'mustache', extra: 'apron', coat: '#8a8a8a', skin: 1 }, train: { hat: 'cap', cap: '#2a3a52', beard: 'pointy', extra: 'sash', coat: '#2a3a52', brow: 'angry' }, bear: { hat: 'ushanka', beard: 'full', coat: '#5a4636', skin: 3 } }[k],
     name: { samovar: 'Ivan, cuisinier impérial', train: 'Général Orlov', bear: 'Piotr, dresseur d\'ours' }[k],
-    text: { samovar: 'Le samovar du tsar est prêt. Il ne manque que votre signe de tête.', train: 'Le train impérial passe sur le pont ce soir. Les rails, eux, sont un peu fatigués.', bear: 'Le tsar visite le cirque ce soir. L\'ours a jeûné exprès.' }[k],
-    L: ['Renoncer', [0, 8, 0, 4]], R: ['Donner le signal', [0, 0, 0, 0]], final: k });
+    text: { samovar: 'Le samovar du tsar est prêt : MOYEN et ACCÈS réunis. Il ne manque que votre signe de tête.', train: 'Le train impérial passe sur le pont ce soir : MOYEN et GARDE réunis. Les rails, eux, sont un peu fatigués.', bear: 'Le tsar visite le cirque ce soir : OURS et ACCÈS réunis. L\'ours a jeûné exprès.' }[k],
+    L: ['Renoncer', [0, 8, 0, 4]], R: ['Donner le signal', [0, 0, 0, 0]], final: k, tag: ['Tu repousses de 2 jours', null] });
 
   // ----- panneau de dialogue et de choix -----
   const pips = fx => fx.map((v, i) => v ? `<i style="--s:${Math.min(11, 5 + Math.abs(v) * .3)}px" title="${GAUGES[i][0]}"></i>` : '').join('');
+  const tagOf = (c, i) => c.final && i ? `🎲 Chances : ${chance()} %` : (c.tag || TAGS[c.id] || [])[i];
   function panel(c) {
     $('ts-panel').className = 'ts-panel';
     $('ts-panel').innerHTML = `<div class="ts-name">${esc(c.name)}</div><p class="ts-say">${esc(c.text)}</p>
-      <div class="ts-choices"><button id="ts-l" data-i="0"><span>${esc(c.L[0])}</span><em>${pips(c.L[1])}</em></button><button id="ts-r" data-i="1"><span>${esc(c.R[0])}</span><em>${pips(c.R[1])}</em></button></div>
+      <div class="ts-choices"><button id="ts-l" data-i="0"><span>${esc(c.L[0])}</span><small>${esc(tagOf(c, 0) || '')}</small><em>${pips(c.L[1])}</em></button><button id="ts-r" data-i="1"><span>${esc(c.R[0])}</span><small class="go">${esc(tagOf(c, 1) || '')}</small><em>${pips(c.R[1])}</em></button></div>
       <div class="ts-hint">${HINTS[Math.floor(Math.random() * HINTS.length)]}</div>`;
     const p = $('ts-panel'); let x0 = 0, dx = 0, drag = false;
     p.onpointerdown = e => { if (busy) return; if (e.target.closest('button')) { const i = +e.target.closest('button').dataset.i; preview((i ? c.R : c.L)[1]); } drag = true; x0 = e.clientX; dx = 0; };
@@ -198,6 +258,8 @@ export function startTsar(host, opts = {}) {
   const chestEl = () => $('ts-chest');
   const EXIT = async (v, flip = 1) => { if (!v) return; await move(v, -70, 1300, flip); v.remove(); };
   const ACT = {
+    async capi(v, c, ap) { ap(); vis = null; v?.remove(); await playEnd('capi'); },
+    async rave(v, c, ap) { ap(); vis = null; v?.remove(); await playEnd('rave'); },
     async leave(v, c, ap, i) { ap(); bubble(v, i ? '🙂' : '😒'); await W(500); await EXIT(v, 1); },
     async turn(v, c, ap) { player.style.setProperty('--f', 1); bubble(player, '🙄'); ap(); await W(700); player.style.setProperty('--f', -1); },
     async flee(v, c, ap) { ap(); bubble(v, '😱'); await EXIT(v, 1); },
@@ -212,14 +274,15 @@ export function startTsar(host, opts = {}) {
     async prep(v, c, ap, i, flag) { act(v, 'raise', 900); await fly(ITEM[flag], v, $('ts-board'), 1000); ap(); bubble(v, '🤫', 800); await W(500); await EXIT(v, 1); },
   };
   async function choose(i) {
-    if (busy) return; busy = true;
+    if (busy) return; busy = true; SFX.blip();
     const c = card, side = i ? c.R : c.L, ac = (ACTS[c.id] || ['leave', 'leave'])[i];
     $('ts-panel').classList.add('hide'); preview(null);
     const ap = () => { S.g = S.g.map((v, k) => clamp(v + side[1][k])); if (side[2]) S.flags[side[2]] = true; decor(); };
-    if (c.final) { if (!i) { ap(); await EXIT(vis, 1); return next(); } vis?.remove(); return playEnd(c.final); }
+    if (c.final) { if (!i) { ap(); S.nextFinal = S.day + 2; S.day++; await EXIT(vis, 1); if (S.day > S.max) return playEnd('late'); return next(); } vis?.remove(); return playEnd(Math.random() * 100 < chance() ? c.final : 'x_' + c.final); }
     const [kind, arg] = ac.split(':'); S.seen.push(c.id); S.last = c.id; S.day++;
     await (ACT[kind] || ACT.leave)(vis, c, ap, i, arg);
-    if (stopped) return;
+    if (stopped || S.dead) return;
+    if (S.day > S.max) return playEnd('late');
     for (let k = 0; k < 4; k++) { if (S.g[k] <= 0) return playEnd(LOSE_KEY[k][0]); if (S.g[k] >= 100) return playEnd(LOSE_KEY[k][1]); }
     next();
   }
@@ -230,25 +293,55 @@ export function startTsar(host, opts = {}) {
     const standUp = () => { tsarEl.classList.remove('sit'); tsarEl.style.transition = 'bottom .3s'; tsarEl.style.bottom = Y(FRONT) + '%'; };
     const crown = async (from = tsarEl) => { await fly('👑', from, player, 1000, 34); player.querySelector('.ts-crown').classList.add('on'); tsarEl.querySelector('.ts-crown').classList.remove('on'); await burst('✨', player, 10); };
     const dead = () => { tsarEl.querySelector('g[transform]').innerHTML = faceInner({ ...tsarO(''), dead: true }); tsarEl.classList.add('slump'); };
-    if (key === 'samovar') {
-      const cook = mk({ hat: 'toque', beard: 'mustache', extra: 'apron', coat: '#8a8a8a', skin: 1 }, -50, { w: 84 }); $('ts-table').classList.add('on'); move(player, 70, 1000, 1);
-      await move(cook, 262, 1900, 1); act(cook, 'raise', 900); await W(300); await burst('☠️', $('ts-table'), 5); $('ts-table').classList.add('green'); await W(900);
+    const arrest = async () => {
+      const g1 = mk({ hat: 'cap', cap: '#2a3a52', coat: '#2a3a52', beard: 'mustache', brow: 'angry' }, -60, { w: 84 }), g2 = mk({ hat: 'cap', cap: '#2a3a52', coat: '#2a3a52', beard: 'full', brow: 'angry' }, -150, { w: 84 });
+      move(g2, 180, 1800, 1); await move(g1, 205, 1700, 1); bubble(player, '😰', 1200); act(player, 'raise', 1200); bubble(g1, '❗', 1000); await W(1300); await Promise.all([move(g1, -80, 1700, -1), move(g2, -80, 1700, -1), move(player, -20, 1700, -1)]); g1.remove(); g2.remove();
+    };
+    const pour = async () => { const cook = mk({ hat: 'toque', beard: 'mustache', extra: 'apron', coat: '#8a8a8a', skin: 1 }, -50, { w: 84 }); $('ts-table').classList.add('on'); move(player, 70, 1000, 1); await move(cook, 262, 1900, 1); act(cook, 'raise', 900); await W(300); await burst('☠️', $('ts-table'), 5); $('ts-table').classList.add('green'); await W(900); return cook; };
+    if (key === 'x_samovar') {
+      await pour(); const t = mk({ hat: 'none', coat: '#555', beard: 'full', hair: '#444' }, -50, { w: 80 }); await move(t, 232, 1400, 1); bubble(t, '🍵', 900); await W(900); t.classList.add('slump'); shake(); bubble(tsarEl, '😏', 1300); await W(1400); await arrest();
+    } else if (key === 'x_train') {
+      const tw = $('ts-trainwrap'); tw.classList.add('stall'); SFX.whistle(); await W(1500); await burst('🐄', $('ts-win'), 3); bubble(tsarEl, '😏', 1500); bubble(player, '🤦', 1500); await W(1600); await Promise.all([move(player, 470, 2000, 1)]);
+    } else if (key === 'x_bear') {
+      const bear = mk('bear', -80, { w: 112, lane: FRONT }); await move(bear, 292, 2200, 1); standUp(); await W(300); await burst('❤️', bear, 6); await fly('🏅', tsarEl, bear, 900); bubble(tsarEl, '🥰', 1300); bubble(player, '🙄', 1300); act(tsarEl, 'hop', 600); await W(1500);
+    } else if (key === 'late') {
+      bubble(tsarEl, '👴', 1200); await W(1300); dead(); await burst('🕯️', tsarEl, 4); bubble(player, '🥱', 1200); await W(900);
+      const u = mk({ hat: 'none', hair: '#222', coat: '#2a2a3a', beard: 'mustache', skin: 2 }, -60, { w: 86 }); await move(u, 150, 1500, 1); bubble(u, '😎', 1300); await fly('👑', tsarEl, u, 1000, 34); await W(500);
+    } else if (key === 'capi') {
+      const relook = (el, o) => { el.querySelector('svg').outerHTML = body(o); };
+      SFX.cash(); await flash(); scene.classList.add('capi'); standUp(); await W(300);
+      relook(tsarEl, { hat: 'tophat', coat: '#1a1a2a', extra: 'tie', beard: 'none', skin: 0 }); tsarEl.querySelector('g[transform]')?.setAttribute('transform', 'translate(10 -8) scale(.5)');
+      relook(player, { hat: 'cap', cap: '#da291c', coat: '#da291c', extra: 'apron', beard: 'none', skin: 0, hair: '#5a3a2a' });
+      const crew = [[320, 'cap'], [360, 'cap']].map(([x]) => mk({ hat: 'cap', cap: '#da291c', coat: '#da291c', extra: 'apron', beard: 'none', skin: 1 }, x, { w: 70, lane: BACK + 40 }));
+      await move(tsarEl, 195, 1100, -1); tsarEl.classList.add('dance'); SFX.anthem(); bubble(tsarEl, '😎', 2600);
+      for (let i = 0; i < 6; i++) setTimeout(() => burst(i % 2 ? '💵' : '🍔', i % 2 ? tsarEl : player, 6), i * 800);
+      crew.forEach((c, i) => { act(c, 'raise', 1000); bubble(c, 'USA !', 2400); }); bubble(player, '🍟', 2400); await W(1500); SFX.cheer(); await W(4200);
+    } else if (key === 'rave') {
+      scene.classList.add('rave'); const lights = document.createElement('div'); lights.className = 'ts-lights'; scene.append(lights); const spk = ['6%', '86%'].map(l => { const e = document.createElement('div'); e.className = 'ts-spk'; e.style.left = l; e.textContent = '🔊'; scene.append(e); return e; });
+      const look = (el, o) => { el.querySelector('svg').outerHTML = body({ ...o, adidas: true, coat: NAVY }); };
+      look(player, { hat: 'none', hair: '#5a3a2a', skin: 0 }); look(tsarEl, { ...tsarO(''), hat: 'crown' }); tsarEl.querySelector('g[transform]')?.setAttribute('transform', 'translate(10 -8) scale(.5)');
+      standUp(); player.classList.add('dance'); tsarEl.classList.add('dance'); await move(tsarEl, 300, 900, -1); tsarEl.classList.add('dance');
+      const crew = [[{ hat: 'mitre', beard: 'full', hair: '#cfc7b8', skin: 2 }, 60], [{ hat: 'toque', beard: 'mustache', skin: 1 }, 118], [{ hat: 'cap', cap: '#16358a', beard: 'pointy', skin: 0 }, 176], [{ hat: 'ushanka', beard: 'full', skin: 3 }, 205], [{ hat: 'none', hair: '#222', beard: 'none', skin: 2 }, 350]];
+      const dancers = crew.map(([o, x], i) => { const d = mk({ ...o, adidas: true, coat: NAVY }, x, { w: 80, lane: i % 2 ? BACK + 20 : FRONT }); d.classList.add('dance'); d.style.animationDelay = (i * .12) + 's'; return d; });
+      const bear = mk('bear', 20, { w: 100, lane: FRONT }); bear.classList.add('dance'); bear.insertAdjacentHTML('beforeend', '<div class="ts-shades">🕶️</div>');
+      beat(); ['🔊', '🎶', '💃', '🕺', '🔥'].forEach((e, i) => setTimeout(() => burst(e, i % 2 ? player : tsarEl, 5), i * 700)); bubble(tsarEl, 'ХАРДБАС !', 2600); bubble(dancers[0], 'Cyka bass', 2400); await W(5200);
+    } else if (key === 'samovar') {
+      await pour();
       bubble(tsarEl, '🍵', 1400); await W(1500); dead(); shake(); await flash(); await crown();
     } else if (key === 'train') {
-      const tw = $('ts-trainwrap'); bubble(tsarEl, '🚂', 1200); tsarEl.style.transition = 'opacity .8s'; tsarEl.style.opacity = 0; await W(900); tw.classList.add('run'); await W(1500); tw.classList.add('fall'); await W(700); shake(); await burst('💥', $('ts-win'), 8); await flash(); await W(300); await crown($('ts-win'));
+      const tw = $('ts-trainwrap'); bubble(tsarEl, '🚂', 1200); tsarEl.style.transition = 'opacity .8s'; tsarEl.style.opacity = 0; await W(900); tw.classList.add('run'); SFX.whistle(); await W(1500); tw.classList.add('fall'); await W(700); shake(); await burst('💥', $('ts-win'), 8); await flash(); await W(300); await crown($('ts-win'));
     } else if (key === 'bear') {
       const bear = mk('bear', -80, { w: 112, lane: FRONT }); await move(bear, 292, 2200, 1); bubble(tsarEl, '😨', 900); standUp(); await W(500);
       shake(); await burst('🐾', bear, 6); dead(); await W(300); await crown(); bear.remove();
     } else if (['c0', 'c1', 'd0', 'a1'].includes(key)) {
-      const g1 = mk({ hat: 'cap', cap: '#2a3a52', coat: '#2a3a52', beard: 'mustache', brow: 'angry' }, -60, { w: 84 }), g2 = mk({ hat: 'cap', cap: '#2a3a52', coat: '#2a3a52', beard: 'full', brow: 'angry' }, -150, { w: 84 });
-      move(g2, 180, 1800, 1); await move(g1, 205, 1700, 1); bubble(player, '😰', 1200); act(player, 'raise', 1200); bubble(g1, '❗', 1000); await W(1300); await Promise.all([move(g1, -80, 1700, -1), move(g2, -80, 1700, -1), move(player, -20, 1700, -1)]); g1.remove(); g2.remove();
+      await arrest();
     } else if (key === 'f0' || key === 'a0') { bubble(tsarEl, '👉', 1100); await W(900); await Promise.all([move(player, 470, 2100, 1), burst('❄️', player, 5)]); }
     else if (key === 'd1') { bubble(player, '🫥', 1200); player.style.transition = 'opacity 1.8s'; player.style.opacity = .12; await W(1900); }
     else if (key === 'f1') { standUp(); await W(350); await move(tsarEl, 286, 1100, -1); await burst('❤️', { x: centre(player).x, y: centre(player).y - 30 }, 6); await W(600); }
     if (stopped) return;
     const isNew = !found.includes(key); if (isNew) { found.push(key); save(); } opts.onEnd?.(key, isNew);
-    const p = $('ts-panel'); p.className = 'ts-panel end ' + e.kind; p.style.transform = '';
-    p.innerHTML = `<div class="ts-stamp ${e.kind}">${e.kind === 'win' ? 'ВЫ ЦАРЬ' : 'КОНЕЦ'}</div><h2>${esc(e.t)}</h2><p class="ts-say">${esc(e.txt)}</p>
+    const p = $('ts-panel'); p.className = 'ts-panel end ' + e.kind; p.style.transform = ''; setTimeout(() => SFX.stamp(), 380); if (e.kind === 'win') SFX.win(); else if (key === 'late') SFX.funeral(); else if (e.kind === 'lose') SFX.lose();
+    p.innerHTML = `<div class="ts-stamp ${e.kind}">${e.stamp || (e.kind === 'win' ? 'ВЫ ЦАРЬ' : 'КОНЕЦ')}</div><h2>${esc(e.t)}</h2><p class="ts-say">${esc(e.txt)}</p>
       <div class="ts-count">Fin n° ${Object.keys(END).indexOf(key) + 1} · ${found.length} / ${TOTAL_ENDS} fins découvertes ${isNew ? '<b>nouveau !</b>' : ''}</div>
       <div class="ts-endbtns"><button id="ts-again">Rejouer</button><button class="plain" id="ts-quit">Quitter</button></div>`;
     $('ts-again').onclick = () => begin(); $('ts-quit').onclick = () => { stopped = true; opts.onExit?.(); };
@@ -258,18 +351,29 @@ export function startTsar(host, opts = {}) {
   // ----- un tour : le visiteur arrive, parle, attend ton choix -----
   async function next() {
     if (stopped) return; busy = true;
-    const n = pickCard(), c = n.final ? finalCard(n.final) : n; card = c; $('ts-day').textContent = `Jour ${S.day}`;
+    const n = pickCard(), c = n.final ? finalCard(n.final) : n; card = c; $('ts-day').textContent = `Jour ${S.day} / ${S.max}`;
     if (c.id === 'tsar') { vis = null; bubble(tsarEl, '🗣️', 1200); }
     else { const v = vis = mk(c.who, -60, { w: 86, flip: 1 }); await move(v, 150, 1500, 1); if (stopped || S.dead || vis !== v) { v.remove(); return; } bubble(v, '💬', 1100); }
     if (S.dead) return; panel(c); busy = false;
   }
+  const PLAYER_O = { hat: 'none', hair: '#5a3a2a', coat: '#3a4a6a', beard: 'none', skin: 0, extra: 'sash' };
   function begin() {
-    S = fresh(); pins.clear(); prevCo = prevEy = 0; prevMood = ''; actors.querySelectorAll('.actor-tmp').forEach(e => e.remove());
-    [...actors.children].forEach(e => { if (e !== player && e !== tsarEl) e.remove(); });
+    S = fresh(); player.querySelector('svg').outerHTML = body(PLAYER_O); tsarEl.querySelector('svg').outerHTML = body(tsarO('')); tsarEl.style.opacity = ''; player.style.opacity = ''; pins.clear(); prevCo = prevEy = 0; prevMood = ''; actors.querySelectorAll('.actor-tmp').forEach(e => e.remove());
+    [...actors.children].forEach(e => { if (e !== player && e !== tsarEl) e.remove(); }); player.classList.remove('dance', 'slump'); tsarEl.classList.remove('dance');
     player.style.cssText = `left:${X(250)}%;bottom:${Y(FRONT)}%;width:${90 / SW * 100}%;--f:-1`; player.querySelector('.ts-crown').classList.remove('on');
     tsarEl.style.cssText = `left:${X(342)}%;bottom:${Y(232)}%;width:${74 / SW * 100}%;--f:-1`; tsarEl.classList.add('sit'); tsarEl.classList.remove('slump'); tsarEl.querySelector('.ts-crown').classList.add('on'); $('ts-table').classList.remove('on', 'green');
     const tw = $('ts-trainwrap'); tw.classList.remove('run', 'fall');
-    decor(); next();
+    decor(); scene.classList.remove('rave', 'capi'); scene.querySelectorAll('.ts-lights,.ts-spk').forEach(e => e.remove()); $('ts-trainwrap').classList.remove('stall');
+    guards(); briefing();
+  }
+  const guards = () => { [268, 386].forEach(x => { const g = mk({ hat: 'cap', cap: '#2a3a52', coat: '#2a3a52', beard: 'mustache', brow: 'angry' }, x, { lane: BACK + 4, w: 44, flip: -1, cls: 'guard' }); g.insertAdjacentHTML('beforeend', '<i class="ts-spear"></i>'); }); };
+  function briefing() {
+    busy = true; $('ts-day').textContent = '';
+    const p = $('ts-panel'); p.className = 'ts-panel brief'; p.style.transform = '';
+    p.innerHTML = `<div class="ts-name">Ton objectif</div><h2>Prendre la place du tsar</h2>
+      <ol class="ts-brief"><li><b>Bâtis une piste</b> : Samovar, Train ou Ours. Chacune demande 2 éléments (affichés sous la scène).</li><li><b>Garde l'équilibre</b> : une jauge à 0 ou à 100, et c'est la fin.</li><li><b>Tu as 14 jours.</b> Quand une piste est prête, donne le signal : plus tes Complices et ta Discrétion sont hautes, plus tu as de chances.</li></ol>
+      <button id="ts-go">Commencer le complot</button>`;
+    $('ts-go').onclick = () => { ctx(); SFX.blip(); if (!S.dead) next(); };
   }
   begin();
   return { stop() { stopped = true; }, state: () => S, found: () => found, finals: () => Object.keys(END), forceEnd: k => playEnd(k) };
