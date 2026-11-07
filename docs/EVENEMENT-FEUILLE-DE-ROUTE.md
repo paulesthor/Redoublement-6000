@@ -1,128 +1,126 @@
-# Feuille de route d'un événement (modèle : « mode communiste », build 10.35)
+# Feuille de route : créer un événement (modèle : « mode communiste », build 10.38)
 
-Ce document sert à refaire un autre événement (Halloween, Noël, Egypte antique, etc.) sans repartir de zéro.
-Chaque section dit **quoi faire**, **dans quel fichier**, et **comment le tester**.
-
----------------------------------------------------------------------
-
-## 0. Ce qu'est un événement ici
-
-Un événement = un **mode temporaire** qui change l'habillage de l'appli et ajoute une économie parallèle, sans toucher à la collection normale.
-
-| Brique | Rôle dans le mode communiste | À remplacer pour un nouvel événement |
-|---|---|---|
-| Monnaie d'événement | wikiroubles (₽), gagnés en jouant, dépensés en colis | nom, icône, textes |
-| Taxe d'entrée | 300 wikibidou, versés à la cagnotte | valeur dans `COMMU` |
-| Plan de paliers | 12 paliers, récompenses (colis, ₽, titres, cadres, thèmes, souvenirs, wikibidou classiques) | `PLAN_MILESTONES` |
-| Réservoir de cartes | 1 214 articles thématiques, 6 raretés, 150 légendaires | liste de titres + script de build |
-| Jeux | Camp, Patates, Dernier Tsar, quiz du jour, Marché noir | jeux réutilisés ou nouveaux |
-| Habillage | thème rouge, bandeau « Pravda », textes réécrits, hymne, icône | skin |
-| Classement | podium + classement général, cagnotte au premier | textes |
-| Fin | gagnant, souvenirs (cartes qui entrent dans la collection normale), thèmes gardés | textes, récompenses |
+**Principe : on garde la structure, on change l'habillage.**
+Pour un nouvel événement, tu m'envoies seulement **4 choses** (le brief). Je m'occupe de tout le reste : cartes, économie, paliers, jeux, pages, textes, couleurs, tests, mise en ligne.
 
 ---------------------------------------------------------------------
 
-## 1. Cartographie du code
+## PARTIE 1 : CE QUE TU M'ENVOIES (le brief)
+
+Copie ce modèle, remplis-le, envoie-le moi. Quelques lignes par point suffisent.
+
+```
+1. THÈME GLOBAL
+   - Nom de l'événement :
+   - Univers (une phrase) : ex. « Égypte antique », « Halloween », « Far West »
+   - Durée voulue (jours) et période :
+   - Nom de la monnaie d'événement : (ex. « wikiroubles » ₽, « deniers », « bonbons »)
+   - Nom du gagnant (l'équivalent de « Staline ») :
+
+2. TON DES TEXTES
+   - Registre : humour noir / absurde / épique / mignon / vulgaire…
+   - Personnage qui parle (le « camarade », le « pharaon », le « sorcier »…) :
+   - Ce qui est interdit (ex. pas d'emoticônes) :
+   - 3 phrases d'exemple dans le ton voulu :
+
+3. COULEURS ET AMBIANCE
+   - 2 à 3 couleurs principales (codes ou noms) + une couleur d'accent :
+   - Style des cartes / du fond (ex. papier vieilli, néon, parchemin) :
+   - Musique d'ambiance (fichier mp3) ou « aucune » :
+   - Icône de l'appli pendant l'événement (image) ou « aucune » :
+
+4. IDÉES DE JEUX
+   - Jeux de l'événement (ex. 3 à 5) : une phrase par jeu, avec ce qui rapporte des points
+   - Jeux existants à réutiliser en les rhabillant : Camp (idle), Patates (clicker),
+     quiz du jour, Marché noir (bourse), scénario à choix (type Reigns)
+   - Un jeu « signature » nouveau (facultatif) :
+```
+
+Tu peux aussi me dire : la taxe d'entrée, la difficulté (casual / régulier / hardcore), ce que les joueurs gardent à la fin.
+**Si une case est vide, je choisis une valeur par défaut raisonnable et je te la montre avant de la figer.**
+
+---------------------------------------------------------------------
+
+## PARTIE 2 : CE QUE JE FAIS (le pipeline)
+
+| # | Étape | Ce que je produis | Ce que tu valides |
+|---|---|---|---|
+| 1 | Cadrage | Fiche récapitulative : monnaie, taxe, plafonds par jeu, 12 paliers, durée | Les chiffres |
+| 2 | Cartes | ≈1 200 articles du thème, 6 raretés (légendaire ≈12 %), vérifiés et sans intrus | Un échantillon de titres |
+| 3 | Économie | Paliers, récompenses (colis, monnaie, titres, cadres, thèmes, souvenirs, wikibidou du mode classique), points de collection | Le tableau des paliers |
+| 4 | Habillage | Thème CSS, textes réécrits dans ton ton, bandeau d'actualités (≈100 lignes), icône, musique | Une capture de chaque écran |
+| 5 | Jeux | Les jeux demandés, rhabillés ou créés, avec plafonds et récompenses côté serveur | Une partie test |
+| 6 | Pages | Annonce de début, route des paliers, podium, classement, règlement, fin, tambour de fin | Les captures |
+| 7 | Tests | Suite serveur + suite iPhone (390×844) + simulation de plusieurs joueurs et plusieurs jours | Le rapport |
+| 8 | Test réel | Événement ouvert **pour toi seul** | Ton essai sur iPhone |
+| 9 | Lancement | Bouton « Lancer pour TOUS » (Administration → Événement) | La date |
+| 10 | Fin | Gagnant, cagnotte, souvenirs, retour au thème normal | — |
+
+Livrable à chaque étape : un build poussé, un message de ce qui change, ce qu'il reste.
+
+---------------------------------------------------------------------
+
+## PARTIE 3 : LA STRUCTURE QUI NE CHANGE PAS
+
+Ces briques sont déjà là et servent à tous les événements :
+
+- **Monnaie d'événement** gagnée en jouant, dépensée en colis, avec plafond par jour et par jeu (anti-triche : tout gain est calculé côté serveur).
+- **Taxe d'entrée** versée à une **cagnotte** ; le premier du classement la remporte.
+- **12 paliers** (colis, monnaie, titres, cadres, thèmes, 2 souvenirs, wikibidou du mode classique).
+- **Collection** : réservoir thématique, colis de 10 fiches, points de palier pour chaque nouvelle fiche (+ prime par 50 fiches différentes).
+- **Départ** : 500 unités de monnaie + 10 colis.
+- **Pages** : annonce, route des paliers, podium + classement général, règlement, fin et choix des souvenirs.
+- **Pilotage admin** (Administration → Événement) : ouvrir pour moi seul, lancer pour tous, fermer, clore + gagnant, clore les souvenirs, repartir de zéro.
+- **Fin** : souvenirs qui entrent dans la collection normale avec un tampon, thèmes et titres gardés.
+
+---------------------------------------------------------------------
+
+## PARTIE 4 : OÙ SE TROUVE QUOI (pour mon usage)
 
 ### Serveur (`cloudflare-supabase/src/`)
-- `plan.js` : **cœur**. `COMMU` (taxe, ₽ de départ, prix du colis, plafonds par jeu), `PLAN_MILESTONES`, `installPlan(d)` (routes `/api/commu/*`, `/api/plan/*`), `credit()` (gain plafonné par jour), `commuView()`, état global dans la table `settings` (`commu_on`, `commu_scope`, `commu_start`, `commu_pot`, `commu_done`, `commu_winner`, `commu_souv_closed`).
-- `commu-cards.js` : réservoir, tirage (`drawPack`, `EVENT_WEIGHTS`), `/api/commu/open`, `/api/commu/cards`, souvenirs, **points de collection** (`NEW_POINTS`, `COLLECTION_BONUS`). Identifiants de cartes d'événement = `EVENT_OFFSET + id Wikipédia`, ce qui les sépare de la collection normale.
-- `commu-bourse.js` : Marché noir (créneaux ≥ 100 dans `bourse_market`).
-- `game.js` : titres et récompenses (`PLAN_TITLES`, `commu_staline`).
-- `index.js` : branchement (`installPlan`), quiz du jour (`qDayOf`, clé `cm:YYYY-MM-DD`), `/api/cosmetics`.
-- `schema.pg.sql` + `ensureGameSchema` : tables (`plan_progress`, `event_progress`, …). Règle : **rester sous 60 aller-retours de base** (un test le vérifie).
-- `config.js` : `VERSION` à incrémenter à chaque livraison.
+`plan.js` (`COMMU`, `PLAN_MILESTONES`, routes `/api/commu/*` et `/api/plan/*`, `credit()`), `commu-cards.js` (réservoir, tirage, `NEW_POINTS`, `COLLECTION_BONUS`), `commu-bourse.js` (Marché noir), `game.js` (titres), `index.js` (branchement, quiz), `schema.pg.sql`, `config.js` (VERSION).
 
-### Client (`wikimasters/public/`, à copier ensuite dans `cloudflare/public/`)
-- `app.js` : état `commu`, `loadCommu()`, `eventOn()`, `eventAccess()`, `eventUi()`, `ussrUiOn()`, `syncUssrUi()`. Vues : `eventPacks`, `eventAlbum`, `views.plan` (route des paliers), `views.commutop`, `views.commurules`, `views.commustart` (annonce), `views.commuend` (fin), `views.rank` (podium), `jeuxHub`, `syncEventDrum` (tambour de fin), `iconSheet` (nouvelle icône), onglet admin « Événement ».
-- `ussr-skin.js` : moteur d'habillage (textes remplacés, bandeau d'actualités, icône, hymne).
-- `ussrpack.js`, `reveal.js` : mise en scène des ouvertures (colis, dossier, matriochka, camion ×10).
-- `reigns.js` : jeu du Tsar (moteur de scènes, 21 fins, sons).
-- `style.css` : habillage, route des paliers `.plr*`, podium `.pd*`, annonce `.cs-*`, tambour `.commu-drum`.
-- `install.html`, `manifest-evenement.webmanifest`, `ussr-icon-*.png`, `ussr-hymne.mp3` : installation et icône.
-- `catalog/commu.json` : réservoir généré (ne pas éditer à la main).
+### Client (`wikimasters/public/`, copie dans `cloudflare/public/`)
+`app.js` (état `commu`, vues `eventPacks`, `eventAlbum`, `plan`, `commutop`, `commurules`, `commustart`, `commuend`, `rank`, onglet admin), `ussr-skin.js` (textes, actualités, icône, hymne), `ussrpack.js` / `reveal.js` (ouvertures), `reigns.js` (jeu à scénarios), `style.css`, `install.html`, `catalog/commu.json`.
 
-### Outils (`tools/`)
-- `commu-titles.json` : titres par rareté (légendaires choisis à la main).
-- `commu-extra.txt` : titres supplémentaires, rareté déduite de la popularité.
-- `build-commu.py` : fabrique `commu.json` **sans réseau** à partir des fragments locaux du catalogue. Il liste les titres absents. `EXCLUDE` retire les intrus.
+### Outils
+`tools/commu-titles.json`, `tools/commu-extra.txt`, `tools/build-commu.py` (fabrique les cartes sans réseau).
+
+### Tests
+Serveur : `plan`, `plan-multi`, `commu`, `commu-scope`, `commu-games`. Interface : `commu-ui`, `commu-ui2`, `commu-end`, `start`, `podium`, `avatar`, `tsar-*`, `hymn-ui`, `icon-ui`, `ten-ui`, audits. Les `.mjs` d'interface s'assemblent : `cat tests/jeux-head.part tests/<nom>-body.part > tests/<nom>.mjs` (modifier le `.part`).
 
 ---------------------------------------------------------------------
 
-## 2. Plan de travail pour un nouvel événement
+## PARTIE 5 : LE CHANTIER À FAIRE UNE FOIS POUR QUE TOUT SOIT PILOTÉ PAR LE BRIEF
 
-### Étape A : cadrage (½ journée)
-1. Thème, ton, durée, public (iPhone uniquement).
-2. Chiffrer l'économie : ₽ gagnés par jour et par jeu (plafonds `COMMU.CAPS`), prix du colis, seuils des paliers. Règle retenue : **un joueur régulier doit pouvoir finir les 12 paliers**.
-3. Décider ce qui reste en commun avec le mode classique (récompenses en wikibidou, thèmes, titres, cadres).
+Aujourd'hui, le thème communiste est encore écrit « en dur » à plusieurs endroits (noms `commu`, `ussr`, textes dans `app.js`, table de remplacement dans `ussr-skin.js`). Pour que le brief suffise sans que je touche à la structure, je propose de faire **avant le prochain événement** :
 
-### Étape B : données
-1. Écrire 1 000+ titres d'articles du thème dans `tools/commu-extra.txt` et les légendaires dans `tools/commu-titles.json`.
-2. `python3 tools/build-commu.py` : vérifier le nombre de cartes par rareté et la liste « absentes ». Corriger avec la table `ALIAS` ou `EXCLUDE`.
-3. Relire les titres (chasser les faux amis, p. ex. « Pelote basque », « Deep Blue » étaient des intrus).
-4. Répartition cible : légendaire ≈ 12 %, ultra 9 %, super 12 %, rare 19 %, peu commune 23 %, commune 25 %.
+1. **Fichier de thème unique** (`events/<nom>/theme.json`) : nom, monnaie, gagnant, couleurs, ton, textes de chaque page, liste de titres de paliers, actualités, libellés des raretés (grades). L'appli lit ce fichier au lieu de textes en dur.
+2. **Renommer** `commu`/`ussr` en `event` (code générique) et garder « communiste » comme premier thème.
+3. **Habillage CSS par variables** : toutes les couleurs passent par des variables définies par le fichier de thème.
+4. **Fabrique de cartes générique** : `tools/build-event.py <nom>` à partir de `events/<nom>/titles.txt`.
+5. **Jeux paramétrables** : plafonds, gains et textes lus dans le thème ; le scénario à choix reçoit son contenu depuis un fichier.
+6. **Tests génériques** : les tests lisent le thème au lieu de textes en dur.
 
-### Étape C : économie et paliers
-1. Adapter `COMMU` et `PLAN_MILESTONES` dans `plan.js` (12 paliers : `at`, `coins`, `packs`, `wr`, `title`, `perk`).
-2. Points de collection : `NEW_POINTS` (1/2/4/7/12/25) et `COLLECTION_BONUS` (20 par 50 fiches).
-3. Mettre à jour les tests qui contiennent des totaux (`plan.mjs`, `commu-end-body.part`).
-
-### Étape D : habillage
-1. Thème CSS (`html[data-theme=…]`) et palette dans `index.html` (`THEME_BG`).
-2. Table de remplacement des textes dans `ussr-skin.js`, bandeau d'actualités (une centaine de lignes, ton cohérent).
-3. Icône (`*-icon-*.png`) et manifeste ; musique de fond (jouée seulement quand le thème est actif, coupée pendant les jeux plein écran).
-4. Animations d'ouverture : colis / dossier / grand paquet selon la rareté, version ×10.
-
-### Étape E : jeux
-Réutiliser les jeux existants (Camp, Patates, quiz, Marché noir) en leur donnant le thème, ou en créer un (le Tsar sert de modèle : moteur de scènes, fins, plafonds par jour, récompense à la première découverte). Chaque gain passe par `credit()` côté serveur : **jamais de gain calculé côté client**.
-
-### Étape F : pages
-Annonce de début (`commustart`), route des paliers (`plan`), podium (`rank`), classement général (`commutop`), règlement (`commurules`), fin (`commuend` + tambour), nouvelle icône (`iconSheet`).
-
-### Étape G : fin d'événement
-Gagnant = plus de points de Plan (₽ gagnés + points de cartes) ; égalité : le premier arrivé au total. Il reçoit la cagnotte, le titre et le contour doré. Souvenirs : cartes choisies qui entrent dans la collection normale avec un contour. Thèmes et titres gagnés restent.
+Ensuite, un nouvel événement = un dossier `events/<nom>/` rempli à partir de ton brief, plus du code de jeu si tu demandes un jeu nouveau.
+Estimation : un chantier d'une session pour le refactor, puis un événement thématique prend le temps de produire les cartes, les textes et les tests.
 
 ---------------------------------------------------------------------
 
-## 3. Tests (à passer avant chaque mise en ligne)
+## PARTIE 6 : MISE EN LIGNE ET PIÈGES
 
-Serveur (base PGlite en mémoire) : `cd cloudflare-supabase && node tests/all.mjs` (long : environ 10 min, ne pas dépasser le délai ; lancer les fichiers séparément si besoin).
-Fichiers clés : `plan.mjs`, `plan-multi.mjs`, `commu.mjs`, `commu-scope.mjs`, `commu-games.mjs`.
+**Lancement** : incrémenter la version (4 fichiers), copier les fichiers dans `cloudflare/public/`, pousser `claude/wikimasters-clone`, synchroniser `test/equilibrage`. Test réel : Administration → Événement → « Ouvrir pour moi seul ». Lancement : « Lancer l'événement pour TOUS ». Retour arrière : « Fermer » (les données restent).
 
-Interface (Playwright, iPhone 390×844, port 8767, **un fichier à la fois**) : `commu-ui`, `commu-ui2`, `commu-end`, `start` (annonce + admin), `podium`, `plan-ui`, `jeux-ui`, `tsar-ui`, `tsar-sim`, `tsar-audio`, `hymn-ui`, `icon-ui`, `ten-ui`, `communiste-audit`, `layout-audit`.
-Les fichiers `*.mjs` d'interface sont assemblés : `cat tests/jeux-head.part tests/<nom>-body.part > tests/<nom>.mjs`. **Modifier le `.part`, pas le `.mjs`.**
+**Pièges déjà rencontrés** : choisir le design avant que l'état de l'événement soit chargé (toujours `await loadCommu()`), gains simultanés (boucles de comparaison et échange), limite de 60 aller-retours base, survol collé sur iPhone, audio à débloquer par un geste, icône figée à l'installation (écran « réinstaller »), conflits de classes CSS (préfixer), pas d'emoticônes, une seule suite Playwright à la fois (port 8767), photo de profil ovale à cause de la hauteur minimale des boutons.
 
-À vérifier à la main sur un vrai iPhone (non automatisable) : hymne, icône (réinstallation), contour bleu, design des paquets, tambour de fin, podium.
+**À valider sur iPhone réel** : hymne, icône, paquets, tambour de fin, podium, tampon des souvenirs.
 
 ---------------------------------------------------------------------
 
-## 4. Mise en ligne
+## PARTIE 7 : MODE COMMUNISTE : CE QUI RESTE AVANT LE LANCEMENT
 
-1. Version : incrémenter dans `wikimasters/public/app.js` (`BUILD`), `wikimasters/config.js`, `cloudflare/src/config.js`, `cloudflare-supabase/src/config.js`. Copier `app.js`, `style.css`, etc. dans `cloudflare/public/`.
-2. Pousser la branche `claude/wikimasters-clone`, puis synchroniser `test/equilibrage`.
-3. **Test réel admin** : Administration → Événement → « Ouvrir pour moi seul ». Payer la taxe, jouer, ouvrir des colis, monter des paliers, regarder le classement.
-4. **Lancement** : Administration → Événement → « Lancer l'événement pour TOUS » (confirmation). Chaque joueur voit la page d'annonce une fois, puis le bandeau sur l'accueil.
-5. **Fin** : « Clore + gagnant », puis (plus tard) « Clore les souvenirs » qui attribue d'office les souvenirs non choisis.
-6. **Retour arrière** : « Fermer » coupe l'événement pour tous ; les données des joueurs restent.
-
----------------------------------------------------------------------
-
-## 5. Pièges rencontrés (à ne pas refaire)
-
-- Choisir le design avant que l'état de l'événement soit chargé : l'accueil classique apparaissait par intermittence. Toujours `await loadCommu()` avant de choisir la vue.
-- Un gain réclamé deux fois en parallèle : utiliser les boucles de **comparaison et échange** (CAS) déjà en place (`credit`, réclamation, ouverture).
-- Trop d'aller-retours base : un test les compte ; regrouper les `ALTER TABLE`, réutiliser `event_progress`.
-- Sur iPhone : le survol reste collé (`@media (hover:none)`), l'audio doit être débloqué par un geste, l'icône de l'écran d'accueil est figée à l'installation (donc écran « réinstaller »).
-- Classe CSS `.rd` en conflit : préfixer les classes de chaque événement.
-- Blocage réseau Wikimedia (429) : construire le réservoir depuis le catalogue local.
-- Pas d'emoticônes dans les jeux dessinés (décors en SVG).
-- Ne jamais lancer plusieurs suites Playwright en parallèle (port 8767 partagé).
-
----------------------------------------------------------------------
-
-## 6. Ce qui reste à décider pour le mode communiste
-
-- Date de début et de fin (le bouton existe, la date non).
-- Relecture complète des 1 214 titres.
-- Deuxième passe d'équilibrage du jeu du Tsar et simulation de plusieurs jours avec les points de cartes.
-- Essai sur iPhone réel, test de charge, plan de coupure d'urgence.
+- Date de début et de fin.
+- Relecture des 1 214 titres.
+- Passe complète des tests et audit visuel sur la dernière version.
+- Équilibrage du Tsar et simulation multi-jours avec les points de cartes.
+- Essai iPhone réel, test de charge, plan de coupure.
