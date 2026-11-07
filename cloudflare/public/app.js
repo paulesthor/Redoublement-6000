@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.22';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.23';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { commurules: 'more', commutop: 'more', tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 /** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
 // ---------- événement communiste : état du joueur, droits, thème ----------
 let commu = null, commuAt = 0;
@@ -445,7 +445,8 @@ let duelDirect = false, gulagTab = null;
 /** Mode communiste : écran « Les Jeux du Peuple » qui regroupe les jeux. */
 function jeuxHub(v) {
   const T = (key, icon, label, sub) => `<button class="mtile" data-jeu="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
-  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science') + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis') + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
+  const ev = eventOn();
+  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science') + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis') + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('bourse', 'market', 'Marché noir', 'Parie sur les vues, vends ta grand-mère')}${ev ? '' : T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
   v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
 }
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
@@ -460,7 +461,7 @@ async function loadCosmetics(force = false) {
   cosAt = Date.now();
   try { const d = await api('/cosmetics'); COS = new Map(d.players.map(p => [p.name, p])); TLABELS = d.labels; } catch { /* sans photos pour cette fois */ }
 }
-const avatar = (name, on = false) => { const c = COS.get(name); return `<span class="av ${on ? 'on' : ''} ${c?.v ? 'hasph' : ''}" style="--avc:${avColor(name)}">${c?.v ? `<img src="/api/avatar/${c.id}?v=${c.v}" alt="" loading="lazy" onerror="this.remove()">` : ''}${esc(String(name)[0]?.toUpperCase() || '?')}</span>`; };
+const avatar = (name, on = false) => { const c = COS.get(name); return `<span class="av ${on ? 'on' : ''} ${c?.v ? 'hasph' : ''} ${c?.fr ? 'fr-' + c.fr : ''}" style="--avc:${avColor(name)}">${c?.v ? `<img src="/api/avatar/${c.id}?v=${c.v}" alt="" loading="lazy" onerror="this.remove()">` : ''}${esc(String(name)[0]?.toUpperCase() || '?')}</span>`; };
 const ttl = name => { const t = COS.get(name)?.ti; return t && TLABELS[t] ? `<span class="ttl">${esc(TLABELS[t])}</span>` : ''; };
 const timeLeft = ms => { const r = Math.max(0, Math.round(ms / 1000)); return r >= 3600 ? `${Math.floor(r / 3600)} h ${Math.floor(r % 3600 / 60)} min` : r >= 60 ? `${Math.floor(r / 60)} min ${r % 60} s` : `${r} s`; };
 const RANK_SEG = [['rank', 'Classement'], ['ach', 'Succès']];
@@ -2085,22 +2086,22 @@ const sparkline = (vals, w = 120, h = 34) => {
 const cdTxt = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
 
 views.bourse = async v => {
-  const d = await api('/bourse');
-  if (!d.market.length) { v.innerHTML = `${pageHead('Bourse', 'Paris sur les vues Wikipédia')}<div class="empty">Le marché du jour n'est pas disponible (les statistiques Wikipédia ne répondent pas).<br>Réessaie dans quelques minutes.${d.why ? `<br><small class="mut">Détail : ${esc(d.why)}</small>` : ''}</div>`; return; }
+  const base = eventUi() ? '/commu/bourse' : '/bourse', U = eventUi() ? '₽' : 'pièces', d = await api(base);
+  if (!d.market.length) { v.innerHTML = `${pageHead(eventUi() ? 'Marché noir' : 'Bourse', eventUi() ? 'Paris sur les vues d\'articles soviétiques' : 'Paris sur les vues Wikipédia')}<div class="empty">Le marché du jour n'est pas disponible (les statistiques Wikipédia ne répondent pas).<br>Réessaie dans quelques minutes.${d.why ? `<br><small class="mut">Détail : ${esc(d.why)}</small>` : ''}</div>`; return; }
   const res = { won: ['Gagné', 'ok'], lost: ['Perdu', 'ko'], tie: ['Rendu', ''], wait: ['En attente', ''] };
-  v.innerHTML = `${pageHead('Bourse', 'Les vues de l\'article vont-elles monter ou baisser aujourd\'hui ?')}
-    <div class="panel boursehead"><p class="mut" style="margin:0">Pour chaque titre, parie sur les vues <b>du jour</b> comparées à la <b>moyenne des 7 derniers jours</b>. Bon pari : <b>×${d.payout}</b>. Résultat demain (les statistiques de Wikipédia sortent après minuit). ${ico('clock')} Nouveau marché dans ${cdTxt(d.resetIn)} · ${d.left} pari${d.left > 1 ? 's' : ''} restant${d.left > 1 ? 's' : ''} · ${fmt(Math.max(0, d.dayStake))} pièces misables.</p></div>
+  v.innerHTML = `${pageHead(eventUi() ? 'Marché noir' : 'Bourse', 'Les vues de l\'article vont-elles monter ou baisser aujourd\'hui ?')}
+    <div class="panel boursehead"><p class="mut" style="margin:0">Pour chaque titre, parie sur les vues <b>du jour</b> comparées à la <b>moyenne des 7 derniers jours</b>. Bon pari : <b>×${d.payout}</b>. Résultat demain (les statistiques de Wikipédia sortent après minuit). ${ico('clock')} Nouveau marché dans ${cdTxt(d.resetIn)} · ${d.left} pari${d.left > 1 ? 's' : ''} restant${d.left > 1 ? 's' : ''} · ${fmt(Math.max(0, d.dayStake))} ${U} misables.</p></div>
     <div class="list">${d.market.map(m => `<div class="item tap bourserow ${m.bet ? 'has' : ''}" data-slot="${m.slot}"><div class="grow"><div class="nm">${esc(m.title)}</div><div class="sub"><span>moy. ${fmt(m.ref)} vues/jour</span>${m.bet ? `<span class="betchip ${m.bet.dir}">${m.bet.dir === 'up' ? '▲' : '▼'} ${fmt(m.bet.stake)}</span>` : ''}</div></div>${sparkline(m.series)}</div>`).join('')}</div>
     ${d.past.length ? `<h3 class="sec">Mes derniers paris</h3><div class="list">${d.past.map(p => `<div class="item row1"><div class="grow"><div class="nm">${esc(p.title)}</div><div class="sub"><span>${p.dir === 'up' ? '▲ hausse' : '▼ baisse'} · ${fmt(p.stake)}</span><span>réf. ${fmt(p.ref)}${p.settled ? ` → ${fmt(p.actual)}` : ''}</span></div></div><b class="res ${res[p.result][1]}">${res[p.result][0]}${p.result === 'won' ? ` +${fmt(p.payout - p.stake)}` : ''}</b></div>`).join('')}</div>` : ''}`;
   v.querySelectorAll('[data-slot]').forEach(el => el.onclick = () => {
     const m = d.market.find(x => x.slot === +el.dataset.slot), box = $('#modal'); box.hidden = false;
     box.innerHTML = `<div class="betsheet"><h2>${esc(m.title)}</h2><p class="mut" style="margin:0 0 8px">Vues des 7 derniers jours (moyenne ${fmt(m.ref)}) :</p><div class="bigspark">${sparkline(m.series, 300, 70)}</div>
       <div class="barlist">${m.series.map(x => `<span>${fmt(x)}</span>`).join('')}</div>
-      ${m.bet ? `<p class="mut" style="margin:10px 0 0">Tu as déjà parié ${m.bet.dir === 'up' ? '▲ à la hausse' : '▼ à la baisse'} : ${fmt(m.bet.stake)} pièces.</p><div class="row"><button class="plain" id="b-x">Fermer</button></div>`
-      : `<label class="fld" style="margin-top:12px">Mise (${d.min} à ${d.max} pièces)<input id="b-stake" type="number" inputmode="numeric" value="50" min="${d.min}" max="${d.max}"></label>
+      ${m.bet ? `<p class="mut" style="margin:10px 0 0">Tu as déjà parié ${m.bet.dir === 'up' ? '▲ à la hausse' : '▼ à la baisse'} : ${fmt(m.bet.stake)} ${U}.</p><div class="row"><button class="plain" id="b-x">Fermer</button></div>`
+      : `<label class="fld" style="margin-top:12px">Mise (${d.min} à ${d.max} ${U})<input id="b-stake" type="number" inputmode="numeric" value="50" min="${d.min}" max="${d.max}"></label>
         <div class="row"><button id="b-up" style="flex:1">▲ Hausse</button><button id="b-down" style="flex:1">▼ Baisse</button></div><div class="row"><button class="plain" id="b-x" style="flex:1">Annuler</button></div>`}</div>`;
     const close = () => { box.hidden = true; box.innerHTML = ''; }; $('#b-x').onclick = close; box.onclick = e => { if (e.target === box) close(); };
-    for (const dir of ['up', 'down']) $('#b-' + dir)?.addEventListener('click', safe(async () => { await api('/bourse/bet', { slot: m.slot, dir, stake: +$('#b-stake').value }); close(); toast(`Pari enregistré : ${dir === 'up' ? 'hausse' : 'baisse'}`); await refreshMe(); render(); }));
+    for (const dir of ['up', 'down']) $('#b-' + dir)?.addEventListener('click', safe(async () => { await api(base + '/bet', { slot: m.slot, dir, stake: +$('#b-stake').value }); close(); toast(`Pari enregistré : ${dir === 'up' ? 'hausse' : 'baisse'}`); await refreshMe(); render(); }));
   });
 };
 
@@ -2321,7 +2322,7 @@ async function eventPacks(v) {
   $('#buy10').onclick = safe(async () => { if (!(await ask('Faire la queue pour 10 colis ?', [], { text: `${fmt(commu.packPrice * 10)} ₽ pour 10 colis du Parti.`, ok: 'Acheter' }))) return; await api('/commu/buy', { n: 10 }); await loadCommu(true); await ten(); });
 }
 async function eventAlbum(v) {
-  const S = await api('/commu/cards'), RARS = ['legendary', 'ultra', 'super', 'rare', 'uncommon', 'common'];
+  const S = await api('/commu/cards'), RARS0 = null, RARS = ['legendary', 'ultra', 'super', 'rare', 'uncommon', 'common'];
   let rar = 'all';
   const draw = () => {
     const list = S.cards.filter(c => rar === 'all' || c.rarity === rar);
@@ -2332,6 +2333,8 @@ async function eventAlbum(v) {
     v.querySelectorAll('.ev-grid .card').forEach(el => el.onclick = () => eventCardSheet(S.cards.find(c => String(c.id) === el.dataset.id)));
   };
   draw();
+  const need = S.cards.filter(c => !c.extract || (!c.image && c.enriched < 2)).slice(0, 40);
+  if (need.length) api('/cards/enrich', { ids: need.map(c => c.id) }).then(({ cards }) => { const by = new Map(cards.map(x => [x.id, x])); need.forEach(c => { const x = by.get(c.id); if (x) Object.assign(c, { extract: x.extract, image: x.image, enriched: x.enriched }); }); if (tab === 'album') draw(); }).catch(() => {});
 }
 function eventCardSheet(c) {
   if (!c) return; const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -2359,8 +2362,9 @@ function joinSheet() {
     <h2>L'événement communiste est ouvert</h2>
     <p>Pendant quelques jours, l'appli devient rouge, l'hymne se lance, et tu joues au Camp, aux Patates et au Dernier Tsar pour gagner des <b>wikiroubles</b>. Douze paliers de récompenses t'attendent.</p>
     <ol class="ic-steps"><li>Taxe de l'État : <b>${c.tax || 300} wikibidou</b>, non remboursables, versées à la cagnotte (${fmt(c.pot || 0)} actuellement).</li><li>Tu démarres avec <b>${c.startWr || 500} ₽</b>.</li><li>Le camarade qui gagne le plus de ₽ remporte la cagnotte et devient <b>Staline</b>.</li></ol>
-    <button class="ic-go" id="cm-join" style="width:100%">Payer la taxe et entrer</button><button class="plain" id="cm-x" style="width:100%;margin-top:8px">Pas maintenant</button></div>`;
+    <button class="plain" id="cm-rules" style="width:100%;margin-bottom:8px">Lire le règlement du Parti</button><button class="ic-go" id="cm-join" style="width:100%">Payer la taxe et entrer</button><button class="plain" id="cm-x" style="width:100%;margin-top:8px">Pas maintenant</button></div>`;
   $('#cm-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  $('#cm-rules').onclick = () => { close(); tab = 'commurules'; render(); };
   $('#cm-join').onclick = safe(async () => { await api('/commu/join', {}); await loadCommu(true); await refreshMe(); close(); toast('Bienvenue, camarade !', 'ok'); await syncUssrUi(); render(); });
 }
 /** Envoie le résultat d'un jeu au serveur, qui calcule seul le gain en wikiroubles. */
@@ -2368,6 +2372,38 @@ async function commuEarn(game, data) {
   if (!eventAccess()) return;
   try { const r = await api('/commu/earn', { game, ...data }); if (r.gained > 0) toast(`+${r.gained} ₽ pour le Plan`, 'ok'); await loadCommu(true); } catch (e) { jlog('gain : ' + e.message); }
 }
+
+// ---------- événement communiste : avance des paliers et classement général ----------
+views.commutop = async v => {
+  await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
+  const s = await api('/commu/standings?all=1'), me_ = s.top.find(x => x.me), max = s.levels.length - 1;
+  const total = s.players || 1, bar = (n, cls = '') => `<div class="ct-bar ${cls}"><i style="width:${Math.max(2, Math.round(n / max * 100))}%"></i></div>`;
+  v.innerHTML = `${pageHead('Classement général', 'Qui avance, qui traîne, qui triche')}
+    <section class="plan-sum"><div class="plan-top"><b>${fmt(s.pot)}</b><span>wikibidou dans la cagnotte · ${s.players} camarade${s.players > 1 ? 's' : ''}</span></div>
+      <p class="plan-wallet">Palier moyen : <b>${s.avgLevel.toFixed(1)}</b> / ${max} · thème rouge gardé (palier 6) : <b>${s.atLeast6}</b> · Plan accompli : <b>${s.done}</b></p>
+      ${me_ ? `<p class="plan-wallet">Toi : rang <b>${me_.rank}</b> · <b>${me_.level}</b> palier${me_.level > 1 ? 's' : ''} sur ${max} · ${fmt(me_.earned)} ₽ gagnés</p>` : ''}</section>
+    <h3 class="sec" style="padding:0 16px">Avance des paliers</h3>
+    <div class="ct-hist">${s.levels.map((n, i) => `<div class="ct-lv"><b>${i === 0 ? 'Départ' : 'Palier ' + i}</b>${bar(n / total * max, i === max ? 'gold' : '')}<span>${n}</span></div>`).join('')}</div>
+    <h3 class="sec" style="padding:0 16px">Classement (${s.top.length} premiers)</h3>
+    <div class="st-list ct-rank">${s.top.map(x => `<div class="st-row ct-row ${x.me ? 'me' : ''}"><b>${x.rank}</b><span class="ct-nm">${avatar(x.name)} ${esc(x.name)}<small>${x.level} / ${max} paliers</small>${bar(x.level, x.level === max ? 'gold' : '')}</span><em>${fmt(x.earned)} ₽</em></div>`).join('') || '<p class="mut" style="padding:0 16px">Personne n\'a encore gagné de wikiroubles.</p>'}</div>`;
+};
+
+// ---------- événement communiste : le règlement du Parti ----------
+views.commurules = async v => {
+  await loadCommu(); const c = commu || { tax: 300, startWr: 500, packPrice: 50, caps: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 } }, K = c.caps || {};
+  const sec = (t, body) => `<section class="plan-row rules"><div class="plan-txt"><h3>${t}</h3>${body}</div></section>`;
+  v.innerHTML = `${pageHead('Règlement du Parti', 'À lire avant de signer. Personne ne lit. Tout le monde signe.')}
+    ${sec('1. De quoi s\'agit-il, camarade ?', `<p>Pendant quelques jours, l'appli devient rouge, l'hymne se lance et le Parti organise un Plan quinquennal accéléré. Tu gagnes des <b>wikiroubles (₽)</b> en jouant, tu les dépenses en colis, et tu montes les <b>12 paliers</b> du Plan. Le but : finir premier, devenir Staline et rafler la cagnotte. Le second, lui, reçoit un joli rien.</p>`)}
+    ${sec('2. L\'entrée : la taxe de l\'État', `<p>L'État te prélève <b>${c.tax} wikibidou</b>, une seule fois, non remboursables. Ils vont dans la <b>cagnotte</b>, qui revient au vainqueur. Tu repars avec <b>${c.startWr} ₽</b> de départ : sois heureux, tu commences plus riche que ton voisin.</p><p class="mut">Ta collection normale n'est pas touchée : l'événement a ses propres cartes, ses propres colis, son propre cirque.</p>`)}
+    ${sec('3. Comment gagner des ₽', `<ul class="ru-list"><li><b>Le Dernier Tsar :</b> 40 ₽ la première fois que tu découvres une fin, 8 ₽ ensuite. Au plus ${K.tsar} ₽ par jour. Oui, on te paie pour assassiner le chef de l'État : c'est ça, le socialisme.</li><li><b>Le Camp :</b> 90 ₽ par plan quinquennal accompli (il faut quelques heures de vrai travail), au plus ${K.camp} ₽ par jour.</li><li><b>Le Kolkhoze (patates) :</b> jusqu'à 60 ₽ par quart de travail, au plus ${K.potato} ₽ par jour.</li><li><b>Le quiz du jour :</b> 20 ₽ par bonne réponse, au plus ${K.quiz} ₽ par jour. Les questions portent sur la Russie et l'URSS : prépare ton accent.</li><li><b>Le Marché noir :</b> tu paries des ₽ sur les vues d'articles soviétiques. Pari gagné : mise rendue + 80 % de gain (au plus ${K.bourse} ₽ de gain par jour). Pari perdu : le Parti remercie ta générosité.</li></ul><p class="mut">Les plafonds sont vérifiés par le serveur. Inutile d'essayer de tricher : le Parti a l'habitude de ces petites choses, et il a le temps.</p>`)}
+    ${sec('4. Les colis du Parti', `<p>Un colis coûte <b>${c.packPrice} ₽</b> (« faire la queue »). Il contient <b>10 fiches</b> d'articles russes et soviétiques : Lénine, la vodka, le Goulag, Tchernobyl et autres joyeusetés. Chaque fiche a un grade militaire, de <b>Soldat</b> à <b>Maréchal</b>. Les <b>150 fiches de Maréchal</b> sortent à <b>0,5 %</b> chacune, et elles ne sont <b>pas uniques</b> : le Parti en a imprimé pour tout le monde (sauf pour les paresseux). Tout est rangé dans tes Archives.</p>`)}
+    ${sec('5. Les 12 paliers', `<p>Tes ₽ <b>gagnés</b> font avancer le Plan (les 500 de départ ne comptent pas, la gloire se mérite). Chaque palier donne des colis, des ₽, des titres, des cadres de profil, et deux <b>souvenirs</b> (paliers 2 et 11). Au <b>palier 6</b>, le Parti te laisse le thème rouge « Camarade » pour toujours, même après l'événement. Le palier 12, à 4 800 ₽, est réservé à ceux qui ont une vie sociale très limitée.</p><p class="mut">Le Plan est calé pour qu'un joueur régulier, une petite demi-heure par jour, le termine en quatre jours et onze mois. Environ.</p>`)}
+    ${sec('6. Le classement et Staline', `<p>Le tableau d'honneur classe les camarades selon les ₽ <b>gagnés</b>. À la fin, le premier remporte la <b>cagnotte</b>, le titre <b>« Staline »</b> et un contour doré autour de son profil. En cas d'égalité, c'est celui qui a atteint le total le plus tôt : la ponctualité est une valeur soviétique.</p>`)}
+    ${sec('7. La fin de l\'événement', `<p>Quand le Parti éteint la lumière : ta collection de l'événement reste dans tes Archives, tes <b>souvenirs</b> entrent dans ta collection normale, tes titres et cadres restent, et si tu as atteint le palier 6 tu gardes le thème rouge. Les autres retrouvent leur thème d'avant et un léger vide existentiel. Tu peux aussi quitter le mode quand tu veux dans les Réglages (« retourner chialer chez les capitalistes »). Les ₽ n'ont plus de valeur ensuite, comme tout le reste.</p>`)}
+    ${sec('8. Quelques conseils d\'un ancien', `<ul class="ru-list"><li>Le Camp et les Patates rapportent peu à la fois, mais tous les jours : sois régulier, camarade.</li><li>Ne mise pas tout au Marché noir. Même Staline n'a pas gagné à tous les coups.</li><li>Une fin du Tsar n'est comptée que 20 secondes après la précédente. Le Parti n'aime pas les enthousiastes.</li><li>En cas de doute, relis le règlement. En cas de doute sur le règlement, c'est que tu as encore raison de douter.</li></ul>`)}
+    <div style="padding:0 16px 16px">${commu?.on && !commu.joined && !(me.admin && !commu.on) ? '<button id="ru-join" style="width:100%">Payer la taxe et entrer</button>' : ''}</div>`;
+  $('#ru-join')?.addEventListener('click', joinSheet);
+};
 // ---------- Plan quinquennal : les 12 paliers du mode communiste (aperçu administrateur) ----------
 views.plan = async v => {
   await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
@@ -2381,7 +2417,7 @@ views.plan = async v => {
       <section class="plan-sum"><div class="plan-top"><b>${fmtR(d.earned)}</b><span>gagnés sur ${fmtR(d.totals.max)}</span></div><div class="plan-bar"><i style="width:${pct}%"></i></div>
         <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}. Courage, sac à merde.` : 'Plan accompli. Va te laver, tu pues la victoire.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
         <p class="plan-wallet">Solde : <b>${fmtR(d.wr)}</b>${commu ? ` · cagnotte : <b>${fmt(commu.pot)}</b> wikibidou · ${commu.players} camarade${commu.players > 1 ? 's' : ''}` : ''}</p>
-        <div class="plan-demo"><button class="plain" id="plan-top">Classement de l'événement</button>${me.admin ? '<button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button>' : ''}</div></section>
+        <div class="plan-demo"><button class="plain" id="plan-top">Classement général et avance des paliers</button>${me.admin ? '<button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button>' : ''}</div></section>
       <div class="plan-list">${d.milestones.map(m => {
         const done = d.claimed.includes(m.id), reached = d.earned >= m.at, rw = rewardOf(m);
         return `<section class="plan-row ${done ? 'done' : reached ? 'ready' : ''}"><div class="plan-n">${m.id}</div><div class="plan-txt"><h3>${esc(m.name)}</h3><p>${esc(m.text)}</p><div class="plan-rw">${rw.map(x => `<span>${esc(x)}</span>`).join('')}</div>
@@ -2389,7 +2425,7 @@ views.plan = async v => {
       }).join('')}</div>`;
     v.querySelectorAll('[data-earn]').forEach(b => b.onclick = safe(async () => { d = await api('/plan/earn', { amount: +b.dataset.earn }); draw(); }));
     v.querySelector('#plan-reset') && (v.querySelector('#plan-reset').onclick = safe(async () => { d = await api('/plan/reset', {}); await loadCommu(true); draw(); }));
-    v.querySelector('#plan-top').onclick = safe(async () => standingsSheet());
+    v.querySelector('#plan-top').onclick = () => { tab = 'commutop'; render(); };
     v.querySelectorAll('[data-claim]').forEach(b => b.onclick = safe(async () => {
       const r = await api('/plan/claim', { id: +b.dataset.claim }); d = await api('/plan');
       toast(['Récompense récupérée', r.packs ? `+${r.packs} colis` : '', r.wr ? `+${r.wr} ₽` : '', r.title ? `titre « ${r.title} »` : '', r.perk === 'theme_urss' ? 'thème rouge conservé' : ''].filter(Boolean).join(' · '), 'ok');
@@ -2624,7 +2660,7 @@ function moreSheet() {
   if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') : ''}</div>
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') + T('commutop', 'trophy', 'Classement général', 'Qui avance, qui traîne') + T('commurules', 'book', 'Règlement du Parti', 'À lire. Personne ne lit.') : ''}</div>
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retourner chialer chez les capitalistes</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };

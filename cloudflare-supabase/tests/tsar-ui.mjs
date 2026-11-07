@@ -59,12 +59,17 @@ st = await state(); ok('garde acheté : il reste dans la salle ; toutes les pist
 await p.screenshot({ path: SH + 'tsar-8-signal.png' });
 await p.click('#ts-r'); await p.waitForSelector('.ts-panel.end', { timeout: 60000 });
 ok('le signal donné mène à une fin avec bilan', true); await p.screenshot({ path: SH + 'tsar-9-fin.png' });
-for (const k of ['samovar', 'x_samovar', 'train', 'x_train', 'bear', 'x_bear', 'late', 'rave', 'capi', 'c0', 'f0', 'd1', 'f1']) {
+for (const k of ['samovar', 'x_samovar', 'train', 'x_train', 'bear', 'x_bear', 'late', 'rave', 'capi', 'vodka', 'babouchka', 'cat', 'strike', 'c0', 'f0', 'd1', 'f1']) {
   await p.evaluate(() => document.querySelector('#ts-again')?.click()); await p.waitForTimeout(600);
-  await p.evaluate(key => window.__tsar.forceEnd(key), k); await p.waitForTimeout(['rave', 'capi', 'train', 'x_train'].includes(k) ? 4200 : 2800);
+  await p.evaluate(key => window.__tsar.forceEnd(key), k); await p.waitForTimeout(['rave', 'capi', 'train', 'x_train', 'strike', 'vodka'].includes(k) ? 4200 : 3000);
   await p.screenshot({ path: SH + `tsar-fin-${k}.png` });
   await p.waitForSelector('.ts-panel.end', { timeout: 30000 }).catch(() => {});
   ok('scène de fin ' + k, !!(await p.$('.ts-panel.end h2')));
+}
+for (const [card, name, end] of [['vodka', 'Majesté', 'vodka'], ['babouchka', 'Nadia', 'babouchka'], ['catcard', 'chat', 'cat']]) {
+  await p.evaluate(() => document.querySelector('#ts-again')?.click()); await p.waitForSelector('#ts-go', { timeout: 8000 });
+  await p.evaluate(c => window.__tsar.deal(c), card); await p.click('#ts-go'); await p.waitForFunction(n => !document.querySelector('.ts-panel.hide') && (document.querySelector('.ts-name')?.textContent || '').includes(n), name, { timeout: 30000 });
+  await p.click('#ts-r'); await p.waitForSelector('.ts-panel.end', { timeout: 60000 }); ok('carte « ' + card + ' » : la fin ' + end + ' se joue jusqu\'au bilan', (await p.evaluate(() => window.__tsar.state().end)) === end);
 }
 await p.evaluate(() => document.querySelector('#ts-again')?.click()); await p.waitForSelector('#ts-go', { timeout: 8000 }); ok('rejouer : retour au briefing', true);
 const o = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, W: document.documentElement.clientWidth }));

@@ -1,44 +1,42 @@
 #!/usr/bin/env python3
 """Construit cloudflare/public/catalog/commu.json : le réservoir de cartes de l'événement communiste.
-Chaque titre de tools/commu-titles.json est vérifié sur fr.wikipedia.org (existence, extrait, vignette) ; les doublons et les pages absentes sont écartés.
+Aucun accès réseau : les titres de tools/commu-titles.json sont cherchés dans le catalogue local (cloudflare/public/catalog/*.json, mêmes identifiants de page que le jeu).
+Les extraits et les images sont ajoutés à la volée par l'enrichissement habituel du jeu, au premier affichage de chaque carte.
 Usage : python3 tools/build-commu.py"""
-import json, subprocess, sys, time, urllib.parse, os
+import glob, json, os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TITLES = json.load(open(os.path.join(ROOT, 'tools/commu-titles.json')))
-ORDER = ['legendary', 'ultra', 'super', 'rare', 'uncommon', 'common']   # un article présent dans plusieurs listes garde la plus haute rareté
-
-def api(titles):
-    q = {'action': 'query', 'format': 'json', 'formatversion': '2', 'redirects': '1', 'titles': '|'.join(titles), 'prop': 'extracts|pageimages|pageprops',
-         'exintro': '1', 'explaintext': '1', 'exsentences': '3', 'piprop': 'thumbnail', 'pithumbsize': '400', 'ppprop': 'disambiguation', 'exlimit': 'max'}
-    url = 'https://fr.wikipedia.org/w/api.php?' + urllib.parse.urlencode(q)
-    for essai in range(8):
-        r = subprocess.run(['curl', '-sS', '-m', '40', '-A', 'ClodoWiki-private-game/1.0 (card catalog build)', url], capture_output=True, text=True)
-        if r.returncode == 0 and r.stdout.startswith('{'):
-            return json.loads(r.stdout)
-        time.sleep(45 if 'too many' in (r.stdout + r.stderr).lower() else 3 * (essai + 1))
-    raise SystemExit('API injoignable : ' + (r.stderr or r.stdout)[:200])
-
-seen, cards, missing = {}, [], []
-for rarity in ORDER:
-    wanted = [t for t in dict.fromkeys(TITLES[rarity])]
-    for i in range(0, len(wanted), 40):
-        chunk = wanted[i:i + 40]; d = api(chunk)
-        q = d.get('query', {}); redir = {r['from']: r['to'] for r in q.get('redirects', [])}; norm = {n['from']: n['to'] for n in q.get('normalized', [])}
-        by = {p['title']: p for p in q.get('pages', [])}
-        for t in chunk:
-            tt = redir.get(norm.get(t, t), norm.get(t, t)); p = by.get(tt)
-            if not p or p.get('missing') or 'disambiguation' in (p.get('pageprops') or {}):
-                missing.append(t); continue
-            pid = p['pageid']
-            if pid in seen: continue
-            ext = (p.get('extract') or '').strip().replace('\n', ' ')
-            if len(ext) < 40: missing.append(t + ' (extrait trop court)'); continue
-            seen[pid] = 1
-            cards.append({'id': pid, 't': p['title'], 'r': rarity, 'x': ext[:330], 'i': (p.get('thumbnail') or {}).get('source')})
-        time.sleep(6)
+ORDER = ['legendary', 'ultra', 'super', 'rare', 'uncommon', 'common']
+# titres de la liste qui s'écrivent autrement dans le catalogue
+ALIAS = {
+    'Nicolas II (empereur de Russie)': 'Nicolas II', 'Pierre Ier (empereur de Russie)': 'Pierre Ier le Grand', 'Ivan IV': 'Ivan le Terrible', 'Constantin Tchernenko': 'Konstantin Tchernenko',
+    'Iouri Gagarine': 'Youri Gagarine', 'Alexandre Ovechkin': 'Aleksandr Ovetchkine', 'Vladimir Klitschko': 'Wladimir Klitschko', 'Cathédrale Saint-Basile-le-Bienheureux': 'Cathédrale Saint-Basile-le-Bienheureux de Moscou',
+    'Révolution russe de 1917': 'Révolution russe', 'Plan quinquennal': 'Plan quinquennal en URSS', 'Soyouz (vaisseau spatial)': 'Soyouz (véhicule spatial)', 'Tentative de putsch de 1991 en Union soviétique': 'Putsch de Moscou',
+    'Matriochka': 'Matriochkas', 'Chapka': 'Ouchanka', 'Katioucha (arme)': 'Katioucha', 'Lada (automobile)': 'Lada Niva', 'Nikolaï Gogol': 'Nicolas Gogol', 'Piotr Kropotkine': 'Pierre Kropotkine', 'Isaac Levitan': 'Issaak Levitan',
+    'Nikolaï Roerich': 'Nicolas Roerich', 'El Lissitzky': 'Lazar Lissitzky', 'Mikhaïl Fokine': 'Michel Fokine', 'Konstantin Stanislavski': 'Constantin Stanislavski', 'Meyerhold': 'Vsevolod Meyerhold', 'Nikolaï Berdiaev': 'Nicolas Berdiaev',
+    'Daniil Harms': 'Daniil Kharms', 'Arcadi Strougatski': 'Arcadi et Boris Strougatski', 'Nevski Prospekt': 'Perspective Nevski', 'Cavalier de bronze': 'Le Cavalier de bronze', 'Tsarskoïe Selo': 'Palais-musée de Tsarskoïe Selo',
+    'Kazan (Russie)': 'Kazan', 'Soči': 'Sotchi', 'Fleuve Ienisseï': 'Ienisseï', 'Mont Elbrouz': 'Elbrouz', 'Chemin de fer Baïkal-Amour': 'Magistrale Baïkal-Amour', 'Aral (mer)': 'Mer d\'Aral', 'Politburo': 'Politburo du Parti communiste de l\'Union soviétique',
+    'Mutinerie de Kronstadt': 'Révolte de Kronstadt', 'Cuirassé Potemkine': 'Le Cuirassé Potemkine', 'Dynastie des Romanov': 'Maison Romanov', 'Maison de Riourik': 'Riourik', 'Pougatchev': 'Emelian Pougatchev',
+    'Expédition de Napoléon en Russie': 'Campagne de Russie', 'Bataille de la Berezina': 'Bataille de la Bérézina', 'Incendie de Moscou de 1812': 'Incendie de Moscou (1812)', 'Radio Free Europe': 'Radio Free Europe/Radio Liberty',
+    'Kalinka (chanson)': 'Kalinka', 'Gopak': 'Hopak', 'Bataille du lac Peipous': 'Bataille du lac Peïpous', 'Saint Serge de Radonège': 'Serge de Radonège', 'Vladimir Ier de Kiev': 'Vladimir Ier', 'Gorki Park': 'Parc Gorki',
+}
+want = {}
+for r in ORDER:
+    for t in TITLES[r]:
+        want.setdefault(ALIAS.get(t, t).lower(), (ALIAS.get(t, t), r))
+found = {}
+shards = sorted(glob.glob(os.path.join(ROOT, 'cloudflare/public/catalog/[0-9]*.json')), key=lambda p: int(os.path.basename(p).split('.')[0]))
+for p in shards:
+    for row in json.load(open(p)):
+        k = row[1].lower()
+        if k in want and want[k][0] not in found: found[want[k][0]] = {'id': row[0], 't': row[1], 'r': want[k][1], 'v': row[2]}
+cards = sorted(found.values(), key=lambda c: (ORDER.index(c['r']), -c['v']))
+legend = [c for c in cards if c['r'] == 'legendary']
+# au-delà de 150 légendaires, les moins populaires redeviennent des « ultra »
+for c in legend[150:]: c['r'] = 'ultra'
 out = os.path.join(ROOT, 'cloudflare/public/catalog/commu.json')
-json.dump({'cards': cards}, open(out, 'w'), ensure_ascii=False, separators=(',', ':'))
-by_r = {r: sum(1 for c in cards if c['r'] == r) for r in ORDER}
-print('cartes :', len(cards), by_r, '· sans image :', sum(1 for c in cards if not c['i']))
-print('écartées :', len(missing)); print(' ; '.join(missing[:60]))
+json.dump({'cards': [{'id': c['id'], 't': c['t'], 'r': c['r'], 'v': c['v']} for c in cards]}, open(out, 'w'), ensure_ascii=False, separators=(',', ':'))
+by = {r: sum(1 for c in cards if c['r'] == r) for r in ORDER}
+print('cartes :', len(cards), by)
+print('absentes :', [v[0] for v in want.values() if v[0] not in found][:40])

@@ -15,7 +15,7 @@ let [s] = await call(tok.Camarade1, 'POST', '/api/commu/join', {}); ok('événem
 [s] = await call(tok.Camarade1, 'POST', '/api/commu/set', { on: true }); ok('un joueur ne peut pas ouvrir l\'événement', s === 403, s);
 let [, v] = await call(tok.Camarade1, 'GET', '/api/commu'); ok('l\'état est lisible : fermé, pas inscrit', v.on === false && v.joined === false && v.tax === 300 && v.startWr === 500, J(v).slice(0, 120));
 // 2. ouverture (administrateur) et inscriptions en parallèle, dont des doublons
-[s, v] = await call(ADM, 'POST', '/api/commu/set', { on: true }); ok('l\'administrateur ouvre l\'événement', s === 200 && v.on === true);
+[s, v] = await call(ADM, 'POST', '/api/commu/set', { on: true, scope: 'all' }); ok('l\'administrateur ouvre l\'événement à tous', s === 200 && v.on === true);
 const joins = await Promise.all(names.flatMap(n => [call(tok[n], 'POST', '/api/commu/join', {}), call(tok[n], 'POST', '/api/commu/join', {})]));
 const okJ = joins.filter(([st]) => st === 200).length, dup = joins.filter(([st]) => st === 409).length, poor = joins.filter(([st]) => st === 400).length;
 ok('inscriptions : 9 réussies, doublons refusés, le joueur trop pauvre refusé', okJ === 9 && poor >= 1 && dup >= 9 && okJ + poor + dup === 20, `réussies ${okJ} · doublons ${dup} · pauvre ${poor}`);

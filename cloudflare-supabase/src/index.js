@@ -12,6 +12,7 @@ import { installSeasonZero } from './seasonzero.js';
 import { installFeed } from './feed.js';
 import { installCamp } from './camp.js';
 import { installPlan, COMMU } from './plan.js';
+import { EVENT_OFFSET } from './commu-cards.js';
 import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
@@ -215,7 +216,7 @@ async function articleImages(pids, titleOf = new Map()) {
 
 async function enrich(env, ids) {
   const rows = ids.length ? await all(env, `SELECT id, title FROM cards WHERE (enriched = 0 OR (enriched = 1 AND image IS NULL)) AND id IN (${placeholders(ids.length)})`, ...ids) : [];
-  const titleOf = new Map(rows.map(r => [r.id >= SHINY_OFFSET ? r.id - SHINY_OFFSET : r.id, r.title]));
+  const titleOf = new Map(rows.map(r => [r.id >= EVENT_OFFSET ? r.id - EVENT_OFFSET : r.id >= SHINY_OFFSET ? r.id - SHINY_OFFSET : r.id, r.title]));
   const pages = [...titleOf.keys()];
   for (let i = 0; i < pages.length; i += 20) {
     const chunk = pages.slice(i, i + 20);
@@ -239,7 +240,7 @@ async function enrich(env, ids) {
     await env.DB.batch([...got].map(([pid, p]) => {
       const image = p.thumbnail?.source ?? art.out.get(pid) ?? wd.out.get(p.pageprops?.wikibase_item) ?? null;
       const done = image || (art.ok && wd.ok) ? 2 : 1; // 1 = on réessaiera plus tard (source injoignable)
-      return st(env, 'UPDATE cards SET extract = ?, image = COALESCE(?, image), enriched = ? WHERE id IN (?, ?)', (p.extract || '').trim(), image, done, pid, pid + SHINY_OFFSET);
+      return st(env, 'UPDATE cards SET extract = ?, image = COALESCE(?, image), enriched = ? WHERE id IN (?, ?, ?)', (p.extract || '').trim(), image, done, pid, pid + SHINY_OFFSET, pid + EVENT_OFFSET);
     }));
   }
 }
@@ -757,8 +758,9 @@ route('POST', '/api/me/avatar', async ({ env, user, body }) => {
 });
 route('GET', '/api/cosmetics', async ({ env }) => {
   await ensureGameSchema(env);
-  const rows = await all(env, 'SELECT id, name, avatar_v v, title ti FROM users WHERE is_bot = 0 AND (avatar_v IS NOT NULL OR title IS NOT NULL)');
-  return { players: rows, labels: Object.fromEntries(TITLES.map(x => [x.id, x.label])) };
+  const rows = await all(env, "SELECT u.id, u.name, u.avatar_v v, u.title ti, p.perks pk FROM users u LEFT JOIN plan_progress p ON p.user_id = u.id WHERE u.is_bot = 0 AND (u.avatar_v IS NOT NULL OR u.title IS NOT NULL OR p.perks LIKE '%frame_%' OR p.perks LIKE '%gold_outline%')");
+  const frameOf = pk => { try { const a = JSON.parse(pk || '[]'); return ['gold_outline', 'frame_gold', 'frame_hammer', 'frame_star'].find(f => a.includes(f)) ?? null; } catch { return null; } };   // cadre le plus prestigieux gagné pendant l'événement
+  return { players: rows.map(({ pk, ...r }) => ({ ...r, fr: frameOf(pk) })), labels: Object.fromEntries(TITLES.map(x => [x.id, x.label])) };
 });
 route('GET', '/api/titles', async ({ env, ctx, user }) => {
   const { owned, added, ctx: c } = await syncTitles(env, user.id);
@@ -981,7 +983,7 @@ const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, p
 const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
 const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
 installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle });
-const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle, assetJson, addCard });
+const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle, assetJson, addCard, dayKey, msToMidnight, hash, now });
 const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
@@ -1471,11 +1473,11 @@ route('POST', '/api/quests/claim', async ({ env, user, body }) => {
 
 const QUIZ_N = 5, QUIZ_SECS = 300;
 /** Choisit un article UR+ à partir d'une graine et fabrique 5 questions IA sur lui. Renvoie null si rien de convenable n'a été trouvé. */
-async function buildQuiz(env, origin, seed) {
+async function buildQuiz(env, origin, seed, pool = null) {
   const { ranges } = await getMeta(env, origin), top = ranges.ultra[1];   // articles de rareté UR ou légendaire seulement
   let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
   for (let k = 0; k < 12; k++) {                             // article choisi au hasard (même pour tous) ; on passe au suivant s'il est peu adapté ou si l'IA ne donne pas assez de questions
-    const e = await entryAt(env, origin, (h + k * 7919) % top);
+    const pick = pool ? pool[(h + k * 7919) % pool.length] : null, e = pick ? [pick.id, pick.t, pick.v || 1] : await entryAt(env, origin, (h + k * 7919) % top);   // événement : article du réservoir soviétique
     if (/^(Liste|Listes|Élections?|Championnat|Saison|Catégorie|Portail)\b|homonymie|^\d{4}\b/i.test(e[1])) continue;   // des pages de listes ou de résultats font de mauvaises questions
     const params = new URLSearchParams({ action: 'query', format: 'json', prop: 'extracts', exintro: '1', explaintext: '1', exchars: '3500', redirects: '1', titles: e[1] });
     let page = null;
@@ -1487,11 +1489,14 @@ async function buildQuiz(env, origin, seed) {
   }
   return null;
 }
+/** Jour de quiz du joueur : « cm:jour » pendant l'événement (quiz soviétique, wikiroubles), sinon le jour normal. */
+const qDayOf = async (env, user) => (await commu.isOn(env, user)) && commu.joinedReal(await commu.rowOf(env, user.id)) ? 'cm:' + dayKey() : dayKey();
 async function dailyQuiz(env, origin, day) {
   const have = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
   if (have && have.model === 'ia2') return have;
   if (have) await env.DB.batch([st(env, 'DELETE FROM daily_quiz WHERE day = ?', day), st(env, 'DELETE FROM daily_quiz_runs WHERE day = ?', day)]);   // quiz de l'ancienne version (questions hors sujet) : remplacé
-  const q = await buildQuiz(env, origin, 'quiz' + day);
+  const evPool = day.startsWith('cm:') ? (await commu.cc.pool(env, origin)).cards.filter(c => ['legendary', 'ultra', 'super'].includes(c.r)) : null;   // quiz de l'événement : articles russes et soviétiques seulement
+  const q = await buildQuiz(env, origin, 'quiz' + day, evPool);
   if (!q) bad('Le quiz du jour n’est pas disponible pour le moment, réessaie dans un instant', 503);
   await run(env, 'INSERT INTO daily_quiz (day, title, extract, questions, model, created) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING', day, q.title, q.extract, q.questions, 'ia2', now());
   return one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day);
@@ -1531,7 +1536,7 @@ route('GET', '/api/daily-quiz/ranking', async ({ env, ctx, user }) => {
 });
 route('GET', '/api/daily-quiz', async ({ env, user }) => {
   await ensureGameSchema(env);
-  const day = dayKey(), quiz = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day), r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
+  const day = await qDayOf(env, user), quiz = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day), r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
   if (r?.finished && quiz) return { status: 'done', day, resetIn: msToMidnight(), recap: recap(quiz, r) };
   if (r && quiz) {
     const left = r.started + QUIZ_SECS * 1000 - now();
@@ -1541,7 +1546,7 @@ route('GET', '/api/daily-quiz', async ({ env, user }) => {
 });
 route('POST', '/api/daily-quiz/start', async ({ env, origin, user }) => {
   await ensureGameSchema(env);
-  const day = dayKey(), quiz = await dailyQuiz(env, origin, day);
+  const day = await qDayOf(env, user), quiz = await dailyQuiz(env, origin, day);
   const mine = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
   if (mine?.finished) bad('Tu as déjà fait le quiz du jour');
   if (!mine) await run(env, 'INSERT INTO daily_quiz_runs (user_id, day, started) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, day, now());
@@ -1551,7 +1556,7 @@ route('POST', '/api/daily-quiz/start', async ({ env, origin, user }) => {
 });
 route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
   await ensureGameSchema(env);
-  const day = dayKey(), quiz = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day), r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
+  const day = await qDayOf(env, user), quiz = await one(env, 'SELECT * FROM daily_quiz WHERE day = ?', day), r = await one(env, 'SELECT * FROM daily_quiz_runs WHERE user_id = ? AND day = ?', user.id, day);
   if (!quiz || !r) bad('Commence d’abord le quiz', 400);
   if (r.finished) return { ok: true, status: 'done', recap: recap(quiz, r) };
   const qs = JSON.parse(quiz.questions), late = now() > r.started + QUIZ_SECS * 1000 + 15000;
@@ -1569,7 +1574,7 @@ route('POST', '/api/daily-quiz/submit', async ({ env, ctx, user, body }) => {
     else { delta = 0; await run(env, 'UPDATE users SET pack_ts = ? WHERE id = ?', now(), user.id); }
     await run(env, 'UPDATE daily_quiz_runs SET delta = ? WHERE user_id = ? AND day = ?', delta, user.id, day);
   }
-  if (correct > 0) ctx.waitUntil((async () => { try { if (await commu.isOn(env) && +(await commu.rowOf(env, user.id)).joined) await commu.credit(env, user.id, 'quiz', correct * COMMU.QUIZ_PER_ANSWER); } catch (e) { console.error('commu quiz', e); } })());   // événement communiste : la Leçon du Parti rapporte des wikiroubles
+  if (correct > 0 && day.startsWith('cm:')) ctx.waitUntil((async () => { try { await commu.credit(env, user.id, 'quiz', correct * COMMU.QUIZ_PER_ANSWER); } catch (e) { console.error('commu quiz', e); } })());   // événement communiste : la Leçon du Parti rapporte des wikiroubles
   bq(env, ctx, user.id, { quiz_daily: 1, quiz_correct: correct });
   if (correct === QUIZ_N) ctx.waitUntil(grantTitle(env, user.id, 'quiz_perfect').then(n => n && notify(env, ctx, { t: 'notify', msg: 'Nouveau titre débloqué : « Sans faute » !' }, user.id)));
   return { ok: true, status: 'done', recap: recap(quiz, { ...r, answers: JSON.stringify(given), correct, delta }) };

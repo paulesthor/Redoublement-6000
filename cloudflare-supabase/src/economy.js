@@ -41,7 +41,7 @@ export function installEconomy(d) {
   let buildTry = 0;
   async function ensureMarket(env, origin) {
     await ensureGameSchema(env);
-    const day = dayKey(), have = (await all(env, 'SELECT slot FROM bourse_market WHERE day = ?', day)).map(r => +r.slot);
+    const day = dayKey(), have = (await all(env, 'SELECT slot FROM bourse_market WHERE day = ? AND slot < 100', day)).map(r => +r.slot);
     if (have.length >= BOURSE.slots || now() - buildTry < 15000) return day;       // complet, ou essai trop récent : on complète peu à peu, par petits lots
     buildTry = now();
     const from = addDays(day, -7), to = addDays(day, -1), out = []; let calls = 0;
@@ -73,7 +73,7 @@ export function installEconomy(d) {
   /** Règle les marchés des jours passés dès que les vues du jour sont publiées (4 jours d'attente au plus, sinon les mises sont rendues). */
   async function settleBourse(env, ctx) {
     await ensureGameSchema(env);
-    const today = dayKey(), open = await all(env, "SELECT day, slot, id, title, ref FROM bourse_market WHERE status = 'open' AND day < ? ORDER BY day LIMIT 12", today);
+    const today = dayKey(), open = await all(env, "SELECT day, slot, id, title, ref FROM bourse_market WHERE status = 'open' AND slot < 100 AND day < ? ORDER BY day LIMIT 12", today);
     for (const m of open) {
       const v = await pageViews(m.title, m.day, m.day);
       let actual = v ? (v[m.day] ?? null) : null, void_ = false;
@@ -96,9 +96,9 @@ export function installEconomy(d) {
     const day = await ensureMarket(env, origin).catch(e => { console.error('bourse', e); return dayKey(); });   // jamais d'erreur serveur : au pire, marché vide avec son message
     await settleBourse(env, ctx).catch(() => {});
     const [market, bets, past] = await Promise.all([
-      all(env, 'SELECT slot, id, title, series, ref FROM bourse_market WHERE day = ? ORDER BY slot', day),
-      all(env, 'SELECT slot, dir, stake FROM bourse_bets WHERE user_id = ? AND day = ?', user.id, day),
-      all(env, `SELECT b.day, b.dir, b.stake, b.payout, b.settled, b.actual, m.title, m.ref FROM bourse_bets b JOIN bourse_market m ON m.day = b.day AND m.slot = b.slot WHERE b.user_id = ? AND b.day < ? ORDER BY b.day DESC, b.slot LIMIT 20`, user.id, day),
+      all(env, 'SELECT slot, id, title, series, ref FROM bourse_market WHERE day = ? AND slot < 100 ORDER BY slot', day),
+      all(env, 'SELECT slot, dir, stake FROM bourse_bets WHERE user_id = ? AND day = ? AND slot < 100', user.id, day),
+      all(env, `SELECT b.day, b.dir, b.stake, b.payout, b.settled, b.actual, m.title, m.ref FROM bourse_bets b JOIN bourse_market m ON m.day = b.day AND m.slot = b.slot WHERE b.user_id = ? AND b.day < ? AND b.slot < 100 ORDER BY b.day DESC, b.slot LIMIT 20`, user.id, day),
     ]);
     const my = new Map(bets.map(b => [b.slot, b]));
     return { day, why: market.length ? null : viewsError.msg, resetIn: msToMidnight(), payout: BOURSE.payout, min: BOURSE.minStake, max: BOURSE.maxStake, left: BOURSE.maxBets - bets.length, dayStake: BOURSE.dayStake - bets.reduce((t, b) => t + b.stake, 0),
@@ -110,7 +110,7 @@ export function installEconomy(d) {
     if (!dir) bad('Choisis hausse ou baisse');
     if (!(stake >= BOURSE.minStake && stake <= BOURSE.maxStake)) bad(`Mise entre ${BOURSE.minStake} et ${BOURSE.maxStake} pièces`);
     if (!(await one(env, 'SELECT 1 x FROM bourse_market WHERE day = ? AND slot = ?', day, slot))) bad('Titre inconnu', 404);
-    const today = await one(env, 'SELECT COUNT(*) n, COALESCE(SUM(stake), 0) s FROM bourse_bets WHERE user_id = ? AND day = ?', user.id, day);
+    const today = await one(env, 'SELECT COUNT(*) n, COALESCE(SUM(stake), 0) s FROM bourse_bets WHERE user_id = ? AND day = ? AND slot < 100', user.id, day);
     if (today.n >= BOURSE.maxBets) bad(`Maximum ${BOURSE.maxBets} paris par jour`);
     if (+today.s + stake > BOURSE.dayStake) bad(`Maximum ${BOURSE.dayStake} pièces misées par jour`);
     const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', stake, user.id, stake);

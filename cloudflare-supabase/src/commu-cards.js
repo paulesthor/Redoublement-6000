@@ -37,7 +37,7 @@ export function installCommuCards(d, h) {
     return out;
   }
   const rowOf = c => ({ id: EVENT_OFFSET + c.id, title: c.t, rarity: c.r });
-  const insertStmt = (env, c) => { const a = stats(c.t, c.r, false); return st(env, 'INSERT OR IGNORE INTO cards (id, title, views, rarity, atk, def, shiny, url, extract, image, enriched) VALUES (?,?,?,?,?,?,?,?,?,?,2)', EVENT_OFFSET + c.id, c.t, 1, c.r, a.atk, a.def, 0, urlOf(c.t), c.x || '', c.i || null); };
+  const insertStmt = (env, c) => { const a = stats(c.t, c.r, false); return st(env, 'INSERT OR IGNORE INTO cards (id, title, views, rarity, atk, def, shiny, url, extract, image, enriched) VALUES (?,?,?,?,?,?,?,?,?,?,?)', EVENT_OFFSET + c.id, c.t, c.v || 1, c.r, a.atk, a.def, 0, urlOf(c.t), c.x || '', c.i || null, c.x ? 2 : 0); };   // sans extrait fourni, l\'enrichissement habituel du jeu le lira sur Wikipédia au premier affichage
   const cardsView = async (env, uid, col) => {
     const ids = Object.keys(col).map(Number); const rows = await cardRows(env, ids);
     return rows.map(r => ({ ...r, qty: +col[r.id] })).sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || a.title.localeCompare(b.title, 'fr'));
@@ -73,7 +73,7 @@ export function installCommuCards(d, h) {
   });
   // fin de l'événement : chaque souvenir gagné (paliers 2 et 11) fait entrer une carte de l'événement dans la collection normale
   async function souvenirs(env) {
-    const rows = await all(env, 'SELECT user_id, perks, cards FROM plan_progress WHERE joined > 0'); let given = 0;
+    const rows = await all(env, 'SELECT user_id, perks, cards FROM plan_progress WHERE joined > 1'); let given = 0;
     for (const r of rows) {
       const perks = (() => { try { return JSON.parse(r.perks || '[]'); } catch { return []; } })(), col = json(r.cards), n = ['souvenir_1', 'souvenir_2'].filter(p => perks.includes(p)).length;
       if (!n || !Object.keys(col).length) continue;

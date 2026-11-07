@@ -3,6 +3,7 @@
 // L'économie en wikiroubles n'existe pas encore : en attendant, l'administrateur dispose d'un bouton de démonstration qui ajoute des wikiroubles gagnés.
 // Récompenses : paquets, wikiroubles, titres de profil, cadres, souvenirs (cartes à garder après l'événement) et, au palier 6, le thème rouge conservé.
 import { installCommuCards } from './commu-cards.js';
+import { installCommuBourse } from './commu-bourse.js';
 export const PLAN_MILESTONES = [
   { id: 1, at: 120, name: 'Camarade', text: 'Première distribution : le Parti note ton nom, avec une faute, et le jette dans un tiroir à côté des autres cons.', packs: 1, wr: 0, title: 'plan_1' },
   { id: 2, at: 400, name: 'Premier souvenir', text: 'Une fiche rare sort des archives, un peu poisseuse. Elle est à toi pour toujours, même quand le Plan sera mort et enterré.', packs: 0, wr: 100, perk: 'souvenir_1' },
@@ -33,7 +34,7 @@ export const PLAN_TABLES = [
 ];
 
 // ---- économie de l'événement communiste ----
-export const COMMU = { START_WR: 500, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, duel: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
+export const COMMU = { START_WR: 500, TAX: 300, PACK_PRICE: 50, CAPS: { tsar: 100, camp: 250, potato: 150, quiz: 120, bourse: 150 }, CAMP_GAP_H: 3, CAMP_PLAN_WR: 90, POTATO_GAP_MS: 5 * 60000, TSAR_GAP_MS: 20000, TSAR_NEW: 40, TSAR_AGAIN: 8, QUIZ_PER_ANSWER: 20, DUEL_WIN: 40,
   ENDINGS: ['samovar', 'train', 'bear', 'x_samovar', 'x_train', 'x_bear', 'late', 'rave', 'capi', 'vodka', 'babouchka', 'cat', 'strike', 'c0', 'c1', 'd0', 'd1', 'a0', 'a1', 'f0', 'f1'] };
 const dayOf = () => new Date().toISOString().slice(0, 10);
 
@@ -48,9 +49,13 @@ export function installPlan(d) {
   }
   const setting = async (env, k) => (await one(env, 'SELECT value FROM settings WHERE key = ?', k))?.value ?? null;
   const putSetting = (env, k, v) => run(env, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?', k, String(v), String(v));
-  const isOn = async env => { await ensureGameSchema(env); return (await setting(env, 'commu_on')) === '1'; };
+  const rawOn = async env => { await ensureGameSchema(env); return (await setting(env, 'commu_on')) === '1'; };
+  const scopeAll = async env => (await setting(env, 'commu_scope')) === 'all';
+  /** Événement ouvert POUR CE JOUEUR : en test, seul l'administrateur le voit ; ouvert à tous, tout le monde. */
+  const isOn = async (env, user) => (await rawOn(env)) && (!!user?.is_admin || await scopeAll(env));
+  const joinedReal = r => +r.joined > 1;                        // joined = 1 : simple aperçu administrateur, sans taxe
   const pot = async env => +((await setting(env, 'commu_pot')) || 0);
-  const players = async env => +((await one(env, 'SELECT COUNT(*) n FROM plan_progress WHERE joined > 0'))?.n || 0);
+  const players = async env => +((await one(env, 'SELECT COUNT(*) n FROM plan_progress WHERE joined > 1'))?.n || 0);
   const view = r => ({
     milestones: PLAN_MILESTONES.map(m => ({ ...m, title: m.title ? PLAN_TITLES.find(t => t.id === m.title)?.label : null })),
     earned: +r.earned, wr: +r.wr, packs: +(r.packs || 0), joined: +(r.joined || 0), claimed: list(r.claimed), perks: list(r.perks),
@@ -58,11 +63,14 @@ export function installPlan(d) {
   });
   // qui peut voir / jouer : l'administrateur toujours ; un joueur seulement s'il est inscrit (voir) et si l'événement est ouvert (jouer)
   async function access(env, user, { play = false } = {}) {
-    const r = await rowOf(env, user.id), on = await isOn(env);
-    if (user.is_admin) { if (!+r.joined) await run(env, 'UPDATE plan_progress SET joined = ?, wr = wr + ? WHERE user_id = ? AND joined = 0', Date.now(), COMMU.START_WR, user.id); return { r: await rowOf(env, user.id), on, admin: true }; }
-    if (!+r.joined) bad('Tu n\'es pas inscrit à l\'événement communiste', 403);
+    const r = await rowOf(env, user.id), on = await isOn(env, user);
+    if (user.is_admin && !on) {                                   // événement fermé : l'administrateur garde un aperçu gratuit
+      if (!+r.joined) await run(env, 'UPDATE plan_progress SET joined = 1, wr = wr + ? WHERE user_id = ? AND joined = 0', COMMU.START_WR, user.id);
+      return { r: await rowOf(env, user.id), on, admin: true };
+    }
+    if (!joinedReal(r)) bad('Tu n\'es pas inscrit à l\'événement communiste', 403);
     if (play && !on) bad('L\'événement communiste est terminé', 403);
-    return { r, on, admin: false };
+    return { r, on, admin: !!user.is_admin };
   }
   // crédit de wikiroubles gagnés, plafonné par jeu et par jour (compare-and-swap : deux appareils ne dépassent jamais le plafond)
   async function credit(env, uid, game, amount) {
@@ -79,22 +87,23 @@ export function installPlan(d) {
     return allowed;
   }
   const commuView = async (env, user) => {
-    const r = await rowOf(env, user.id), on = await isOn(env), day = dayOf();
+    const r = await rowOf(env, user.id), on = await isOn(env, user), day = dayOf();
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
-    return { on, done: (await setting(env, 'commu_done')) === '1', admin: !!user.is_admin, joined: +r.joined > 0, wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
+    return { on, done: (await setting(env, 'commu_done')) === '1', admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
       tax: COMMU.TAX, startWr: COMMU.START_WR, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
   route('GET', '/api/commu', async ({ env, user }) => commuView(env, user));
   // inscription : taxe d'État versée à la cagnotte, 500 wikiroubles de départ
   route('POST', '/api/commu/join', async ({ env, user }) => {
-    const on = await isOn(env); if (!on && !user.is_admin) bad('L\'événement communiste n\'est pas ouvert', 403);
-    const r = await rowOf(env, user.id); if (+r.joined) bad('Tu es déjà inscrit, camarade', 409);
-    const claim = await run(env, 'UPDATE plan_progress SET joined = ?, wr = wr + ? WHERE user_id = ? AND joined = 0', Date.now(), COMMU.START_WR, user.id);
+    const on = await isOn(env, user); if (!on) bad('L\'événement communiste n\'est pas ouvert', 403);
+    const r = await rowOf(env, user.id); if (joinedReal(r)) bad('Tu es déjà inscrit, camarade', 409);
+    // un administrateur qui n'avait qu'un aperçu repart de zéro : même parcours qu'un joueur (taxe, 500 ₽, paliers vierges)
+    const claim = await run(env, "UPDATE plan_progress SET joined = ?, wr = ?, earned = 0, claimed = '[]', perks = '[]', packs = 0, cards = '{}', opened = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]' WHERE user_id = ? AND joined <= 1", Date.now(), COMMU.START_WR, user.id);
     if (!claim.meta.changes) bad('Tu es déjà inscrit, camarade', 409);
-    if (!user.is_admin) {
+    {
       const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', COMMU.TAX, user.id, COMMU.TAX);
-      if (!paid.meta.changes) { await run(env, 'UPDATE plan_progress SET joined = 0, wr = wr - ? WHERE user_id = ?', COMMU.START_WR, user.id); bad(`La taxe de l'État est de ${COMMU.TAX} wikibidou, tu n'as pas assez`, 400); }
+      if (!paid.meta.changes) { await run(env, 'UPDATE plan_progress SET joined = ?, wr = 0 WHERE user_id = ?', +r.joined, user.id); bad(`La taxe de l'État est de ${COMMU.TAX} wikibidou, tu n'as pas assez`, 400); }
       await run(env, "INSERT INTO settings (key, value) VALUES ('commu_pot', ?) ON CONFLICT (key) DO UPDATE SET value = CAST(CAST(settings.value AS BIGINT) + ? AS TEXT)", String(COMMU.TAX), COMMU.TAX);
     }
     return commuView(env, user);
@@ -127,23 +136,26 @@ export function installPlan(d) {
     return commuView(env, user);
   });
   // classement des wikiroubles gagnés (la cagnotte revient au premier)
-  route('GET', '/api/commu/standings', async ({ env, user }) => {
+  route('GET', '/api/commu/standings', async ({ env, user, query }) => {
     await access(env, user);
-    const rows = await d.all(env, 'SELECT p.user_id id, u.name, p.earned, p.earn_ts FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE p.joined > 0 ORDER BY p.earned DESC, p.earn_ts ASC, p.user_id ASC LIMIT 20');
-    const me = rows.findIndex(x => +x.id === user.id);
-    return { pot: await pot(env), players: await players(env), top: rows.map((x, i) => ({ rank: i + 1, name: x.name, earned: +x.earned, me: +x.id === user.id })), myRank: me >= 0 ? me + 1 : null };
+    const all_ = await d.all(env, 'SELECT p.user_id id, u.name, p.earned, p.earn_ts FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE p.joined > 1 ORDER BY p.earned DESC, p.earn_ts ASC, p.user_id ASC');
+    const lvl = e => PLAN_MILESTONES.filter(m => +e >= m.at).length, max = PLAN_MILESTONES.length, levels = Array(max + 1).fill(0);
+    for (const x of all_) levels[lvl(x.earned)]++;
+    const full = query?.get?.('all') === '1', rows = all_.slice(0, full ? 50 : 20), me = all_.findIndex(x => +x.id === user.id);
+    return { pot: await pot(env), players: all_.length, levels, avgLevel: all_.length ? all_.reduce((t, x) => t + lvl(x.earned), 0) / all_.length : 0, atLeast6: all_.filter(x => lvl(x.earned) >= 6).length, done: levels[max],
+      top: rows.map((x, i) => ({ rank: i + 1, name: x.name, earned: +x.earned, level: lvl(x.earned), me: +x.id === user.id })), myRank: me >= 0 ? me + 1 : null };
   });
   // administrateur : ouvre / ferme l'événement (le bouton de lancement viendra plus tard)
   route('POST', '/api/commu/set', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
-    await ensureGameSchema(env); await putSetting(env, 'commu_on', body.on ? '1' : '0'); if (body.on) await putSetting(env, 'commu_done', '0');
+    await ensureGameSchema(env); await putSetting(env, 'commu_on', body.on ? '1' : '0'); await putSetting(env, 'commu_scope', body.scope === 'all' ? 'all' : 'admin'); if (body.on) await putSetting(env, 'commu_done', '0');
     return commuView(env, user);
   });
   // fin de l'événement : la cagnotte au meilleur, titre « Staline » et contour doré ; les avantages gagnés restent
   route('POST', '/api/commu/finish', async ({ env, user }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
     await ensureGameSchema(env); if ((await setting(env, 'commu_done')) === '1') bad('L\'événement est déjà terminé', 409);
-    const win = await one(env, 'SELECT p.user_id id, u.name, p.earned FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE p.joined > 0 AND p.earned > 0 ORDER BY p.earned DESC, p.earn_ts ASC, p.user_id ASC LIMIT 1');
+    const win = await one(env, 'SELECT p.user_id id, u.name, p.earned FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE p.joined > 1 AND p.earned > 0 ORDER BY p.earned DESC, p.earn_ts ASC, p.user_id ASC LIMIT 1');
     const prize = await pot(env); let winner = null;
     if (win) {
       const rw = await rowOf(env, +win.id); await run(env, 'UPDATE plan_progress SET perks = ? WHERE user_id = ?', JSON.stringify([...new Set([...list(rw.perks), 'gold_outline'])]), +win.id);
@@ -188,5 +200,6 @@ export function installPlan(d) {
     return { ok: true, id: m.id, packs: m.packs, wr: m.wr, title: m.title ? PLAN_TITLES.find(t => t.id === m.title).label : null, titleNew, perk: m.perk ?? null };
   });
   const cc = installCommuCards(d, { access, rowOf });
-  return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc };
+  installCommuBourse(d, { access, credit, cc });
+  return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc, joinedReal };
 }
