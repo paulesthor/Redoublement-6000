@@ -32,7 +32,7 @@
     // raretés → grades militaires
     'Commune': 'Soldat', 'Peu commune': 'Caporal', 'Rare': 'Sergent', 'Super rare': 'Capitaine', 'Ultra rare': 'Général', 'Légendaire': 'Maréchal', 'Légendaires': 'Maréchaux', 'Communes': 'Soldats', 'Rares': 'Sergents',
     'Hits légendaires': 'Faits d\'armes', 'Hits': 'Faits d\'armes', 'légendaires': 'd\'armes',
-    'Les prochains tirages légendaires apparaîtront ici.': 'Les prochains faits d\'armes seront affichés ici, camarade.',
+    'Les prochains tirages légendaires apparaîtront ici.': 'Les prochains faits d\'armes seront affichés ici.',
     'Aucune légendaire pour le moment.': 'Aucun maréchal pour le moment.',
     'Ajouter un commentaire…': 'Ajouter une note au dossier…', 'Rechercher une carte': 'Rechercher une fiche', 'cartes uniques': 'fiches uniques', 'exemplaires': 'exemplaires du Plan', 'doublons': 'doublons (au kolkhoze)', 'valeur estimée (pièces)': 'valeur estimée (roubles d\'État)', 'Publier': 'Afficher', 'J\'aime': 'Approuvé',
   }));
