@@ -17,7 +17,7 @@ ok('souvenirs aux paliers 2 et 11, thème rouge au palier 6', r.milestones[1].pe
 const p0 = await packs();
 [s, r] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 : 1 paquet + titre', s === 200 && r.packs === 1 && r.title === 'Camarade' && await packs() === p0 + 1, J(r));
 [s] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 : une seule fois', s === 409, s);
-[s] = await call(A, 'POST', '/api/plan/claim', { id: 3 }); ok('palier 3 refusé (900 requis)', s === 400, s);
+[s] = await call(A, 'POST', '/api/plan/claim', { id: 3 }); ok('palier 3 refusé (720 requis)', s === 400, s);
 [s, r] = await call(A, 'POST', '/api/plan/claim', { id: 2 }); ok('palier 2 : souvenir + 100 wikiroubles', s === 200 && r.perk === 'souvenir_1' && r.wr === 100, J(r));
 await call(A, 'POST', '/api/plan/earn', { amount: 2000 }); await call(A, 'POST', '/api/plan/earn', { amount: 2000 }); await call(A, 'POST', '/api/plan/earn', { amount: 2000 });
 for (let id = 3; id <= 12; id++) { [s] = await call(A, 'POST', '/api/plan/claim', { id }); if (s !== 200) ok('palier ' + id, false, s); }
