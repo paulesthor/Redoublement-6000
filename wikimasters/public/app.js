@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.28';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.29';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -420,14 +420,14 @@ const eventOn = () => !!commu && commu.on && commu.joined;                      
 const eventAccess = () => !!me?.admin || eventOn();                               // l'administrateur garde l'aperçu
 async function loadCommu(force) {
   if (!force && commu && Date.now() - commuAt < 25000) return commu;
-  commuAt = Date.now(); try { commu = await api('/commu'); } catch { commu = null; }
+  commuAt = Date.now(); try { commu = await api('/commu'); } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
   syncEventTheme(); return commu;
 }
 /** Le thème rouge suit l'événement : appliqué à l'entrée, retiré à la fin (sauf si le joueur a gagné le palier 6). */
 function syncEventTheme() {
   const optOut = prefOf('wm_ussr_ui') === '0', th = prefOf('wm_theme');
   if (eventOn() && !optOut && th !== 'urss') { if (th) setPref('wm_theme_prev', th); setPref('wm_theme', 'urss'); setPref('wm_theme_auto', '1'); }
-  else if (prefOf('wm_theme_auto') === '1' && (!eventOn() || optOut)) { if (optOut || !(commu?.perks || []).includes('theme_urss')) setPref('wm_theme', prefOf('wm_theme_prev') || 'dark'); setPref('wm_theme_auto', '0'); }
+  else if (commu && prefOf('wm_theme_auto') === '1' && (!eventOn() || optOut)) { if (optOut || !(commu?.perks || []).includes('theme_urss')) setPref('wm_theme', prefOf('wm_theme_prev') || 'dark'); setPref('wm_theme_auto', '0'); }
 }
 const ussrUiOn = () => { try { return (!!me?.admin && localStorage.getItem('wm_ussr_ui') === '1') || (eventOn() && localStorage.getItem('wm_ussr_ui') !== '0'); } catch { return false; } };
 const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src + '?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error(src)); document.head.append(s); });
@@ -518,6 +518,8 @@ function cardPicker(title, { user } = {}) {
 }
 const views = {
   async packs(v) {
+    await loadCommu().catch(() => {});   // l'état de l'événement doit être connu avant de choisir le design
+    if (ussrUiOn() && !window.ussrParcelSvg) await loadUssr().catch(() => {});
     if (eventUi()) return eventPacks(v);
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
     v.innerHTML = `${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
@@ -600,6 +602,7 @@ const views = {
   },
 
   async album(v) {
+    await loadCommu().catch(() => {});
     if (eventUi()) return eventAlbum(v);
     const S = await api('/album/stats');
     const { uniques, copies, dupes, worth, have, tiers, total, rarityAvg } = S;
@@ -1518,9 +1521,11 @@ const render = safe(async () => {
 });
 async function refreshMe() {
   me = await api('/me');
-  syncUssrUi().catch(() => {});
+  // l'état de l'événement et les scripts du thème sont prêts AVANT le premier affichage : plus d'accueil classique qui apparaît puis se corrige
+  await Promise.race([loadCommu(), new Promise(r => setTimeout(r, 1500))]).catch(() => {});
+  await syncUssrUi().catch(() => {});
   { const sig = () => commu ? `${commu.on}:${commu.joined}` : ''; const before = sig();
-    loadCommu().then(() => { syncUssrUi(); if (cfg && sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) render();
+    loadCommu().then(() => { syncUssrUi(); if (sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) { const go = n => (cfg ? render() : n > 0 && setTimeout(() => go(n - 1), 300)); go(20); }   // si la configuration n'est pas encore là, on réessaie un instant
       syncEventDrum(); }).catch(() => {}); }   // la fin de l'événement s'ouvre toute seule, une fois   // l'événement s'ouvre ou se ferme : l'écran suit
   if (me.maintenance === true) maintenanceScreen();
   { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }

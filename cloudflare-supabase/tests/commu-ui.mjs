@@ -64,7 +64,7 @@ await DB.prepare("UPDATE users SET coins = 1000 WHERE name = 'Carole'").run(); a
 await DB.prepare("UPDATE plan_progress SET earned = 900, earn_ts = 1 WHERE user_id = (SELECT id FROM users WHERE name = 'Carole')").run();
 await pb.evaluate(async () => { tab = 'plan'; await render(); }); await pb.waitForSelector('#plan-top'); await pb.click('#plan-top'); await pb.waitForSelector('.st-row');
 const rows = await pb.$$eval('.st-row', r => r.map(x => x.textContent.replace(/\s+/g, ' ').trim())); ok('classement : Carole 1re, Bob 2e, sa ligne mise en évidence', rows[0].includes('Carole') && rows[1].includes('Bob') && (await pb.$('.st-row.me')) !== null, J(rows));
-ok('cagnotte affichée : 2 inscrits × 300 + admin 0', (await pb.textContent('.moresheet')).includes('600'), (await pb.textContent('.moresheet')).slice(0, 160));
+ok('cagnotte affichée : 2 inscrits × 300 + admin 0', (await pb.textContent('#view')).includes('600'), (await pb.textContent('#view')).slice(0, 160));
 await pb.screenshot({ path: SHS + 'commu-5-classement.png' }); await quiet(pb);
 // 6. réglages : interrupteur du mode, retour au capitalisme
 await pb.evaluate(async () => { tab = 'settings'; await render(); }); await pb.waitForSelector('#st-commu');
@@ -82,6 +82,7 @@ await pb.context().close();
 await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' });
 await DB.prepare("UPDATE plan_progress SET earned = 3000 WHERE user_id = (SELECT id FROM users WHERE name = 'Bob')").run();
 const [sc] = await call(B, 'POST', '/api/plan/claim', { id: 6 }); ok('Bob atteint le palier 6 : récompense réclamée', sc === 200, sc);
+{ const pq = await mkAs(B); await pq.evaluate(async () => { commu = null; commuAt = 0; tab = 'packs'; await render(); }); ok('régression : colis soviétique dès le premier affichage (jamais le booster classique)', !!(await pq.$('#packart .us-home')), await pq.evaluate(() => document.querySelector('#packart')?.innerHTML.slice(0, 60))); await pq.context().close(); }
 await call(A, 'POST', '/api/commu/finish', {}); const pb2 = await mkAs(B); await pb2.evaluate(async () => { await loadCommu(true); tab = 'settings'; await render(); }); await pb2.waitForTimeout(1200);
 ok('après l\'événement, le palier 6 donne le thème « Camarade » dans les réglages', (await pb2.$('.themes button[data-th="urss"], .themes [data-theme="urss"], .themes button:has-text("Camarade")')) !== null);
 ok('aucune erreur JS', pb2.errs.length === 0, J(pb2.errs)); await pb2.context().close();
