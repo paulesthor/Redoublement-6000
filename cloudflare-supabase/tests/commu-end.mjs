@@ -32,7 +32,7 @@ await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(
 await DB.prepare("UPDATE plan_progress SET earned = 3700 WHERE user_id = (SELECT id FROM users WHERE name = 'Bob')").run();
 const c0 = await coinsOf('Bob');
 for (const id of [1, 2, 9]) { const [s, r] = await call(B, 'POST', '/api/plan/claim', { id }); ok(`palier ${id} réclamé`, s === 200, s); }
-ok('récompenses classiques : wikibidou versés (20 + 40 + 120)', await coinsOf('Bob') === c0 + 180, (await coinsOf('Bob')) - c0);
+ok('récompenses classiques : wikibidou versés (30 + 60 + 180)', await coinsOf('Bob') === c0 + 270, (await coinsOf('Bob')) - c0);
 await call(B, 'POST', '/api/commu/buy', { n: 3 }); for (let i = 0; i < 3; i++) await call(B, 'POST', '/api/commu/open', {});
 await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(A, 'POST', '/api/commu/finish', {});
 const pb = await mkE(B); await pb.waitForTimeout(1500);
