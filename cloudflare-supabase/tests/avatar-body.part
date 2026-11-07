@@ -1,0 +1,9 @@
+const mkV = async token => { const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); localStorage.setItem('wm_sound', '0'); localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, token); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8767/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(1500); return p; };
+await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(B, 'POST', '/api/commu/join', {});
+await DB.prepare("UPDATE users SET coins = 1000 WHERE name = 'Bob'").run(); await call(B, 'POST', '/api/commu/join', {});
+const pb = await mkV(B); await pb.evaluate(() => { document.querySelector('#modal').hidden = true; });
+await pb.evaluate(async () => { await loadCommu(true); await syncUssrUi(); tab = 'packs'; await render(); }); await pb.waitForTimeout(800);
+const rr = await pb.$eval('#profile', e => { const s = getComputedStyle(e); return { rad: s.borderRadius, w: e.offsetWidth, h: e.offsetHeight, ussr: document.body.classList.contains('ussr-ui') }; });
+ok('photo du bandeau : rond parfait en mode communiste', rr.ussr && rr.w === rr.h && /50%|^(1[6-9]|2\d)(\.\d+)?px/.test(rr.rad), J(rr));
+ok('aucune erreur JS', pb.errs.length === 0, J(pb.errs));
+process.exit(0);
