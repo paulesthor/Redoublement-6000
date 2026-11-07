@@ -102,5 +102,5 @@
     obs.observe(document.body, { childList: true, subtree: true, characterData: true });
   };
   const off = () => { if (!active) return; active = false; setIcons(false); hymnOff(); obs?.disconnect(); obs = null; clearInterval(tickT); ticker?.remove(); ticker = null; document.body.classList.remove('ussr-ui'); for (const r of changed) { const n = r.deref(); if (n && orig.has(n)) n.nodeValue = orig.get(n); } changed.clear(); };
-  window.UssrSkin = { on, off, hymnRefresh: () => (hymnWanted() ? hymnStart() : hymn?.pause()), isOn: () => active, EXACT };
+  window.UssrSkin = { on, off, hymnState: () => ({ chargé: !!hymn, enLecture: !!hymn && !hymn.paused, manquant: hymnMissing, durée: hymn?.duration || 0 }), hymnRefresh: () => (hymnWanted() ? hymnStart() : hymn?.pause()), isOn: () => active, EXACT };
 })();
