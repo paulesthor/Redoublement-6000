@@ -1580,3 +1580,10 @@ body.ussr-ui .us-news{margin-bottom:12px}
 .plr-rw>div{display:flex;flex-wrap:wrap;gap:5px}.rw{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px 3px 5px;border-radius:99px;background:#f4d56b1f;color:#f4d56b}.rw i{width:18px;height:18px;display:block}.rw i svg{width:100%;height:100%;display:block}
 .plr .plan-st{margin-top:8px}.plr-stamp{position:absolute;right:10px;top:10px;padding:2px 10px;border:2px solid #c0161d;color:#c0161d;border-radius:4px;font-weight:900;letter-spacing:.12em;font-size:12px;transform:rotate(-8deg);opacity:.85}
 @media(prefers-reduced-motion:reduce){.plr-n b,.plr-n i,.plr-card::before{animation:none!important}}
+
+/* thèmes gagnés au Plan */
+html[data-theme=siberie]{--bg:#07111a;--bg2:#0a1824;--panel:#0e1d2b;--panel2:#142a3d;--line:#173047;--line2:#234560;--gold:#bfe4ff;--gold2:#7fb4d8;--grad-gold:linear-gradient(180deg,#dff2ff,#9dcdee)}html[data-theme=siberie],html[data-theme=siberie] body{background:#07111a}
+html[data-theme=or]{--bg:#110d04;--bg2:#181206;--panel:#1e1708;--panel2:#2a210d;--line:#3a2e12;--line2:#54431a;--gold:#ffd96a;--gold2:#c9a43a;--grad-gold:linear-gradient(180deg,#ffe9a0,#e0b53c)}html[data-theme=or],html[data-theme=or] body{background:#110d04}
+/* cartes souvenir : contour rouge et or, ruban */
+.card.souv{box-shadow:0 0 0 2px #c0161d,0 0 0 4px #f4d56b,0 6px 18px #f4d56b55}.card.souv::after{content:"SOUVENIR";position:absolute;right:-6px;top:10px;padding:2px 10px;background:#c0161d;color:#f4d56b;font-size:9px;font-weight:900;letter-spacing:.14em;transform:rotate(8deg);box-shadow:0 2px 6px #0008;z-index:5;pointer-events:none}
+.card.souvpick{outline:3px solid #f4d56b;outline-offset:2px;transform:translateY(-3px)}

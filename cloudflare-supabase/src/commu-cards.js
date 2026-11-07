@@ -71,16 +71,43 @@ export function installCommuCards(d, h) {
     const have = Object.fromEntries(RARITIES.map(x => [x, 0])); for (const c of list) have[c.rarity]++;
     return { cards: list, have, total: P.total, owned: list.length, copies: list.reduce((t, c) => t + c.qty, 0), opened: +(r.opened || 0), packs: +(r.packs || 0) };
   });
-  // fin de l'événement : chaque souvenir gagné (paliers 2 et 11) fait entrer une carte de l'événement dans la collection normale
+  // fin de l'événement : chaque souvenir gagné (paliers 2 et 11) permet de faire entrer UNE carte de l'événement, au choix, dans la collection normale (marquée « souvenir »)
+  const entitledOf = r => { try { return JSON.parse(r.perks || '[]').filter(p => p.startsWith('souvenir_')).length; } catch { return 0; } };
+  async function grantSouvenirs(env, uid, r, ids) {
+    const col = json(r.cards), have = (() => { try { return JSON.parse(r.souvenirs || '[]'); } catch { return []; } })(), n = entitledOf(r);
+    if (have.length) bad('Tes souvenirs sont déjà choisis, camarade : le Parti ne reprend pas ses cadeaux', 409);
+    const pick = [...new Set(ids.map(Number))]; if (!pick.length || pick.length > n || pick.some(id => !(id in col))) bad(`Choisis de 1 à ${n} fiche${n > 1 ? 's' : ''} parmi celles que tu possèdes`, 400);
+    const claim = await run(env, "UPDATE plan_progress SET souvenirs = ? WHERE user_id = ? AND souvenirs = '[]'", JSON.stringify(pick), uid);
+    if (!claim.meta.changes) bad('Tes souvenirs sont déjà choisis, camarade', 409);
+    await env.DB.batch(pick.map(id => addCard(env, uid, id)));
+    return pick;
+  }
+  route('POST', '/api/commu/souvenirs', async ({ env, user, body }) => {
+    const { r } = await h.access(env, user);
+    if ((await h.setting(env, 'commu_done')) !== '1') bad('L\'événement n\'est pas terminé : les souvenirs se choisissent à la fin', 400);
+    if ((await h.setting(env, 'commu_souv_closed')) === '1') bad('Le choix des souvenirs est clos', 400);
+    const ids = Array.isArray(body.ids) ? body.ids : []; const pick = await grantSouvenirs(env, user.id, r, ids);
+    const cards = (await cardRows(env, pick)).map(c => ({ ...c, souvenir: true }));
+    return { ok: true, cards };
+  });
+  // administrateur : clôture le choix ; ceux qui n'ont pas choisi reçoivent leurs plus belles fiches
   async function souvenirs(env) {
-    const rows = await all(env, 'SELECT user_id, perks, cards FROM plan_progress WHERE joined > 1'); let given = 0;
+    const rows = await all(env, 'SELECT user_id, perks, cards, souvenirs FROM plan_progress WHERE joined > 1'); let given = 0;
     for (const r of rows) {
-      const perks = (() => { try { return JSON.parse(r.perks || '[]'); } catch { return []; } })(), col = json(r.cards), n = ['souvenir_1', 'souvenir_2'].filter(p => perks.includes(p)).length;
-      if (!n || !Object.keys(col).length) continue;
-      const owned = (await cardRows(env, Object.keys(col).map(Number))).sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || +col[a.id] - +col[b.id]);   // les plus rares d'abord, à rareté égale la moins possédée
-      const stmts = owned.slice(0, n).map(c => addCard(env, +r.user_id, c.id)); if (stmts.length) { await env.DB.batch(stmts); given += stmts.length; }
+      const n = entitledOf(r), col = json(r.cards); if (!n || !Object.keys(col).length) continue;
+      if ((() => { try { return JSON.parse(r.souvenirs || '[]').length; } catch { return 0; } })()) continue;
+      const owned = (await cardRows(env, Object.keys(col).map(Number))).sort((a, b) => RANK[b.rarity] - RANK[a.rarity] || +col[a.id] - +col[b.id]);
+      const ids = owned.slice(0, n).map(c => c.id); if (!ids.length) continue;
+      await run(env, 'UPDATE plan_progress SET souvenirs = ? WHERE user_id = ?', JSON.stringify(ids), +r.user_id);
+      await env.DB.batch(ids.map(id => addCard(env, +r.user_id, id))); given += ids.length;
     }
     return given;
   }
+  route('POST', '/api/commu/souvenirs/close', async ({ env, user }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    if ((await h.setting(env, 'commu_done')) !== '1') bad('L\'événement n\'est pas terminé', 400);
+    const given = await souvenirs(env); await h.putSetting(env, 'commu_souv_closed', '1');
+    return { ok: true, given };
+  });
   return { souvenirs, pool };
 }

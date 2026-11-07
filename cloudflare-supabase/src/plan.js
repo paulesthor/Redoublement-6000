@@ -5,18 +5,18 @@
 import { installCommuCards } from './commu-cards.js';
 import { installCommuBourse } from './commu-bourse.js';
 export const PLAN_MILESTONES = [
-  { id: 1, at: 120, name: 'Camarade', text: 'Première distribution : le Parti note ton nom, avec une faute, et le jette dans un tiroir à côté des autres cons.', packs: 1, wr: 0, title: 'plan_1' },
-  { id: 2, at: 400, name: 'Premier souvenir', text: 'Une fiche rare sort des archives, un peu poisseuse. Elle est à toi pour toujours, même quand le Plan sera mort et enterré.', packs: 0, wr: 100, perk: 'souvenir_1' },
-  { id: 3, at: 720, name: 'Cadre de l\'Étoile rouge', text: 'Un cadre rouge pour ton profil : l\'étoile brille, le budget aussi, mais pas pour toi, connard.', packs: 2, wr: 0, perk: 'frame_star' },
-  { id: 4, at: 1100, name: 'Brigadier', text: 'Tu encadres maintenant d\'autres camarades. Ils n\'ont rien demandé, et ils te détestent déjà. C\'est ça, la promotion.', packs: 0, wr: 150, title: 'plan_2' },
-  { id: 5, at: 1600, name: 'Colis de ravitaillement', text: 'Trois colis, une saucisse suspecte et une lettre d\'excuses signée « va te faire voir, cordialement ».', packs: 3, wr: 0 },
-  { id: 6, at: 2100, name: 'Héros du Plan', text: 'Le Parti te laisse le drapeau : le thème rouge « Camarade » reste dans tes Réglages après l\'événement. Plante-le où tu veux.', packs: 0, wr: 200, title: 'plan_3', perk: 'theme_urss' },
-  { id: 7, at: 2550, name: 'Cadre Faucille et Marteau', text: 'Un deuxième cadre, plus lourd. Il ne se porte pas à la légère, ni sans un petit coup de vodka avant.', packs: 0, wr: 200, perk: 'frame_hammer' },
-  { id: 8, at: 3050, name: 'Stakhanoviste', text: 'Tu as dépassé la norme de 300 %. Le Parti relève la norme, et ton cul avec.', packs: 3, wr: 0, title: 'plan_4' },
-  { id: 9, at: 3500, name: 'Prime du Politburo', text: 'Une enveloppe épaisse, prise sur la prime de quelqu\'un d\'autre. Ne pose pas de questions, il ne pose plus rien non plus.', packs: 0, wr: 300 },
-  { id: 10, at: 3900, name: 'Cadre du Politburo', text: 'Cadre doré. Il est en plastique, mais la dorure est réglementaire. Comme ta dignité, il est en option.', packs: 4, wr: 0, perk: 'frame_gold' },
-  { id: 11, at: 4300, name: 'Second souvenir', text: 'Une carte légendaire sortie des archives secrètes. On ne pose pas de questions, on se les pose, en silence, aux chiottes.', packs: 0, wr: 0, title: 'plan_5', perk: 'souvenir_2' },
-  { id: 12, at: 4800, name: 'Héros de l\'Union soviétique', text: 'Le Plan est accompli. Tu entres dans les manuels, au chapitre des remerciements, entre le tampon et la tache de graisse.', packs: 5, wr: 500, title: 'plan_6' },
+  { id: 1, at: 120, coins: 20, name: 'Camarade', text: 'Première distribution : le Parti note ton nom, avec une faute, et le jette dans un tiroir à côté des autres cons.', packs: 1, wr: 0, title: 'plan_1' },
+  { id: 2, at: 400, coins: 40, name: 'Premier souvenir', text: 'Une fiche rare sort des archives, un peu poisseuse. Elle est à toi pour toujours, même quand le Plan sera mort et enterré.', packs: 0, wr: 100, perk: 'souvenir_1' },
+  { id: 3, at: 720, coins: 40, name: 'Cadre de l\'Étoile rouge', text: 'Un cadre rouge pour ton profil : l\'étoile brille, le budget aussi, mais pas pour toi, connard.', packs: 2, wr: 0, perk: 'frame_star' },
+  { id: 4, at: 1100, coins: 60, name: 'Brigadier', text: 'Tu encadres maintenant d\'autres camarades. Ils n\'ont rien demandé, et ils te détestent déjà. C\'est ça, la promotion.', packs: 0, wr: 150, title: 'plan_2' },
+  { id: 5, at: 1600, coins: 60, name: 'Colis de ravitaillement', text: 'Trois colis, une saucisse suspecte et une lettre d\'excuses signée « va te faire voir, cordialement ».', packs: 3, wr: 0 },
+  { id: 6, at: 2100, coins: 100, name: 'Héros du Plan', text: 'Le Parti te laisse le drapeau : le thème rouge « Camarade » reste dans tes Réglages après l\'événement. Plante-le où tu veux.', packs: 0, wr: 200, title: 'plan_3', perk: 'theme_urss' },
+  { id: 7, at: 2550, coins: 80, name: 'Cadre Faucille et Marteau', text: 'Un deuxième cadre, plus lourd. Il ne se porte pas à la légère, ni sans un petit coup de vodka avant.', packs: 0, wr: 200, perk: 'frame_hammer' },
+  { id: 8, at: 3050, coins: 100, name: 'Stakhanoviste', text: 'Tu as dépassé la norme de 300 %. Le Parti relève la norme, et ton cul avec.', packs: 3, wr: 0, title: 'plan_4' },
+  { id: 9, at: 3500, coins: 120, name: 'Prime du Politburo', text: 'Une enveloppe épaisse, prise sur la prime de quelqu\'un d\'autre. Ne pose pas de questions, il ne pose plus rien non plus.', packs: 0, wr: 300, perk: 'theme_siberie' },
+  { id: 10, at: 3900, coins: 150, name: 'Cadre du Politburo', text: 'Cadre doré. Il est en plastique, mais la dorure est réglementaire. Comme ta dignité, il est en option.', packs: 4, wr: 0, perk: 'frame_gold' },
+  { id: 11, at: 4300, coins: 200, name: 'Second souvenir', text: 'Une carte légendaire sortie des archives secrètes. On ne pose pas de questions, on se les pose, en silence, aux chiottes.', packs: 0, wr: 0, title: 'plan_5', perk: 'souvenir_2' },
+  { id: 12, at: 4800, coins: 300, name: 'Héros de l\'Union soviétique', text: 'Le Plan est accompli. Tu entres dans les manuels, au chapitre des remerciements, entre le tampon et la tache de graisse.', packs: 5, wr: 500, title: 'plan_6', perk: 'theme_or' },
 ];
 export const PLAN_TITLES = [
   { id: 'plan_1', label: 'Camarade', desc: 'Plan quinquennal : atteins le palier 1' },
@@ -29,7 +29,7 @@ export const PLAN_TITLES = [
 ];
 export const PLAN_TABLES = [
   'CREATE TABLE IF NOT EXISTS plan_progress (user_id BIGINT PRIMARY KEY, earned BIGINT NOT NULL DEFAULT 0, wr BIGINT NOT NULL DEFAULT 0, claimed TEXT NOT NULL DEFAULT \'[]\', perks TEXT NOT NULL DEFAULT \'[]\')',
-  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS joined BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS packs BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS earn_ts BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS camp_plans INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_camp BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_tsar BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_potato BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS tsar_ends TEXT NOT NULL DEFAULT \'[]\', ADD COLUMN IF NOT EXISTS cards TEXT NOT NULL DEFAULT \'{}\', ADD COLUMN IF NOT EXISTS opened INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE plan_progress ADD COLUMN IF NOT EXISTS joined BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS packs BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS earn_ts BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS camp_plans INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_camp BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_tsar BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS last_potato BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS tsar_ends TEXT NOT NULL DEFAULT \'[]\', ADD COLUMN IF NOT EXISTS cards TEXT NOT NULL DEFAULT \'{}\', ADD COLUMN IF NOT EXISTS opened INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS souvenirs TEXT NOT NULL DEFAULT \'[]\'',
   'ALTER TABLE plan_progress ENABLE ROW LEVEL SECURITY',
 ];
 
@@ -59,7 +59,7 @@ export function installPlan(d) {
   const view = r => ({
     milestones: PLAN_MILESTONES.map(m => ({ ...m, title: m.title ? PLAN_TITLES.find(t => t.id === m.title)?.label : null })),
     earned: +r.earned, wr: +r.wr, packs: +(r.packs || 0), joined: +(r.joined || 0), claimed: list(r.claimed), perks: list(r.perks),
-    totals: { packs: PLAN_MILESTONES.reduce((t, m) => t + m.packs, 0), wr: PLAN_MILESTONES.reduce((t, m) => t + m.wr, 0), max: PLAN_MILESTONES[PLAN_MILESTONES.length - 1].at },
+    totals: { coins: PLAN_MILESTONES.reduce((t, m) => t + (m.coins || 0), 0), packs: PLAN_MILESTONES.reduce((t, m) => t + m.packs, 0), wr: PLAN_MILESTONES.reduce((t, m) => t + m.wr, 0), max: PLAN_MILESTONES[PLAN_MILESTONES.length - 1].at },
   });
   // qui peut voir / jouer : l'administrateur toujours ; un joueur seulement s'il est inscrit (voir) et si l'événement est ouvert (jouer)
   async function access(env, user, { play = false } = {}) {
@@ -89,7 +89,8 @@ export function installPlan(d) {
   const commuView = async (env, user) => {
     const r = await rowOf(env, user.id), on = await isOn(env, user), day = dayOf();
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
-    return { on, done: (await setting(env, 'commu_done')) === '1', admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
+    const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
+    return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
       tax: COMMU.TAX, startWr: COMMU.START_WR, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
@@ -162,7 +163,9 @@ export function installPlan(d) {
       if (prize > 0) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', prize, +win.id);
       await grantTitle(env, +win.id, 'commu_staline'); winner = { id: +win.id, name: win.name, earned: +win.earned, prize };
     }
-    const souv = await cc.souvenirs(env);
+    const souv = 0;
+    if (winner) await putSetting(env, 'commu_winner', JSON.stringify(winner)); else await putSetting(env, 'commu_winner', '');
+    await putSetting(env, 'commu_souv_closed', '0');
     await putSetting(env, 'commu_done', '1'); await putSetting(env, 'commu_on', '0'); await putSetting(env, 'commu_pot', 0);
     return { ok: true, winner, souvenirs: souv, players: await players(env) };
   });
@@ -177,7 +180,7 @@ export function installPlan(d) {
   });
   route('POST', '/api/plan/reset', async ({ env, user }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403); await rowOf(env, user.id);
-    await run(env, "UPDATE plan_progress SET earned = 0, wr = 0, claimed = '[]', perks = '[]', joined = 0, packs = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]', cards = '{}', opened = 0 WHERE user_id = ?", user.id);
+    await run(env, "UPDATE plan_progress SET earned = 0, wr = 0, claimed = '[]', perks = '[]', joined = 0, packs = 0, camp_plans = 0, last_camp = 0, last_tsar = 0, last_potato = 0, tsar_ends = '[]', cards = '{}', opened = 0, souvenirs = '[]' WHERE user_id = ?", user.id);
     return view(await rowOf(env, user.id));
   });
   route('POST', '/api/plan/claim', async ({ env, user, body }) => {
@@ -195,11 +198,12 @@ export function installPlan(d) {
       won = !!upd.meta.changes;
     }
     if (!won) bad('Trop de réclamations en même temps, réessaie', 409);
+    if (m.coins) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', m.coins, user.id);   // wikibidou du mode classique
     if (m.packs) await run(env, 'UPDATE plan_progress SET packs = packs + ? WHERE user_id = ?', m.packs, user.id);   // les colis des paliers rejoignent le stock de colis de l\'événement
     const titleNew = m.title ? await grantTitle(env, user.id, m.title) : false;
-    return { ok: true, id: m.id, packs: m.packs, wr: m.wr, title: m.title ? PLAN_TITLES.find(t => t.id === m.title).label : null, titleNew, perk: m.perk ?? null };
+    return { ok: true, id: m.id, packs: m.packs, wr: m.wr, coins: m.coins || 0, title: m.title ? PLAN_TITLES.find(t => t.id === m.title).label : null, titleNew, perk: m.perk ?? null };
   });
-  const cc = installCommuCards(d, { access, rowOf });
+  const cc = installCommuCards(d, { access, rowOf, setting, putSetting, list });
   installCommuBourse(d, { access, credit, cc });
   return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc, joinedReal };
 }

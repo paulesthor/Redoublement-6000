@@ -14,7 +14,7 @@ ok('souvenirs aux paliers 2 et 11, thème rouge au palier 6', r.milestones[1].pe
 [s] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 refusé sans wikiroubles', s === 400, s);
 [s] = await call(A, 'POST', '/api/plan/earn', { amount: 99999 }); ok('démo : montant borné', s === 400, s);
 [s, r] = await call(A, 'POST', '/api/plan/earn', { amount: 600 }); ok('600 wikiroubles gagnés', s === 200 && r.earned === 600, J(r).slice(0, 80));
-const p0 = await packs();
+const p0 = await packs(); const c0 = +(await q('SELECT coins c FROM users WHERE id = ?', alice))[0].c;
 [s, r] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 : 1 paquet + titre', s === 200 && r.packs === 1 && r.title === 'Camarade' && await packs() === p0 + 1, J(r));
 [s] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 : une seule fois', s === 409, s);
 [s] = await call(A, 'POST', '/api/plan/claim', { id: 3 }); ok('palier 3 refusé (720 requis)', s === 400, s);
@@ -24,6 +24,7 @@ for (let id = 3; id <= 12; id++) { [s] = await call(A, 'POST', '/api/plan/claim'
 [s, r] = await call(A, 'GET', '/api/plan');
 ok('12 paliers réclamés', r.claimed.length === 12, J(r.claimed));
 ok('avantages : thème rouge, 2 souvenirs, 3 cadres', r.perks.includes('theme_urss') && r.perks.includes('souvenir_1') && r.perks.includes('souvenir_2') && r.perks.filter(p => p.startsWith('frame_')).length === 3, J(r.perks));
+const c1 = +(await q('SELECT coins c FROM users WHERE id = ?', alice))[0].c; ok('wikibidou du mode classique : somme des paliers versée', c1 - c0 === r.totals.coins && r.totals.coins === 1270, `${c1 - c0} / ${r.totals.coins}`);
 ok('wikiroubles et paquets = totaux annoncés', r.wr === r.totals.wr + 500 && await packs() === p0 + r.totals.packs, `${r.wr} / ${r.totals.wr}`);
 ok('6 titres du Plan attribués', (await q("SELECT COUNT(*) n FROM user_titles WHERE user_id = ? AND tid LIKE 'plan_%'", alice))[0].n === 6);
 [s, r] = await call(A, 'POST', '/api/plan/reset', {}); ok('démo : remise à zéro', s === 200 && r.earned === 0 && r.claimed.length === 0 && r.perks.length === 0, J(r).slice(0, 80));

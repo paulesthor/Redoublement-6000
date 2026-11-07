@@ -57,11 +57,22 @@ globalThis.__PV = undefined;
 [, v] = await call(tok.Ana, 'GET', '/api/daily-quiz'); ok('quiz de l\'événement : jour dédié (cm:)', String(v.day).startsWith('cm:'), v.day);
 [, v] = await call(tok.Dmitri, 'GET', '/api/daily-quiz'); ok('joueur classique : quiz normal', !String(v.day).startsWith('cm:'), v.day);
 
-// ---------- fin : souvenirs dans la collection normale ----------
-await q("UPDATE plan_progress SET perks = '[\"souvenir_1\",\"souvenir_2\"]' WHERE user_id = ?", uid.Clara);
+// ---------- fin : le gagnant, puis le CHOIX des souvenirs selon les paliers ----------
+await q("UPDATE plan_progress SET perks = '[\"souvenir_1\",\"souvenir_2\"]', earned = 900 WHERE user_id = ?", uid.Clara); await q("UPDATE plan_progress SET perks = '[\"souvenir_1\"]' WHERE user_id = ?", uid.Boris);
+[s, v] = await call(ADM, 'POST', '/api/commu/finish', {}); ok('fin : événement clos sans attribution automatique', s === 200 && v.souvenirs === 0, J(v));
+[, v] = await call(tok.Clara, 'GET', '/api/commu'); ok('Clara : 2 souvenirs à choisir, choix ouvert, gagnant annoncé', v.done && v.entitled === 2 && v.chosen.length === 0 && v.souvenirOpen === true && v.winner?.name === 'Clara', J({ e: v.entitled, w: v.winner }));
+const [, ccards] = await call(tok.Clara, 'GET', '/api/commu/cards'); const mine = ccards.cards.map(c => c.id);
+[s] = await call(tok.Ana, 'POST', '/api/commu/souvenirs', { ids: [mine[0]] }); ok('Ana (aucun souvenir gagné) : choix refusé', s === 400, s);
+[s] = await call(tok.Clara, 'POST', '/api/commu/souvenirs', { ids: [mine[0], mine[1], mine[2]] }); ok('trop de fiches choisies (3 pour 2 droits) : refusé', s === 400, s);
+[s] = await call(tok.Clara, 'POST', '/api/commu/souvenirs', { ids: [999999999] }); ok('fiche qu\'on ne possède pas : refusée', s === 400, s);
 const before = (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Clara))[0].n;
-[s, v] = await call(ADM, 'POST', '/api/commu/finish', {}); ok('fin : souvenirs remis', s === 200 && v.souvenirs >= 2, J(v));
-const after = (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Clara))[0].n;
-ok('Clara a reçu ses 2 souvenirs dans sa collection normale', after === before + 2, `${before} → ${after}`);
-ok('Ana (sans souvenir) n\'a rien reçu', (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Ana))[0].n === 0);
+[s, v] = await call(tok.Clara, 'POST', '/api/commu/souvenirs', { ids: [mine[0], mine[1]] }); ok('Clara choisit ses 2 souvenirs', s === 200 && v.cards.length === 2, J(v).slice(0, 100));
+ok('les 2 fiches choisies entrent dans la collection normale (identifiants d\'événement, donc reconnaissables)', (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Clara))[0].n === before + 2 && (await q('SELECT card_id FROM inventory WHERE user_id = ? AND card_id > 200000000', uid.Clara)).length === 2);
+[s] = await call(tok.Clara, 'POST', '/api/commu/souvenirs', { ids: [mine[2]] }); ok('le choix est définitif', s === 409, s);
+[, v] = await call(tok.Clara, 'GET', '/api/commu'); ok('l\'état garde les fiches choisies', v.chosen.length === 2);
+const bBefore = (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Boris))[0].n;
+[s] = await call(tok.Boris, 'POST', '/api/commu/souvenirs/close', {}); ok('un joueur ne peut pas clore le choix', s === 403, s);
+[s, v] = await call(ADM, 'POST', '/api/commu/souvenirs/close', {}); ok('l\'administrateur clôt : Boris (qui n\'a pas choisi) reçoit sa plus belle fiche', s === 200 && v.given >= 1 && (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Boris))[0].n === bBefore + 1, J(v));
+[s] = await call(tok.Boris, 'POST', '/api/commu/souvenirs', { ids: [mine[0]] }); ok('après la clôture, plus de choix', s === 400, s);
+ok('Ana n\'a rien reçu', (await q('SELECT COUNT(*) n FROM inventory WHERE user_id = ?', uid.Ana))[0].n === 0);
 done();

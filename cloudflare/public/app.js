@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.26';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.27';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -282,7 +282,7 @@ const TOPICS = [
 const topic = c => { const t = (c.extract || '').slice(0, 240); for (const [k, re] of TOPICS) if (re.test(t)) return k; return 'spark'; };
 const noimg = c => `<svg class="ic big"><use href="#i-${topic(c)}"/></svg>`;
 const cardIndex = new Map(); // cartes affichées, pour la fiche détaillée au toucher
-const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.shiny ? 'shiny' : ''} ${c.beta ? 'beta' : ''} ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" data-id="${c.id}">
+const cardHtml = (c, { acts = '', tag = '', cls = '', extra = '', lazy = false, star = false } = {}) => (cardIndex.set(c.id, c), `<div class="card ${c.rarity} ${c.id >= 200000000 && c.id < 300000000 ? 'souv' : ''} ${c.shiny ? 'shiny' : ''} ${c.beta ? 'beta' : ''} ${c.lvl ? 'lv' + c.lvl : ''} ${cls}" data-id="${c.id}">
   <div class="img ${c.image ? '' : 'noimg'}" ${c.image ? (lazy ? `data-bg="${esc(c.image)}"` : `style="background-image:url('${esc(c.image)}')"`) : ''}>${c.image ? '' : noimg(c)}<span class="chip">${ABBR[c.rarity]}</span>${c.beta ? '<span class="betatag">BÊTA</span>' : ''}</div>
   <div class="tags">${star ? `<button class="starbtn ${c.fav ? 'on' : ''}" data-fav="${c.id}" aria-label="Favori" title="Favori"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/><path class="st" d="M12 3.4l2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.4 6.8 19.3 8 13.5 3.6 9.5l5.9-.7z"/></svg></button>` : ''}${c.isNew ? '<span class="tag new">Nouveau</span>' : ''}${c.qty > 1 ? `<span class="tag">×${c.qty}</span>` : tag}${c.shiny ? '<span class="tag shiny">Shiny</span>' : ''}${c.lvl ? `<span class="tag lvl">★${c.lvl}</span>` : ''}</div>
   <div class="body"><div class="t">${esc(c.title)}</div>
@@ -411,7 +411,7 @@ async function fillMissing(r) {
 
 // ---------- vues ----------
 
-const GROUP = { commurules: 'more', commutop: 'more', tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
+const GROUP = { commuend: 'more', commurules: 'more', commutop: 'more', tsar: 'more', plan: 'more', gulag: 'more', potato: 'more', feed: 'feed', packs: 'packs', album: 'album', search: 'search', duel: 'duel', rank: 'rank', ach: 'rank', market: 'market', trades: 'market', friends: 'friends', msg: 'msg', chat: 'msg', quests: 'more', dquiz: 'more', bourse: 'more', hilo: 'more', trends: 'more', bank: 'more', expeditions: 'more', events: 'more', albums: 'more', themepacks: 'more', settings: 'more', customize: 'more', tournaments: 'more', tournament: 'more', admin: 'more' };
 /** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
 // ---------- événement communiste : état du joueur, droits, thème ----------
 let commu = null, commuAt = 0;
@@ -1519,7 +1519,8 @@ async function refreshMe() {
   me = await api('/me');
   syncUssrUi().catch(() => {});
   { const sig = () => commu ? `${commu.on}:${commu.joined}` : ''; const before = sig();
-    loadCommu().then(() => { syncUssrUi(); if (sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) render(); }).catch(() => {}); }   // l'événement s'ouvre ou se ferme : l'écran suit
+    loadCommu().then(() => { syncUssrUi(); if (cfg && sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) render();
+      if (commu?.done && commu.joined && commu.souvenirOpen && commu.entitled > 0 && !commu.chosen.length && prefOf('wm_commu_end') !== String(commu.winner?.name || '-') + commu.players && $('#modal').hidden) { try { localStorage.setItem('wm_commu_end', String(commu.winner?.name || '-') + commu.players); } catch {} tab = 'commuend'; render(); } }).catch(() => {}); }   // la fin de l'événement s'ouvre toute seule, une fois   // l'événement s'ouvre ou se ferme : l'écran suit
   if (me.maintenance === true) maintenanceScreen();
   { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }
   loadCosmetics();
@@ -1815,7 +1816,7 @@ views.tournament = async v => {
 };
 
 // ---------- réglages : thèmes, texte, animations, vibrations, notifications ----------
-const THEME_LIST = [['urss', 'Camarade', '#2a0f14', '#f4d56b', 'Rouge soviétique, gagné au Camp'], ['dark', 'Sombre', '#07070b', '#ecebe6', 'Le thème d\'origine'], ['midnight', 'Minuit', '#000', '#ecebe6', 'Noir total, économise la batterie'], ['ocean', 'Océan', '#0d1726', '#8fd0ff', 'Bleu nuit'], ['forest', 'Forêt', '#0d1a13', '#9be3b0', 'Vert profond'],
+const THEME_LIST = [['urss', 'Camarade', '#2a0f14', '#f4d56b', 'Rouge soviétique, gagné au Plan (palier 6)', 'theme_urss'], ['siberie', 'Sibérie', '#0e1d2b', '#bfe4ff', 'Bleu glacé, gagné au Plan (palier 9)', 'theme_siberie'], ['or', 'Or impérial', '#1e1708', '#ffd96a', 'Noir et or, gagné au Plan (palier 12)', 'theme_or'], ['dark', 'Sombre', '#07070b', '#ecebe6', 'Le thème d\'origine'], ['midnight', 'Minuit', '#000', '#ecebe6', 'Noir total, économise la batterie'], ['ocean', 'Océan', '#0d1726', '#8fd0ff', 'Bleu nuit'], ['forest', 'Forêt', '#0d1a13', '#9be3b0', 'Vert profond'],
   ['violet', 'Violet', '#171027', '#d2b4ff', 'Mauve nocturne'], ['light', 'Clair', '#f2f1ee', '#222', 'Fond blanc'], ['beige', 'Beige', '#efe6d3', '#6b5a3a', 'Papier chaleureux'], ['auto', 'Automatique', 'linear-gradient(135deg,#07070b 50%,#f2f1ee 50%)', '#888', 'Suit ton téléphone']];
 const pref = (k, d = '') => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } window.applyPrefs?.(); };
@@ -1833,7 +1834,7 @@ views.settings = async v => {
   const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await loadCommu(true))?.perks || [])];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
   v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
-    <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.filter(t => t[0] !== 'urss' || perks.includes('theme_urss') || th === 'urss').map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
+    <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.filter(t => !t[5] || perks.includes(t[5]) || th === t[0]).map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
       ${sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
@@ -1844,7 +1845,7 @@ views.settings = async v => {
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
     ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussrui', 'Interface URSS complète', 'Menus, textes, rarités en grades, bandeau Pravda, décor rouge', pref('wm_ussr_ui', '0') === '1')}${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-cm-on" style="flex:1">Ouvrir pour moi seul (test réel)</button><button class="plain" id="st-cm-off" style="flex:1">Fermer</button><button class="plain" id="st-cm-end" style="flex:1">Clore + gagnant</button></div></div></div>` : ''}
+      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-cm-on" style="flex:1">Ouvrir pour moi seul (test réel)</button><button class="plain" id="st-cm-off" style="flex:1">Fermer</button><button class="plain" id="st-cm-end" style="flex:1">Clore + gagnant</button><button class="plain" id="st-cm-souv" style="flex:1">Clore les souvenirs</button></div></div></div>` : ''}
     <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
     <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
@@ -1858,6 +1859,7 @@ views.settings = async v => {
   $('#st-iconsheet')?.addEventListener('click', iconSheet);
   $('#st-cm-on')?.addEventListener('click', safe(async () => { await api('/commu/set', { on: true }); await loadCommu(true); toast('Événement ouvert pour toi seul : inscris-toi depuis l\'accueil', 'ok'); render(); }));
   $('#st-cm-off')?.addEventListener('click', safe(async () => { await api('/commu/set', { on: false }); await loadCommu(true); await syncUssrUi(); toast('Événement fermé', 'ok'); render(); }));
+  $('#st-cm-souv')?.addEventListener('click', safe(async () => { const r = await api('/commu/souvenirs/close', {}); toast(`Choix clos : ${r.given} souvenir${r.given > 1 ? 's' : ''} attribué${r.given > 1 ? 's' : ''} d'office`, 'ok'); render(); }));
   $('#st-cm-end')?.addEventListener('click', safe(async () => { const r = await api('/commu/finish', {}); await loadCommu(true); await syncUssrUi(); toast(r.winner ? `Gagnant : ${r.winner.name} (${fmt(r.winner.prize)} wikibidou)` : 'Événement clos, aucun gagnant', 'ok'); render(); }));
   $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
   $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
@@ -2331,7 +2333,7 @@ async function eventAlbum(v) {
       <div class="chips ev-chips"><button class="${rar === 'all' ? 'on' : ''}" data-r="all">Toutes</button>${RARS.map(r => `<button class="${rar === r ? 'on' : ''}" data-r="${r}">${esc(ussrLabels()[r] || RAR[r])} ${S.have[r]} / ${S.total[r] || 0}</button>`).join('')}</div>
       <div class="grid ev-grid">${list.map(c => cardHtml(c, { extra: c.qty > 1 ? `<div class="mut" style="font-size:11px">×${c.qty}</div>` : '' })).join('') || '<div class="empty">Aucune fiche ici pour l\'instant. Fais la queue, camarade.</div>'}</div>`;
     v.querySelectorAll('.ev-chips [data-r]').forEach(b => b.onclick = () => { rar = b.dataset.r; draw(); });
-    v.querySelectorAll('.ev-grid .card').forEach(el => el.onclick = () => eventCardSheet(S.cards.find(c => String(c.id) === el.dataset.id)));
+    v.querySelectorAll('.ev-grid .card').forEach(el => el.onclick = e => { e.stopPropagation(); eventCardSheet(S.cards.find(c => String(c.id) === el.dataset.id)); });
   };
   draw();
   const need = S.cards.filter(c => !c.extract || (!c.image && c.enriched < 2)).slice(0, 40);
@@ -2374,6 +2376,38 @@ async function commuEarn(game, data) {
   try { const r = await api('/commu/earn', { game, ...data }); if (r.gained > 0) toast(`+${r.gained} ₽ pour le Plan`, 'ok'); await loadCommu(true); } catch (e) { jlog('gain : ' + e.message); }
 }
 
+
+// ---------- fin de l'événement : bilan, gagnant et choix des souvenirs ----------
+views.commuend = async v => {
+  await loadCommu(true); const c = commu;
+  if (!c || !c.done || !(c.joined || me.admin)) { tab = 'packs'; return render(); }
+  const S = await api('/commu/cards'), P = await api('/plan'), n = c.entitled, picked = new Set(c.chosen.map(String)), open = c.souvenirOpen && !c.chosen.length && n > 0;
+  const kept = P.milestones.filter(m => P.claimed.includes(m.id)), perks = c.perks || [];
+  const keeps = [perks.includes('theme_urss') ? 'le thème rouge « Camarade »' : '', perks.includes('theme_siberie') ? 'le thème « Sibérie »' : '', perks.includes('theme_or') ? 'le thème « Or impérial »' : '', ...kept.filter(m => m.title).map(m => `le titre « ${m.title} »`), ...perks.filter(p => p.startsWith('frame_') || p === 'gold_outline').map(p => p === 'gold_outline' ? 'le contour doré de Staline' : 'un cadre de profil')].filter(Boolean);
+  const mine = new Set(); let sel = [];
+  const draw = () => {
+    v.innerHTML = `${pageHead('Fin du Plan quinquennal', 'Le Parti a terminé de compter. Il a aussi terminé de rire.')}
+      <section class="plan-sum"><div class="plan-top"><b>${c.winner ? esc(c.winner.name) : 'Personne'}</b><span>${c.winner ? `devient Staline et rafle ${fmt(c.winner.prize)} wikibidou` : 'n\'a gagné aucun ₽ : Staline reste vacant'}</span></div>
+        <p class="plan-wallet">Toi : <b>${c.level}</b> palier${c.level > 1 ? 's' : ''} sur 12 · <b>${fmt(c.earned)} ₽</b> gagnés · <b>${S.owned}</b> fiches différentes</p></section>
+      <h3 class="sec" style="padding:0 16px">Ce que tu gardes</h3>
+      <div class="plan-sum"><ul class="ru-list">${keeps.length ? keeps.map(k => `<li>${esc(k)}</li>`).join('') : '<li>Des souvenirs, et la certitude que le Parti pense à toi (surtout la nuit).</li>'}</ul><p class="plan-wallet">Les wikibidou gagnés aux paliers sont déjà dans ta cagnotte du jeu normal.</p></div>
+      <h3 class="sec" style="padding:0 16px">Tes cartes souvenir</h3>
+      ${n === 0 ? '<div class="plan-sum"><p class="plan-wallet">Aucun souvenir gagné : il fallait atteindre le palier 2 (un souvenir) puis le palier 11 (un deuxième). Le Parti ne distribue pas de cadeaux aux retardataires.</p></div>'
+      : c.chosen.length ? `<div class="plan-sum"><p class="plan-wallet">Tes ${c.chosen.length} souvenir${c.chosen.length > 1 ? 's' : ''} sont dans ta collection normale, avec leur contour spécial.</p></div><div class="grid ev-grid souvgrid">${S.cards.filter(x => picked.has(String(x.id))).map(x => cardHtml(x)).join('')}</div>`
+      : open ? `<div class="plan-sum"><p class="plan-wallet">Choisis <b>${n}</b> fiche${n > 1 ? 's' : ''} parmi tes ${S.owned}. Elle${n > 1 ? 's' : ''} entrer${n > 1 ? 'ont' : 'a'} dans ta collection normale, définitivement, avec un contour de souvenir. <b>${sel.length} / ${n}</b> choisie${sel.length > 1 ? 's' : ''}.</p></div>
+        <div class="grid ev-grid souvgrid">${S.cards.map(x => cardHtml(x, { cls: sel.includes(x.id) ? 'souvpick' : '' })).join('')}</div>
+        <div style="padding:8px 16px 18px"><button id="sv-ok" style="width:100%" ${sel.length ? '' : 'disabled'}>Confirmer mes souvenirs</button></div>`
+      : '<div class="plan-sum"><p class="plan-wallet">Le choix des souvenirs est clos.</p></div>'}`;
+    if (open) {
+      v.querySelectorAll('.souvgrid .card').forEach(el => el.onclick = e => { e.stopPropagation(); const id = +el.dataset.id; sel = sel.includes(id) ? sel.filter(x => x !== id) : sel.length < n ? [...sel, id] : [...sel.slice(1), id]; draw(); });
+      $('#sv-ok')?.addEventListener('click', safe(async () => {
+        if (!(await ask(`Garder ces ${sel.length} fiche${sel.length > 1 ? 's' : ''} comme souvenir${sel.length > 1 ? 's' : ''} ?`, [], { text: 'Le choix est définitif : le Parti ne reprend pas ses cadeaux, mais il ne les échange pas non plus.', ok: 'Confirmer' }))) return;
+        await api('/commu/souvenirs', { ids: sel }); await loadCommu(true); toast('Souvenirs rangés dans ta collection', 'ok'); render();
+      }));
+    }
+  };
+  draw();
+};
 // ---------- événement communiste : avance des paliers et classement général ----------
 views.commutop = async v => {
   await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
@@ -2416,8 +2450,8 @@ const PLAN_ICO = {
   theme: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="1" fill="#c0161d"/><path d="M8 9a2.500 2.500 0 1 0 2 3.800M9.500 14l5-5.500" fill="none" stroke="#f4d56b" stroke-width="1.400"/><rect x="11" y="18" width="2" height="4" fill="#8a7a52"/></svg>',
 };
 const planChips = m => [
-  m.packs ? [PLAN_ICO.pack, `${m.packs} colis`] : null, m.wr ? [PLAN_ICO.coin, `${fmt(m.wr)} ₽`] : null, m.title ? [PLAN_ICO.title, `titre « ${m.title} »`] : null,
-  m.perk === 'theme_urss' ? [PLAN_ICO.theme, 'thème rouge à vie'] : m.perk?.startsWith('frame_') ? [PLAN_ICO.frame, 'cadre de profil'] : m.perk?.startsWith('souvenir_') ? [PLAN_ICO.souv, 'carte souvenir'] : null,
+  m.packs ? [PLAN_ICO.pack, `${m.packs} colis`] : null, m.wr ? [PLAN_ICO.coin, `${fmt(m.wr)} ₽`] : null, m.coins ? [PLAN_ICO.coin, `${fmt(m.coins)} wikibidou (jeu normal)`] : null, m.title ? [PLAN_ICO.title, `titre « ${m.title} »`] : null,
+  m.perk === 'theme_urss' ? [PLAN_ICO.theme, 'thème rouge à vie'] : m.perk === 'theme_siberie' ? [PLAN_ICO.theme, 'thème Sibérie à vie'] : m.perk === 'theme_or' ? [PLAN_ICO.theme, 'thème Or impérial à vie'] : m.perk?.startsWith('frame_') ? [PLAN_ICO.frame, 'cadre de profil'] : m.perk?.startsWith('souvenir_') ? [PLAN_ICO.souv, 'carte souvenir'] : null,
 ].filter(Boolean).map(([ic, t]) => `<span class="rw"><i>${ic}</i>${esc(t)}</span>`).join('');
 /** Hauteur (en %) de la piste dorée : de palier atteint en palier atteint, avec la part du chemin déjà faite vers le suivant. */
 function roadFill(d) {
@@ -2453,7 +2487,7 @@ views.plan = async v => {
     v.querySelector('#plan-top').onclick = () => { tab = 'commutop'; render(); };
     v.querySelectorAll('[data-claim]').forEach(b => b.onclick = safe(async () => {
       const r = await api('/plan/claim', { id: +b.dataset.claim }); d = await api('/plan');
-      toast(['Récompense récupérée', r.packs ? `+${r.packs} colis` : '', r.wr ? `+${r.wr} ₽` : '', r.title ? `titre « ${r.title} »` : '', r.perk === 'theme_urss' ? 'thème rouge conservé' : ''].filter(Boolean).join(' · '), 'ok');
+      toast(['Récompense récupérée', r.packs ? `+${r.packs} colis` : '', r.coins ? `+${r.coins} wikibidou` : '', r.wr ? `+${r.wr} ₽` : '', r.title ? `titre « ${r.title} »` : '', r.perk === 'theme_urss' ? 'thème rouge conservé' : ''].filter(Boolean).join(' · '), 'ok');
       refreshMe().catch(() => {}); draw();
     }));
   };
@@ -2685,7 +2719,7 @@ function moreSheet() {
   if (ussrUiOn()) {   // mode communiste : 4 entrées seulement (Distribution, Archives, Les Jeux, Plan)
     m.innerHTML = `<div class="moresheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
       <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>Plan quinquennal</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
-      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') + T('commutop', 'trophy', 'Classement général', 'Qui avance, qui traîne') + T('commurules', 'book', 'Règlement du Parti', 'À lire. Personne ne lit.') : ''}</div>
+      <div class="mgrid">${T('rank', 'trophy', 'Tableau d\'honneur', 'Les meilleurs lèche-bottes du pays')}${eventAccess() ? T('plan', 'medal', 'Paliers du Plan', 'Douze façons de te faire baiser') + T('commutop', 'trophy', 'Classement général', 'Qui avance, qui traîne') + T('commurules', 'book', 'Règlement du Parti', 'À lire. Personne ne lit.') : ''}${commu?.done && (commu.joined || me.admin) ? T('commuend', 'trophy', 'Fin de l\'événement', commu.chosen.length ? 'Tes souvenirs' : 'Choisis tes souvenirs') : ''}</div>
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retourner chialer chez les capitalistes</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };
