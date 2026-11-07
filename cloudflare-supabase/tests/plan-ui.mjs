@@ -29,13 +29,13 @@ for (const [w, h] of [[375, 667], [430, 932]]) {
   await p.waitForTimeout(1200); await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });
   await p.evaluate(async () => { setPref('wm_theme', 'urss'); setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); await syncUssrUi(); tab = 'packs'; render(); });
   await p.waitForTimeout(800);
-  await p.click('nav [data-tab=more]'); await p.waitForSelector('.moresheet'); await p.click('[data-go=plan]'); await p.waitForSelector('.plan-row'); await p.click('#plan-reset'); await p.waitForTimeout(500);
-  ok(`${w} : 12 paliers affichés`, (await p.$$('.plan-row')).length === 12);
+  await p.click('nav [data-tab=more]'); await p.waitForSelector('.moresheet'); await p.click('[data-go=plan]'); await p.waitForSelector('.rd'); await p.click('#plan-reset'); await p.waitForTimeout(500);
+  ok(`${w} : 12 paliers affichés`, (await p.$$('.rd')).length === 12);
   await p.click('[data-earn="1000"]'); await p.waitForTimeout(500); await p.click('[data-earn="1000"]'); await p.waitForTimeout(500);
   ok(`${w} : récompenses prêtes`, (await p.$$('[data-claim]')).length >= 3);
   await p.click('[data-claim="1"]'); await p.waitForTimeout(600);
-  ok(`${w} : palier 1 récupéré`, (await p.textContent('.plan-row.done')).includes('récupérée'));
-  const o = await p.evaluate(() => { const W = document.documentElement.clientWidth; return { sw: document.documentElement.scrollWidth, W, bad: [...document.querySelectorAll('.plan-sum *,.plan-row *')].filter(e => e.getBoundingClientRect().right > W - 8).map(e => e.className || e.tagName).slice(0, 5) }; });
+  ok(`${w} : palier 1 récupéré`, (await p.textContent('.rd.claimed')).includes('récupérée'));
+  const o = await p.evaluate(() => { const W = document.documentElement.clientWidth; return { sw: document.documentElement.scrollWidth, W, bad: [...document.querySelectorAll('.plan-sum *,.rd *')].filter(e => e.getBoundingClientRect().right > W - 8).map(e => e.className || e.tagName).slice(0, 5) }; });
   ok(`${w} : rien ne dépasse`, o.sw <= o.W && o.bad.length === 0, J(o));
   await p.screenshot({ path: SH + `plan-${w}.png` });
   ok(`${w} : aucune erreur JS`, errs.length === 0, J(errs));

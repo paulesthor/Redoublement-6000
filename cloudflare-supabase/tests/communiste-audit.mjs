@@ -39,7 +39,7 @@ const probe = () => {
     if (!sc && cs.position !== 'fixed' && (r.right > W + 1 || r.left < -1)) out.over.push(`${label(el)} ${Math.round(r.left)}..${Math.round(r.right)}`);
     if (!el.children.length && el.scrollWidth > el.clientWidth + 2 && ['hidden', 'clip'].includes(cs.overflowX) && cs.textOverflow !== 'ellipsis' && (el.textContent || '').trim()) out.clip.push(`${label(el)} ${el.scrollWidth}>${el.clientWidth} "${el.textContent.trim().slice(0, 26)}"`);
     const t = !el.children.length ? (el.textContent || '').trim() : ''; if (t) { out.texts.push(t); if (/undefined|NaN|\[object|null\b/.test(t)) out.broken.push(t.slice(0, 40)); }
-    if (['BUTTON', 'H1', 'H2', 'H3', 'P'].includes(el.tagName) || el.classList.contains('mtile') || el.classList.contains('plan-row') || el.classList.contains('us-news')) vis.push([el, r]);
+    if (['BUTTON', 'H1', 'H2', 'H3', 'P'].includes(el.tagName) || el.classList.contains('mtile') || el.classList.contains('rd-card') || el.classList.contains('us-news')) vis.push([el, r]);
   });
   // blocs qui se chevauchent (frères directs seulement, éléments de même type)
   for (const [a, ra] of vis) for (const [b, rb] of vis) { if (a === b || a.contains(b) || b.contains(a) || a.parentElement !== b.parentElement) continue; const ix = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left), iy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top); if (ix > 4 && iy > 4 && a.compareDocumentPosition(b) & 4) out.overlap.push(`${label(a)} × ${label(b)} (${Math.round(ix)}×${Math.round(iy)})`); }
@@ -64,7 +64,7 @@ for (const [w, h] of SIZES) {
     ['Distribution', () => { tab = 'packs'; render(); }], ['Archives', () => { tab = 'album'; render(); }], ['Les Jeux (hub)', () => { duelDirect = false; tab = 'duel'; render(); }],
     ['Paliers du Plan', () => { tab = 'plan'; render(); }], ['Quiz du jour', () => { tab = 'dquiz'; render(); }], ['Tableau d\'honneur', () => { tab = 'rank'; render(); }], ['Réglages', () => { tab = 'settings'; render(); }],
   ]) { await p.evaluate(setup); await p.waitForTimeout(1100); note(size, name, await p.evaluate(probe)); }
-  await p.evaluate(() => { tab = 'plan'; render(); }); await p.waitForSelector('.plan-row'); await p.click('[data-earn="1000"]'); await p.waitForTimeout(400); await p.click('[data-earn="1000"]'); await p.waitForTimeout(400); await p.click('[data-earn="1000"]'); await p.waitForTimeout(500);
+  await p.evaluate(() => { tab = 'plan'; render(); }); await p.waitForSelector('.rd'); await p.click('[data-earn="1000"]'); await p.waitForTimeout(400); await p.click('[data-earn="1000"]'); await p.waitForTimeout(400); await p.click('[data-earn="1000"]'); await p.waitForTimeout(500);
   note(size, 'Paliers (avec récompenses prêtes)', await p.evaluate(probe)); await p.evaluate(() => document.querySelector('#plan-reset').click()); await p.waitForTimeout(300);
   await p.evaluate(() => moreSheet()); await p.waitForSelector('.moresheet'); await p.waitForTimeout(400); note(size, 'Menu Plan', await p.evaluate(probe)); await closeModal();
   await p.evaluate(() => iconSheet()); await p.waitForSelector('.iconsheet'); await p.waitForTimeout(400); note(size, 'Écran nouvelle icône', await p.evaluate(probe)); await closeModal();

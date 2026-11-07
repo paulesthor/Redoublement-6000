@@ -50,8 +50,8 @@ await pb.screenshot({ path: SHS + 'commu-3-inscrit.png' });
 // 3. jeux et Plan accessibles à un simple joueur
 await pb.evaluate(async () => { duelDirect = false; tab = 'duel'; await render(); }); await pb.waitForSelector('[data-jeu]');
 ok('Les Jeux : Camp, Patates et Tsar visibles pour un joueur inscrit', (await pb.$$('[data-jeu=gulag],[data-jeu=potato],[data-jeu=tsar]')).length === 3);
-await pb.evaluate(async () => { tab = 'plan'; await render(); }); await pb.waitForSelector('.plan-row');
-ok('Plan : 12 paliers, solde 500 ₽, boutons de démo cachés', (await pb.$$('.plan-row')).length === 12 && (await pb.textContent('.plan-wallet')).includes('500') && !(await pb.$('[data-earn]')));
+await pb.evaluate(async () => { tab = 'plan'; await render(); }); await pb.waitForSelector('.rd');
+ok('Plan : 12 paliers, solde 500 ₽, boutons de démo cachés', (await pb.$$('.rd')).length === 12 && (await pb.textContent('.plan-wallet')).includes('500') && !(await pb.$('[data-earn]')));
 await pb.screenshot({ path: SHS + 'commu-4-plan.png' });
 // 4. un jeu rapporte des wikiroubles (calculés par le serveur)
 await pb.evaluate(async () => { await commuEarn('tsar', { ending: 'samovar' }); }); await pb.waitForTimeout(800);

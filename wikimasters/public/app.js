@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.24';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.25';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -444,9 +444,10 @@ const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/>
 let duelDirect = false, gulagTab = null;
 /** Mode communiste : écran « Les Jeux du Peuple » qui regroupe les jeux. */
 function jeuxHub(v) {
+  const cap = g => (commu && commu.caps && commu.caps[g] ? ` · ${fmt(commu.today?.[g] || 0)} / ${commu.caps[g]} ₽ aujourd\'hui` : '');
   const T = (key, icon, label, sub) => `<button class="mtile" data-jeu="${key}"><span class="mi">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
   const ev = eventOn();
-  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science') + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis') + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit') : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('bourse', 'market', 'Marché noir', 'Parie sur les vues, vends ta grand-mère')}${ev ? '' : T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
+  v.innerHTML = `${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science' + (eventAccess() ? cap('camp') : '')) + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis' + (eventAccess() ? cap('potato') : '')) + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit' + (eventAccess() ? cap('tsar') : '')) : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('bourse', 'market', 'Marché noir', 'Parie sur les vues, vends ta grand-mère' + (eventAccess() ? cap('bourse') : ''))}${ev ? '' : T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
   v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
 }
 const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
@@ -2405,6 +2406,26 @@ views.commurules = async v => {
   $('#ru-join')?.addEventListener('click', joinSheet);
 };
 // ---------- Plan quinquennal : les 12 paliers du mode communiste (aperçu administrateur) ----------
+
+const PLAN_ICO = {
+  pack: '<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="1.5" fill="#b08457" stroke="#6a4a2c" stroke-width="1.4"/><path d="M3 8l2-4h14l2 4z" fill="#d0a876" stroke="#6a4a2c" stroke-width="1.4"/><path d="M12 4v16" stroke="#efe3c2" stroke-width="2"/></svg>',
+  coin: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f4d56b" stroke="#b8902a" stroke-width="1.6"/><path d="M12 7v10M9.500 9.500q2.500-2 5 0M9.500 14.500q2.500 2 5 0" fill="none" stroke="#b8902a" stroke-width="1.5"/></svg>',
+  title: '<svg viewBox="0 0 24 24"><path d="M12 2l2.700 6 6.500.6-4.900 4.300 1.500 6.400L12 15.800 6.200 19.300l1.500-6.400L2.800 8.600 9.300 8z" fill="#f4d56b" stroke="#b8902a" stroke-width="1.2"/></svg>',
+  frame: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#f4d56b" stroke-width="2.4"/><rect x="7" y="7" width="10" height="10" rx="1.500" fill="#c0161d"/></svg>',
+  souv: '<svg viewBox="0 0 24 24"><rect x="5" y="2.500" width="14" height="19" rx="2" fill="#f6efd8" stroke="#8a7a52" stroke-width="1.400"/><path d="M12 7l1.500 3.200 3.500.4-2.600 2.300.7 3.400-3.100-1.700-3.100 1.700.7-3.400L7 10.600l3.500-.4z" fill="#c0161d"/></svg>',
+  theme: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="1" fill="#c0161d"/><path d="M8 9a2.500 2.500 0 1 0 2 3.800M9.500 14l5-5.500" fill="none" stroke="#f4d56b" stroke-width="1.400"/><rect x="11" y="18" width="2" height="4" fill="#8a7a52"/></svg>',
+};
+const planChips = m => [
+  m.packs ? [PLAN_ICO.pack, `${m.packs} colis`] : null, m.wr ? [PLAN_ICO.coin, `${fmt(m.wr)} ₽`] : null, m.title ? [PLAN_ICO.title, `titre « ${m.title} »`] : null,
+  m.perk === 'theme_urss' ? [PLAN_ICO.theme, 'thème rouge à vie'] : m.perk?.startsWith('frame_') ? [PLAN_ICO.frame, 'cadre de profil'] : m.perk?.startsWith('souvenir_') ? [PLAN_ICO.souv, 'carte souvenir'] : null,
+].filter(Boolean).map(([ic, t]) => `<span class="rw"><i>${ic}</i>${esc(t)}</span>`).join('');
+/** Hauteur (en %) de la piste dorée : de palier atteint en palier atteint, avec la part du chemin déjà faite vers le suivant. */
+function roadFill(d) {
+  const M = d.milestones, n = M.length; let k = M.filter(m => d.earned >= m.at).length;
+  if (k >= n) return 100;
+  const lo = k ? M[k - 1].at : 0, hi = M[k].at, part = Math.max(0, Math.min(1, (d.earned - lo) / (hi - lo)));
+  return Math.round(((k + part * .85) / n) * 100);
+}
 views.plan = async v => {
   await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
   let d = await api('/plan');
@@ -2418,10 +2439,14 @@ views.plan = async v => {
         <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}. Courage, sac à merde.` : 'Plan accompli. Va te laver, tu pues la victoire.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
         <p class="plan-wallet">Solde : <b>${fmtR(d.wr)}</b>${commu ? ` · cagnotte : <b>${fmt(commu.pot)}</b> wikibidou · ${commu.players} camarade${commu.players > 1 ? 's' : ''}` : ''}</p>
         <div class="plan-demo"><button class="plain" id="plan-top">Classement général et avance des paliers</button>${me.admin ? '<button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button>' : ''}</div></section>
-      <div class="plan-list">${d.milestones.map(m => {
-        const done = d.claimed.includes(m.id), reached = d.earned >= m.at, rw = rewardOf(m);
-        return `<section class="plan-row ${done ? 'done' : reached ? 'ready' : ''}"><div class="plan-n">${m.id}</div><div class="plan-txt"><h3>${esc(m.name)}</h3><p>${esc(m.text)}</p><div class="plan-rw">${rw.map(x => `<span>${esc(x)}</span>`).join('')}</div>
-          <div class="plan-st">${done ? '<span class="ok">Récompense récupérée</span>' : reached ? (commu && !commu.on && !me.admin ? '<span>Événement terminé</span>' : `<button data-claim="${m.id}">Récupérer</button>`) : `<span>À ${fmtR(m.at)} · encore ${fmtR(m.at - d.earned)}</span>`}</div></div></section>`;
+      <div class="road" style="--fill:${roadFill(d)}%">${d.milestones.map(m => {
+        const done = d.claimed.includes(m.id), reached = d.earned >= m.at, isNext = next && next.id === m.id, rw = planChips(m), pc = Math.min(100, Math.floor(d.earned / m.at * 100));
+        return `<section class="rd ${done ? 'claimed' : reached ? 'reached' : ''} ${isNext ? 'next' : ''}" data-id="${m.id}"><div class="rd-n"><b>${m.id}</b><i></i><i></i><i></i></div>
+          <div class="rd-card"><h3>${esc(m.name)}</h3><p>${esc(m.text)}</p>
+            <div class="rd-req"><span class="rd-lbl">Prérequis</span><b>${fmtR(m.at)} gagnés</b><div class="ct-bar"><i style="width:${reached ? 100 : Math.max(2, pc)}%"></i></div>${reached ? '' : `<small>${isNext ? 'Prochain palier · ' : ''}encore ${fmtR(m.at - d.earned)}</small>`}</div>
+            <div class="rd-rw"><span class="rd-lbl">Récompenses</span><div>${rw}</div></div>
+            <div class="plan-st">${done ? '<span class="ok">Récompense récupérée</span>' : reached ? (commu && !commu.on && !me.admin ? '<span>Événement terminé</span>' : `<button data-claim="${m.id}">Récupérer</button>`) : ''}</div>
+            ${done ? '<div class="rd-stamp">ПРИНЯТО</div>' : ''}</div></section>`;
       }).join('')}</div>`;
     v.querySelectorAll('[data-earn]').forEach(b => b.onclick = safe(async () => { d = await api('/plan/earn', { amount: +b.dataset.earn }); draw(); }));
     v.querySelector('#plan-reset') && (v.querySelector('#plan-reset').onclick = safe(async () => { d = await api('/plan/reset', {}); await loadCommu(true); draw(); }));
