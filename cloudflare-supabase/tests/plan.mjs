@@ -1,0 +1,30 @@
+// Plan quinquennal (mode communiste) : 12 paliers, récompenses réclamées une seule fois, aperçu réservé à l'admin.
+import './api.mjs';
+const { call, ok, DB, J, done } = globalThis.__T;
+const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
+[s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
+await q('UPDATE users SET is_admin = 1 WHERE name = ?', 'Alice');
+const alice = (await q("SELECT id FROM users WHERE name = 'Alice'"))[0].id, packs = async () => +(await q('SELECT pack_stock p FROM users WHERE id = ?', alice))[0].p;
+[s] = await call(B, 'GET', '/api/plan'); ok('refusé à un joueur ordinaire', s === 403, s);
+[s] = await call(B, 'POST', '/api/plan/claim', { id: 1 }); ok('réclamer refusé à un joueur ordinaire', s === 403, s);
+[s, r] = await call(A, 'GET', '/api/plan'); ok('12 paliers, rien gagné', s === 200 && r.milestones.length === 12 && r.earned === 0 && r.claimed.length === 0, J(r).slice(0, 120));
+ok('seuils croissants', r.milestones.every((m, i) => i === 0 || m.at > r.milestones[i - 1].at));
+ok('souvenirs aux paliers 2 et 11, thème rouge au palier 6', r.milestones[1].perk === 'souvenir_1' && r.milestones[10].perk === 'souvenir_2' && r.milestones[5].perk === 'theme_urss');
+[s] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 refusé sans wikiroubles', s === 400, s);
+[s] = await call(A, 'POST', '/api/plan/earn', { amount: 99999 }); ok('démo : montant borné', s === 400, s);
+[s, r] = await call(A, 'POST', '/api/plan/earn', { amount: 600 }); ok('600 wikiroubles gagnés', s === 200 && r.earned === 600, J(r).slice(0, 80));
+const p0 = await packs();
+[s, r] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 : 1 paquet + titre', s === 200 && r.packs === 1 && r.title === 'Camarade' && await packs() === p0 + 1, J(r));
+[s] = await call(A, 'POST', '/api/plan/claim', { id: 1 }); ok('palier 1 : une seule fois', s === 409, s);
+[s] = await call(A, 'POST', '/api/plan/claim', { id: 3 }); ok('palier 3 refusé (900 requis)', s === 400, s);
+[s, r] = await call(A, 'POST', '/api/plan/claim', { id: 2 }); ok('palier 2 : souvenir + 100 wikiroubles', s === 200 && r.perk === 'souvenir_1' && r.wr === 100, J(r));
+await call(A, 'POST', '/api/plan/earn', { amount: 2000 }); await call(A, 'POST', '/api/plan/earn', { amount: 2000 }); await call(A, 'POST', '/api/plan/earn', { amount: 2000 });
+for (let id = 3; id <= 12; id++) { [s] = await call(A, 'POST', '/api/plan/claim', { id }); if (s !== 200) ok('palier ' + id, false, s); }
+[s, r] = await call(A, 'GET', '/api/plan');
+ok('12 paliers réclamés', r.claimed.length === 12, J(r.claimed));
+ok('avantages : thème rouge, 2 souvenirs, 3 cadres', r.perks.includes('theme_urss') && r.perks.includes('souvenir_1') && r.perks.includes('souvenir_2') && r.perks.filter(p => p.startsWith('frame_')).length === 3, J(r.perks));
+ok('wikiroubles et paquets = totaux annoncés', r.wr === r.totals.wr && await packs() === p0 + r.totals.packs, `${r.wr} / ${r.totals.wr}`);
+ok('6 titres du Plan attribués', (await q("SELECT COUNT(*) n FROM user_titles WHERE user_id = ? AND tid LIKE 'plan_%'", alice))[0].n === 6);
+[s, r] = await call(A, 'POST', '/api/plan/reset', {}); ok('démo : remise à zéro', s === 200 && r.earned === 0 && r.claimed.length === 0 && r.perks.length === 0, J(r).slice(0, 80));
+done();
