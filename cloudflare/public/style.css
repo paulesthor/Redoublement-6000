@@ -1638,3 +1638,5 @@ body.ussr-ui button.avatar{width:38px;height:38px;min-width:38px;min-height:38px
 .ts-panel{transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden;will-change:opacity,transform;isolation:isolate}
 .ts-panel .ts-say,.ts-panel .ts-choices,.ts-panel .ts-name,.ts-panel .ts-hint{min-width:0;max-width:100%}
 .ts-panel .ts-say{align-self:stretch}
+/* encart d'explication du Camp : texte complet (la règle mobile des cartes tronque à 2 lignes) */
+.gl-tip .gl-info p{display:block;-webkit-line-clamp:unset;overflow:visible;font-size:12.5px;line-height:1.4;opacity:.92}

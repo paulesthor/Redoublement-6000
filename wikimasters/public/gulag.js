@@ -1,9 +1,9 @@
 // Démo : « Directeur du Camp » — jeu de gestion incrémental, satire de la bureaucratie soviétique (humour noir de pacotille, sans cruauté montrée).
-/** Rythme : cibles de production de chaque plan, calibrées (simulation) pour qu'un joueur « médian » (7 min toutes les 50 min) finisse les 6 plans en ~3 jours. */
-export const PLAN_TARGETS = [1.4e10, 2.4e12, 6.7e13, 1.7e16, 3.8e17, 1.1e20];
+/** Rythme : cibles de production de chaque plan, calibrées par simulation. Les joueurs actifs sont freinés par le délai minimum, pas par la production ; les occasionnels avancent d'un plan par jour environ. */
+export const PLAN_TARGETS = [3.5e9, 6e11, 1.7e13, 4.2e15, 9.5e16, 2.8e19];   // divisées par 4 (simulation : un joueur de 10 min toutes les 2 h finit le plan 1 en 6 h, les 6 plans en 62 h)
 /** Délai réglementaire minimum de chaque plan (heures réelles) : même un joueur parfait ne peut pas finir l'édition en moins de 60 h. */
 export const PLAN_MIN_H = [4, 8, 10, 12, 12, 14];
-const SAVE_KEY = 'wm_gulag_demo_v2', OFFLINE_MAX = 2 * 3600, GROWTH = 1.15;
+const SAVE_KEY = 'wm_gulag_demo_v2', OFFLINE_MAX = 8 * 3600, GROWTH = 1.15;
 const GRADES = ['Contremaître stagiaire', 'Chef de brigade', 'Directeur adjoint', 'Directeur du camp', 'Commissaire du peuple', 'Héros du Travail Socialiste'];
 
 const WORKSHOPS = [
@@ -60,6 +60,7 @@ const ICONS = {
 };
 const icon = n => `<svg class="gl-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">${ICONS[n]}</svg>`;
 const fmt = n => { n = Math.floor(n); if (n < 10000) return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); const u = ['', ' k', ' M', ' Md', ' Bn']; let i = 0, v = n; while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; } return (v >= 100 ? v.toFixed(0) : v.toFixed(1)).replace('.', ',') + u[i]; };
+const fmtBig = n => n >= 1e15 ? `${(n / 10 ** Math.floor(Math.log10(n))).toFixed(1).replace('.', ',')}e${Math.floor(Math.log10(n))}` : fmt(n);
 const fx = n => n < 10 ? n.toFixed(1).replace('.', ',') : fmt(n);
 const pick = a => a[(Math.random() * a.length) | 0];
 
@@ -71,7 +72,9 @@ export function startGulag(host, opts = {}) {
   const planTarget = n => PLAN_TARGETS[n] ?? PLAN_TARGETS[PLAN_TARGETS.length - 1] * Math.pow(80, n - PLAN_TARGETS.length + 1);
   const gateLeft = () => Math.max(0, (PLAN_MIN_H[S.plan] ?? 14) * 3600 - (Date.now() - S.planStart) / 1000);
   const hm = sec => { const m = Math.ceil(sec / 60), h = Math.floor(m / 60); return h ? `${h} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
-  const planFrac = () => Math.min(1, Math.log10(1 + S.planProd) / Math.log10(planTarget(S.plan)));   // barre à l'échelle logarithmique : elle avance régulièrement même quand la production explose
+  const planFracLog = () => Math.min(1, Math.log10(1 + S.planProd) / Math.log10(planTarget(S.plan)));   // échelle logarithmique : sert aux primes et aux étapes du décor (rythme inchangé)
+  const planFrac = () => planFracLog();
+  const planLin = () => Math.min(1, S.planProd / planTarget(S.plan));   // barre « Plan » : progression réelle, linéaire   // barre à l'échelle logarithmique : elle avance régulièrement même quand la production explose
   const permMult = () => 1 + 0.25 * S.plan;
   const mult = () => permMult() * (S.staff.prof ? 1.25 : 1);
   const wIncome = w => w.inc * S.own[w.id] * (S.mgr[w.id] ? 2 : 1);
@@ -97,7 +100,7 @@ export function startGulag(host, opts = {}) {
 
   function renderBody() {
     const b = $('gl-body');
-    if (tab === 'w') b.innerHTML = ALL.filter(w => (w.plan || 0) <= S.plan).map(w => { const c = cost(w), inc = wIncome(w) * mult(), n = S.own[w.id], m = S.mgr[w.id];
+    if (tab === 'w') b.innerHTML = `<section class="gl-card gl-tip"><div class="gl-info"><h3>Comment avancer vite, camarade</h3><p><b>Falsifier le rapport</b> rapporte d'un coup 150 secondes de production, mais ajoute 30 de risque. Au-dessus de 40 de risque, une contre-vérification te coûte une amende. Le <b>pot-de-vin</b> baisse le risque de 35. Le bon rythme : pot-de-vin, puis rapport, toutes les 40 secondes. La barre « Plan » montre la production réelle à atteindre ; le camp produit aussi pendant ton absence (8 h maximum).</p></div></section>` + ALL.filter(w => (w.plan || 0) <= S.plan).map(w => { const c = cost(w), inc = wIncome(w) * mult(), n = S.own[w.id], m = S.mgr[w.id];
       return `<section class="gl-card" data-w="${w.id}"><div class="gl-ico">${icon(w.icon)}</div><div class="gl-info"><h3>${w.name}</h3><p>${w.desc}</p><div class="gl-stats"><span>Niveau <b>${n}</b></span><span>${inc ? '+' + fx(inc) + ' / s' : 'à bâtir'}</span>${m ? '<span class="ok">cadre en poste</span>' : ''}</div>
         <div class="gl-btns"><button data-buy="${w.id}">${n ? 'Améliorer' : 'Bâtir'} · ${fmt(c)}</button>${!m && n ? `<button class="alt" data-mgr="${w.id}" title="${w.mgr[1]}">${w.mgr[0]} · ${fmt(w.mgr[2])}</button>` : ''}</div>${m ? `<p class="gl-mgr">${w.mgr[0]} : ${w.mgr[1]}</p>` : ''}</div></section>`; }).join('') + (S.plan < 5 ? `<section class="gl-card gl-locked"><div class="gl-info"><h3>Prochain plan : ${REGION_NAMES[S.plan + 1]}</h3><p>${ALL.filter(w => w.plan === S.plan + 1).map(w => w.name).join(' · ')}</p><p class="gl-mgr">Accomplissez le plan n° ${S.plan + 1} pour transférer votre camp et débloquer ces ateliers.</p></div></section>` : '');
     else if (tab === 's') b.innerHTML = STAFF.map(p => `<section class="gl-card"><div class="gl-info"><h3>${p.name}</h3><p>${p.text}</p><div class="gl-btns">${S.staff[p.id] ? '<span class="ok">en poste (et il le sait)</span>' : `<button data-staff="${p.id}">Recruter · ${fmt(p.cost)}</button>`}</div></div></section>`).join('');
@@ -134,7 +137,7 @@ export function startGulag(host, opts = {}) {
   function refresh() {
     const inc = income();
     $('gl-r').textContent = fmt(S.r); $('gl-ps').textContent = '+' + fx(inc) + ' / s'; $('gl-grade').textContent = GRADES[Math.min(GRADES.length - 1, S.plan)];
-    const p = planFrac(); $('gl-plan').textContent = `n° ${S.plan + 1} — ${Math.floor(p * 100)} %${gateLeft() > 0 ? ` · ${hm(gateLeft())}` : ''}`; $('gl-planbar').style.width = p * 100 + '%';
+    const p = planLin(); $('gl-plan').textContent = `n° ${S.plan + 1} — ${fmtBig(S.planProd)} / ${fmtBig(planTarget(S.plan))}${gateLeft() > 0 && S.planProd >= planTarget(S.plan) ? ` · délai ${hm(gateLeft())}` : ''}`; $('gl-planbar').style.width = p * 100 + '%';
     $('gl-fav').style.width = Math.max(0, Math.min(100, S.favor)) + '%'; $('gl-risk').style.width = Math.max(0, Math.min(100, S.risk)) + '%';
     $('gl-fake').disabled = S.cd > 0 || eventOpen; $('gl-fake').textContent = S.cd > 0 ? `Falsifier le rapport (${Math.ceil(S.cd)} s)` : 'Falsifier le rapport';
     const bribe = Math.ceil(inc * 90 + 150); $('gl-bribe').textContent = `Pot-de-vin · ${fmt(bribe)}`; $('gl-bribe').disabled = S.r < bribe || S.risk < 5 || eventOpen;
@@ -203,9 +206,9 @@ export function startGulag(host, opts = {}) {
   renderBody(); loadCamp();
   import('./gulag-scene.js').then(m => { if (stopped) return; sceneMod = m; try { camp = m.createCamp($('gl-scene')); syncScene(); } catch (e) { camp = null; $('gl-scene').classList.add('nowebgl'); } }).catch(() => { $('gl-scene').classList.add('nowebgl'); });
   if (away > 60 && income() > 0) {
-    const g = income() * away * 0.5, dur = (() => { const m = Math.round(rawAway / 60), h = Math.floor(m / 60); return h ? `${h} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim() : `${m} min`; })(), capped = rawAway > OFFLINE_MAX;
+    const g = income() * away, dur = (() => { const m = Math.round(rawAway / 60), h = Math.floor(m / 60); return h ? `${h} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim() : `${m} min`; })(), capped = rawAway > OFFLINE_MAX;
     gain(g); S.t = Date.now();
-    setTimeout(() => popup(`<div class="gl-event"><div class="gl-stamp ok">RAPPORT D'ABSENCE</div><h2>Bon retour, camarade</h2><p>Vous étiez absent <b>${dur}</b>. Pendant ce temps, le camp a continué à produire tout seul (à 50 %, le directeur adjoint est un peu paresseux) et vous a rapporté <b>${fmt(g)} kopeks du Plan</b>.${capped ? ' Au-delà de 2 heures, le camp se met en grève du zèle : le reste n\'a pas été compté.' : ''}</p><p class="gl-fx">+${fmt(g)} kopeks</p><button data-close>Merci, camarade directeur adjoint</button></div>`), 300);
+    setTimeout(() => popup(`<div class="gl-event"><div class="gl-stamp ok">RAPPORT D'ABSENCE</div><h2>Bon retour, camarade</h2><p>Vous étiez absent <b>${dur}</b>. Pendant ce temps, le camp a continué à produire tout seul (à plein régime : le directeur adjoint a compris qu'il était filmé) et vous a rapporté <b>${fmt(g)} kopeks du Plan</b>.${capped ? ' Au-delà de 8 heures, le camp se met en grève du zèle : le reste n\'a pas été compté.' : ''}</p><p class="gl-fx">+${fmt(g)} kopeks</p><button data-close>Merci, camarade directeur adjoint</button></div>`), 300);
   }
   let last = performance.now(), acc = 0, saveAcc = 0, acc2 = 0;
   const timer = setInterval(() => {
