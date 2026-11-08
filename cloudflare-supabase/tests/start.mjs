@@ -80,6 +80,12 @@ await pa.evaluate(() => { const b = [...document.querySelectorAll('#modal button
 ok('remise à zéro : l\'administrateur sort tout seul du mode communiste', await pa.evaluate(() => !ussrUiOn() && !document.body.classList.contains('ussr-ui')));
 const [, cz] = await call(A, 'GET', '/api/commu'); ok('remise à zéro : collection, colis et paliers vides, non inscrit', !cz.joined && cz.packs === 0 && cz.wr === 0 && cz.earned === 0, J(cz).slice(0, 120));
 const pz = (await DB.prepare("SELECT claimed, cards FROM plan_progress WHERE user_id = (SELECT id FROM users WHERE name = 'Alice')").all()).results[0]; ok('remise à zéro : aucune récompense réclamée, aucune carte', pz.claimed === '[]' && pz.cards === '{}', J(pz));
+// son et hymne imposés aux joueurs pendant l'événement, pas à l'administrateur
+await pb.evaluate(async () => { await loadCommu(true); await refreshMe(); tab = 'settings'; await render(); }); await pb.waitForTimeout(1000);
+ok('joueur : son et hymne forcés (réglage initial « coupé » écrasé)', await pb.evaluate(() => localStorage.getItem('wm_sound') === '1' && localStorage.getItem('wm_hymn') !== '0'));
+ok('joueur : aucune option pour couper le son ou l\'hymne', !(await pb.$('#st-snd')) && !(await pb.$('#st-hymn')));
+await pa.evaluate(async () => { setPref('wm_sound', '0'); await loadCommu(true); tab = 'settings'; await render(); }); await pa.waitForTimeout(1000);
+ok('administrateur : garde l\'option de couper le son, et son choix', !!(await pa.$('#st-snd')) && await pa.evaluate(() => localStorage.getItem('wm_sound') === '0'));
 // 3. un joueur qui rouvre l'appli ne revoit pas l'annonce une seconde fois (déjà inscrit) ; l'annonce n'est montrée qu'une fois pour les autres
 await call(null, 'POST', '/api/register', { name: 'Dora', password: 'secret4' }); const [, ld] = await call(null, 'POST', '/api/login', { name: 'Dora', password: 'secret4' });
 await DB.prepare("UPDATE users SET coins = 100 WHERE name = 'Dora'").run();

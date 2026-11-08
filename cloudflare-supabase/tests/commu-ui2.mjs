@@ -47,7 +47,7 @@ await pa.screenshot({ path: SHP + 'commu2-2-jeux.png' });
 // 3. colis et Archives
 await call(A, 'POST', '/api/commu/buy', { n: 3 }); const [, o1] = await call(A, 'POST', '/api/commu/open', {}); await call(A, 'POST', '/api/commu/open', {});
 await pa.evaluate(async () => { await loadCommu(true); tab = 'packs'; await render(); }); await pa.waitForSelector('#open'); await pa.screenshot({ path: SHP + 'commu2-3-distribution.png' });
-ok('Distribution : stock de colis de l\'événement et solde en ₽', (await pa.textContent('.stock')).includes('1') && (await pa.textContent('.stock')).includes('₽') && !(await pa.$('#cd')));
+ok('Distribution : stock de colis de l\'événement et solde en ₽', (await pa.textContent('.stock')).includes('1') && (await pa.textContent('.stock')).includes('₽') && !!(await pa.$('#cd')));
 await pa.evaluate(async () => { tab = 'album'; await render(); }); await pa.waitForSelector('.ev-grid .card', { timeout: 10000 }); await pa.waitForTimeout(1500);
 ok('Archives : fiches de l\'événement et avancement par grade', (await pa.$$('.ev-grid .card')).length >= 10 && (await pa.textContent('.ev-chips')).includes('/ 150'), (await pa.textContent('.ev-chips')).slice(0, 120));
 await pa.screenshot({ path: SHP + 'commu2-4-archives.png' });

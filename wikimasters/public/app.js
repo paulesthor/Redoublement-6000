@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.47';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.48';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -418,6 +418,17 @@ let commu = null, commuAt = 0;
 const prefOf = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const eventOn = () => !!commu && commu.on && commu.joined;                       // inscrit et événement ouvert
 const eventAccess = () => !!me?.admin || eventOn();                               // l'administrateur garde l'aperçu
+/** Pendant l'événement, le son et l'hymne sont imposés à tous les joueurs (seul l'administrateur peut les couper). L'ancien réglage est rendu à la fin. */
+const soundLocked = () => !!(commu && eventUi() && me && !me.admin);
+function syncSoundLock() {
+  try {
+    if (soundLocked()) {
+      if (prefOf('wm_sound') === '0' || prefOf('wm_hymn') === '0') { if (prefOf('wm_sound_prev') === null) localStorage.setItem('wm_sound_prev', (prefOf('wm_sound') ?? '1') + (prefOf('wm_hymn') ?? '1')); localStorage.setItem('wm_sound', '1'); localStorage.setItem('wm_hymn', '1'); window.UssrSkin?.hymnRefresh?.(); }
+    } else if (prefOf('wm_sound_prev') !== null && commu && me) {
+      const prev = prefOf('wm_sound_prev'); localStorage.setItem('wm_sound', prev[0]); localStorage.setItem('wm_hymn', prev[1]); localStorage.removeItem('wm_sound_prev');
+    }
+  } catch { /* stockage indisponible */ }
+}
 /** Bandeau du haut : en mode événement, il affiche les colis et les ₽ du Plan (et non ceux du jeu normal). */
 function pillsSync() {
   const ps = document.querySelectorAll('#me .pill'); if (ps.length < 2 || !me) return;
@@ -427,7 +438,7 @@ function pillsSync() {
 async function loadCommu(force) {
   if (!force && commu && Date.now() - commuAt < 25000) return commu;
   commuAt = Date.now(); try { commu = await api('/commu'); } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
-  syncEventTheme(); try { pillsSync(); } catch { /* bandeau pas encore affiché */ } return commu;
+  syncEventTheme(); try { pillsSync(); syncSoundLock(); } catch { /* bandeau pas encore affiché */ } return commu;
 }
 /** Le thème rouge suit l'événement : appliqué à l'entrée, retiré à la fin (sauf si le joueur a gagné le palier 6). */
 function syncEventTheme() {
@@ -1582,7 +1593,7 @@ async function refreshMe() {
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
   document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily || me.ex > 0);
   $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'hasph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
-  pillsSync();
+  pillsSync(); syncSoundLock();
   $('#profile').onclick = profileSheet;
   paintEvBar();
 }
@@ -1698,7 +1709,7 @@ function profileSheet() {
   m.innerHTML = `<div><div class="profile tapp" id="pf-head" role="button" tabindex="0">${avatar(me.name)}<div><b>${esc(me.name)}</b><div class="mut">${me.wins} victoire${me.wins > 1 ? 's' : ''} · ${me.losses} défaite${me.losses > 1 ? 's' : ''}</div></div><span class="chev" aria-hidden="true">Voir ma page ›</span></div>
     <div class="row"><span class="pill gold">${ico('coin')}${fmt(me.coins)} pièces</span><span class="pill">${ico('packs')}${me.packs} paquets</span></div>
     
-    <label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>
+    ${soundLocked() ? '' : `<label class="switch"><span>Sons<small>Déchirure et ouverture des paquets</small></span><input type="checkbox" id="pf-snd" ${localStorage.getItem('wm_sound') === '0' ? '' : 'checked'}></label>`}
     <label class="switch" id="pf-pushrow"><span>Notifications<small id="pf-pushtxt">Vérification…</small></span><input type="checkbox" id="pf-push" disabled></label>
     ${me.admin ? '<button class="plain" id="pf-admin" style="width:100%;margin-top:16px">Administration</button>' : ''}
     <p class="build" id="build">Build ${BUILD} · chargé à ${hms(LOADED)}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p>
@@ -1719,7 +1730,7 @@ function profileSheet() {
     c.checked = st === 'ok'; c.disabled = !(st === 'ok' || st === 'off');
     c.onchange = async () => { c.disabled = true; try { if (c.checked) { await enablePush(); toast('Notifications activées'); api('/push/test', {}).catch(() => {}); } else { await disablePush(); toast('Notifications désactivées'); } } catch (e) { c.checked = !c.checked; toast(e.message); } c.disabled = false; };
   });
-  $('#pf-snd').onchange = e => { try { localStorage.setItem('wm_sound', e.target.checked ? '1' : '0'); } catch { /* stockage indisponible */ } };
+  if ($('#pf-snd')) $('#pf-snd').onchange = e => { try { localStorage.setItem('wm_sound', e.target.checked ? '1' : '0'); } catch { /* stockage indisponible */ } };
   m.onclick = e => { if (e.target === m) { m.hidden = true; m.innerHTML = ''; } };
 }
 // ---------- récompense quotidienne, quêtes, quiz du jour ----------
@@ -1895,9 +1906,9 @@ views.settings = async v => {
     <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.filter(t => !t[5] || perks.includes(t[5]) || th === t[0]).map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
-      ${sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
+      ${soundLocked() ? '' : sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
       ${commu?.on && commu.joined ? sw('st-commu', 'Mode communiste', 'Thème rouge, menus du Parti et jeux de l\'événement', prefOf('wm_ussr_ui') !== '0') : ''}
-      ${th === 'urss' ? sw('st-hymn', 'Hymne de l\'URSS', 'Joue en fond pendant le thème rouge', pref('wm_hymn', '1') !== '0') : ''}
+      ${th === 'urss' && !soundLocked() ? sw('st-hymn', 'Hymne de l\'URSS', 'Joue en fond pendant le thème rouge', pref('wm_hymn', '1') !== '0') : ''}
       ${sw('st-vib', 'Vibrations', 'Combats, ouvertures, récompenses', pref('wm_vibe', '1') !== '0')}
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
@@ -1922,7 +1933,7 @@ views.settings = async v => {
   $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
   $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
   v.querySelectorAll('[data-ussr-test]').forEach(b => b.onclick = safe(async () => { await previewUssr(b.dataset.ussrTest); render(); }));
-  $('#st-snd').onchange = e => { setPref('wm_sound', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); };
+  $('#st-snd')?.addEventListener('change', e => { setPref('wm_sound', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); });
   $('#st-commu')?.addEventListener('change', async e => { setPref('wm_ussr_ui', e.target.checked ? '1' : '0'); setPref('wm_ussr', e.target.checked ? '1' : '0'); syncEventTheme(); await syncUssrUi(); render(); });
   $('#st-hymn')?.addEventListener('change', e => { setPref('wm_hymn', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); });
   $('#st-vib').onchange = e => { setPref('wm_vibe', e.target.checked ? '1' : '0'); if (e.target.checked) { toast('Vibrations activées (rechargement conseillé)'); try { navigator.vibrate?.(40); } catch { /* non supporté */ } } };
