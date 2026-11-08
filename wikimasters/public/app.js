@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.48';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.49';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2391,8 +2391,11 @@ async function eventPacks(v) {
     if (rr === 'again') setTimeout(() => $('#open10')?.click(), 60);
   });
   $('#open').onclick = one; $('#open10').onclick = ten;
-  { const t0 = Date.now(), next = c.nextPackIn || 0; clearInterval(tick);
-    tick = setInterval(() => { const cd = $('#cd'); if (!cd) return; const s = Math.max(0, Math.round((next - (Date.now() - t0)) / 1000)); cd.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; if (s === 0) { clearInterval(tick); loadCommu(true).then(() => { if (tab === 'packs') render(); }); } }, 500); }
+  { // décompte du prochain colis offert : à zéro, on relit l'état ; on ne réaffiche l'écran que si quelque chose a changé (sinon, plus d'écran qui clignote en boucle)
+    const arm = ms => { const t0 = Date.now(); clearInterval(tick);
+      tick = setInterval(() => { const cd = $('#cd'); if (!cd) return; const s = Math.max(0, Math.round((ms - (Date.now() - t0)) / 1000)); cd.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+        if (s === 0) { clearInterval(tick); loadCommu(true).then(() => { if (tab !== 'packs') return; if (commu.packs !== c.packs || commu.paused !== c.paused) render(); else arm(Math.max(commu.nextPackIn || 0, 15000)); }); } }, 500); };
+    arm(c.nextPackIn || 0); }
   $('#buy').onclick = safe(async () => { await api('/commu/buy', { n: 1 }); await loadCommu(true); await one(); });
   $('#buy10').onclick = safe(async () => { if (!(await ask('Faire la queue pour 10 colis ?', [], { text: `${fmt(commu.packPrice * 10)} ₽ pour 10 colis du Parti.`, ok: 'Acheter' }))) return; await api('/commu/buy', { n: 10 }); await loadCommu(true); await ten(); });
 }

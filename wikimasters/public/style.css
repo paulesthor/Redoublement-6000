@@ -1640,3 +1640,7 @@ body.ussr-ui button.avatar{width:38px;height:38px;min-width:38px;min-height:38px
 .ts-panel .ts-say{align-self:stretch}
 /* encart d'explication du Camp : texte complet (la règle mobile des cartes tronque à 2 lignes) */
 .gl-tip .gl-info p{display:block;-webkit-line-clamp:unset;overflow:visible;font-size:12.5px;line-height:1.4;opacity:.92}
+
+/* accueil du mode communiste : couches de rendu dédiées (évite le scintillement sur iPhone : colis qui flotte, étoile fixe) */
+.us-home .us-svg{will-change:transform;transform:translateZ(0);-webkit-backface-visibility:hidden;backface-visibility:hidden}
+body.ussr-ui::after{will-change:transform;transform:translateZ(0);-webkit-backface-visibility:hidden}
