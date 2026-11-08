@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.50';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.51';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -453,10 +453,12 @@ async function syncUssrUi() {
   if (ussrUiOn()) { try { if (!window.UssrSkin) await loadScript('/ussr-skin.js'); if (!window.ussrParcelSvg) await loadScript('/ussrpack.js').catch(() => {}); window.UssrSkin.on(); } catch { /* aperçu indisponible */ } }
   else window.UssrSkin?.off();
 }
-const ussrOn = () => { try { return (!!me?.admin && localStorage.getItem('wm_ussr') === '1') || (eventOn() && localStorage.getItem('wm_ussr_ui') !== '0'); } catch { return false; } };
+/** Récompense du palier 5 : le colis et l'animation d'ouverture URSS restent disponibles dans le jeu normal, au choix du joueur (Réglages). */
+const animPerk = () => { try { return !eventOn() && !!(commu?.perks || []).includes('anim_urss') && localStorage.getItem('wm_ussr') === '1'; } catch { return false; } };
+const ussrOn = () => { try { return (!!me?.admin && localStorage.getItem('wm_ussr') === '1') || (eventOn() && localStorage.getItem('wm_ussr_ui') !== '0') || animPerk(); } catch { return false; } };
 const loadUssr = () => window.ussrPackStage ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ussrpack.js?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error('ussrpack')); document.head.append(s); });
 const ussrOpts = () => ussrOn() && window.ussrPackStage ? { ussr: true, stage: window.ussrPackStage, shape: (() => { try { return localStorage.getItem('wm_ussr_shape') || 'auto'; } catch { return 'auto'; } })() } : {};
-const ussrLabels = () => ussrOn() && window.USSR_GRADES ? window.USSR_GRADES : RAR;
+const ussrLabels = () => ussrOn() && !animPerk() && window.USSR_GRADES ? window.USSR_GRADES : RAR;
 const ico = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
 let duelDirect = false, gulagTab = null;
 /** Mode communiste : écran « Les Jeux du Peuple » qui regroupe les jeux. */
@@ -536,12 +538,12 @@ function cardPicker(title, { user } = {}) {
 const views = {
   async packs(v) {
     await loadCommu().catch(() => {});   // l'état de l'événement doit être connu avant de choisir le design
-    if (ussrUiOn() && !window.ussrParcelSvg) await loadUssr().catch(() => {});
+    if ((ussrUiOn() || ussrOn()) && !window.ussrParcelSvg) await loadUssr().catch(() => {});
     if (eventUi()) return eventPacks(v);
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
     v.innerHTML = `${commu?.on && commu.joined && !ussrUiOn() ? '<button class="commu-banner" id="commu-enter"><b>Mode communiste</b><span>Retourne au Plan : thème rouge, colis du Parti, jeux et paliers.</span></button>' : ''}${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
-      <div class="packart" id="packart">${ussrUiOn() && window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
+      <div class="packart" id="packart">${(ussrUiOn() || ussrOn()) && window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
       <div class="stock"><div class="pips">${Array.from({ length: 10 }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
         <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''} · prochain dans <b id="cd"></b>`}</p></div>
@@ -1912,6 +1914,9 @@ views.settings = async v => {
       ${sw('st-vib', 'Vibrations', 'Combats, ouvertures, récompenses', pref('wm_vibe', '1') !== '0')}
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
+    ${!me.admin && !eventOn() && perks.includes('anim_urss') ? `<div class="setgrp"><h3>Colis du Parti (récompense du Plan)</h3><div class="panel">${sw('st-ussr', 'Colis et animation URSS', 'Garde le colis du Parti et son animation d\'ouverture dans le jeu normal', pref('wm_ussr', '0') === '1')}
+      <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Voir le colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Voir le dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Voir la matriochka</button></div></div></div>` : ''}
     ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussrui', 'Interface URSS complète', 'Menus, textes, rarités en grades, bandeau Pravda, décor rouge', pref('wm_ussr_ui', '0') === '1')}${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-cm-on" style="flex:1">Ouvrir pour moi seul (test réel)</button><button class="plain" id="st-cm-off" style="flex:1">Fermer</button><button class="plain" id="st-cm-end" style="flex:1">Clore + gagnant</button><button class="plain" id="st-cm-souv" style="flex:1">Clore les souvenirs</button></div></div></div>` : ''}
@@ -2502,7 +2507,7 @@ views.commuend = async v => {
   if (!c || !c.done || !(c.joined || me.admin)) { tab = 'packs'; return render(); }
   const S = await api('/commu/cards'), P = await api('/plan'), n = c.entitled, picked = new Set(c.chosen.map(String)), open = c.souvenirOpen && !c.chosen.length && n > 0;
   const kept = P.milestones.filter(m => P.claimed.includes(m.id)), perks = c.perks || [];
-  const keeps = [perks.includes('theme_urss') ? 'le thème rouge « Camarade »' : '', perks.includes('theme_siberie') ? 'le thème « Sibérie »' : '', perks.includes('theme_or') ? 'le thème « Or impérial »' : '', ...kept.filter(m => m.title).map(m => `le titre « ${m.title} »`), ...perks.filter(p => p.startsWith('frame_') || p === 'gold_outline').map(p => p === 'gold_outline' ? 'le contour doré de Staline' : 'un cadre de profil')].filter(Boolean);
+  const keeps = [perks.includes('theme_urss') ? 'le thème rouge « Camarade »' : '', perks.includes('anim_urss') ? 'le colis du Parti et son animation d\'ouverture' : '', perks.includes('theme_siberie') ? 'le thème « Sibérie »' : '', perks.includes('theme_or') ? 'le thème « Or impérial »' : '', ...kept.filter(m => m.title).map(m => `le titre « ${m.title} »`), ...perks.filter(p => p.startsWith('frame_') || p === 'gold_outline').map(p => p === 'gold_outline' ? 'le contour doré de Staline' : 'un cadre de profil')].filter(Boolean);
   const mine = new Set(); let sel = [];
   const draw = () => {
     v.innerHTML = `${pageHead('Fin du Plan quinquennal', 'Le Parti a terminé de compter. Il a aussi terminé de rire.')}
@@ -2571,7 +2576,7 @@ const PLAN_ICO = {
 };
 const planChips = m => [
   m.packs ? [PLAN_ICO.pack, `${m.packs} colis`] : null, m.wr ? [PLAN_ICO.coin, `${fmt(m.wr)} ₽`] : null, m.coins ? [PLAN_ICO.coin, `${fmt(m.coins)} wikibidou (jeu normal)`] : null, m.title ? [PLAN_ICO.title, `titre « ${m.title} »`] : null,
-  m.perk === 'theme_urss' ? [PLAN_ICO.theme, 'thème rouge à vie'] : m.perk === 'theme_siberie' ? [PLAN_ICO.theme, 'thème Sibérie à vie'] : m.perk === 'theme_or' ? [PLAN_ICO.theme, 'thème Or impérial à vie'] : m.perk?.startsWith('frame_') ? [PLAN_ICO.frame, 'cadre de profil'] : m.perk?.startsWith('souvenir_') ? [PLAN_ICO.souv, 'carte souvenir'] : null,
+  m.perk === 'theme_urss' ? [PLAN_ICO.theme, 'thème rouge à vie'] : m.perk === 'anim_urss' ? [PLAN_ICO.pack, 'colis et animation URSS à vie'] : m.perk === 'theme_siberie' ? [PLAN_ICO.theme, 'thème Sibérie à vie'] : m.perk === 'theme_or' ? [PLAN_ICO.theme, 'thème Or impérial à vie'] : m.perk?.startsWith('frame_') ? [PLAN_ICO.frame, 'cadre de profil'] : m.perk?.startsWith('souvenir_') ? [PLAN_ICO.souv, 'carte souvenir'] : null,
 ].filter(Boolean).map(([ic, t]) => `<span class="rw"><i>${ic}</i>${esc(t)}</span>`).join('');
 /** Hauteur (en %) de la piste dorée : de palier atteint en palier atteint, avec la part du chemin déjà faite vers le suivant. */
 function roadFill(d) {
@@ -2584,7 +2589,7 @@ views.plan = async v => {
   await loadCommu(); if (!eventAccess()) { tab = 'packs'; return render(); }
   let d = await api('/plan');
   const fmtR = n => fmt(n) + ' ₽';
-  const rewardOf = m => [m.packs ? `${m.packs} colis` : '', m.wr ? fmtR(m.wr) : '', m.title ? `titre « ${m.title} »` : '', m.perk === 'theme_urss' ? 'thème rouge conservé à vie' : m.perk?.startsWith('frame_') ? 'cadre de profil' : m.perk?.startsWith('souvenir_') ? 'carte souvenir à garder' : ''].filter(Boolean);
+  const rewardOf = m => [m.packs ? `${m.packs} colis` : '', m.wr ? fmtR(m.wr) : '', m.title ? `titre « ${m.title} »` : '', m.perk === 'theme_urss' ? 'thème rouge conservé à vie' : m.perk === 'anim_urss' ? 'colis et animation URSS conservés à vie' : m.perk?.startsWith('frame_') ? 'cadre de profil' : m.perk?.startsWith('souvenir_') ? 'carte souvenir à garder' : ''].filter(Boolean);
   const draw = () => {
     const next = d.milestones.find(m => d.earned < m.at), pct = Math.min(100, Math.round(d.earned / d.totals.max * 100));
     const ready = d.milestones.filter(m => d.earned >= m.at && !d.claimed.includes(m.id)).length;
