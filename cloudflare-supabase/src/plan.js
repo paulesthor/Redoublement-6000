@@ -292,6 +292,6 @@ export function installPlan(d) {
     return { ok: true, id: m.id, packs: m.packs, wr: m.wr, coins: m.coins || 0, title: m.title ? PLAN_TITLES.find(t => t.id === m.title).label : null, titleNew, perk: m.perk ?? null };
   });
   const cc = installCommuCards(d, { access, rowOf, setting, putSetting, list });
-  installCommuBourse(d, { access, credit, cc });
-  return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc, joinedReal };
+  const bourse = installCommuBourse(d, { access, credit, cc });
+  return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc, joinedReal, bourse, rawOn };
 }

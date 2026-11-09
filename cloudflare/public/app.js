@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.64';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.65';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2643,7 +2643,7 @@ const PLAN_ICO = {
   coin: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f4d56b" stroke="#b8902a" stroke-width="1.6"/><path d="M12 7v10M9.500 9.500q2.500-2 5 0M9.500 14.500q2.500 2 5 0" fill="none" stroke="#b8902a" stroke-width="1.5"/></svg>',
   title: '<svg viewBox="0 0 24 24"><path d="M12 2l2.700 6 6.500.6-4.900 4.300 1.500 6.400L12 15.800 6.200 19.300l1.500-6.400L2.800 8.600 9.300 8z" fill="#f4d56b" stroke="#b8902a" stroke-width="1.2"/></svg>',
   frame: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#f4d56b" stroke-width="2.4"/><rect x="7" y="7" width="10" height="10" rx="1.500" fill="#c0161d"/></svg>',
-  souv: '<svg viewBox="0 0 24 24"><rect x="5" y="2.500" width="14" height="19" rx="2" fill="#f6efd8" stroke="#8a7a52" stroke-width="1.400"/><path d="M12 7l1.500 3.200 3.500.4-2.600 2.300.7 3.400-3.100-1.700-3.100 1.700.7-3.400L7 10.640l3.500-.4z" fill="#c0161d"/></svg>',
+  souv: '<svg viewBox="0 0 24 24"><rect x="5" y="2.500" width="14" height="19" rx="2" fill="#f6efd8" stroke="#8a7a52" stroke-width="1.400"/><path d="M12 7l1.500 3.200 3.500.4-2.600 2.300.7 3.400-3.100-1.700-3.100 1.700.7-3.400L7 10.650l3.500-.4z" fill="#c0161d"/></svg>',
   theme: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="1" fill="#c0161d"/><path d="M8 9a2.500 2.500 0 1 0 2 3.800M9.500 14l5-5.500" fill="none" stroke="#f4d56b" stroke-width="1.400"/><rect x="11" y="18" width="2" height="4" fill="#8a7a52"/></svg>',
 };
 const planChips = m => [

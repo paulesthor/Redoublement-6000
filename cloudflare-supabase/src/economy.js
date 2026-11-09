@@ -325,5 +325,5 @@ export function installEconomy(d) {
     for (const r of out) notify(env, ctx, { t: 'notify', msg: 'Tes explorateurs sont rentrés : récupère ton butin !' }, r.user_id);
     return out.length;
   }
-  return { settleBourse, finishExpeditionsOnce, capExpeditionsOnce };
+  return { settleBourse, finishExpeditionsOnce, capExpeditionsOnce, ensureMarket };
 }
