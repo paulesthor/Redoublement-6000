@@ -30,7 +30,6 @@ await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(
 // 1. l'administrateur prépare le communiqué avec le modèle et l'aperçu (rien n'est publié)
 const pa = await mkN(A); await pa.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });
 await pa.evaluate(async () => { adminTab = 'event'; tab = 'admin'; await render(); }); await pa.waitForTimeout(1500); await pa.evaluate(async () => { await render(); }); await pa.waitForSelector('#nt-tpl', { timeout: 8000 });
-await pa.evaluate(async () => { setPref('wm_ussr_ui', '1'); setPref('wm_ussr', '1'); setPref('wm_theme', 'urss'); await syncUssrUi(); });
 await pa.click('#nt-tpl'); await pa.click('#nt-prev'); await pa.waitForSelector('.notice', { timeout: 5000 }); await pa.waitForTimeout(500);
 await pa.screenshot({ path: SH + 'notice-apercu.png' });
 ok('aperçu admin : titre, tampon DÉNONCÉ, +50 et −50 affichés, mention « rien n\'est envoyé »', await pa.evaluate(() => { const t = document.querySelector('.notice').textContent; return /Dénonciation exemplaire/.test(t) && /DÉNONCÉ/.test(t) && /\+50 ₽/.test(t) && /−50 ₽/.test(t) && /rien n'est envoyé/.test(t); }));
@@ -38,9 +37,14 @@ const [, still] = await call(B, 'GET', '/api/commu'); ok('l\'aperçu ne publie r
 // 2. publication réelle (compte de test) : le joueur voit l'écran une seule fois
 await pa.click('#nt-ok');
 await call(A, 'POST', '/api/commu/notice', { title: 'Dénonciation exemplaire', text: 'Le camarade a dénoncé.\n\nLe Parti remercie.', stamp: 'DÉNONCÉ', btn: 'Vive la vigilance !', adjust: [] });
+await call(A, 'POST', '/api/commu/notice', { title: 'Insulte à la patrie : le Parti sévit', text: 'Le camarade a insulté.\n\nLe Parti sévit.', stamp: 'CONDAMNÉ', btn: 'Je regrette, camarade', adjust: [] });
 const pb = await mkN(B); await pb.waitForTimeout(1500);
 ok('joueur : le communiqué s\'affiche tout seul', !!(await pb.$('.notice')));
-await pb.click('#nt-ok'); await pb.waitForTimeout(300); ok('fermé : le joueur peut continuer', !(await pb.$('.notice')) || await pb.$eval('#modal', m => m.hidden));
+ok('premier communiqué affiché', /Dénonciation exemplaire/i.test(await pb.textContent('.notice')));
+await pb.click('#nt-ok'); await pb.waitForTimeout(900);
+ok('le second communiqué suit automatiquement', !!(await pb.$('.notice')) && /Insulte à la patrie/i.test(await pb.textContent('.notice')));
+await pb.screenshot({ path: SH + 'notice-2.png' });
+await pb.click('#nt-ok'); await pb.waitForTimeout(600); ok('fermé : le joueur peut continuer', !(await pb.$('.notice')) || await pb.$eval('#modal', m => m.hidden));
 await pb.reload(); await pb.waitForSelector('#app:not([hidden])'); await pb.waitForTimeout(2000);
 ok('jamais montré deux fois au même joueur', !(await pb.$('.notice')) || await pb.$eval('#modal', m => m.hidden));
 ok('aucune erreur JS', pa.errs.length + pb.errs.length === 0, J([...pa.errs, ...pb.errs]));

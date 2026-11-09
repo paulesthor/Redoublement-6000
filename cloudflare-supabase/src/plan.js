@@ -109,7 +109,11 @@ export function installPlan(d) {
   const PENDING = [{ key: 'denonciation-1', notice: {
     title: 'Dénonciation exemplaire : le Parti remercie un camarade vigilant', stamp: 'DÉNONCÉ', btn: 'Vive la vigilance !',
     text: 'Le camarade Michelleclebresil a signalé au Parti que le camarade Just1e avait honteusement volé le peuple.\n\nLe Parti a mené une enquête approfondie. Il a surtout cru le dénonciateur : c\'est plus rapide, et ça évite de se salir les mains.\n\nEn récompense de sa vigilance, 50 ₽ sont versés au camarade Michelleclebresil. 50 ₽ sont confisqués à Just1e, pour manque de discrétion.\n\nLe Parti rappelle que voler le peuple est un crime, mais se faire prendre est une faute professionnelle. La dénonciation est un devoir civique. Elle est aussi très bien payée.',
-    adjust: [{ name: 'Michelleclebresil', delta: 50 }, { name: 'Just1e', delta: -50 }] } }];
+    adjust: [{ name: 'Michelleclebresil', delta: 50 }, { name: 'Just1e', delta: -50 }] } },
+  { key: 'insulte-loris-1', notice: {
+    title: 'Insulte à la patrie : le Parti sévit', stamp: 'CONDAMNÉ', btn: 'Je regrette, camarade',
+    text: 'Le camarade Loris a tenu des propos regrettables à l\'égard de la patrie et des dirigeants en place.\n\nLe Parti a écouté. Il a aussi relu deux fois, pour être bien sûr d\'être vexé.\n\nEn conséquence, 50 ₽ sont confisqués au camarade Loris, au titre de l\'amende pour insulte à la patrie. La somme servira à acheter des fleurs pour les dirigeants, qui ont été très touchés.\n\nLe Parti rappelle que la critique est le sel de la démocratie, à condition de la garder pour soi. La liberté d\'expression est garantie : l\'expression, non.',
+    adjust: [{ name: 'Loris', delta: -50 }] } }];
   async function runPending(env) {
     if (!(await rawOn(env)) || !(await scopeAll(env))) return;
     for (const p of PENDING) {
@@ -122,7 +126,7 @@ export function installPlan(d) {
       try { await publishNotice(env, p.notice); } catch (e) { console.error('annonce programmée', p.key, e); }
     }
   }
-  const noticeOf = async env => { try { return JSON.parse((await setting(env, 'commu_notice')) || 'null'); } catch { return null; } };
+  const noticesOf = async env => { try { const a = JSON.parse((await setting(env, 'commu_notices')) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
   const commuView = async (env, user) => {
     try { await runPending(env); } catch (e) { console.error('annonces programmées', e); }
     let r = await rowOf(env, user.id); const on = await isOn(env, user), day = dayOf(); let nextIn = 0;
@@ -130,7 +134,7 @@ export function installPlan(d) {
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
     return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
-      notice: on || done ? await noticeOf(env) : null, paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, quizPer: COMMU.QUIZ_PER_ANSWER, nextPackIn: nextIn, freeEveryMin: COMMU.FREE_EVERY_MS / 60000, freeMax: COMMU.FREE_MAX, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
+      ...(on || done ? await (async () => { const n = await noticesOf(env); return { notices: n, notice: n.at(-1) || null }; })() : { notices: [], notice: null }), paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, quizPer: COMMU.QUIZ_PER_ANSWER, nextPackIn: nextIn, freeEveryMin: COMMU.FREE_EVERY_MS / 60000, freeMax: COMMU.FREE_MAX, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
   route('GET', '/api/commu', async ({ env, user }) => commuView(env, user));
@@ -211,14 +215,14 @@ export function installPlan(d) {
       applied.push({ name: t.name, delta: give, asked: t.delta });
     }
     const notice = { id: Date.now(), title, text, stamp, btn, adjust: applied.map(x => ({ name: x.name, delta: x.delta })) };
-    await putSetting(env, 'commu_notice', JSON.stringify(notice));
+    const keep = (await noticesOf(env)).slice(-4); await putSetting(env, 'commu_notices', JSON.stringify([...keep, notice]));
     return { ok: true, notice, applied };
   }
   // communiqué du Parti : écran d'annonce montré une fois à chaque joueur inscrit, avec d'éventuels ajustements de ₽ appliqués à la publication
   route('POST', '/api/commu/notice', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
     await ensureGameSchema(env);
-    if (body.clear) { await putSetting(env, 'commu_notice', 'null'); return { ok: true, cleared: true }; }
+    if (body.clear) { await putSetting(env, 'commu_notices', '[]'); return { ok: true, cleared: true }; }
     return publishNotice(env, body);
   });
   // pause : plus aucun gain, achat, ouverture, réclamation ni inscription ; rien n'est coupé ni remis à zéro, l'état reprend tel quel

@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.54';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.55';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2491,8 +2491,8 @@ function syncEventDrum() {
 
 
 // ---------- communiqué du Parti : écran d'annonce montré une fois à chaque joueur inscrit ----------
-function noticeSheet(n, { preview = false } = {}) {
-  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+function noticeSheet(n, { preview = false, next = false } = {}) {
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; if (!preview) { try { localStorage.setItem('wm_notice', String(n.id)); } catch { /* stockage indisponible */ } } };   // « lu » seulement à la fermeture : un écran fermé par autre chose reviendra
   const money = x => x.delta > 0 ? `<li class="nt-up"><b>+${fmt(x.delta)} ₽</b> pour le camarade ${esc(x.name)}</li>` : `<li class="nt-down"><b>−${fmt(-x.delta)} ₽</b> confisqués à ${esc(x.name)}</li>`;
   m.hidden = false;
   m.innerHTML = `<div class="iconsheet notice" role="dialog" aria-label="Communiqué du Parti"><span class="grab" aria-hidden="true"></span>
@@ -2502,14 +2502,15 @@ function noticeSheet(n, { preview = false } = {}) {
     ${String(n.text || '').split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('')}
     ${(n.adjust || []).length ? `<ul class="nt-money">${n.adjust.map(money).join('')}</ul>` : ''}
     <button class="ic-go" id="nt-ok" style="width:100%">${esc(n.btn || 'Pour la gloire du Plan')}</button>${preview ? '<p class="mut" style="font-size:11px">Aperçu : rien n\'est envoyé aux joueurs.</p>' : ''}</div>`;
-  $('#nt-ok').onclick = () => { close(); if (!preview) refreshMe().catch(() => {}); };
+  $('#nt-ok').onclick = () => { close(); if (!preview) refreshMe().catch(() => {}); if (next) setTimeout(() => { try { syncEventNotice(); } catch { /* ignoré */ } }, 350); };   // s'il y en a un autre à lire, il suit
   if (!preview) m.onclick = e => { if (e.target === m) close(); };
 }
 function syncEventNotice() {
   try {
-    const n = commu?.notice; if (!n || !(commu.joined || me?.admin) || prefOf('wm_notice') === String(n.id)) return;
+    const list = commu?.notices?.length ? commu.notices : commu?.notice ? [commu.notice] : [];
+    const seen = +(prefOf('wm_notice') || 0), n = list.find(x => x.id > seen); if (!n || !(commu.joined || me?.admin)) return;
     if (game || ['tsar', 'gulag', 'potato'].includes(tab) || ($('#modal') && !$('#modal').hidden)) return;
-    localStorage.setItem('wm_notice', String(n.id)); noticeSheet(n);
+    noticeSheet(n, { next: true });
   } catch { /* stockage indisponible */ }
 }
 // ---------- annonce du début de l'événement : page d'accueil, taxe et entrée ----------

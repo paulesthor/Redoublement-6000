@@ -17,6 +17,14 @@ ok('les deux inscrits : communiqué publié automatiquement', v.notice?.title?.s
 ok('+50 ₽ pour Michelleclebresil, −50 ₽ pour Just1e', await wr('Michelleclebresil') === 550 && await wr('Just1e') === 450, J({ m: await wr('Michelleclebresil'), j: await wr('Just1e') }));
 for (let i = 0; i < 3; i++) await Promise.all([call(MICH, 'GET', '/api/commu'), call(JUST, 'GET', '/api/commu'), call(ADM, 'GET', '/api/commu')]);
 ok('appliqué une seule fois, même avec des requêtes simultanées', await wr('Michelleclebresil') === 550 && await wr('Just1e') === 450);
+// second communiqué programmé : Loris, insulte à la patrie (−50 ₽), sans écraser le premier
+const LORIS = await reg('Loris'); await q("UPDATE users SET coins = 1000 WHERE name = 'Loris'");
+[, v] = await call(LORIS, 'GET', '/api/commu'); ok('Loris pas encore inscrit : en attente', v.notices.length === 1 && await wr('Loris') === 0, J(v.notices.map(n => n.title)));
+await call(LORIS, 'POST', '/api/commu/join', {}); [, v] = await call(LORIS, 'GET', '/api/commu');
+ok('Loris inscrit : communiqué « insulte à la patrie » publié, le premier est conservé', v.notices.length === 2 && v.notices[0].title.startsWith('Dénonciation') && v.notices[1].title.startsWith('Insulte à la patrie') && v.notice.stamp === 'CONDAMNÉ', J(v.notices.map(n => n.title)));
+ok('−50 ₽ pour Loris, appliqué une seule fois', await wr('Loris') === 450, await wr('Loris'));
+for (let i = 0; i < 2; i++) await Promise.all([call(MICH, 'GET', '/api/commu'), call(LORIS, 'GET', '/api/commu')]);
+ok('toujours une seule application', await wr('Loris') === 450 && await wr('Just1e') === 450 && await wr('Michelleclebresil') === 550);
 await call(ADM, 'POST', '/api/commu/notice', { clear: true }); await call(JUST, 'GET', '/api/commu');
-ok('retiré par l\'administrateur : ne revient pas et ne se réapplique pas', await wr('Just1e') === 450 && !(await call(JUST, 'GET', '/api/commu'))[1].notice);
+ok('retiré par l\'administrateur : ne revient pas et ne se réapplique pas', await wr('Just1e') === 450 && await wr('Loris') === 450 && !(await call(JUST, 'GET', '/api/commu'))[1].notice);
 done();
