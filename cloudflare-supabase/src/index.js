@@ -1324,10 +1324,12 @@ route('GET', '/api/auctions', async ({ env, ctx, user, origin, query }) => {
   const sort = ['end', 'recent', 'up', 'down', 'rar', 'bids'].includes(query.get('sort')) ? query.get('sort') : 'end', f = (query.get('f') || '').slice(0, 12), qq = (query.get('q') || '').trim().slice(0, 40);
   if (!one_ && offset === 0 && now() - auctionsMaint >= (globalThis.__MAINT_MS ?? 10000)) {
     auctionsMaint = now();
-    maybeRefill(env, ctx);
     const settled = await settleAuctions(env, ctx);
-    await market.tick(env, ctx, origin).catch(e => console.error('market', e));
-    if (!settled) ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée (pas dans la même requête qu'un règlement : limite d'appels)
+    if (!settled) {                                  // un règlement d'enchères consomme déjà beaucoup d'appels : le reste attend la prochaine ouverture (10 s plus tard) ou la tâche planifiée
+      maybeRefill(env, ctx);
+      await market.tick(env, ctx, origin).catch(e => console.error('market', e));
+      ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée
+    }
   }
   const where = ["a.status = 'open'"], args = [];
   if (one_) { where.push('a.id = ?'); args.push(one_); }
