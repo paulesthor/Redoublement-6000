@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.55';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.56';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1340,7 +1340,7 @@ let adminTab = 'overview';   // l'onglet « Joueurs » (pièces, paquets, cartes
 views.admin = async v => {
   jlog('ouverture de l\'administration');
   if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
-  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['eco', 'Économie'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['event', 'Événement'], ['tools', 'Outils']];
+  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['eco', 'Économie'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['event', 'Événement'], ['probe', 'Enquête'], ['tools', 'Outils']];
   v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips wrap" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
   const adminBody = async () => {
@@ -1353,6 +1353,22 @@ views.admin = async v => {
       const rows = [['Joueurs', o.users], ['En ligne maintenant', o.online], ['Joueurs simulés', o.bots], ['Paquets ouverts', fmt(o.packs)], ['Cartes possédées', fmt(o.owned)], ['Cartes en base', fmt(o.cards)], ['Pièces en circulation', fmt(o.coins)],
         ['Enchères ouvertes', o.auctions], ['Offres placées', fmt(o.bids)], ['Appareils notifiés', o.subs], ['Réserve de cartes prêtes', o.reserve], ['Questions IA (articles)', fmt(o.quizzes)], ['Questions IA aujourd\'hui', `${o.aiToday} / ≈ 250`], ['Dernière erreur IA', o.aiErr || 'aucune'], ['Version serveur', o.version]];
       box.innerHTML = `<div class="admgrid">${rows.map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>`;
+    } else if (adminTab === 'probe') {
+      const draw = async name => {
+        box.innerHTML = '<p class="mut" style="text-align:center;padding:24px 0">Enquête en cours…</p>';
+        let R; try { R = await api('/admin/investigate' + (name ? '?name=' + encodeURIComponent(name) : '')); } catch (e) { box.innerHTML = `<div class="panel"><b>Enquête impossible</b><p class="mut">${esc(e.message)}</p><button id="pb-back">Retour</button></div>`; $('#pb-back').onclick = () => draw(''); return; }
+        const P = R.player, d = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Enquête : ${esc(P.name)}</h3>
+          <div class="admgrid"><div><span>Créé il y a</span><b>${esc(P.age)}</b></div><div><span>Pièces</span><b>${fmt(P.coins)}</b></div><div><span>Paquets ouverts</span><b>${fmt(P.packsOpened)}</b></div><div><span>Cartes (exemplaires)</span><b>${fmt(P.cards)}</b></div><div><span>Sans origine connue</span><b>${fmt(P.extraCards)}</b></div><div><span>Appareils / sessions</span><b>${P.devices} / ${P.sessions}</b></div></div>
+          <div class="row" style="margin-top:10px"><input id="pb-name" placeholder="Autre joueur (pseudo exact)" style="flex:1"><button class="plain" id="pb-go">Enquêter</button><button class="plain" id="pb-last">Dernier créé</button></div></div>
+          <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Alertes</h3>${R.flags.length ? `<ul class="ru-list">${R.flags.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : '<p class="mut">Aucune alerte automatique. Cela ne prouve pas l\'absence de triche.</p>'}</div>
+          <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Relations avec les autres joueurs</h3>${R.peers.length ? R.peers.map(p => `<div style="padding:6px 0;border-top:1px solid #ffffff14"><b>${esc(p.name || '#' + p.id)}</b>${p.friend ? ' <small>ami</small>' : ''}<div class="mut" style="font-size:12px">${p.trades} échange${p.trades > 1 ? 's' : ''} · ${p.auctionsSold} enchère${p.auctionsSold > 1 ? 's' : ''} vendue${p.auctionsSold > 1 ? 's' : ''} · ${p.auctionsBought} achetée${p.auctionsBought > 1 ? 's' : ''} · ${p.dms} message${p.dms > 1 ? 's' : ''} privé${p.dms > 1 ? 's' : ''}</div><div class="mut" style="font-size:12px">Pièces reçues : ${fmt(p.coinsOut + p.auctionCoinsOut)} · envoyées : ${fmt(p.coinsIn + p.auctionCoinsIn)} · cartes données : ${p.giftsOut + p.giftsIn}</div></div>`).join('') : '<p class="mut">Aucun échange, aucune enchère ni message avec un autre joueur.</p>'}</div>
+          <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Derniers échanges directs</h3>${R.trades.length ? R.trades.map(t => `<p class="mut" style="margin:4px 0;font-size:12.5px">${d(t.when)} · ${esc(t.dir)} · ${esc(t.offer)} (${esc(t.rarity)})${t.want ? ' contre ' + esc(t.want) : t.price != null ? ' pour ' + fmt(t.price) + ' pièces' : ''} · ${esc(t.status)} · avec ${esc(t.peer || '?')}</p>`).join('') : '<p class="mut">Aucun échange direct.</p>'}</div>
+          <p class="mut" style="font-size:12px">${esc(R.note)}</p>`;
+        $('#pb-go').onclick = () => { const n = $('#pb-name').value.trim(); if (n) draw(n); };
+        $('#pb-last').onclick = () => draw('');
+      };
+      await draw('');
     } else if (adminTab === 'event') {
       const c = await loadCommu(true), st = await api('/commu/standings').catch(() => ({ players: 0, pot: 0 }));
       const state = c.done ? 'Terminé' : c.paused ? 'EN PAUSE' : c.on ? (c.scope === 'all' ? 'En cours, ouvert à tous' : 'Ouvert pour toi seul (test)') : 'Fermé';

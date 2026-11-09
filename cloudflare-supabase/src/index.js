@@ -1772,6 +1772,58 @@ route('GET', '/api/admin/overview', admin(async ({ env }) => {
   const aiErr = (await one(env, "SELECT value FROM settings WHERE key = 'ai_last_error'").catch(() => null))?.value ?? null;
   return { users, bots, cards, owned, auctions, packs, coins, subs, quizzes, aiToday, aiErr, reserve, bids, online: (await onlineIds(env)).length, version: CFG.VERSION };
 }));
+/** Enquête anti-triche (lecture seule) : le dernier joueur créé (ou un joueur nommé), ses échanges avec les autres joueurs, et des alertes. Le contenu des messages privés n'est jamais lu : seulement leur nombre. */
+route('GET', '/api/admin/investigate', admin(async ({ env, query }) => {
+  await ensureGameSchema(env);
+  const nm = (query.get('name') || '').trim();
+  const u = nm ? await one(env, 'SELECT * FROM users WHERE LOWER(name) = LOWER(?)', nm) : await one(env, 'SELECT * FROM users WHERE is_bot = 0 ORDER BY created DESC, id DESC LIMIT 1');
+  if (!u) bad('Joueur introuvable', 404);
+  const id = +u.id, ago = ms => `${Math.floor(ms / 3600000)} h`;
+  const nameOf = new Map();
+  const peers = new Map(); const peer = (pid, nameHint) => { pid = +pid; if (!peers.has(pid)) peers.set(pid, { id: pid, name: nameHint || null, trades: 0, giftsOut: 0, giftsIn: 0, coinsOut: 0, coinsIn: 0, auctionsSold: 0, auctionsBought: 0, auctionCoinsIn: 0, auctionCoinsOut: 0, dms: 0, friend: false }); return peers.get(pid); };
+  const cardVal = r => CFG.SELL[r] || 1;
+  // 1. échanges directs : cartes contre cartes ou ventes
+  const trades = await all(env, "SELECT t.id, t.from_id, t.to_id, t.price, t.status, t.created, c.title offer, c.rarity orar, w.title want, w.rarity wrar FROM trades t JOIN cards c ON c.id = t.offer_card LEFT JOIN cards w ON w.id = t.want_card WHERE t.from_id = ? OR t.to_id = ? ORDER BY t.created DESC LIMIT 80", id, id);
+  const flags = [];
+  for (const t of trades) {
+    const out = +t.from_id === id, other = peer(out ? t.to_id : t.from_id); other.trades++;
+    if (t.status === 'accepted' || t.status === 'done') {
+      if (t.price != null) { if (out) other.coinsIn += +t.price; else other.coinsOut += +t.price; }
+      if (t.price != null && +t.price <= 0) { if (out) other.giftsOut++; else other.giftsIn++; }
+      if (t.price != null && +t.price > 0) { const v = cardVal(t.orar); if (+t.price < v * 0.2 || +t.price > v * 8) flags.push(`Vente d'une « ${t.offer} » (${t.orar}) à ${t.price} pièces, très éloigné de sa valeur normale (${v})`); }
+    }
+  }
+  // 2. enchères entre joueurs
+  const aucs = await all(env, "SELECT a.id, a.seller_id, a.bidder_id, a.bid, a.start_price, a.status, c.title, c.rarity FROM auctions a JOIN cards c ON c.id = a.card_id WHERE (a.seller_id = ? OR a.bidder_id = ?) AND a.status <> 'open' ORDER BY a.id DESC LIMIT 80", id, id);
+  for (const a of aucs) {
+    if (!+a.bidder_id || +a.bid <= 0) continue;
+    if (+a.seller_id === id) { const o = peer(a.bidder_id); o.auctionsSold++; o.auctionCoinsIn += +a.bid; if (+a.bid > cardVal(a.rarity) * 10) flags.push(`Enchère « ${a.title} » (${a.rarity}) vendue ${a.bid} pièces, bien au-dessus de sa valeur (${cardVal(a.rarity)})`); }
+    else if (+a.bidder_id === id) { const o = peer(a.seller_id); o.auctionsBought++; o.auctionCoinsOut += +a.bid; if (+a.bid > cardVal(a.rarity) * 10) flags.push(`Enchère « ${a.title} » (${a.rarity}) achetée ${a.bid} pièces, bien au-dessus de sa valeur (${cardVal(a.rarity)})`); }
+  }
+  // 3. messages privés : nombre uniquement
+  for (const r of await all(env, 'SELECT CASE WHEN a = ? THEN b ELSE a END pid, COUNT(*) n, MIN(id) first, MAX(id) last FROM dms WHERE a = ? OR b = ? GROUP BY 1 ORDER BY n DESC LIMIT 20', id, id, id)) peer(r.pid).dms = +r.n;
+  for (const r of await all(env, 'SELECT friend_id FROM friends WHERE user_id = ?', id)) peer(r.friend_id).friend = true;
+  const ids = [...peers.keys()]; if (ids.length) for (const r of await all(env, `SELECT id, name, created, coins FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids)) { const p = peers.get(+r.id); p.name = r.name; p.created = +r.created; p.coins = +r.coins; }
+  // 4. cartes sans origine connue : exemplaires possédés au-delà de ce que les paquets ouverts expliquent
+  const inv = await one(env, 'SELECT COALESCE(SUM(qty), 0) q, COUNT(*) d FROM inventory WHERE user_id = ?', id);
+  const sessions = await one(env, 'SELECT COUNT(*) n, MIN(created) a, MAX(created) b FROM sessions WHERE user_id = ?', id);
+  const devices = await one(env, 'SELECT COUNT(*) n FROM push_subs WHERE user_id = ?', id);
+  const fromPacks = +u.packs_opened * PACK_SIZE, extra = Math.max(0, +inv.q - fromPacks);
+  const list = [...peers.values()].filter(p => p.trades || p.auctionsSold || p.auctionsBought || p.dms || p.friend).sort((a, b) => (b.trades + b.auctionsSold + b.auctionsBought + b.dms) - (a.trades + a.auctionsSold + a.auctionsBought + a.dms));
+  const inter = list.reduce((t, p) => t + p.trades + p.auctionsSold + p.auctionsBought, 0);
+  for (const p of list) {
+    const n = p.trades + p.auctionsSold + p.auctionsBought;
+    if (inter >= 3 && n / inter >= 0.7) flags.push(`${Math.round(n / inter * 100)} % des échanges de ${u.name} se font avec un seul joueur : ${p.name}`);
+    if (p.giftsIn + p.giftsOut >= 2) flags.push(`${p.giftsIn + p.giftsOut} cartes données pour 0 pièce entre ${u.name} et ${p.name}`);
+    if (p.coinsIn + p.auctionCoinsIn - p.coinsOut - p.auctionCoinsOut >= 1500) flags.push(`${p.name} a reçu net ${p.coinsIn + p.auctionCoinsIn - p.coinsOut - p.auctionCoinsOut} pièces de ${u.name} en échanges`);
+    if (p.coinsOut + p.auctionCoinsOut - p.coinsIn - p.auctionCoinsIn >= 1500) flags.push(`${u.name} a reçu net ${p.coinsOut + p.auctionCoinsOut - p.coinsIn - p.auctionCoinsIn} pièces de ${p.name} en échanges`);
+  }
+  if (extra > 40 && +inv.q > 60) flags.push(`${extra} exemplaires de plus que ses ${u.packs_opened} paquets ouverts n'en expliquent (hors quêtes, récompenses et événements)`);
+  if (now() - +u.created < 48 * 3600000 && +u.coins > 5000) flags.push(`Compte de moins de 48 h avec ${u.coins} pièces`);
+  if (+devices.n > 2) flags.push(`${devices.n} appareils abonnés aux notifications`);
+  return { player: { id, name: u.name, created: +u.created, age: ago(now() - +u.created), coins: +u.coins, packsOpened: +u.packs_opened, cards: +inv.q, distinct: +inv.d, extraCards: extra, duelWins: +u.duel_wins, duelLosses: +u.duel_losses, sessions: +sessions.n, devices: +devices.n },
+    peers: list.slice(0, 12), trades: trades.slice(0, 15).map(t => ({ when: +t.created, dir: +t.from_id === id ? 'envoyé' : 'reçu', offer: t.offer, rarity: t.orar, want: t.want, price: t.price, status: t.status, peer: peers.get(+t.from_id === id ? +t.to_id : +t.from_id)?.name })), flags: [...new Set(flags)].slice(0, 20), note: 'Lecture seule. Les messages privés ne sont pas lus : seul leur nombre apparaît.' };
+}));
 route('GET', '/api/admin/users', admin(async ({ env }) => {
   const online = new Set(await onlineIds(env));
   const rows = await all(env, `SELECT u.id, u.name, u.coins, u.pack_stock packs, u.packs_opened, u.duel_wins wins, u.duel_losses losses, u.test_mode test, u.is_admin admin, u.created, u.drop_w,
