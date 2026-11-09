@@ -18,6 +18,7 @@ import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { isBanned, bannedIds, forgetBans, BAN_MSG } from './ban.js';
+import { maintenance } from './maint.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -2186,6 +2187,7 @@ export default {
     const env = meter(withDb(env0), 'R:tâche planifiée');
     ctx.waitUntil((async () => {
       const t0 = Date.now();
+      await maintenance(withDb(env0)).catch(e => console.error('entretien', e));   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
       await events.tick(env, ctx).catch(e => console.error('événements', e));
@@ -2195,8 +2197,6 @@ export default {
       await market.tick(env, ctx).catch(e => console.error('market', e));
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
-      await pruneLogs(withDb(env0)).catch(() => {});
-      await run(withDb(env0), "DELETE FROM event_progress WHERE key LIKE 'ip:%' AND n < ?", Math.floor((now() - 90 * 86400000) / 1000)).catch(() => {});   // empreintes de connexion : 90 jours
       await flushAll(withDb(env0));
     })());
   },
