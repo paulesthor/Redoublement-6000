@@ -17,6 +17,7 @@ import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.j
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
+import { isBanned, bannedIds, forgetBans, BAN_MSG } from './ban.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -695,6 +696,7 @@ async function gameBadges(env, uid) {
   return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new', ex: +(ex?.n || 0) };
 }
 route('GET', '/api/me', async ({ env, ctx, user, req }) => {
+  if (!user.is_admin && await isBanned(env, user.id)) return { ...publicUser(user), packs: 0, nextPackIn: 0, banned: true, banMsg: BAN_MSG };   // aucune génération de paquet, aucune tâche de fond
   recordIpSoon(env, ctx, user.id, req);   // au plus une écriture par heure et par compte
   // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
   if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
@@ -1833,6 +1835,30 @@ route('GET', '/api/admin/overview', admin(async ({ env }) => {
   const aiErr = (await one(env, "SELECT value FROM settings WHERE key = 'ai_last_error'").catch(() => null))?.value ?? null;
   return { users, bots, cards, owned, auctions, packs, coins, subs, quizzes, aiToday, aiErr, reserve, bids, online: (await onlineIds(env)).length, version: CFG.VERSION };
 }));
+/** Suspension d'un compte (administrateur) : plus aucune action, plus de paquets gratuits, gains de pièces mis de côté ; la levée rend les pièces mises de côté et repart sans rattrapage de paquets. */
+route('POST', '/api/admin/ban', admin(async ({ env, body }) => {
+  await ensureGameSchema(env);
+  const u = await one(env, 'SELECT id, name, is_admin, is_bot FROM users WHERE LOWER(name) = LOWER(?)', String(body.name || '').trim());
+  if (!u) bad('Joueur introuvable', 404);
+  if (+u.is_admin || +u.is_bot) bad('On ne suspend ni un administrateur ni un joueur simulé', 400);
+  const ids = new Set([...(await bannedIds(env))]); const on = body.ban !== false;
+  if (on) ids.add(+u.id); else ids.delete(+u.id);
+  await run(env, "INSERT INTO settings (key, value) VALUES ('banned_users', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify([...ids]));
+  forgetBans();
+  if (on) await run(env, 'INSERT INTO coin_freeze (user_id, until, held, ts) VALUES (?,?,0,?) ON CONFLICT (user_id) DO UPDATE SET until = excluded.until', +u.id, now() + 3650 * 86400000, now());
+  else {
+    await run(env, 'UPDATE coin_freeze SET until = ? WHERE user_id = ?', now() - 5000, +u.id);
+    await run(env, 'UPDATE users SET pack_ts = ? WHERE id = ?', now(), +u.id);                                                    // pas de paquets gratuits « de rattrapage »
+    await run(env, "UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", Math.floor(now() / 1000), +u.id);   // ni de colis de l'événement
+    await sanctions.release(env);                                                                                                 // les gains mis de côté pendant la suspension sont rendus
+  }
+  return { ok: true, name: u.name, banned: on };
+}));
+route('GET', '/api/admin/bans', admin(async ({ env }) => {
+  const ids = [...(await bannedIds(env))];
+  const rows = ids.length ? await all(env, `SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids) : [];
+  return { banned: rows.map(r => ({ id: +r.id, name: r.name })) };
+}));
 /** Comptes qui partagent la même connexion internet (empreinte identique), tous joueurs confondus. */
 route('GET', '/api/admin/ip-shares', admin(async ({ env }) => {
   await ensureGameSchema(env);
@@ -1892,7 +1918,8 @@ route('GET', '/api/admin/investigate', admin(async ({ env, query }) => {
   if (extra > 40 && +inv.q > 60) flags.push(`${extra} exemplaires de plus que ses ${u.packs_opened} paquets ouverts n'en expliquent (hors quêtes, récompenses et événements)`);
   if (now() - +u.created < 48 * 3600000 && +u.coins > 5000) flags.push(`Compte de moins de 48 h avec ${u.coins} pièces`);
   if (+devices.n > 2) flags.push(`${devices.n} appareils abonnés aux notifications`);
-  return { player: { id, name: u.name, created: +u.created, age: ago(now() - +u.created), coins: +u.coins, packsOpened: +u.packs_opened, cards: +inv.q, distinct: +inv.d, extraCards: extra, duelWins: +u.duel_wins, duelLosses: +u.duel_losses, sessions: +sessions.n, devices: +devices.n },
+  const banned = (await bannedIds(env)).has(id);
+  return { player: { id, name: u.name, banned, created: +u.created, age: ago(now() - +u.created), coins: +u.coins, packsOpened: +u.packs_opened, cards: +inv.q, distinct: +inv.d, extraCards: extra, duelWins: +u.duel_wins, duelLosses: +u.duel_losses, sessions: +sessions.n, devices: +devices.n },
     sharedConnection: shared, peers: list.slice(0, 12), trades: trades.slice(0, 15).map(t => ({ when: +t.created, dir: +t.from_id === id ? 'envoyé' : 'reçu', offer: t.offer, rarity: t.orar, want: t.want, price: t.price, status: t.status, peer: peers.get(+t.from_id === id ? +t.to_id : +t.from_id)?.name })), flags: [...new Set(flags)].slice(0, 20), note: 'Lecture seule. Les messages privés ne sont pas lus : seul leur nombre apparaît.' };
 }));
 route('GET', '/api/admin/users', admin(async ({ env }) => {
@@ -2094,6 +2121,7 @@ async function maintenanceOn(env) {
   if (now() - mnt.t > 10000) { await ensureGameSchema(env); const rows = await all(env, "SELECT key FROM settings WHERE key IN ('reset_done', 'maintenance_off')"); mnt = { t: now(), on: rows.length === 0 }; }
   return mnt.on;
 }
+const BAN_OK = /^\/api\/(me|version|config|logout|clientlog)$/;   // restent ouvertes pour un compte suspendu (l'écran de suspension se met à jour avec /me)
 const MAINT_OK = /^\/api\/(me|version|config|logout|clientlog|reset|reset\/choose|admin\/.*)$/;   // restent ouvertes : l'écran de maintenance se met à jour avec /me
 async function api(req, env0, ctx, url) {
   const t0 = Date.now();
@@ -2109,6 +2137,7 @@ async function api(req, env0, ctx, url) {
       if (!user) bad('Non connecté', 401);
       env = meter(env0, 'R:' + label, 'U:' + user.name);
     }
+    if (r.auth && !user.is_admin && !BAN_OK.test(url.pathname) && await isBanned(env, user.id)) { status = 403; return json({ error: BAN_MSG, banned: true }, 403); }   // compte suspendu : rien n'est permis
     if (r.auth && !user.is_admin && !MAINT_OK.test(url.pathname) && await maintenanceOn(env)) bad('Maintenance en cours : la remise à zéro se prépare, le jeu revient très vite !', 503);
     if (r.auth && req.method === 'POST' && SPEND_ROUTE.test(url.pathname)) {                    // sanction : aucune dépense de pièces (paquets, enchères, paris, banque…)
       const end = await sanctions.check(env, user);

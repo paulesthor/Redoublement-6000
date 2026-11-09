@@ -1,0 +1,21 @@
+const SH = '/tmp/claude-0/-home-user-Redoublement-6000/37801998-3ced-5dcb-85ba-95e236d12c04/scratchpad/';
+const mkB = async token => { const c = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); localStorage.setItem('wm_sound', '0'); localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, token); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8767/'); await p.waitForTimeout(2500); return p; };
+// l'administrateur suspend Bob depuis l'onglet Enquête
+const pa = await mkB(A); await pa.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });
+await pa.evaluate(async () => { adminTab = 'probe'; tab = 'admin'; await render(); }); await pa.waitForSelector('#bn-name', { timeout: 10000 });
+await pa.fill('#bn-name', 'Bob'); await pa.click('#bn-go'); await pa.waitForTimeout(600);
+await pa.evaluate(() => { const b = [...document.querySelectorAll('#modal button')].find(x => /Suspendre/.test(x.textContent)); b?.click(); }); await pa.waitForTimeout(2500);
+ok('onglet Enquête : Bob apparaît dans les comptes suspendus', (await pa.textContent('#adm')).includes('Lever la suspension') && /Bob/.test(await pa.textContent('#adm')));
+await pa.screenshot({ path: SH + 'ban-admin.png' });
+// Bob ouvre l'appli : écran bloquant
+const pb = await mkB(B);
+ok('joueur suspendu : écran « Compte suspendu » bloquant', !!(await pb.$('#banned')) && /Compte suspendu/.test(await pb.textContent('#banned')));
+await pb.screenshot({ path: SH + 'ban-joueur.png' });
+// levée depuis l'administration
+await pa.click('[data-unban]'); await pa.waitForTimeout(500);
+await pa.evaluate(() => { const b = [...document.querySelectorAll('#modal button')].find(x => /Lever/.test(x.textContent)); b?.click(); }); await pa.waitForTimeout(2500);
+ok('suspension levée depuis l\'administration', (await pa.textContent('#adm')).includes('Aucun compte suspendu'));
+await pb.reload(); await pb.waitForTimeout(2500);
+ok('le joueur retrouve l\'appli', !(await pb.$('#banned')));
+ok('aucune erreur JS', pa.errs.length + pb.errs.length === 0, JSON.stringify([...pa.errs, ...pb.errs]));
+process.exit(0);

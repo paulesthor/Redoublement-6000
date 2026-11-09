@@ -1,5 +1,6 @@
 // Durable Object unique : WebSocket de tous les joueurs (présence, défis, duels de quiz, combats de cartes, notifications).
 // L'état des parties en cours vit en mémoire ; seuls les résultats (pièces, victoires) sont écrits dans D1.
+import { isBanned } from './ban.js';
 import CFG from './config.js';
 import { withDb } from './pg.js';
 import { one, all, run, st, placeholders, cardRows, caseSql, RANK, userFromToken, randomPool, meter, takeMeter, isQuotaError, nextResetMs, QUOTA_MSG } from './util.js';
@@ -132,6 +133,7 @@ export class Lobby {
 
     const user = await userFromToken(this.env, url.searchParams.get('token'));
     if (!user) return new Response('Non connecté', { status: 401 });
+    if (!user.is_admin && await isBanned(this.env, user.id)) return new Response('Compte suspendu', { status: 403 });
     const [client, server] = Object.values(new WebSocketPair());
     server.accept();
     if (!this.clients.has(user.id)) this.clients.set(user.id, new Set());

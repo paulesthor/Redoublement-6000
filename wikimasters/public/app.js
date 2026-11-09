@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.58';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.59';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -65,6 +65,7 @@ async function fetchJson(path, body) {
   let j = {}; try { j = JSON.parse(raw); } catch { /* réponse vide */ }
   if (r.status === 401 && token) logout();
   if (r.status === 503 && /Maintenance/.test(j.error || '')) maintenanceScreen();
+  if (r.status === 403 && j.banned) banScreen(j.error);
   if (!r.ok) { if (j.quota) showQuota(j.until); const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
   if (quotaBar && Date.now() - quotaAt > 8000) hideQuota();   // la base répond à nouveau (on laisse 8 s après la dernière erreur pour ne pas clignoter)
   if (!body && SWR.test(path)) gcache.set(path, { t: Date.now(), raw });
@@ -1357,16 +1358,24 @@ views.admin = async v => {
       const draw = async name => {
         box.innerHTML = '<p class="mut" style="text-align:center;padding:24px 0">Enquête en cours…</p>';
         let R; try { R = await api('/admin/investigate' + (name ? '?name=' + encodeURIComponent(name) : '')); } catch (e) { box.innerHTML = `<div class="panel"><b>Enquête impossible</b><p class="mut">${esc(e.message)}</p><button id="pb-back">Retour</button></div>`; $('#pb-back').onclick = () => draw(''); return; }
-        const SH = await api('/admin/ip-shares').catch(() => ({ groups: [] }));
+        const SH = await api('/admin/ip-shares').catch(() => ({ groups: [] })), BN = await api('/admin/bans').catch(() => ({ banned: [] }));
         const P = R.player, d = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Connexions partagées</h3>${SH.groups.length ? SH.groups.map(g => `<p style="margin:4px 0"><b>${g.accounts.map(x => esc(x.name)).join(' · ')}</b> <small class="mut">(même connexion, dernière vue ${new Date(Math.max(...g.accounts.map(x => x.lastSeen))).toLocaleDateString('fr-FR')})</small></p>`).join('') : '<p class="mut" style="margin:0">Aucun compte ne partage la même connexion pour l\'instant. Les alertes arrivent en notification, pour les administrateurs seulement.</p>'}</div>
+        box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Suspensions de compte</h3><p class="mut" style="margin:0 0 6px;font-size:12px">Un compte suspendu ne peut plus rien faire, dans les deux modes : ni jouer, ni gagner de paquets ou de pièces, jusqu'à ce que tu lèves la suspension.</p>
+          ${BN.banned.length ? BN.banned.map(b => `<div class="row" style="align-items:center;margin:4px 0"><b style="flex:1">${esc(b.name)}</b><button class="plain" data-unban="${esc(b.name)}">Lever la suspension</button></div>`).join('') : '<p class="mut" style="margin:0 0 6px">Aucun compte suspendu.</p>'}
+          <div class="row" style="margin-top:8px"><input id="bn-name" placeholder="Pseudo à suspendre" style="flex:1"><button id="bn-go">Suspendre</button></div></div>
+        <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Connexions partagées</h3>${SH.groups.length ? SH.groups.map(g => `<p style="margin:4px 0"><b>${g.accounts.map(x => esc(x.name)).join(' · ')}</b> <small class="mut">(même connexion, dernière vue ${new Date(Math.max(...g.accounts.map(x => x.lastSeen))).toLocaleDateString('fr-FR')})</small></p>`).join('') : '<p class="mut" style="margin:0">Aucun compte ne partage la même connexion pour l\'instant. Les alertes arrivent en notification, pour les administrateurs seulement.</p>'}</div>
         <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Enquête : ${esc(P.name)}</h3>
           <div class="admgrid"><div><span>Créé il y a</span><b>${esc(P.age)}</b></div><div><span>Pièces</span><b>${fmt(P.coins)}</b></div><div><span>Paquets ouverts</span><b>${fmt(P.packsOpened)}</b></div><div><span>Cartes (exemplaires)</span><b>${fmt(P.cards)}</b></div><div><span>Sans origine connue</span><b>${fmt(P.extraCards)}</b></div><div><span>Appareils / sessions</span><b>${P.devices} / ${P.sessions}</b></div></div>
-          <div class="row" style="margin-top:10px"><input id="pb-name" placeholder="Autre joueur (pseudo exact)" style="flex:1"><button class="plain" id="pb-go">Enquêter</button><button class="plain" id="pb-last">Dernier créé</button></div></div>
+          <div class="row" style="margin-top:10px"><input id="pb-name" placeholder="Autre joueur (pseudo exact)" style="flex:1"><button class="plain" id="pb-go">Enquêter</button><button class="plain" id="pb-last">Dernier créé</button></div>
+          <div class="row" style="margin-top:8px"><button id="pb-ban" class="${P.banned ? 'plain' : ''}" style="flex:1">${P.banned ? 'Lever la suspension de ' : 'Suspendre le compte de '}${esc(P.name)}</button></div></div>
           <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Alertes</h3>${R.flags.length ? `<ul class="ru-list">${R.flags.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : '<p class="mut">Aucune alerte automatique. Cela ne prouve pas l\'absence de triche.</p>'}</div>
           <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Relations avec les autres joueurs</h3>${R.peers.length ? R.peers.map(p => `<div style="padding:6px 0;border-top:1px solid #ffffff14"><b>${esc(p.name || '#' + p.id)}</b>${p.friend ? ' <small>ami</small>' : ''}<div class="mut" style="font-size:12px">${p.trades} échange${p.trades > 1 ? 's' : ''} · ${p.auctionsSold} enchère${p.auctionsSold > 1 ? 's' : ''} vendue${p.auctionsSold > 1 ? 's' : ''} · ${p.auctionsBought} achetée${p.auctionsBought > 1 ? 's' : ''} · ${p.dms} message${p.dms > 1 ? 's' : ''} privé${p.dms > 1 ? 's' : ''}</div><div class="mut" style="font-size:12px">Pièces reçues : ${fmt(p.coinsOut + p.auctionCoinsOut)} · envoyées : ${fmt(p.coinsIn + p.auctionCoinsIn)} · cartes données : ${p.giftsOut + p.giftsIn}</div></div>`).join('') : '<p class="mut">Aucun échange, aucune enchère ni message avec un autre joueur.</p>'}</div>
           <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Derniers échanges directs</h3>${R.trades.length ? R.trades.map(t => `<p class="mut" style="margin:4px 0;font-size:12.5px">${d(t.when)} · ${esc(t.dir)} · ${esc(t.offer)} (${esc(t.rarity)})${t.want ? ' contre ' + esc(t.want) : t.price != null ? ' pour ' + fmt(t.price) + ' pièces' : ''} · ${esc(t.status)} · avec ${esc(t.peer || '?')}</p>`).join('') : '<p class="mut">Aucun échange direct.</p>'}</div>
           <p class="mut" style="font-size:12px">${esc(R.note)}</p>`;
+        const banDo = safe(async (name, ban) => { if (!(await ask(ban ? `Suspendre « ${name} » ?` : `Lever la suspension de « ${name} » ?`, [], { text: ban ? 'Le compte ne pourra plus rien faire (aucun jeu, aucun paquet, aucune pièce) jusqu\'à ce que tu lèves la suspension. Les pièces qu\'il aurait gagnées sont mises de côté et rendues à la levée.' : 'Il rejouera tout de suite. Aucun paquet de rattrapage pour la période suspendue.', ok: ban ? 'Suspendre' : 'Lever' }))) return; await api('/admin/ban', { name, ban }); toast(ban ? `${name} est suspendu` : `${name} peut rejouer`, 'ok'); draw(name); });
+        $('#bn-go').onclick = () => { const n = $('#bn-name').value.trim(); if (n) banDo(n, true); };
+        box.querySelectorAll('[data-unban]').forEach(b => b.onclick = () => banDo(b.dataset.unban, false));
+        $('#pb-ban').onclick = () => banDo(P.name, !P.banned);
         $('#pb-go').onclick = () => { const n = $('#pb-name').value.trim(); if (n) draw(n); };
         $('#pb-last').onclick = () => draw('');
       };
@@ -1611,6 +1620,7 @@ const render = safe(async () => {
 });
 async function refreshMe() {
   me = await api('/me');
+  if (me.banned) { banScreen(me.banMsg); return; }
   // l'état de l'événement et les scripts du thème sont prêts AVANT le premier affichage : plus d'accueil classique qui apparaît puis se corrige
   await Promise.race([loadCommu(), new Promise(r => setTimeout(r, 1500))]).catch(() => {});
   await syncUssrUi().catch(() => {});
@@ -2758,6 +2768,15 @@ function sanctionScreen(then) {
 }
 /** Écran de maintenance (de minuit jusqu'à la fin de la remise à zéro) : bloque le jeu, se met à jour tout seul. */
 let maintTimer = null;
+/** Compte suspendu par l'administrateur : écran bloquant (aucun jeu, aucun gain). Se met à jour dès que la suspension est levée. */
+function banScreen(msg) {
+  if ($('#banned')) return;
+  const d = document.createElement('div'); d.id = 'banned'; d.setAttribute('role', 'alertdialog');
+  d.innerHTML = `<div class="maintbox"><h2>Compte suspendu</h2><p>${esc(msg || 'Ton compte est suspendu par l\'administration.')}</p><p class="mut" style="font-size:12px">Tu ne reçois ni paquets ni pièces pendant la suspension. Elle prendra fin quand l'administrateur l'aura décidé.</p><div class="row"><button id="bn-r">Réessayer</button><button class="plain" id="bn-x">Se déconnecter</button></div></div>`;
+  document.body.append(d); document.body.classList.add('noscroll');
+  const check = async () => { try { const r = (await fetchJson('/me')).j; if (!r.banned) location.reload(); } catch { /* on réessaiera */ } };
+  $('#bn-r').onclick = check; $('#bn-x').onclick = () => logout(); setInterval(check, 60000);
+}
 function maintenanceScreen() {
   if ($('#maint')) return;
   const d = document.createElement('div'); d.id = 'maint'; d.setAttribute('role', 'alertdialog');
