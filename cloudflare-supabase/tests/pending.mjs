@@ -1,0 +1,22 @@
+// Annonce programmée « dénonciation » : appliquée automatiquement une seule fois, quand l'événement est ouvert à tous et que les deux joueurs sont inscrits.
+import './api.mjs';
+const { call, ok, DB, J, done } = globalThis.__T;
+const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+const reg = async n => { const [, r] = await call(null, 'POST', '/api/register', { name: n, password: 'secret1' }); return r.token; };
+const ADM = await reg('Chef'), MICH = await reg('Michelleclebresil'), JUST = await reg('Just1e');
+await q("UPDATE users SET is_admin = 1 WHERE name = 'Chef'"); await q("UPDATE users SET coins = 1000 WHERE name IN ('Michelleclebresil','Just1e')");
+const wr = async n => +(await q("SELECT p.wr w FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE u.name = ?", n))[0].w;
+let [, v] = await call(MICH, 'GET', '/api/commu'); ok('événement fermé : rien n\'est appliqué', !v.notice);
+await call(ADM, 'POST', '/api/commu/set', { on: true, scope: 'admin' }); await call(ADM, 'GET', '/api/commu'); ok('ouvert pour l\'administrateur seul : rien n\'est appliqué', true);
+await call(ADM, 'POST', '/api/commu/set', { on: true, scope: 'all' });
+[, v] = await call(ADM, 'GET', '/api/commu'); ok('joueurs pas encore inscrits : en attente, rien d\'appliqué', !v.notice);
+await call(MICH, 'POST', '/api/commu/join', {}); [, v] = await call(MICH, 'GET', '/api/commu'); ok('un seul des deux inscrit : toujours en attente', !v.notice && await wr('Michelleclebresil') === 500);
+await call(JUST, 'POST', '/api/commu/join', {});
+[, v] = await call(JUST, 'GET', '/api/commu');
+ok('les deux inscrits : communiqué publié automatiquement', v.notice?.title?.startsWith('Dénonciation exemplaire') && v.notice.adjust.length === 2, J(v.notice));
+ok('+50 ₽ pour Michelleclebresil, −50 ₽ pour Just1e', await wr('Michelleclebresil') === 550 && await wr('Just1e') === 450, J({ m: await wr('Michelleclebresil'), j: await wr('Just1e') }));
+for (let i = 0; i < 3; i++) await Promise.all([call(MICH, 'GET', '/api/commu'), call(JUST, 'GET', '/api/commu'), call(ADM, 'GET', '/api/commu')]);
+ok('appliqué une seule fois, même avec des requêtes simultanées', await wr('Michelleclebresil') === 550 && await wr('Just1e') === 450);
+await call(ADM, 'POST', '/api/commu/notice', { clear: true }); await call(JUST, 'GET', '/api/commu');
+ok('retiré par l\'administrateur : ne revient pas et ne se réapplique pas', await wr('Just1e') === 450 && !(await call(JUST, 'GET', '/api/commu'))[1].notice);
+done();

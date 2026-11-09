@@ -105,8 +105,26 @@ export function installPlan(d) {
     await run(env, 'UPDATE plan_progress SET earned = earned + ?, wr = wr + ?, earn_ts = ? WHERE user_id = ?', allowed, allowed, Date.now(), uid);
     return allowed;
   }
+  /** Annonces programmées (à usage unique) : appliquées automatiquement la première fois que l'événement est ouvert à tous et que les joueurs concernés sont inscrits. */
+  const PENDING = [{ key: 'denonciation-1', notice: {
+    title: 'Dénonciation exemplaire : le Parti remercie un camarade vigilant', stamp: 'DÉNONCÉ', btn: 'Vive la vigilance !',
+    text: 'Le camarade Michelleclebresil a signalé au Parti que le camarade Just1e avait honteusement volé le peuple.\n\nLe Parti a mené une enquête approfondie. Il a surtout cru le dénonciateur : c\'est plus rapide, et ça évite de se salir les mains.\n\nEn récompense de sa vigilance, 50 ₽ sont versés au camarade Michelleclebresil. 50 ₽ sont confisqués à Just1e, pour manque de discrétion.\n\nLe Parti rappelle que voler le peuple est un crime, mais se faire prendre est une faute professionnelle. La dénonciation est un devoir civique. Elle est aussi très bien payée.',
+    adjust: [{ name: 'Michelleclebresil', delta: 50 }, { name: 'Just1e', delta: -50 }] } }];
+  async function runPending(env) {
+    if (!(await rawOn(env)) || !(await scopeAll(env))) return;
+    for (const p of PENDING) {
+      if (await setting(env, 'commu_pend_' + p.key)) continue;
+      const names = p.notice.adjust.map(a => a.name.toLowerCase());
+      const found = await d.all(env, 'SELECT LOWER(u.name) n FROM users u JOIN plan_progress p ON p.user_id = u.id WHERE p.joined > 1 AND LOWER(u.name) IN (' + names.map(() => '?').join(',') + ')', ...names);
+      if (found.length !== names.length) continue;   // les joueurs ne sont pas encore tous inscrits : on réessaiera
+      const claim = await run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", 'commu_pend_' + p.key, String(Date.now()));
+      if (!claim.meta.changes) continue;   // une autre requête s'en occupe : une seule application
+      try { await publishNotice(env, p.notice); } catch (e) { console.error('annonce programmée', p.key, e); }
+    }
+  }
   const noticeOf = async env => { try { return JSON.parse((await setting(env, 'commu_notice')) || 'null'); } catch { return null; } };
   const commuView = async (env, user) => {
+    try { await runPending(env); } catch (e) { console.error('annonces programmées', e); }
     let r = await rowOf(env, user.id); const on = await isOn(env, user), day = dayOf(); let nextIn = 0;
     if (on && +r.joined >= 1) { const g = await regen(env, user.id, r); r = g.r; nextIn = g.nextIn; }
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
@@ -175,11 +193,8 @@ export function installPlan(d) {
     await putSetting(env, 'commu_on_prev', body.on ? '1' : '0'); if (!body.on) await putSetting(env, 'commu_paused', '0');
     return commuView(env, user);
   });
-  // communiqué du Parti : écran d'annonce montré une fois à chaque joueur inscrit, avec d'éventuels ajustements de ₽ appliqués à la publication
-  route('POST', '/api/commu/notice', async ({ env, user, body }) => {
-    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
-    await ensureGameSchema(env);
-    if (body.clear) { await putSetting(env, 'commu_notice', 'null'); return { ok: true, cleared: true }; }
+  /** Publie un communiqué : valide les joueurs, applique les ajustements de ₽, enregistre l'annonce. */
+  async function publishNotice(env, body) {
     const title = String(body.title || '').trim().slice(0, 90), text = String(body.text || '').trim().slice(0, 900), stamp = String(body.stamp || 'COMMUNIQUÉ').trim().slice(0, 24), btn = String(body.btn || 'Pour la gloire du Plan').trim().slice(0, 40);
     if (!title || !text) bad('Titre et texte obligatoires', 400);
     const adj = Array.isArray(body.adjust) ? body.adjust.slice(0, 20) : [], todo = [];
@@ -198,6 +213,13 @@ export function installPlan(d) {
     const notice = { id: Date.now(), title, text, stamp, btn, adjust: applied.map(x => ({ name: x.name, delta: x.delta })) };
     await putSetting(env, 'commu_notice', JSON.stringify(notice));
     return { ok: true, notice, applied };
+  }
+  // communiqué du Parti : écran d'annonce montré une fois à chaque joueur inscrit, avec d'éventuels ajustements de ₽ appliqués à la publication
+  route('POST', '/api/commu/notice', async ({ env, user, body }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env);
+    if (body.clear) { await putSetting(env, 'commu_notice', 'null'); return { ok: true, cleared: true }; }
+    return publishNotice(env, body);
   });
   // pause : plus aucun gain, achat, ouverture, réclamation ni inscription ; rien n'est coupé ni remis à zéro, l'état reprend tel quel
   route('POST', '/api/commu/pause', async ({ env, user, body }) => {
