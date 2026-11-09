@@ -700,7 +700,7 @@ route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
-  ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {}));
+  if (now() - lastDailyWin >= (globalThis.__CACHE_MS ?? 30000)) { lastDailyWin = now(); ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {})); }   // au plus toutes les 30 s (et non à chaque ouverture de l'appli)
   if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   if (!liftDone) { liftDone = true; ctx.waitUntil(sanctions.lift(env).catch(() => { liftDone = false; })); }   // opération unique : fin des sanctions de pièces
   if (!expedDone) { expedDone = true; ctx.waitUntil((async () => { await economy.capExpeditionsOnce(env); await economy.finishExpeditionsOnce(env, ctx); })().catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
@@ -793,11 +793,14 @@ route('POST', '/api/me/avatar', async ({ env, user, body }) => {
   await env.DB.batch([st(env, 'INSERT INTO avatars (user_id, data, ts) VALUES (?,?,?) ON CONFLICT (user_id) DO UPDATE SET data = excluded.data, ts = excluded.ts', user.id, m[1], v), st(env, 'UPDATE users SET avatar_v = ? WHERE id = ?', v, user.id)]);
   return { ok: true, v };
 });
+let cosCache = { t: 0, v: null };
 route('GET', '/api/cosmetics', async ({ env }) => {
+  if (cosCache.v && now() - cosCache.t < (globalThis.__CACHE_MS ?? 30000)) return cosCache.v;   // même réponse pour tous : relue au plus toutes les 30 s
   await ensureGameSchema(env);
   const rows = await all(env, "SELECT u.id, u.name, u.avatar_v v, u.title ti, p.perks pk FROM users u LEFT JOIN plan_progress p ON p.user_id = u.id WHERE u.is_bot = 0 AND (u.avatar_v IS NOT NULL OR u.title IS NOT NULL OR p.perks LIKE '%frame_%' OR p.perks LIKE '%gold_outline%')");
   const frameOf = pk => { try { const a = JSON.parse(pk || '[]'); return ['gold_outline', 'frame_gold', 'frame_hammer', 'frame_star'].find(f => a.includes(f)) ?? null; } catch { return null; } };   // cadre le plus prestigieux gagné pendant l'événement
-  return { players: rows.map(({ pk, ...r }) => ({ ...r, fr: frameOf(pk) })), labels: Object.fromEntries(TITLES.map(x => [x.id, x.label])) };
+  cosCache = { t: now(), v: { players: rows.map(({ pk, ...r }) => ({ ...r, fr: frameOf(pk) })), labels: Object.fromEntries(TITLES.map(x => [x.id, x.label])) } };
+  return cosCache.v;
 });
 route('GET', '/api/titles', async ({ env, ctx, user }) => {
   const { owned, added, ctx: c } = await syncTitles(env, user.id);
@@ -885,9 +888,12 @@ route('POST', '/api/cards/enrich', async ({ env, body }) => {
   await enrich(env, ids);
   return { cards: (await cardRows(env, ids)).map(c => ({ id: c.id, extract: c.extract, image: c.image, enriched: c.enriched })) };
 });
-route('GET', '/api/hits', async ({ env }) => ({
-  hits: (await all(env, 'SELECT username AS user, title, shiny, ts FROM hits ORDER BY id DESC LIMIT 10')).map(h => ({ ...h, shiny: !!h.shiny })),
-}));
+let hitsCache = { t: 0, v: null };
+route('GET', '/api/hits', async ({ env }) => {
+  if (hitsCache.v && now() - hitsCache.t < (globalThis.__CACHE_MS ?? 10000)) return hitsCache.v;   // les 10 derniers tirages : identiques pour tous, relus au plus toutes les 10 s
+  hitsCache = { t: now(), v: { hits: (await all(env, 'SELECT username AS user, title, shiny, ts FROM hits ORDER BY id DESC LIMIT 10')).map(h => ({ ...h, shiny: !!h.shiny })) } };
+  return hitsCache.v;
+});
 
 const AVG = '(SELECT CAST(ROUND(AVG(price)) AS INTEGER) FROM (SELECT price FROM sales WHERE card_id = c.id ORDER BY id DESC LIMIT 10))';
 route('POST', '/api/favorites', async ({ env, ctx, user, body }) => {
@@ -1287,29 +1293,47 @@ route('GET', '/api/quiz/preview', async ({ env, user, query }) => {
   const questions = await battleQuestions(env, card, page.extract, { cards: pool }, 3);
   return { title: card.title, ia: !!env.AI, deja_en_base: cached, questions_ia_disponibles: ai, derniere_erreur_ia: ai ? null : lastAiError(), questions: questions.map(x => ({ source: x.ai ? 'ia' : 'regles', question: x.text, choix: x.options, bonne_reponse: x.options[x.answer] })) };
 });
+let lastDailyWin = 0;
 let lbCache = { t: 0, v: null };                                        // classement partagé : lecture lourde (toutes les collections), gardé 60 s
 const byRar = (map, col = 'i.rar') => `CASE ${col} ${RARITIES.map((r, k) => `WHEN ${k} THEN ${map[r]}`).join(' ')} ELSE 0 END`;   // valeur selon le rang de rareté
-route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < 60000 && lbCache.v) || (lbCache = { t: now(), v: {
+route('GET', '/api/leaderboard', async ({ env }) => (now() - lbCache.t < (globalThis.__CACHE_MS ?? 180000) && lbCache.v) || (lbCache = { t: now(), v: {
   players: await all(env, `SELECT u.id, u.name, u.duel_wins wins, u.duel_losses losses,
     COALESCE(SUM(${byRar(POINTS)}), 0) + u.duel_wins * 10 AS score, COUNT(i.card_id) AS uniques
     FROM users u LEFT JOIN inventory i ON i.user_id = u.id WHERE u.is_bot = 0 GROUP BY u.id ORDER BY score DESC LIMIT 50`),
 } }).v);
 
 let expedDone = false, liftDone = false;
-let auctionsCache = { t: 0, rows: null };                         // la liste est la même pour tous (hors drapeaux « à moi / en tête ») : lue au plus toutes les 8 s
-route('GET', '/api/auctions', async ({ env, ctx, user, origin }) => {
-  maybeRefill(env, ctx);
-  const settled = await settleAuctions(env, ctx);
-  await market.tick(env, ctx, origin).catch(e => console.error('market', e));
-  if (!settled) ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée (pas dans la même requête qu'un règlement : limite d'appels à la base)
-  if (now() - auctionsCache.t > 8000 || !auctionsCache.rows) {
-    auctionsCache = { t: now(), rows: await all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder,
-    c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
-    (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) bids FROM auctions a JOIN cards c ON c.id = a.card_id
-    JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id WHERE a.status = 'open' ORDER BY a.ends_at`) };
+/** Liste des enchères : UNE PAGE à la fois (40 par défaut, 100 au plus), triée et filtrée par la base. Les tâches de fond (règlement, marché, réserve) ne tournent qu'à l'ouverture de la liste, au plus toutes les 10 s. */
+let auctionsMaint = 0, auctionsCache = { t: 0 };   // auctionsCache : conservé pour les remises à zéro existantes (plus de liste complète en mémoire)
+const RAR_ORDER = "CASE c.rarity WHEN 'legendary' THEN 5 WHEN 'ultra' THEN 4 WHEN 'super' THEN 3 WHEN 'rare' THEN 2 WHEN 'uncommon' THEN 1 ELSE 0 END";
+route('GET', '/api/auctions', async ({ env, ctx, user, origin, query }) => {
+  const one_ = +query.get('id') || 0, offset = Math.max(0, Math.min(5000, Math.floor(+query.get('offset')) || 0)), limit = Math.max(1, Math.min(100, Math.floor(+query.get('limit')) || 40));
+  const sort = ['end', 'recent', 'up', 'down', 'rar', 'bids'].includes(query.get('sort')) ? query.get('sort') : 'end', f = (query.get('f') || '').slice(0, 12), qq = (query.get('q') || '').trim().slice(0, 40);
+  if (!one_ && offset === 0 && now() - auctionsMaint >= (globalThis.__MAINT_MS ?? 10000)) {
+    auctionsMaint = now();
+    maybeRefill(env, ctx);
+    const settled = await settleAuctions(env, ctx);
+    await market.tick(env, ctx, origin).catch(e => console.error('market', e));
+    if (!settled) ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée (pas dans la même requête qu'un règlement : limite d'appels)
   }
-  const mineBids = new Set((await all(env, 'SELECT DISTINCT auction_id id FROM bids WHERE user_id = ?', user.id)).map(r => r.id));   // enchères où j'ai déjà misé (index bids_user)
-  return { auctions: auctionsCache.rows.map(a => ({ ...a, mine: a.seller_id === user.id, leading: a.bidder_id === user.id, bidded: mineBids.has(a.id) })) };
+  const where = ["a.status = 'open'"], args = [];
+  if (one_) { where.push('a.id = ?'); args.push(one_); }
+  if (qq) { where.push("(c.title ILIKE ? OR s.name ILIKE ?)"); const like = '%' + qq.replace(/[\\%_]/g, m => '\\' + m) + '%'; args.push(like, like); }
+  if (f === 'mine') { where.push('a.seller_id = ?'); args.push(user.id); }
+  else if (f === 'lead') { where.push('a.bidder_id = ?'); args.push(user.id); }
+  else if (f === 'bid') { where.push('(a.bidder_id = ? OR EXISTS (SELECT 1 FROM bids bb WHERE bb.auction_id = a.id AND bb.user_id = ?))'); args.push(user.id, user.id); }
+  else if (RARITIES.includes(f)) { where.push('c.rarity = ?'); args.push(f); }
+  const order = { end: 'a.ends_at, a.id', recent: 'a.id DESC', up: 'GREATEST(a.bid, a.start_price), a.id', down: 'GREATEST(a.bid, a.start_price) DESC, a.id', rar: `${RAR_ORDER} DESC, GREATEST(a.bid, a.start_price) DESC, a.id`, bids: 'bids DESC, a.id' }[sort];
+  const from = 'FROM auctions a JOIN cards c ON c.id = a.card_id JOIN users s ON s.id = a.seller_id LEFT JOIN users b ON b.id = a.bidder_id WHERE ' + where.join(' AND ');
+  const [rows, total, mine, myBids] = await Promise.all([
+    all(env, `SELECT a.id, a.start_price, a.bid, a.ends_at, a.seller_id, a.bidder_id, s.name seller, s.is_bot seller_bot, b.name bidder, c.id card_id, c.title, c.image, c.rarity, c.atk, c.def, ${AVG} avg_price,
+      (SELECT COUNT(*) FROM bids WHERE auction_id = a.id) bids, EXISTS (SELECT 1 FROM bids bb WHERE bb.auction_id = a.id AND bb.user_id = ?) bidded ${from} ORDER BY ${order} LIMIT ? OFFSET ?`, user.id, ...args, limit, offset),
+    one(env, `SELECT COUNT(*) n ${from}`, ...args),
+    one(env, "SELECT COUNT(*) n, COUNT(*) FILTER (WHERE bid > 0) with_bid, COALESCE(SUM(bid), 0) total FROM auctions WHERE seller_id = ? AND status = 'open'", user.id),
+    one(env, "SELECT COUNT(*) n FROM auctions a WHERE a.status = 'open' AND (a.bidder_id = ? OR EXISTS (SELECT 1 FROM bids bb WHERE bb.auction_id = a.id AND bb.user_id = ?))", user.id, user.id),
+  ]);
+  return { auctions: rows.map(a => ({ ...a, bidded: !!a.bidded, mine: a.seller_id === user.id, leading: a.bidder_id === user.id })), total: +total.n, offset, limit, more: offset + rows.length < +total.n,
+    mine: { n: +mine.n, withBid: +mine.with_bid, total: +mine.total }, myBids: +myBids.n };
 });
 route('POST', '/api/auctions', async ({ env, ctx, user, body }) => {
   const price = Math.floor(+body.price), minutes = Math.min(1440, Math.max(1, Math.floor(+body.minutes || 10)));

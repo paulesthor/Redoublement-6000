@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.57';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.58';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -218,7 +218,7 @@ function sellManySheet(list) {
 let lotOpen = null, ACH_NAMES = [];
 async function lotSheet(id) {
   const m = $('#modal'); lotOpen = id;
-  const [{ auctions }, { bids }] = await Promise.all([api('/auctions'), api(`/auctions/${id}/bids`)]);
+  const [{ auctions }, { bids }] = await Promise.all([api('/auctions?id=' + encodeURIComponent(id)), api(`/auctions/${id}/bids`)]);
   const a = auctions.find(x => x.id == id);
   if (!a) { m.hidden = true; lotOpen = null; return; }
   const min = Math.max(a.start_price, a.bid + 1);
@@ -310,7 +310,7 @@ const prefetched = new Set();
 async function prefetchNext() {
   try { (await api('/packs/next')).images.forEach(u => { if (!prefetched.has(u)) { prefetched.add(u); new Image().src = u; } }); } catch { /* pas grave */ }
 }
-const schedulePrefetch = () => [2500, 8000, 16000].forEach(ms => setTimeout(prefetchNext, ms));
+const schedulePrefetch = () => [3000, 12000].forEach(ms => setTimeout(prefetchNext, ms));   // 2 relectures du paquet suivant (au lieu de 3) : moins de requêtes
 
 /** Images de fond chargées seulement quand la carte approche de l'écran (album de centaines de cartes). */
 let lazyObs = null;
@@ -779,13 +779,13 @@ const views = {
   },
 
   async market(v) {
-    const { auctions } = await api('/auctions');
+    // la liste arrive PAR PAGES de 30 (tri, filtre et recherche faits par la base) : on ne charge plus tout le marché à chaque ouverture
+    let auctions = [], total = 0, more = false, minfo = { n: 0, withBid: 0, total: 0 }, myBids = 0;
+    const SORTS = { end: 'Bientôt terminées', recent: 'Plus récentes', up: 'Prix croissant', down: 'Prix décroissant', rar: 'Rareté', bids: 'Plus d\'offres' };
+    const url = off => `/auctions?limit=30&offset=${off}&sort=${mk.sort}${mk.f ? '&f=' + encodeURIComponent(mk.f) : ''}${mk.q.trim() ? '&q=' + encodeURIComponent(mk.q.trim()) : ''}`;
+    const load = async reset => { const r = await api(url(reset ? 0 : auctions.length)); auctions = reset ? r.auctions : [...auctions, ...r.auctions]; total = r.total; more = r.more; minfo = r.mine; myBids = r.myBids; };
+    await load(true);
     const cur = a => a.bid || a.start_price;
-    const SORTS = {
-      end: ['Bientôt terminées', (x, y) => x.ends_at - y.ends_at], recent: ['Plus récentes', (x, y) => y.id - x.id],
-      up: ['Prix croissant', (x, y) => cur(x) - cur(y)], down: ['Prix décroissant', (x, y) => cur(y) - cur(x)],
-      rar: ['Rareté', (x, y) => RANK[y.rarity] - RANK[x.rarity] || cur(y) - cur(x)], bids: ['Plus d\'offres', (x, y) => (y.bids || 0) - (x.bids || 0)],
-    };
     const row = a => `<div class="item lot" style="--c:var(--${a.rarity})">
           <div class="thumb ${a.image ? '' : 'noimg'}" ${a.image ? `style="background-image:url('${esc(a.image)}')"` : ''}>${a.image ? '' : noimg(a)}<span class="chip" style="--c:var(--${a.rarity})">${ABBR[a.rarity]}</span></div>
           <div class="info"><div class="nm">${esc(a.title)}</div>
@@ -793,30 +793,30 @@ const views = {
             <div class="price">${ico('coin')}${cur(a)}<span class="mut" style="font-size:12px;font-weight:400;font-family:var(--f-body)">${a.bid ? `${esc(a.bidder)}${a.leading ? ' (toi)' : ''}` : 'mise de départ'}</span></div>
             <div class="time" data-end="${a.ends_at}">${ico('clock')}<span></span></div></div>
           <div class="acts" style="align-self:center">${a.mine ? '<span class="mut">Ta vente</span>' : a.leading ? '<span class="mut" style="color:var(--ok,#4ade80)">En tête</span>' : a.bidded ? '<span class="mut" style="color:#f87171">Dépassé</span>' : ''}<button class="${a.mine ? 'plain' : ''}" data-lot="${a.id}">${a.mine ? 'Voir' : 'Enchérir'}</button></div></div>`;
-    v.innerHTML = `${pageHead('Marché', `${auctions.length} enchère${auctions.length > 1 ? 's' : ''} entre joueurs`)}${seg(MARKET_SEG, 'market')}
+    v.innerHTML = `${pageHead('Marché', `${total} enchère${total > 1 ? 's' : ''} entre joueurs`)}${seg(MARKET_SEG, 'market')}
       <div class="toolbar mk">
         <div class="search">${ico('search')}<input id="mk-q" placeholder="Chercher une carte ou un vendeur" autocomplete="off" value="${esc(mk.q)}"></div>
-        <select id="mk-s" aria-label="Tri">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${k === mk.sort ? 'selected' : ''}>Tri : ${l}</option>`).join('')}</select>
-        <div class="chips" id="mk-c"><button data-f="" class="on">Toutes</button><button data-f="bid">Mes enchères (${auctions.filter(a => a.bidded || a.leading).length})</button><button data-f="lead">Je suis en tête</button><button data-f="mine">Mes ventes</button>${cfg.rarities.map(r => `<button data-f="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
+        <select id="mk-s" aria-label="Tri">${Object.entries(SORTS).map(([k, l]) => `<option value="${k}" ${k === mk.sort ? 'selected' : ''}>Tri : ${l}</option>`).join('')}</select>
+        <div class="chips" id="mk-c"><button data-f="" class="on">Toutes</button><button data-f="bid">Mes enchères (${myBids})</button><button data-f="lead">Je suis en tête</button><button data-f="mine">Mes ventes</button>${cfg.rarities.map(r => `<button data-f="${r}" style="--cc:var(--${r})">${RAR[r]}</button>`).join('')}</div>
       </div>
       <div id="mine-sum"></div>
       <div class="list" id="lots"></div>`;
     const draw = () => {
-      const q = mk.q.trim().toLowerCase();
-      const list = auctions.filter(a => (!q || a.title.toLowerCase().includes(q) || a.seller.toLowerCase().includes(q))
-        && (!mk.f || (mk.f === 'mine' ? a.mine : mk.f === 'lead' ? a.leading : mk.f === 'bid' ? (a.bidded || a.leading) : a.rarity === mk.f))).sort(SORTS[mk.sort][1]);
-      $('#lots').innerHTML = list.length ? list.map(row).join('') : `<div class="empty">${auctions.length ? 'Aucune enchère ne correspond.' : 'Aucune enchère en cours.<br>Mets une carte en vente depuis ta collection.'}</div>`;
-      const mine = auctions.filter(a => a.mine), withBid = mine.filter(a => a.bid > 0), total = withBid.reduce((t, a) => t + a.bid, 0);
-      $('#mine-sum').innerHTML = mk.f === 'mine' ? `<div class="panel minesum"><div><small>À récupérer en ce moment</small><b>${ico('coin')}${fmt(total)}</b></div><p class="mut">${mine.length ? `${withBid.length} vente${withBid.length > 1 ? 's' : ''} avec offre${mine.length - withBid.length ? ` · ${mine.length - withBid.length} sans offre pour l'instant (la carte te revient si personne n'enchérit)` : ''}. Le total change à chaque surenchère.` : 'Tu n\'as aucune vente en cours.'}</p></div>` : '';
+      $('#lots').innerHTML = (auctions.length ? auctions.map(row).join('') : `<div class="empty">${mk.q || mk.f ? 'Aucune enchère ne correspond.' : 'Aucune enchère en cours.<br>Mets une carte en vente depuis ta collection.'}</div>`)
+        + (more ? `<button class="plain" id="mk-more" style="width:100%;margin:10px 0">Voir plus (${total - auctions.length} restante${total - auctions.length > 1 ? 's' : ''})</button>` : '');
+      $('#mine-sum').innerHTML = mk.f === 'mine' ? `<div class="panel minesum"><div><small>À récupérer en ce moment</small><b>${ico('coin')}${fmt(minfo.total)}</b></div><p class="mut">${minfo.n ? `${minfo.withBid} vente${minfo.withBid > 1 ? 's' : ''} avec offre${minfo.n - minfo.withBid ? ` · ${minfo.n - minfo.withBid} sans offre` : ''}` : 'Aucune vente en cours.'}</p></div>` : '';
       $('#mk-c').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.f === mk.f));
       $('#lots').querySelectorAll('[data-lot]').forEach(b => b.onclick = safe(() => lotSheet(b.dataset.lot)));
+      $('#mk-more')?.addEventListener('click', safe(async () => { $('#mk-more').disabled = true; await load(false); draw(); }));
       upd();
     };
+    const reload = safe(async () => { await load(true); draw(); });
     const upd = () => v.querySelectorAll('[data-end]').forEach(s => { const ms = s.dataset.end - Date.now(); s.querySelector('span').textContent = timeLeft(ms); s.classList.toggle('hot', ms < 60000); });
     bindSeg(v);
-    $('#mk-q').oninput = e => { mk.q = e.target.value; draw(); };
-    $('#mk-s').onchange = e => { mk.sort = e.target.value; draw(); };
-    $('#mk-c').onclick = e => { const b = e.target.closest('button'); if (!b) return; mk.f = b.dataset.f; draw(); };
+    let qt = null;
+    $('#mk-q').oninput = e => { mk.q = e.target.value; clearTimeout(qt); qt = setTimeout(reload, 350); };
+    $('#mk-s').onchange = e => { mk.sort = e.target.value; reload(); };
+    $('#mk-c').onclick = e => { const b = e.target.closest('button'); if (!b) return; mk.f = b.dataset.f; reload(); };
     draw(); tick = setInterval(upd, 1000);
   },
 
@@ -2942,7 +2942,7 @@ async function start() {
   if (me?.maintenance === true) maintenanceScreen();
   $('#boot').hidden = true;
   if (!ok) { $('#auth').hidden = false; $('#a-err').textContent = 'Serveur injoignable. Réessaie dans un instant (tu restes connecté).'; return; } $('#app').hidden = false; connect(); render();
-  setTimeout(() => ['/auctions', '/friends'].forEach(p => api(p).catch(() => {})), 1500); schedulePrefetch();   // pré-chargement des onglets suivants
+  setTimeout(() => api('/friends').catch(() => {}), 1500);   // le marché n'est plus préchargé : il se charge à son ouverture (première page seulement) schedulePrefetch();   // pré-chargement des onglets suivants
   let pending = null; try { pending = localStorage.getItem('wm_friend_code'); localStorage.removeItem('wm_friend_code'); } catch { /* stockage indisponible */ }
   if (pending) addByCode(pending);
   setTimeout(pushStartup, 2500);

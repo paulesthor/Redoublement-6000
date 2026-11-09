@@ -1,0 +1,20 @@
+const SH = '/tmp/claude-0/-home-user-Redoublement-6000/37801998-3ced-5dcb-85ba-95e236d12c04/scratchpad/';
+const rs = ['common', 'uncommon', 'rare', 'super', 'ultra', 'legendary'];
+const aid = (await DB.prepare("SELECT id FROM users WHERE name = 'Bob'").all()).results[0].id;
+const before = +(await DB.prepare("SELECT COUNT(*) n FROM auctions WHERE status = 'open'").all()).results[0].n, T = before + 75;
+const maxPrice = 10 + 75;
+for (let i = 1; i <= 75; i++) { await DB.prepare("INSERT INTO cards (id, title, rarity, views) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING").bind(7000000 + i, 'Carte ' + (i % 7 === 0 ? 'Loup ' : '') + i, rs[i % 6], 100 + i).run(); await DB.prepare("INSERT INTO auctions (seller_id, card_id, start_price, bid, ends_at, status) VALUES (?, ?, ?, 0, ?, 'open')").bind(aid, 7000000 + i, 10 + i, Date.now() + (i + 5) * 3600000).run(); }
+const p = await mk(390, 844); await p.waitForTimeout(1200); await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });
+await p.evaluate(async () => { tab = 'market'; await render(); }); await p.waitForSelector('#lots .lot', { timeout: 10000 });
+let n = (await p.$$('#lots .lot')).length; ok('première page : 30 enchères seulement (sur beaucoup plus)', n === 30, n);
+ok('titre : le total des enchères est annoncé', new RegExp(T + ' enchère').test(await p.textContent('#view')), T);
+await p.click('#mk-more'); await p.waitForTimeout(1200); n = (await p.$$('#lots .lot')).length; ok('« Voir plus » : 60 enchères', n === 60, n);
+while (await p.$('#mk-more')) { await p.click('#mk-more'); await p.waitForTimeout(900); }
+n = (await p.$$('#lots .lot')).length; ok('en continuant : toutes les enchères, plus de bouton', n === T, n + ' / ' + T);
+await p.fill('#mk-q', 'Loup'); await p.waitForTimeout(1500); n = (await p.$$('#lots .lot')).length; ok('recherche « Loup » faite par le serveur (10 résultats)', n === 10, n);
+await p.fill('#mk-q', ''); await p.selectOption('#mk-s', 'down'); await p.waitForTimeout(1500);
+const firstPrice = await p.$eval('#lots .lot .price', e => +e.textContent.replace(/\D/g, '')); ok('tri « prix décroissant » : le plus cher en premier', firstPrice >= maxPrice, firstPrice);
+await p.click('#mk-c [data-f=legendary]'); await p.waitForTimeout(1500); n = (await p.$$('#lots .lot')).length; ok('filtre légendaires : seulement des légendaires', n > 0 && n <= 13 && (await p.$$eval('#lots .lot .rar', e => e.every(x => x.classList.contains('legendary')))), n);
+await p.click('#lots .lot [data-lot]'); await p.waitForSelector('.detail', { timeout: 6000 }); ok('ouvrir une enchère hors première page fonctionne (chargée par identifiant)', !!(await p.$('#bid-v')));
+await p.screenshot({ path: SH + 'market-ui.png' });
+process.exit(0);
