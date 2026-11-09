@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.67';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.68';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -47,11 +47,13 @@ function revalidate(path) {
     if (before && raw !== before && path !== '/hits' && !game && $('#modal').hidden && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) render();
   }).catch(() => {});
 }
+const PRIME = new Map();   // réponses déjà reçues avec /boot : consommées une seule fois par l'appel d'origine (zéro requête de plus au démarrage)
 async function api(path, body) {
   if (body) { gcache.clear(); return fetchJson(path, body).then(r => r.j); }
+  if (PRIME.has(path)) { const v = PRIME.get(path); PRIME.delete(path); if (v) return v; }
   if (SWR.test(path)) {
     const c = gcache.get(path);
-    const ttl = TTL[path] ?? 30000, again = REVAL[path] ?? 2000, age = c ? Date.now() - c.t : 0;
+    const ttl = TTL[path] ?? 60000, again = REVAL[path] ?? 5000, age = c ? Date.now() - c.t : 0;
     if (c && age < ttl) { if (age > again && !c.busy) { c.busy = true; revalidate(path).finally(() => { c.busy = false; }); } return JSON.parse(c.raw); }
   }
   return fetchJson(path).then(r => r.j);
@@ -146,6 +148,7 @@ document.addEventListener('visibilitychange', () => {
   const away = Date.now() - hiddenAt;
   if (!ws || ws.readyState > 1) connect();                  // la connexion a été coupée en arrière-plan (le serveur renvoie alors l'état de la partie)
   else send({ t: 'sync' });                                   // connexion encore ouverte mais peut-être sourde : on redemande l'état de la partie
+  if (away < 20000) return;   // simple aller-retour (notification, autre appli) : rien à recharger
   refreshMe().then(() => { if (me.daily && dailyShown !== new Date().toDateString() && $('#modal').hidden && !game) dailyModal(); if (!game && away > 30000) render(); }).catch(() => {});   // nouveau jour : la récompense réapparaît   // pas de reconstruction de l'écran pour un simple aller-retour rapide
 });
 const send = o => ws?.readyState === 1 && ws.send(JSON.stringify(o));
@@ -440,7 +443,7 @@ function pillsSync() {
   ps[0].innerHTML = ico('packs') + (ev ? commu.packs : me.test ? '∞' : me.packs); ps[1].innerHTML = ico('coin') + (ev ? fmt(commu.wr) + ' ₽' : fmt(me.coins));
 }
 async function loadCommu(force) {
-  if (!force && commu && Date.now() - commuAt < 25000) return commu;
+  if (!force && commu && Date.now() - commuAt < 45000) return commu;
   commuAt = Date.now(); const sigC = c => c ? `${c.on}:${c.joined}:${c.paused}:${c.done}` : '', before = sigC(commu);
   try { commu = await api('/commu'); try { localStorage.setItem('wm_commu', JSON.stringify({ ...commu, _t: Date.now() })); } catch { /* stockage plein */ } } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
   if (sigC(commu) !== before && ['packs', 'album'].includes(tab) && $('#modal')?.hidden && !game && cfg) setTimeout(() => render(), 0);   // l'état a changé : l'écran se met à jour tout seul
@@ -483,7 +486,7 @@ const avColor = name => `hsl(${[...String(name)].reduce((h, c) => (h * 31 + c.ch
 // photos et titres des joueurs : { nom -> { id, v: version de la photo, ti: titre équipé } }, rechargés régulièrement
 let COS = new Map(), TLABELS = {}, cosAt = 0;
 async function loadCosmetics(force = false) {
-  if (!force && Date.now() - cosAt < 60000) return;
+  if (!force && Date.now() - cosAt < 180000) return;
   cosAt = Date.now();
   try { const d = await api('/cosmetics'); COS = new Map(d.players.map(p => [p.name, p])); TLABELS = d.labels; } catch { /* sans photos pour cette fois */ }
 }
@@ -2956,7 +2959,8 @@ async function start() {
   let ok = false;
   for (let essai = 0; essai < 8 && !ok; essai++) {  // réseau absent ou serveur qui démarre : on réessaie sans déconnecter
     try {
-      const [c, , h] = await Promise.all([api('/config'), refreshMe(), api('/hits'), loadCosmetics(true)]);   // trois appels en parallèle au démarrage
+      try { const b = await fetchJson('/boot').then(r => r.j); for (const [k, v] of [['/me', b.me], ['/commu', b.commu], ['/cosmetics', b.cosmetics], ['/hits', b.hits], ['/config', b.config]]) if (v) PRIME.set(k, v); setTimeout(() => PRIME.clear(), 8000); } catch (e) { if (e.status === 401) return; /* ancien serveur ou panne : les appels séparés habituels prennent le relais */ }
+      const [c, , h] = await Promise.all([api('/config'), refreshMe(), api('/hits'), loadCosmetics(true)]);   // une seule requête (/boot) ; les appels ci-dessous lisent ses réponses
       if (c.version && c.version !== BUILD) { if (await applyUpdate(c.version)) return; setTimeout(() => checkVersion(c.version), 2500); }   // appli ouverte depuis un cache plus ancien que le serveur : on se met à jour avant d'afficher quoi que ce soit
       cfg = c; RAR = cfg.labels; RANK = Object.fromEntries(cfg.rarities.map((r, i) => [r, i]));
       showHits(h.hits); ACH_NAMES = cfg.ach || [];

@@ -55,10 +55,25 @@ const shape = (r, wantId, read = false) => ({ results: r.results, success: true,
 
 /** Base « façon D1 » au-dessus d'un transport : stmts [{sql}] -> [{results, changes}]. */
 export function pgDB(transport) {
+  // Regroupement des lectures : toutes les lectures lancées « en même temps » (Promise.all, ou simplement dans la même passe) partent dans UN SEUL appel vers Supabase.
+  // Sur Workers gratuit chaque appel compte pour une « sous-requête » (50 maximum par requête) : une route qui lisait 10 tables en consommait 10, elle n'en consomme plus qu'une.
+  // Une lecture est sans effet : si le lot échoue (une requête fautive), chaque lecture est rejouée seule et reçoit sa propre erreur.
+  let queue = [], timer = null;
+  const MAX_BATCH = 25;
+  const flush = async () => {
+    timer = null;
+    const list = queue; queue = [];
+    for (let i = 0; i < list.length; i += MAX_BATCH) {
+      const part = list.slice(i, i + MAX_BATCH);
+      if (part.length === 1) { transport([{ sql: part[0].c.sql }]).then(r => part[0].ok(r[0]), part[0].ko); continue; }
+      transport(part.map(x => ({ sql: x.c.sql }))).then(res => part.forEach((x, k) => x.ok(res[k])), () => part.forEach(x => transport([{ sql: x.c.sql }]).then(r => x.ok(r[0]), x.ko)));
+    }
+  };
+  const readOne = c => new Promise((ok, ko) => { queue.push({ c, ok, ko }); if (!timer) timer = setTimeout(flush, 0); });
   const make = (sql, params = []) => ({
     _sql: sql, _params: params,
     bind: (...p) => make(sql, p),
-    run: async function () { const c = compile(sql, params); return shape((await transport([{ sql: c.sql }]))[0], c.wantId, isRead(sql)); },
+    run: async function () { const c = compile(sql, params), rd = isRead(sql); return shape(rd ? await readOne(c) : (await transport([{ sql: c.sql }]))[0], c.wantId, rd); },
     all: async function () { return this.run(); },
     first: async function (col) { const r = (await this.run()).results[0] ?? null; return col && r ? r[col] : r; },
     raw: async function () { return (await this.run()).results.map(o => Object.values(o)); },

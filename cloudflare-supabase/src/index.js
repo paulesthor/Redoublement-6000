@@ -372,9 +372,11 @@ async function refillReserve(env, max = 30) {
 
 let lastRefill = 0;
 /** Remplissage de la réserve à la demande (au plus toutes les 30 s par instance) : la tâche planifiée n'est qu'un renfort. */
-function maybeRefill(env, ctx) {
+async function maybeRefill(env, ctx) {
   if (now() - lastRefill < 120000) return;
   lastRefill = now();
+  // le remplissage coûte des dizaines d'appels (Wikipédia, photos, base) : pendant la visite d'un joueur il n'a lieu que si la réserve est vraiment dégarnie ; sinon la tâche planifiée s'en charge
+  try { const have = Object.values(await reserveCounts(env)).reduce((t, r) => t + (+r.n || 0), 0), want = Object.values(RESERVE_TARGET).reduce((t, n) => t + n, 0); if (have >= want * 0.6) return; } catch { return; }
   ctx.waitUntil(refillReserve(env).catch(e => console.error('refillReserve', e)));
 }
 
@@ -706,7 +708,6 @@ route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
   if (now() - lastDailyWin >= (globalThis.__CACHE_MS ?? 30000)) { lastDailyWin = now(); ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {})); }   // au plus toutes les 30 s (et non à chaque ouverture de l'appli)
-  if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   if (!liftDone) { liftDone = true; ctx.waitUntil(sanctions.lift(env).catch(() => { liftDone = false; })); }   // opération unique : fin des sanctions de pièces
   if (!expedDone) { expedDone = true; ctx.waitUntil((async () => { await economy.capExpeditionsOnce(env); await economy.finishExpeditionsOnce(env, ctx); })().catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
   const resetOn = env.RESET !== '0' && now() < RESET_AT;
@@ -835,6 +836,13 @@ route('POST', '/api/me/title', async ({ env, user, body }) => {
   return { ok: true, title: id };
 });
 
+// Démarrage de l'appli : profil, événement, photos, compteur de visites et configuration en UNE seule requête (au lieu de cinq).
+// Chaque morceau est celui de la route d'origine ; un morceau en échec vaut null et le client le redemande seul. Les lectures de ces routes partent ensemble dans un seul appel vers la base (voir pg.js).
+route('GET', '/api/boot', async c => {
+  const get = path => { const r = routes.find(x => x.label === 'GET ' + path); return Promise.resolve().then(() => r.fn(c)).catch(() => null); };
+  const [me, commu, cosmetics, hits, config] = await Promise.all([get('/api/me'), get('/api/commu'), get('/api/cosmetics'), get('/api/hits'), get('/api/config')]);
+  return { me, commu, cosmetics, hits, config };
+});
 route('GET', '/api/version', async () => ({ v: CFG.VERSION, db: 'supabase' }), false);
 route('GET', '/api/config', async ({ env, origin }) => {
   const meta = await getMeta(env, origin);
@@ -851,7 +859,7 @@ route('POST', '/api/clientlog', async ({ user, body }) => {
   return { ok: true };
 });
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
-  maybeRefill(env, ctx);
+  await maybeRefill(env, ctx);
   const u = await refreshPacks(env, user);
   if (!testOn(u)) {                                      // mode test : paquets illimités
     if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
@@ -881,7 +889,7 @@ const fakeGod = async (env, user) => {
 };
 const FAKE_NEXT = ['fourniseur2caca'];
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
-  maybeRefill(env, ctx);
+  await maybeRefill(env, ctx);
   const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
   if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
   let drawn = null;
@@ -1324,12 +1332,7 @@ route('GET', '/api/auctions', async ({ env, ctx, user, origin, query }) => {
   const sort = ['end', 'recent', 'up', 'down', 'rar', 'bids'].includes(query.get('sort')) ? query.get('sort') : 'end', f = (query.get('f') || '').slice(0, 12), qq = (query.get('q') || '').trim().slice(0, 40);
   if (!one_ && offset === 0 && now() - auctionsMaint >= (globalThis.__MAINT_MS ?? 10000)) {
     auctionsMaint = now();
-    const settled = await settleAuctions(env, ctx);
-    if (!settled) {                                  // un règlement d'enchères consomme déjà beaucoup d'appels : le reste attend la prochaine ouverture (10 s plus tard) ou la tâche planifiée
-      maybeRefill(env, ctx);
-      await market.tick(env, ctx, origin).catch(e => console.error('market', e));
-      ctx.waitUntil(botTick(env, ctx).catch(e => console.error('botTick', e)));   // le marché reste animé même sans tâche planifiée
-    }
+    await settleAuctions(env, ctx);                  // seul le règlement d'un lot échu reste à la demande (le vendeur et l'acheteur attendent leur résultat) ; l'animation du marché, les robots et la réserve sont faits par la tâche planifiée, pas pendant la visite d'un joueur
   }
   const where = ["a.status = 'open'"], args = [];
   if (one_) { where.push('a.id = ?'); args.push(one_); }
@@ -2208,7 +2211,8 @@ export default {
         if (await commu.rawOn(env).catch(() => false)) await commu.bourse.ensureMarket(env, ASSET_ORIGIN).catch(e => console.error('marché noir', e));
         await economy.settleBourse(env, ctx).catch(e => console.error('règlement bourse', e));
       } finally { pvStop(); }
-      const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
+      for (let i = 0; i < 4; i++) { if (!(await settleAuctions(env, ctx).catch(e => { console.error('enchères', e); return 0; }))) break; }   // lots échus : réglés ici aussi (2 par tour)
+      const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env, 60).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
       await events.tick(env, ctx).catch(e => console.error('événements', e));
       await economy.capExpeditionsOnce(env).catch(e => console.error('expéditions', e));
