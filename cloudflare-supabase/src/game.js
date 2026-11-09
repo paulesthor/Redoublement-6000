@@ -1,5 +1,5 @@
 // Récompense quotidienne, quêtes du jour, quiz du jour : règles, catalogue de quêtes, suivi de progression.
-import { st } from './util.js';
+import { st, hash } from './util.js';
 import { FEED_TABLES } from './feed.js';
 import { CAMP_TABLES, CAMP_TITLES } from './camp.js';
 import { PLAN_TABLES, PLAN_TITLES } from './plan.js';
@@ -83,7 +83,7 @@ export function questsFor(uid, day) {
 let ready = false;
 export async function ensureGameSchema(env) {
   if (ready) return;
-  const stmts = [
+  const sqls = [
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_day TEXT',
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_streak INTEGER NOT NULL DEFAULT 0',
     'CREATE TABLE IF NOT EXISTS quests (user_id BIGINT NOT NULL, day TEXT NOT NULL, qid TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, claimed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day, qid))',
@@ -145,7 +145,12 @@ export async function ensureGameSchema(env) {
     `CREATE OR REPLACE FUNCTION card_seen_fn() RETURNS trigger AS $fn$ BEGIN INSERT INTO card_seen (user_id, card_id, ts) VALUES (NEW.user_id, NEW.card_id, COALESCE(NEW.acquired, 0)) ON CONFLICT DO NOTHING; RETURN NEW; END $fn$ LANGUAGE plpgsql`,
     'DROP TRIGGER IF EXISTS card_seen_trg ON inventory',
     'CREATE TRIGGER card_seen_trg AFTER INSERT ON inventory FOR EACH ROW EXECUTE FUNCTION card_seen_fn()',
-  ].map(s => env.DB.prepare(s));
+  ];
+  // Ces ordres (dont DROP / CREATE TRIGGER sur users et inventory) verrouillent des tables très utilisées et font recharger le schéma de l'API à chaque démarrage d'un Worker :
+  // on ne les rejoue que si leur contenu a changé depuis la dernière application (empreinte rangée dans settings).
+  const sig = String(sqls.length) + ':' + hash(sqls.join('\n'));
+  try { if ((await env.DB.prepare("SELECT value FROM settings WHERE key = 'schema_sig'").all()).results[0]?.value === sig) { ready = true; return; } } catch { /* première installation : la table settings n'existe pas encore */ }
+  const stmts = [...sqls.map(s => env.DB.prepare(s)), env.DB.prepare("INSERT INTO settings (key, value) VALUES ('schema_sig', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(sig)];   // l'empreinte est enregistrée dans la même transaction
   try { await env.DB.batch(stmts); } catch (e) { await new Promise(r => setTimeout(r, 200)); await env.DB.batch(stmts); }   // deux Workers qui créent en même temps : le second réessaie
   await env.DB.prepare('INSERT INTO card_seen (user_id, card_id, ts) SELECT user_id, card_id, COALESCE(acquired, 0) FROM inventory WHERE NOT EXISTS (SELECT 1 FROM card_seen LIMIT 1) ON CONFLICT DO NOTHING').run().catch(() => {});   // première fois : reprend l'existant
   ready = true;

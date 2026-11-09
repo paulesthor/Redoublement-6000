@@ -1,5 +1,7 @@
 import './api.mjs';
 const { call, settle, ok, DB, pg, J, done, lobby, env, worker, ctx } = globalThis.__T;
+// la création du schéma est une dépense UNIQUE au démarrage d'un Worker, pas le coût d'une requête : on la fait avant de compter les allers-retours
+const { ensureGameSchema } = await import('../src/game.js'); await ensureGameSchema(env);
 let res3;
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 const NOT500 = (s, r) => s < 500;
