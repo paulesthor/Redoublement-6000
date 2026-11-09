@@ -19,6 +19,7 @@ import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { isBanned, bannedIds, forgetBans, BAN_MSG } from './ban.js';
 import { maintenance } from './maint.js';
+import { packLockMsg, PACK_LOCK_ROUTES } from './packlock.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
 import { getVapid, pushTo, wake, pull } from './push.js';
@@ -715,7 +716,8 @@ route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   const resetOn = env.RESET !== '0' && now() < RESET_AT, resetChosen = resetOn ? await reset.chosen(env, user.id).catch(() => false) : false;   // remise à zéro annoncée
   if (resetOn) ev.push({ id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: RESET_AT });
   const recap = !resetOn && now() >= RESET_AT ? await one(env, 'SELECT seen FROM season0_recap WHERE user_id = ?', user.id).catch(() => null) : null;   // bilan de la saison 0 à montrer une fois
-  return { ...publicUser(u), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
+  const packLock = user.is_admin ? '' : await packLockMsg(env);
+  return { ...publicUser(u), ...(packLock ? { packLock } : {}), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, user }) => {
@@ -2138,6 +2140,7 @@ async function api(req, env0, ctx, url) {
       if (!user) bad('Non connecté', 401);
       env = meter(env0, 'R:' + label, 'U:' + user.name);
     }
+    if (r.auth && req.method === 'POST' && !user.is_admin && PACK_LOCK_ROUTES.test(url.pathname)) { const lock = await packLockMsg(env); if (lock) { status = 503; return json({ error: lock, packLock: true }, 503); } }   // maintenance volontaire de la base
     if (r.auth && !user.is_admin && !BAN_OK.test(url.pathname) && await isBanned(env, user.id)) { status = 403; return json({ error: BAN_MSG, banned: true }, 403); }   // compte suspendu : rien n'est permis
     if (r.auth && !user.is_admin && !MAINT_OK.test(url.pathname) && await maintenanceOn(env)) bad('Maintenance en cours : la remise à zéro se prépare, le jeu revient très vite !', 503);
     if (r.auth && req.method === 'POST' && SPEND_ROUTE.test(url.pathname)) {                    // sanction : aucune dépense de pièces (paquets, enchères, paris, banque…)

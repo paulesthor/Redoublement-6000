@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.60';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.61';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -66,6 +66,7 @@ async function fetchJson(path, body) {
   if (r.status === 401 && token) logout();
   if (r.status === 503 && /Maintenance/.test(j.error || '')) maintenanceScreen();
   if (r.status === 403 && j.banned) banScreen(j.error);
+  if (j.packLock) { if (me) me.packLock = j.error; }
   if (!r.ok) { if (j.quota) showQuota(j.until); const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
   if (quotaBar && Date.now() - quotaAt > 8000) hideQuota();   // la base répond à nouveau (on laisse 8 s après la dernière erreur pour ne pas clignoter)
   if (!body && SWR.test(path)) gcache.set(path, { t: Date.now(), raw });
@@ -542,7 +543,7 @@ const views = {
     if ((ussrUiOn() || ussrOn()) && !window.ussrParcelSvg) await loadUssr().catch(() => {});
     if (eventUi()) return eventPacks(v);
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
-    v.innerHTML = `${commu?.on && commu.joined && !ussrUiOn() ? '<button class="commu-banner" id="commu-enter"><b>Mode communiste</b><span>Retourne au Plan : thème rouge, colis du Parti, jeux et paliers.</span></button>' : ''}${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
+    v.innerHTML = `${lockNote()}${commu?.on && commu.joined && !ussrUiOn() ? '<button class="commu-banner" id="commu-enter"><b>Mode communiste</b><span>Retourne au Plan : thème rouge, colis du Parti, jeux et paliers.</span></button>' : ''}${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${(ussrUiOn() || ussrOn()) && window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
@@ -601,6 +602,7 @@ const views = {
       const again = await tenFlow('/packs/buy', {}, () => ({ ok: me.coins >= total, label: `Acheter 10 autres (${fmt(total)})` }));
       if (again === 'again') setTimeout(() => $('#buy10')?.click(), 60);
     });
+    applyPackLock(v);
     $('#commu-join')?.addEventListener('click', () => { tab = 'commustart'; render(); });
     $('#commu-enter')?.addEventListener('click', safe(async () => { setPref('wm_ussr_ui', '1'); setPref('wm_ussr', '1'); syncEventTheme(); await syncUssrUi(); tab = 'packs'; render(); }));
     $('#rates-btn').onclick = () => {
@@ -2411,16 +2413,20 @@ views.potato = async v => {
 
 // ---------- événement communiste : colis du Parti et Archives ----------
 const eventUi = () => eventOn() && ussrUiOn();
+/** Maintenance volontaire de la base : l'ouverture des paquets est suspendue quelques minutes (message du serveur dans me.packLock). */
+const lockNote = () => me?.packLock ? `<div class="commu-pause"><b>Maintenance volontaire</b><span>${esc(me.packLock)}</span></div>` : '';
+const applyPackLock = v => { if (me?.packLock) v.querySelectorAll('#open, #open10, #buy, #buy10').forEach(b => { b.disabled = true; }); };
 const pauseNote = () => commu?.paused ? '<div class="commu-pause"><b>Événement en pause</b><span>Le Parti fait une sieste. Rien n\'est perdu : les gains et les colis reprennent bientôt.</span></div>' : '';
 async function eventPacks(v) {
   if (ussrOn()) await loadUssr().catch(() => {});
   await loadCommu(true); const c = commu;
-  v.innerHTML = `${pauseNote()}<div class="hero"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
+  v.innerHTML = `${lockNote()}${pauseNote()}<div class="hero"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
     <div class="packart" id="packart">${window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
     <div class="pk-actions"><button id="open" ${c.packs > 0 && !c.paused ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${c.packs >= 10 && !c.paused ? '' : 'disabled'}>Ouvrir ×10</button></div>
     <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · ${c.paused ? 'compte à rebours gelé' : c.packs >= (c.freeMax || 30) ? 'réserve pleine' : 'prochain dans <b id="cd"></b>'}</p><p class="mut" style="margin:2px 0 0">Un colis offert toutes les ${c.freeEveryMin || 10} min (${c.freeMax || 30} en réserve) · solde <b>${fmt(c.wr)} ₽</b></p></div>
     <button id="buy" class="plain buy" ${c.wr >= c.packPrice ? '' : 'disabled'}>Faire la queue et ouvrir · ${c.packPrice} ₽</button>
     <button id="buy10" class="plain buy" ${c.wr >= c.packPrice * 10 ? '' : 'disabled'}>Faire la queue ×10 · ${fmt(c.packPrice * 10)} ₽</button></div>`;
+  applyPackLock(v);
   const again = (n) => () => ({ ok: commu.packs >= n, label: n > 1 ? `Ouvrir 10 autres (${commu.packs})` : `Ouvrir un autre colis (${commu.packs})` });
   const one = safe(async () => {
     v.querySelectorAll('button').forEach(b => b.disabled = true);
@@ -2634,7 +2640,7 @@ const PLAN_ICO = {
   coin: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f4d56b" stroke="#b8902a" stroke-width="1.6"/><path d="M12 7v10M9.500 9.500q2.500-2 5 0M9.500 14.500q2.500 2 5 0" fill="none" stroke="#b8902a" stroke-width="1.5"/></svg>',
   title: '<svg viewBox="0 0 24 24"><path d="M12 2l2.700 6 6.500.6-4.900 4.300 1.500 6.400L12 15.800 6.200 19.300l1.500-6.400L2.800 8.600 9.300 8z" fill="#f4d56b" stroke="#b8902a" stroke-width="1.2"/></svg>',
   frame: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#f4d56b" stroke-width="2.4"/><rect x="7" y="7" width="10" height="10" rx="1.500" fill="#c0161d"/></svg>',
-  souv: '<svg viewBox="0 0 24 24"><rect x="5" y="2.500" width="14" height="19" rx="2" fill="#f6efd8" stroke="#8a7a52" stroke-width="1.400"/><path d="M12 7l1.500 3.200 3.500.4-2.600 2.300.7 3.400-3.100-1.700-3.100 1.700.7-3.400L7 10.600l3.500-.4z" fill="#c0161d"/></svg>',
+  souv: '<svg viewBox="0 0 24 24"><rect x="5" y="2.500" width="14" height="19" rx="2" fill="#f6efd8" stroke="#8a7a52" stroke-width="1.400"/><path d="M12 7l1.500 3.200 3.500.4-2.600 2.300.7 3.400-3.100-1.700-3.100 1.700.7-3.400L7 10.610l3.500-.4z" fill="#c0161d"/></svg>',
   theme: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="1" fill="#c0161d"/><path d="M8 9a2.500 2.500 0 1 0 2 3.800M9.500 14l5-5.500" fill="none" stroke="#f4d56b" stroke-width="1.400"/><rect x="11" y="18" width="2" height="4" fill="#8a7a52"/></svg>',
 };
 const planChips = m => [
