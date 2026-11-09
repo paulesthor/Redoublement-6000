@@ -612,7 +612,41 @@ async function throttleCheck(env, kind, keys) {
 }
 const throttleHit = (env, kind, keys) => env.DB.batch(keys.map(k => st(env, `INSERT INTO login_fails (k, n, first) VALUES (?, 1, ?) ON CONFLICT (k) DO UPDATE SET n = CASE WHEN login_fails.first > ? THEN login_fails.n + 1 ELSE 1 END, first = CASE WHEN login_fails.first > ? THEN login_fails.first ELSE ? END`, kind + ':' + k, now(), now() - THROTTLE[kind][1], now() - THROTTLE[kind][1], now())));
 const clientIp = req => req.headers.get('cf-connecting-ip') || 'inconnue';
-route('POST', '/api/register', async ({ env, body, req }) => {
+// ---------- empreinte de connexion (anti multi-comptes) ----------
+// L'adresse IP n'est jamais conservée : seulement une empreinte non réversible (HMAC avec un sel propre au serveur), rangée dans event_progress (clé « ip:<empreinte> », une ligne par compte, date de dernière vue).
+// Deux comptes différents sur la même empreinte déclenchent une alerte réservée aux administrateurs. Les empreintes de plus de 90 jours sont purgées.
+let ipSalt = null; const ipSeen = new Map();
+async function ipHash(env, ip) {
+  if (!ipSalt) {
+    ipSalt = (await one(env, "SELECT value FROM settings WHERE key = 'ip_salt'"))?.value;
+    if (!ipSalt) { const fresh = randomHex(32); await run(env, "INSERT INTO settings (key, value) VALUES ('ip_salt', ?) ON CONFLICT (key) DO NOTHING", fresh); ipSalt = (await one(env, "SELECT value FROM settings WHERE key = 'ip_salt'")).value; }
+  }
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(ipSalt), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(ip)));
+  return [...sig].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function recordIp(env, ctx, userId, req) {
+  const ip = clientIp(req); if (ip === 'inconnue') return;
+  const h = await ipHash(env, ip), memo = userId + ':' + h;
+  if (now() - (ipSeen.get(memo) || 0) < 3600000) return; ipSeen.set(memo, now()); if (ipSeen.size > 5000) ipSeen.clear();
+  await ensureGameSchema(env);
+  await run(env, "INSERT INTO event_progress (key, user_id, n) VALUES (?,?,?) ON CONFLICT (key, user_id) DO UPDATE SET n = excluded.n", 'ip:' + h, userId, Math.floor(now() / 1000));
+  const others = await all(env, "SELECT e.user_id, u.name, u.is_bot, u.is_admin FROM event_progress e JOIN users u ON u.id = e.user_id WHERE e.key = ? AND e.user_id <> ?", 'ip:' + h, userId);
+  const me = await one(env, 'SELECT name, is_admin, is_bot FROM users WHERE id = ?', userId);
+  if (!me || +me.is_bot || +me.is_admin) return;
+  for (const o of others) {
+    if (+o.is_bot || +o.is_admin) continue;
+    const a = Math.min(userId, +o.user_id), b = Math.max(userId, +o.user_id);
+    const first = await run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING", `ipalert:${h}:${a}:${b}`, String(now()));
+    if (!first.meta.changes) continue;   // une seule alerte par paire de comptes
+    const msg = `Même connexion internet : « ${me.name} » et « ${o.name} » (alerte réservée aux administrateurs)`;
+    for (const ad of await all(env, 'SELECT id FROM users WHERE is_admin = 1 AND is_bot = 0')) { notify(env, ctx, { t: 'notify', msg }, +ad.id); ctx.waitUntil(pushTo(env, +ad.id, 'Alerte multi-comptes', msg, 'ipalert').catch(() => 0)); }
+    logEvent({ level: 'warn', kind: 'multi-compte', user: me.name, route: 'ip', detail: `${me.name} / ${o.name}` });
+  }
+}
+const recordIpSoon = (env, ctx, userId, req) => ctx.waitUntil(recordIp(env, ctx, userId, req).catch(e => console.error('empreinte', e)));
+
+route('POST', '/api/register', async ({ env, ctx, body, req }) => {
   const name = String(body.name || '').trim(), pw = String(body.password || '');
   if (!/^[\p{L}\p{N}_-]{2,20}$/u.test(name)) bad('Pseudo : 2 à 20 caractères (lettres, chiffres, _ -)');
   if (pw.length < 6) bad('Mot de passe trop court (6 min.)');
@@ -625,14 +659,16 @@ route('POST', '/api/register', async ({ env, body, req }) => {
   const r = await run(env, 'INSERT INTO users (name, salt, hash, coins, pack_stock, pack_ts, created, friend_code) VALUES (?,?,?,?,?,?,?,?)',
     name, salt, await hashPw(pw, salt), CFG.START_COINS, CFG.START_PACKS, now(), now(), randomHex(5));
   await throttleHit(env, 'register', [ip]);
+  recordIpSoon(env, ctx, r.meta.last_row_id, req);
   return newSession(env, r.meta.last_row_id);
 }, false);
-route('POST', '/api/login', async ({ env, body, req }) => {
+route('POST', '/api/login', async ({ env, ctx, body, req }) => {
   const name = String(body.name || '').trim().toLowerCase().slice(0, 40), keys = ['n:' + name, 'ip:' + clientIp(req)];
   await throttleCheck(env, 'login', keys);
   const u = await one(env, 'SELECT * FROM users WHERE lower(name) = lower(?)', String(body.name || '').trim());
   if (!u || (await hashPw(String(body.password || '').slice(0, 200), u.salt)) !== u.hash) { await throttleHit(env, 'login', keys); bad('Pseudo ou mot de passe incorrect', 401); }
   await run(env, 'DELETE FROM login_fails WHERE k = ?', 'login:' + keys[0]);
+  recordIpSoon(env, ctx, u.id, req);
   return newSession(env, u.id);
 }, false);
 route('POST', '/api/logout', async ({ req, env }) => { await run(env, 'DELETE FROM sessions WHERE token = ?', (req.headers.get('authorization') || '').replace('Bearer ', '')); return { ok: true }; });
@@ -658,7 +694,8 @@ async function gameBadges(env, uid) {
   const qc = q.filter(r => ids.includes(r.qid) && !r.claimed && r.progress >= QUEST[r.qid].goal).length;
   return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new', ex: +(ex?.n || 0) };
 }
-route('GET', '/api/me', async ({ env, ctx, user }) => {
+route('GET', '/api/me', async ({ env, ctx, user, req }) => {
+  recordIpSoon(env, ctx, user.id, req);   // au plus une écriture par heure et par compte
   // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
   if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
   const u = await refreshPacks(env, user);
@@ -1772,6 +1809,13 @@ route('GET', '/api/admin/overview', admin(async ({ env }) => {
   const aiErr = (await one(env, "SELECT value FROM settings WHERE key = 'ai_last_error'").catch(() => null))?.value ?? null;
   return { users, bots, cards, owned, auctions, packs, coins, subs, quizzes, aiToday, aiErr, reserve, bids, online: (await onlineIds(env)).length, version: CFG.VERSION };
 }));
+/** Comptes qui partagent la même connexion internet (empreinte identique), tous joueurs confondus. */
+route('GET', '/api/admin/ip-shares', admin(async ({ env }) => {
+  await ensureGameSchema(env);
+  const rows = await all(env, "SELECT e.key, e.n, u.id, u.name, u.is_bot, u.is_admin FROM event_progress e JOIN users u ON u.id = e.user_id WHERE e.key LIKE 'ip:%' AND e.key IN (SELECT key FROM event_progress WHERE key LIKE 'ip:%' GROUP BY key HAVING COUNT(*) > 1) ORDER BY e.key, e.n DESC");
+  const g = new Map(); for (const r of rows) { if (+r.is_bot || +r.is_admin) continue; if (!g.has(r.key)) g.set(r.key, []); g.get(r.key).push({ id: +r.id, name: r.name, lastSeen: +r.n * 1000, admin: !!+r.is_admin }); }
+  return { groups: [...g.entries()].filter(([, v]) => v.length > 1).map(([k, v]) => ({ id: k.slice(3, 9), accounts: v })), note: 'Empreintes non réversibles : aucune adresse IP n\'est conservée. Une même box ou un même réseau mobile peut partager une empreinte entre des proches.' };
+}));
 /** Enquête anti-triche (lecture seule) : le dernier joueur créé (ou un joueur nommé), ses échanges avec les autres joueurs, et des alertes. Le contenu des messages privés n'est jamais lu : seulement leur nombre. */
 route('GET', '/api/admin/investigate', admin(async ({ env, query }) => {
   await ensureGameSchema(env);
@@ -1818,11 +1862,14 @@ route('GET', '/api/admin/investigate', admin(async ({ env, query }) => {
     if (p.coinsIn + p.auctionCoinsIn - p.coinsOut - p.auctionCoinsOut >= 1500) flags.push(`${p.name} a reçu net ${p.coinsIn + p.auctionCoinsIn - p.coinsOut - p.auctionCoinsOut} pièces de ${u.name} en échanges`);
     if (p.coinsOut + p.auctionCoinsOut - p.coinsIn - p.auctionCoinsIn >= 1500) flags.push(`${u.name} a reçu net ${p.coinsOut + p.auctionCoinsOut - p.coinsIn - p.auctionCoinsIn} pièces de ${p.name} en échanges`);
   }
+  const mine = await all(env, "SELECT key FROM event_progress WHERE user_id = ? AND key LIKE 'ip:%'", id), shared = [];
+  if (mine.length) for (const r of await all(env, `SELECT DISTINCT u.id, u.name, u.is_bot FROM event_progress e JOIN users u ON u.id = e.user_id WHERE e.key IN (${mine.map(() => '?').join(',')}) AND e.user_id <> ?`, ...mine.map(m => m.key), id)) if (!+r.is_bot) shared.push(r.name);
+  if (shared.length) flags.push(`Même connexion internet que : ${shared.join(', ')}`);
   if (extra > 40 && +inv.q > 60) flags.push(`${extra} exemplaires de plus que ses ${u.packs_opened} paquets ouverts n'en expliquent (hors quêtes, récompenses et événements)`);
   if (now() - +u.created < 48 * 3600000 && +u.coins > 5000) flags.push(`Compte de moins de 48 h avec ${u.coins} pièces`);
   if (+devices.n > 2) flags.push(`${devices.n} appareils abonnés aux notifications`);
   return { player: { id, name: u.name, created: +u.created, age: ago(now() - +u.created), coins: +u.coins, packsOpened: +u.packs_opened, cards: +inv.q, distinct: +inv.d, extraCards: extra, duelWins: +u.duel_wins, duelLosses: +u.duel_losses, sessions: +sessions.n, devices: +devices.n },
-    peers: list.slice(0, 12), trades: trades.slice(0, 15).map(t => ({ when: +t.created, dir: +t.from_id === id ? 'envoyé' : 'reçu', offer: t.offer, rarity: t.orar, want: t.want, price: t.price, status: t.status, peer: peers.get(+t.from_id === id ? +t.to_id : +t.from_id)?.name })), flags: [...new Set(flags)].slice(0, 20), note: 'Lecture seule. Les messages privés ne sont pas lus : seul leur nombre apparaît.' };
+    sharedConnection: shared, peers: list.slice(0, 12), trades: trades.slice(0, 15).map(t => ({ when: +t.created, dir: +t.from_id === id ? 'envoyé' : 'reçu', offer: t.offer, rarity: t.orar, want: t.want, price: t.price, status: t.status, peer: peers.get(+t.from_id === id ? +t.to_id : +t.from_id)?.name })), flags: [...new Set(flags)].slice(0, 20), note: 'Lecture seule. Les messages privés ne sont pas lus : seul leur nombre apparaît.' };
 }));
 route('GET', '/api/admin/users', admin(async ({ env }) => {
   const online = new Set(await onlineIds(env));
@@ -2096,6 +2143,7 @@ export default {
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await pruneLogs(withDb(env0)).catch(() => {});
+      await run(withDb(env0), "DELETE FROM event_progress WHERE key LIKE 'ip:%' AND n < ?", Math.floor((now() - 90 * 86400000) / 1000)).catch(() => {});   // empreintes de connexion : 90 jours
       await flushAll(withDb(env0));
     })());
   },

@@ -1,0 +1,23 @@
+// Empreinte de connexion : jamais l'adresse IP ; alerte réservée aux administrateurs quand deux comptes différents partagent la même connexion.
+import './api.mjs';
+const { call, ok, DB, J, done, env } = globalThis.__T;
+const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+const IP1 = { 'cf-connecting-ip': '203.0.113.7' }, IP2 = { 'cf-connecting-ip': '198.51.100.9' };
+const reg = async (n, h) => { const [, r] = await call(null, 'POST', '/api/register', { name: n, password: 'secret1' }, h); return r.token; };
+const ADM = await reg('Chef', IP2); await q("UPDATE users SET is_admin = 1 WHERE name = 'Chef'");
+const A = await reg('Alice', IP1), B = await reg('Bob', IP2), C = await reg('Carole', IP1);
+const rows = await q("SELECT key FROM event_progress WHERE key LIKE 'ip:%'");
+ok('une empreinte est enregistrée par compte', rows.length >= 3, J(rows));
+ok('l\'adresse IP n\'apparaît nulle part dans la base', !JSON.stringify(await q('SELECT key, n FROM event_progress')).includes('203.0.113') && !JSON.stringify(await q('SELECT key, value FROM settings')).includes('203.0.113'));
+ok('l\'empreinte ne ressemble pas à l\'adresse (16 caractères hexadécimaux)', rows.every(r => /^ip:[0-9a-f]{16}$/.test(r.key)), J(rows));
+const [, shares] = await call(ADM, 'GET', '/api/admin/ip-shares');
+ok('Alice et Carole (même connexion) sont signalées, pas Bob', shares.groups.length === 1 && shares.groups[0].accounts.map(a => a.name).sort().join() === 'Alice,Carole', J(shares));
+const alerts = await q("SELECT key FROM settings WHERE key LIKE 'ipalert:%'");
+ok('une seule alerte pour la paire', alerts.length === 1, J(alerts));
+const [, mine] = await call(ADM, 'GET', '/api/admin/investigate?name=Alice');
+ok('rapport d\'enquête : « Même connexion internet que : Carole »', mine.flags.some(f => /Même connexion internet que : Carole/.test(f)) && mine.sharedConnection.includes('Carole'), J(mine.flags));
+const [s] = await call(A, 'GET', '/api/admin/ip-shares'); ok('liste réservée aux administrateurs', s === 403, s);
+await call(A, 'POST', '/api/login', { name: 'Carole', password: 'secret1' }, IP1);
+ok('reconnexions : pas de nouvelle alerte', (await q("SELECT key FROM settings WHERE key LIKE 'ipalert:%'")).length === 1);
+const [, adm] = await call(ADM, 'GET', '/api/admin/ip-shares'); ok('l\'administrateur lui-même n\'est jamais signalé', !JSON.stringify(adm).includes('Chef'));
+done();

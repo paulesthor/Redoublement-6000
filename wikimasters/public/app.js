@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.56';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.57';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1357,8 +1357,10 @@ views.admin = async v => {
       const draw = async name => {
         box.innerHTML = '<p class="mut" style="text-align:center;padding:24px 0">Enquête en cours…</p>';
         let R; try { R = await api('/admin/investigate' + (name ? '?name=' + encodeURIComponent(name) : '')); } catch (e) { box.innerHTML = `<div class="panel"><b>Enquête impossible</b><p class="mut">${esc(e.message)}</p><button id="pb-back">Retour</button></div>`; $('#pb-back').onclick = () => draw(''); return; }
+        const SH = await api('/admin/ip-shares').catch(() => ({ groups: [] }));
         const P = R.player, d = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Enquête : ${esc(P.name)}</h3>
+        box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Connexions partagées</h3>${SH.groups.length ? SH.groups.map(g => `<p style="margin:4px 0"><b>${g.accounts.map(x => esc(x.name)).join(' · ')}</b> <small class="mut">(même connexion, dernière vue ${new Date(Math.max(...g.accounts.map(x => x.lastSeen))).toLocaleDateString('fr-FR')})</small></p>`).join('') : '<p class="mut" style="margin:0">Aucun compte ne partage la même connexion pour l\'instant. Les alertes arrivent en notification, pour les administrateurs seulement.</p>'}</div>
+        <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Enquête : ${esc(P.name)}</h3>
           <div class="admgrid"><div><span>Créé il y a</span><b>${esc(P.age)}</b></div><div><span>Pièces</span><b>${fmt(P.coins)}</b></div><div><span>Paquets ouverts</span><b>${fmt(P.packsOpened)}</b></div><div><span>Cartes (exemplaires)</span><b>${fmt(P.cards)}</b></div><div><span>Sans origine connue</span><b>${fmt(P.extraCards)}</b></div><div><span>Appareils / sessions</span><b>${P.devices} / ${P.sessions}</b></div></div>
           <div class="row" style="margin-top:10px"><input id="pb-name" placeholder="Autre joueur (pseudo exact)" style="flex:1"><button class="plain" id="pb-go">Enquêter</button><button class="plain" id="pb-last">Dernier créé</button></div></div>
           <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Alertes</h3>${R.flags.length ? `<ul class="ru-list">${R.flags.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : '<p class="mut">Aucune alerte automatique. Cela ne prouve pas l\'absence de triche.</p>'}</div>
