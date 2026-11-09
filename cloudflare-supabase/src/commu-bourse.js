@@ -1,6 +1,7 @@
 // Événement communiste : « Marché noir », paris sur les vues d'articles russes et soviétiques, misés en wikiroubles.
 // Mêmes tables que la Bourse normale (créneaux 100 et plus pour ne jamais se croiser), mêmes statistiques de vues Wikimedia.
-import { pageViews, BOURSE } from './economy.js';
+import { BOURSE } from './economy.js';
+import { pvGet, pvRest } from './pvcache.js';
 
 export const BM = { slot0: 100, slots: 6, minStake: 10, maxStake: 200, maxBets: 6, dayStake: 600, payout: 1.8, popular: ['legendary', 'ultra', 'super'] };
 const DAY = 86400000;
@@ -13,6 +14,7 @@ export function installCommuBourse(d, h) {
     await ensureGameSchema(env);
     const day = dayKey(), have = (await all(env, 'SELECT slot FROM bourse_market WHERE day = ? AND slot >= ?', day, BM.slot0)).map(r => +r.slot);
     if (have.length >= BM.slots || now() - buildTry < 15000) return day;
+    if (await pvRest(env)) return day;
     buildTry = now();
     const P = (await h.cc.pool(env, origin)).cards.filter(c => BM.popular.includes(c.r)), from = addDays(day, -7), to = addDays(day, -1), out = []; let calls = 0;
     for (let i = 0; i < BM.slots; i++) {
@@ -20,7 +22,7 @@ export function installCommuBourse(d, h) {
       let m = null;
       for (let k = 0; k < 6 && !m; k++) {
         const c = P[(hash(`cbourse${day}${slot}`) + k * 104729) % P.length]; if (calls >= 12) break; calls++;
-        const v = await pageViews(c.t, from, to); if (!v) { calls = 99; break; }
+        const v = await pvGet(env, c.t, from, to); if (!v) { calls = 99; break; }
         const series = []; for (let j = -7; j <= -1; j++) series.push(v[addDays(day, j)] ?? 0);
         if (series.filter(Boolean).length < 6) continue;
         m = { slot, id: c.id, title: c.t, series, ref: Math.round(series.reduce((t, x) => t + x, 0) / 7) };
@@ -35,7 +37,8 @@ export function installCommuBourse(d, h) {
   async function settle(env) {
     const today = dayKey(), open = await all(env, "SELECT day, slot, id, title, ref FROM bourse_market WHERE status = 'open' AND slot >= ? AND day < ? ORDER BY day LIMIT 8", BM.slot0, today);
     for (const m of open) {
-      const v = await pageViews(m.title, m.day, m.day); let actual = v ? (v[m.day] ?? null) : null, void_ = false;
+      if (await pvRest(env)) break;
+      const v = await pvGet(env, m.title, m.day, m.day); let actual = v ? (v[m.day] ?? null) : null, void_ = false;
       if (actual === null) { if (v && m.day <= addDays(today, -4)) void_ = true; else continue; }
       const claim = await run(env, "UPDATE bourse_market SET status = ?, actual = ? WHERE day = ? AND slot = ? AND status = 'open'", void_ ? 'void' : 'done', actual, m.day, m.slot);
       if (!claim.meta.changes) continue;

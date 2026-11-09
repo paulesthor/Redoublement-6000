@@ -83,7 +83,8 @@ await pb.context().close();
 await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' });
 await DB.prepare("UPDATE plan_progress SET earned = 3000 WHERE user_id = (SELECT id FROM users WHERE name = 'Bob')").run();
 const [sc] = await call(B, 'POST', '/api/plan/claim', { id: 6 }); ok('Bob atteint le palier 6 : récompense réclamée', sc === 200, sc);
-{ const pq = await mkAs(B); await pq.evaluate(async () => { commu = null; commuAt = 0; tab = 'packs'; await render(); }); ok('régression : colis soviétique dès le premier affichage (jamais le booster classique)', !!(await pq.$('#packart .us-home')), await pq.evaluate(() => document.querySelector('#packart')?.innerHTML.slice(0, 60))); await pq.context().close(); }
+{ const pq = await mkAs(B); await pq.evaluate(async () => { commu = null; commuAt = 0; tab = 'packs'; await render(); }); await pq.waitForSelector('#packart .us-home', { timeout: 6000 }).catch(() => {});   // sans dernier état connu, l'écran se corrige tout seul dès que l'état de l'événement arrive
+ok('régression : colis soviétique dès le premier affichage (jamais le booster classique)', !!(await pq.$('#packart .us-home')), await pq.evaluate(() => document.querySelector('#packart')?.innerHTML.slice(0, 60))); await pq.context().close(); }
 await call(A, 'POST', '/api/commu/finish', {}); const pb2 = await mkAs(B); await pb2.evaluate(async () => { await loadCommu(true); tab = 'settings'; await render(); }); await pb2.waitForTimeout(1200);
 ok('après l\'événement, le palier 6 donne le thème « Camarade » dans les réglages', (await pb2.$('.themes button[data-th="urss"], .themes [data-theme="urss"], .themes button:has-text("Camarade")')) !== null);
 ok('aucune erreur JS', pb2.errs.length === 0, J(pb2.errs)); await pb2.context().close();

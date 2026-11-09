@@ -708,15 +708,22 @@ route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   if (now() - lastBourse > 600000) { lastBourse = now(); ctx.waitUntil(economy.settleBourse(env, ctx).catch(() => {})); }
   if (!liftDone) { liftDone = true; ctx.waitUntil(sanctions.lift(env).catch(() => { liftDone = false; })); }   // opération unique : fin des sanctions de pièces
   if (!expedDone) { expedDone = true; ctx.waitUntil((async () => { await economy.capExpeditionsOnce(env); await economy.finishExpeditionsOnce(env, ctx); })().catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
-  const [badge, dm, extra] = await Promise.all([friendBadge(env, user.id), one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null), gameBadges(env, user.id).catch(() => ({}))]);   // lectures en parallèle
-  const ev = await events.brief(env).catch(() => []);                           // événements en cours (bannière de l'accueil)
-  const frozen = await sanctions.check(env, user).catch(() => 0);                // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
+  const resetOn = env.RESET !== '0' && now() < RESET_AT;
+  // TOUTES les lectures partent ensemble (au lieu d'une file d'attente de requêtes l'une après l'autre : chaque aller-retour vers la base coûte du temps)
+  const [badge, dm, extra, evRaw, frozen, maint, resetChosen, recap, packLock] = await Promise.all([
+    friendBadge(env, user.id),
+    one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null),
+    gameBadges(env, user.id).catch(() => ({})),
+    events.brief(env).catch(() => []),                                          // événements en cours (bannière de l'accueil)
+    sanctions.check(env, user).catch(() => 0),                                  // sanction en cours (gains suspendus, épargne gelée) : posée une seule fois
+    maintenanceOn(env).catch(() => false),                                      // maintenance : écran bloquant pour les joueurs, simple bandeau pour l'administrateur
+    resetOn ? reset.chosen(env, user.id).catch(() => false) : false,            // remise à zéro annoncée
+    !resetOn && now() >= RESET_AT ? one(env, 'SELECT seen FROM season0_recap WHERE user_id = ?', user.id).catch(() => null) : null,   // bilan de la saison 0 à montrer une fois
+    user.is_admin ? '' : packLockMsg(env),
+  ]);
+  const ev = evRaw;
   if (frozen) ev.push({ id: 'freeze', kind: 'freeze', name: 'Gains suspendus', emoji: '⛔', end: frozen });
-  const maint = await maintenanceOn(env).catch(() => false);                      // maintenance : écran bloquant pour les joueurs, simple bandeau pour l'administrateur
-  const resetOn = env.RESET !== '0' && now() < RESET_AT, resetChosen = resetOn ? await reset.chosen(env, user.id).catch(() => false) : false;   // remise à zéro annoncée
   if (resetOn) ev.push({ id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: RESET_AT });
-  const recap = !resetOn && now() >= RESET_AT ? await one(env, 'SELECT seen FROM season0_recap WHERE user_id = ?', user.id).catch(() => null) : null;   // bilan de la saison 0 à montrer une fois
-  const packLock = user.is_admin ? '' : await packLockMsg(env);
   return { ...publicUser(u), ...(packLock ? { packLock } : {}), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture

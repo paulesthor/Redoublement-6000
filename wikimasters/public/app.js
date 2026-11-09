@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.62';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.64';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -417,6 +417,8 @@ const GROUP = { commustart: 'packs', commuend: 'more', commurules: 'more', commu
 /** Ouverture de paquet « ambiance URSS » : aperçu réservé à l'administrateur (réglage dans Réglages). */
 // ---------- événement communiste : état du joueur, droits, thème ----------
 let commu = null, commuAt = 0;
+// dernier état de l'événement connu : le bon décor s'affiche tout de suite au lancement, la mise à jour se fait en arrière-plan (plus d'attente de quelques secondes)
+try { const c = JSON.parse(localStorage.getItem('wm_commu') || 'null'); if (c && localStorage.getItem('wm_token') && Date.now() - c._t < 12 * 3600000) commu = c; } catch { /* stockage indisponible */ }
 const prefOf = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const eventOn = () => !!commu && commu.on && commu.joined;                       // inscrit et événement ouvert
 const eventAccess = () => !!me?.admin || eventOn();                               // l'administrateur garde l'aperçu
@@ -439,7 +441,9 @@ function pillsSync() {
 }
 async function loadCommu(force) {
   if (!force && commu && Date.now() - commuAt < 25000) return commu;
-  commuAt = Date.now(); try { commu = await api('/commu'); } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
+  commuAt = Date.now(); const sigC = c => c ? `${c.on}:${c.joined}:${c.paused}:${c.done}` : '', before = sigC(commu);
+  try { commu = await api('/commu'); try { localStorage.setItem('wm_commu', JSON.stringify({ ...commu, _t: Date.now() })); } catch { /* stockage plein */ } } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
+  if (sigC(commu) !== before && ['packs', 'album'].includes(tab) && $('#modal')?.hidden && !game && cfg) setTimeout(() => render(), 0);   // l'état a changé : l'écran se met à jour tout seul
   syncEventTheme(); try { pillsSync(); syncSoundLock(); } catch { /* bandeau pas encore affiché */ } setTimeout(() => { try { syncEventNotice(); } catch { /* ignoré */ } }, 400); return commu;
 }
 /** Le thème rouge suit l'événement : appliqué à l'entrée, retiré à la fin (sauf si le joueur a gagné le palier 6). */
@@ -539,7 +543,7 @@ function cardPicker(title, { user } = {}) {
 }
 const views = {
   async packs(v) {
-    await loadCommu().catch(() => {});   // l'état de l'événement doit être connu avant de choisir le design
+    loadCommu().catch(() => {});   // rafraîchi en arrière-plan : l'écran ne l'attend pas (le dernier état connu choisit le design)
     if ((ussrUiOn() || ussrOn()) && !window.ussrParcelSvg) await loadUssr().catch(() => {});
     if (eventUi()) return eventPacks(v);
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
@@ -625,7 +629,7 @@ const views = {
   },
 
   async album(v) {
-    await loadCommu().catch(() => {});
+    loadCommu().catch(() => {});
     if (eventUi()) return eventAlbum(v);
     const S = await api('/album/stats');
     const { uniques, copies, dupes, worth, have, tiers, total, rarityAvg } = S;
@@ -1359,7 +1363,7 @@ views.admin = async v => {
     } else if (adminTab === 'probe') {
       const draw = async name => {
         box.innerHTML = '<p class="mut" style="text-align:center;padding:24px 0">Enquête en cours…</p>';
-        let R; try { R = await api('/admin/investigate' + (name ? '?name=' + encodeURIComponent(name) : '')); } catch (e) { box.innerHTML = `<div class="panel"><b>Enquête impossible</b><p class="mut">${esc(e.message)}</p><button id="pb-back">Retour</button></div>`; $('#pb-back').onclick = () => draw(''); return; }
+        let R; try { R = await api('/admin/investigate' + (name ? '?name=' + encodeURIComponent(name) : '')); } catch (e) { box.innerHTML = `<div class="panel"><b>Enquête impossible</b><p class="mut">${esc(e.message)}</p><button id="pb-back">Retour</button></div>`; ($('#pb-back') || {}).onclick = () => draw(''); return; }
         const SH = await api('/admin/ip-shares').catch(() => ({ groups: [] })), BN = await api('/admin/bans').catch(() => ({ banned: [] }));
         const P = R.player, d = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Suspensions de compte</h3><p class="mut" style="margin:0 0 6px;font-size:12px">Un compte suspendu ne peut plus rien faire, dans les deux modes : ni jouer, ni gagner de paquets ou de pièces, jusqu'à ce que tu lèves la suspension.</p>
@@ -1375,11 +1379,11 @@ views.admin = async v => {
           <div class="panel" style="margin-top:10px"><h3 style="margin:0 0 6px">Derniers échanges directs</h3>${R.trades.length ? R.trades.map(t => `<p class="mut" style="margin:4px 0;font-size:12.5px">${d(t.when)} · ${esc(t.dir)} · ${esc(t.offer)} (${esc(t.rarity)})${t.want ? ' contre ' + esc(t.want) : t.price != null ? ' pour ' + fmt(t.price) + ' pièces' : ''} · ${esc(t.status)} · avec ${esc(t.peer || '?')}</p>`).join('') : '<p class="mut">Aucun échange direct.</p>'}</div>
           <p class="mut" style="font-size:12px">${esc(R.note)}</p>`;
         const banDo = safe(async (name, ban) => { if (!(await ask(ban ? `Suspendre « ${name} » ?` : `Lever la suspension de « ${name} » ?`, [], { text: ban ? 'Le compte ne pourra plus rien faire (aucun jeu, aucun paquet, aucune pièce) jusqu\'à ce que tu lèves la suspension. Les pièces qu\'il aurait gagnées sont mises de côté et rendues à la levée.' : 'Il rejouera tout de suite. Aucun paquet de rattrapage pour la période suspendue.', ok: ban ? 'Suspendre' : 'Lever' }))) return; await api('/admin/ban', { name, ban }); toast(ban ? `${name} est suspendu` : `${name} peut rejouer`, 'ok'); draw(name); });
-        $('#bn-go').onclick = () => { const n = $('#bn-name').value.trim(); if (n) banDo(n, true); };
+        ($('#bn-go') || {}).onclick = () => { const n = $('#bn-name').value.trim(); if (n) banDo(n, true); };
         box.querySelectorAll('[data-unban]').forEach(b => b.onclick = () => banDo(b.dataset.unban, false));
-        $('#pb-ban').onclick = () => banDo(P.name, !P.banned);
-        $('#pb-go').onclick = () => { const n = $('#pb-name').value.trim(); if (n) draw(n); };
-        $('#pb-last').onclick = () => draw('');
+        ($('#pb-ban') || {}).onclick = () => banDo(P.name, !P.banned);
+        ($('#pb-go') || {}).onclick = () => { const n = $('#pb-name').value.trim(); if (n) draw(n); };
+        ($('#pb-last') || {}).onclick = () => draw('');
       };
       await draw('');
     } else if (adminTab === 'event') {
@@ -1400,8 +1404,8 @@ views.admin = async v => {
       const act = (id, fn) => { const el = $(id); if (el) el.onclick = safe(async () => { await fn(); await loadCommu(true); await syncUssrUi(); if ($('#adm')) adminBody(); }); };
       if (c.on && c.scope === 'all' && $('#ev-all')) $('#ev-all').disabled = true;
       const noticeForm = () => ({ title: $('#nt-title').value, text: $('#nt-text').value, stamp: $('#nt-stamp').value, btn: $('#nt-btn').value, adjust: $('#nt-adj').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const m = l.match(/^(.+?)\s*([+\-−]\s*\d+)$/); if (!m) throw new Error('Ajustement illisible : « ' + l + ' »'); return { name: m[1].trim(), delta: parseInt(m[2].replace('−', '-').replace(/\s+/g, ''), 10) }; }) });
-      $('#nt-tpl').onclick = () => { $('#nt-title').value = 'Dénonciation exemplaire : le Parti remercie un camarade vigilant'; $('#nt-text').value = 'Le camarade Michelleclebresil a signalé au Parti que le camarade Just1e avait honteusement volé le peuple.\n\nLe Parti a mené une enquête approfondie. Il a surtout cru le dénonciateur : c\'est plus rapide, et ça évite de se salir les mains.\n\nEn récompense de sa vigilance, 50 ₽ sont versés au camarade Michelleclebresil. 50 ₽ sont confisqués à Just1e, pour manque de discrétion.\n\nLe Parti rappelle que voler le peuple est un crime, mais se faire prendre est une faute professionnelle. La dénonciation est un devoir civique. Elle est aussi très bien payée.'; $('#nt-stamp').value = 'DÉNONCÉ'; $('#nt-btn').value = 'Vive la vigilance !'; $('#nt-adj').value = 'Michelleclebresil +50\nJust1e -50'; };
-      $('#nt-prev').onclick = safe(async () => { const f = noticeForm(); if (!f.title || !f.text) throw new Error('Titre et texte obligatoires'); noticeSheet({ ...f, adjust: f.adjust }, { preview: true }); });
+      ($('#nt-tpl') || {}).onclick = () => { $('#nt-title').value = 'Dénonciation exemplaire : le Parti remercie un camarade vigilant'; $('#nt-text').value = 'Le camarade Michelleclebresil a signalé au Parti que le camarade Just1e avait honteusement volé le peuple.\n\nLe Parti a mené une enquête approfondie. Il a surtout cru le dénonciateur : c\'est plus rapide, et ça évite de se salir les mains.\n\nEn récompense de sa vigilance, 50 ₽ sont versés au camarade Michelleclebresil. 50 ₽ sont confisqués à Just1e, pour manque de discrétion.\n\nLe Parti rappelle que voler le peuple est un crime, mais se faire prendre est une faute professionnelle. La dénonciation est un devoir civique. Elle est aussi très bien payée.'; $('#nt-stamp').value = 'DÉNONCÉ'; $('#nt-btn').value = 'Vive la vigilance !'; $('#nt-adj').value = 'Michelleclebresil +50\nJust1e -50'; };
+      ($('#nt-prev') || {}).onclick = safe(async () => { const f = noticeForm(); if (!f.title || !f.text) throw new Error('Titre et texte obligatoires'); noticeSheet({ ...f, adjust: f.adjust }, { preview: true }); });
       act('#nt-pub', async () => { const f = noticeForm(); if (!(await ask('Publier le communiqué à tous les joueurs ?', [], { text: f.adjust.length ? `Les ajustements de ₽ seront appliqués immédiatement : ${f.adjust.map(x => `${x.name} ${x.delta > 0 ? '+' : ''}${x.delta}`).join(', ')}.` : 'Aucun ajustement de ₽.', ok: 'Publier' }))) throw new Error('annulé'); const r = await api('/commu/notice', f); toast(`Communiqué publié${r.applied.length ? ' · ' + r.applied.map(x => `${x.name} ${x.delta > 0 ? '+' : ''}${x.delta} ₽`).join(', ') : ''}`, 'ok'); });
       act('#nt-clr', async () => { await api('/commu/notice', { clear: true }); toast('Communiqué retiré', 'ok'); });
       act('#ev-all', async () => { if (!(await ask('Lancer l\'événement pour TOUS les joueurs ?', [], { text: 'Chaque joueur verra l\'annonce sur son accueil et pourra payer la taxe pour entrer.', ok: 'Lancer' }))) throw new Error('annulé'); await api('/commu/set', { on: true, scope: 'all' }); toast('Événement lancé : envoi des notifications…', 'ok');
@@ -1624,8 +1628,7 @@ async function refreshMe() {
   me = await api('/me');
   if (me.banned) { banScreen(me.banMsg); return; }
   // l'état de l'événement et les scripts du thème sont prêts AVANT le premier affichage : plus d'accueil classique qui apparaît puis se corrige
-  await Promise.race([loadCommu(), new Promise(r => setTimeout(r, 1500))]).catch(() => {});
-  await syncUssrUi().catch(() => {});
+  syncUssrUi().catch(() => {});
   { const sig = () => commu ? `${commu.on}:${commu.joined}` : ''; const before = sig();
     loadCommu().then(() => { syncUssrUi(); if (sig() !== before && ['packs', 'album'].includes(tab) && $('#modal').hidden) { const go = n => (cfg ? render() : n > 0 && setTimeout(() => go(n - 1), 300)); go(20); }   // si la configuration n'est pas encore là, on réessaie un instant
       syncEventDrum(); syncEventStart(); }).catch(() => {}); }   // la fin de l'événement s'ouvre toute seule, une fois   // l'événement s'ouvre ou se ferme : l'écran suit
@@ -1742,8 +1745,8 @@ async function pushStartup() {
       : `<p><b>Active les notifications</b><br>Enchères dépassées, défis, demandes d'amis… même téléphone verrouillé.</p><div><button id="pb-yes">Activer</button><button class="plain" id="pb-no">Plus tard</button></div>`;
     $('#app').prepend(bar);
     const close = () => { try { localStorage.setItem('wm_push_ask', '1'); } catch { /* stockage indisponible */ } bar.remove(); };
-    $('#pb-no').onclick = close;
-    if (st === 'off') $('#pb-yes').onclick = async () => { try { await enablePush(); toast('Notifications activées'); } catch (e) { toast(e.message); } close(); };
+    ($('#pb-no') || {}).onclick = close;
+    if (st === 'off') ($('#pb-yes') || {}).onclick = async () => { try { await enablePush(); toast('Notifications activées'); } catch (e) { toast(e.message); } close(); };
   } catch { /* pas de notifications ici */ }
 }
 function profileSheet() {
@@ -2536,7 +2539,7 @@ function noticeSheet(n, { preview = false, next = false } = {}) {
     ${String(n.text || '').split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('')}
     ${(n.adjust || []).length ? `<ul class="nt-money">${n.adjust.map(money).join('')}</ul>` : ''}
     <button class="ic-go" id="nt-ok" style="width:100%">${esc(n.btn || 'Pour la gloire du Plan')}</button>${preview ? '<p class="mut" style="font-size:11px">Aperçu : rien n\'est envoyé aux joueurs.</p>' : ''}</div>`;
-  $('#nt-ok').onclick = () => { close(); if (!preview) refreshMe().catch(() => {}); if (next) setTimeout(() => { try { syncEventNotice(); } catch { /* ignoré */ } }, 350); };   // s'il y en a un autre à lire, il suit
+  ($('#nt-ok') || {}).onclick = () => { close(); if (!preview) refreshMe().catch(() => {}); if (next) setTimeout(() => { try { syncEventNotice(); } catch { /* ignoré */ } }, 350); };   // s'il y en a un autre à lire, il suit
   if (!preview) m.onclick = e => { if (e.target === m) close(); };
 }
 function syncEventNotice() {
@@ -2640,7 +2643,7 @@ const PLAN_ICO = {
   coin: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f4d56b" stroke="#b8902a" stroke-width="1.6"/><path d="M12 7v10M9.500 9.500q2.500-2 5 0M9.500 14.500q2.500 2 5 0" fill="none" stroke="#b8902a" stroke-width="1.5"/></svg>',
   title: '<svg viewBox="0 0 24 24"><path d="M12 2l2.700 6 6.500.6-4.900 4.300 1.500 6.400L12 15.800 6.200 19.300l1.500-6.400L2.800 8.600 9.300 8z" fill="#f4d56b" stroke="#b8902a" stroke-width="1.2"/></svg>',
   frame: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#f4d56b" stroke-width="2.4"/><rect x="7" y="7" width="10" height="10" rx="1.500" fill="#c0161d"/></svg>',
-  souv: '<svg viewBox="0 0 24 24"><rect x="5" y="2.500" width="14" height="19" rx="2" fill="#f6efd8" stroke="#8a7a52" stroke-width="1.400"/><path d="M12 7l1.500 3.200 3.500.4-2.600 2.300.7 3.400-3.100-1.700-3.100 1.700.7-3.400L7 10.620l3.500-.4z" fill="#c0161d"/></svg>',
+  souv: '<svg viewBox="0 0 24 24"><rect x="5" y="2.500" width="14" height="19" rx="2" fill="#f6efd8" stroke="#8a7a52" stroke-width="1.400"/><path d="M12 7l1.500 3.200 3.500.4-2.600 2.300.7 3.400-3.100-1.700-3.100 1.700.7-3.400L7 10.640l3.500-.4z" fill="#c0161d"/></svg>',
   theme: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="1" fill="#c0161d"/><path d="M8 9a2.500 2.500 0 1 0 2 3.800M9.500 14l5-5.500" fill="none" stroke="#f4d56b" stroke-width="1.400"/><rect x="11" y="18" width="2" height="4" fill="#8a7a52"/></svg>',
 };
 const planChips = m => [
@@ -2781,7 +2784,7 @@ function banScreen(msg) {
   d.innerHTML = `<div class="maintbox"><h2>Compte suspendu</h2><p>${esc(msg || 'Ton compte est suspendu par l\'administration.')}</p><p class="mut" style="font-size:12px">Tu ne reçois ni paquets ni pièces pendant la suspension. Elle prendra fin quand l'administrateur l'aura décidé.</p><div class="row"><button id="bn-r">Réessayer</button><button class="plain" id="bn-x">Se déconnecter</button></div></div>`;
   document.body.append(d); document.body.classList.add('noscroll');
   const check = async () => { try { const r = (await fetchJson('/me')).j; if (!r.banned) location.reload(); } catch { /* on réessaiera */ } };
-  $('#bn-r').onclick = check; $('#bn-x').onclick = () => logout(); setInterval(check, 60000);
+  ($('#bn-r') || {}).onclick = check; ($('#bn-x') || {}).onclick = () => logout(); setInterval(check, 60000);
 }
 function maintenanceScreen() {
   if ($('#maint')) return;

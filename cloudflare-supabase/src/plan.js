@@ -47,8 +47,14 @@ export function installPlan(d) {
     if (!r) { await run(env, "INSERT INTO plan_progress (user_id) VALUES (?) ON CONFLICT DO NOTHING", uid); r = await one(env, 'SELECT * FROM plan_progress WHERE user_id = ?', uid); }
     return r;
   }
-  const setting = async (env, k) => (await one(env, 'SELECT value FROM settings WHERE key = ?', k))?.value ?? null;
-  const putSetting = (env, k, v) => run(env, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?', k, String(v), String(v));
+  // Tous les réglages de l'événement (clés « commu_… ») sont relus EN UNE SEULE requête, au plus toutes les 5 s par Worker : /api/commu en faisait une dizaine, une par réglage.
+  let snap = { t: 0, map: null };
+  const snapshot = async env => {
+    if (!snap.map || Date.now() - snap.t >= (globalThis.__CACHE_MS ?? 5000)) { const rows = await d.all(env, "SELECT key, value FROM settings WHERE key LIKE 'commu%'"); snap = { t: Date.now(), map: new Map(rows.map(r => [r.key, r.value])) }; }
+    return snap.map;
+  };
+  const setting = async (env, k) => k.startsWith('commu') ? ((await snapshot(env)).get(k) ?? null) : ((await one(env, 'SELECT value FROM settings WHERE key = ?', k))?.value ?? null);
+  const putSetting = async (env, k, v) => { await run(env, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?', k, String(v), String(v)); if (snap.map && k.startsWith('commu')) snap.map.set(k, String(v)); };
   const rawOn = async env => { await ensureGameSchema(env); return (await setting(env, 'commu_on')) === '1'; };
   const scopeAll = async env => (await setting(env, 'commu_scope')) === 'all';
   /** Événement ouvert POUR CE JOUEUR : en test, seul l'administrateur le voit ; ouvert à tous, tout le monde. */
@@ -121,7 +127,7 @@ export function installPlan(d) {
       const names = p.notice.adjust.map(a => a.name.toLowerCase());
       const found = await d.all(env, 'SELECT LOWER(u.name) n FROM users u JOIN plan_progress p ON p.user_id = u.id WHERE p.joined > 1 AND LOWER(u.name) IN (' + names.map(() => '?').join(',') + ')', ...names);
       if (found.length !== names.length) continue;   // les joueurs ne sont pas encore tous inscrits : on réessaiera
-      const claim = await run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", 'commu_pend_' + p.key, String(Date.now()));
+      const claim = await run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", 'commu_pend_' + p.key, String(Date.now())); snap.t = 0;
       if (!claim.meta.changes) continue;   // une autre requête s'en occupe : une seule application
       try { await publishNotice(env, p.notice); } catch (e) { console.error('annonce programmée', p.key, e); }
     }
@@ -149,7 +155,7 @@ export function installPlan(d) {
     {
       const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', COMMU.TAX, user.id, COMMU.TAX);
       if (!paid.meta.changes) { await run(env, 'UPDATE plan_progress SET joined = ?, wr = 0 WHERE user_id = ?', +r.joined, user.id); bad(`La taxe de l'État est de ${COMMU.TAX} wikibidou, tu n'as pas assez`, 400); }
-      await run(env, "INSERT INTO settings (key, value) VALUES ('commu_pot', ?) ON CONFLICT (key) DO UPDATE SET value = CAST(CAST(settings.value AS BIGINT) + ? AS TEXT)", String(COMMU.TAX), COMMU.TAX);
+      await run(env, "INSERT INTO settings (key, value) VALUES ('commu_pot', ?) ON CONFLICT (key) DO UPDATE SET value = CAST(CAST(settings.value AS BIGINT) + ? AS TEXT)", String(COMMU.TAX), COMMU.TAX); snap.t = 0;
     }
     return commuView(env, user);
   });

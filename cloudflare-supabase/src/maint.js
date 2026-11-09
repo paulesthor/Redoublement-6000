@@ -18,6 +18,7 @@ export async function purgeSmall(env, now = Date.now()) {
     st(env, 'DELETE FROM push_msgs WHERE ts < ?', now - 3 * DAY),
     st(env, 'DELETE FROM login_fails WHERE first < ?', now - 2 * DAY),
     st(env, 'DELETE FROM usage WHERE day < ?', day),
+    st(env, "DELETE FROM settings WHERE key LIKE 'pv:%' AND key < ?", 'pv:' + new Date(now - 4 * DAY).toISOString().slice(0, 10)),   // mémoire des vues Wikipédia : 4 jours
     st(env, 'DELETE FROM hits WHERE id < (SELECT COALESCE(MAX(id), 0) - 500 FROM hits)'),
   ]);
 }

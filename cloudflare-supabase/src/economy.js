@@ -1,7 +1,7 @@
 // Gagner des wikibidou autrement : Bourse (paris sur les vues Wikipédia), « Plus ou moins », cours des cartes et alertes, banque (épargne), dividendes de collection, expéditions.
 // Les routes sont enregistrées par installEconomy(d), qui reçoit les outils de index.js.
 
-const UA = { 'User-Agent': 'WikimastersClone/1.0 (https://github.com/paulesthor/Redoublement-6000; jeu prive entre amis)' };
+import { pageViews, viewsError, pvGet, pvRest } from './pvcache.js';
 export const BOURSE = { slots: 12, minStake: 10, maxStake: 500, maxBets: 8, dayStake: 2000, payout: 1.8, popularRanks: 1500 };
 export const HILO = { time: 8000, grace: 2500, minStake: 10, maxStake: 50, perDay: 2, step: 1.85, maxStreak: 5, gap: 0.15, ranks: 30000 };
 /** Joueurs privés du « Plus ou moins » (pseudo comparé sans majuscules, accents ni séparateurs) et message affiché quand ils essaient d'y accéder. */
@@ -15,21 +15,7 @@ const DAY = 86400000;
 const ymd = d => d.replace(/-/g, '');
 const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * DAY).toISOString().slice(0, 10);
 
-/** Vues Wikipédia par jour (UTC) d'un article entre deux jours « YYYY-MM-DD » : { 'YYYY-MM-DD': vues }, ou null si l'API ne répond pas. Un jour sans visite est absent. */
-export const viewsError = { msg: null };     // dernière raison d'échec des statistiques Wikimedia (affichée à l'écran quand le marché est vide)
-export async function pageViews(title, from, to, fetchFn = fetch) {
-  const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/fr.wikipedia/all-access/user/${encodeURIComponent(title.replace(/ /g, '_'))}/daily/${ymd(from)}00/${ymd(to)}00`;
-  try {
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 4500);
-    const r = await fetchFn(url, { headers: { ...UA, 'Api-User-Agent': UA['User-Agent'] }, signal: ctl.signal }); clearTimeout(t);
-    if (r.status === 404) return {};
-    if (!r.ok) { viewsError.msg = `Wikimedia a répondu ${r.status}${r.status === 429 ? ' (trop de demandes)' : ''}`; return null; }
-    viewsError.msg = null;
-    const j = await r.json(), out = {};
-    for (const it of j.items ?? []) { const s = String(it.timestamp); out[`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`] = it.views; }
-    return out;
-  } catch (e) { viewsError.msg = e?.name === 'AbortError' ? 'Wikimedia ne répond pas (délai dépassé)' : `Wikimedia injoignable : ${String(e?.message || e).slice(0, 80)}`; return null; }
-}
+export { pageViews, viewsError } from './pvcache.js';
 
 export function installEconomy(d) {
   const { route, bad, one, all, run, st, placeholders, notify, bq, addCard, insertCard, entryAt, getMeta, stats, statsCache, ensureGameSchema, dayKey, msToMidnight, hash, CFG, now, assetOrigin, albumCount, savingsFrozen } = d;
@@ -43,6 +29,7 @@ export function installEconomy(d) {
     await ensureGameSchema(env);
     const day = dayKey(), have = (await all(env, 'SELECT slot FROM bourse_market WHERE day = ? AND slot < 100', day)).map(r => +r.slot);
     if (have.length >= BOURSE.slots || now() - buildTry < 15000) return day;       // complet, ou essai trop récent : on complète peu à peu, par petits lots
+    if (await pvRest(env)) return day;                                               // Wikimedia vient de refuser : tout le monde patiente quelques minutes
     buildTry = now();
     const from = addDays(day, -7), to = addDays(day, -1), out = []; let calls = 0;
     // Wikimedia refuse les rafales : une demande à la fois, avec une courte pause, et on s'arrête dès qu'il dit « trop de demandes »
@@ -52,7 +39,7 @@ export function installEconomy(d) {
         if (LIST.test(e[1])) continue;
         if (calls >= 14) return 'stop';                                              // une requête Worker ne peut faire qu'une cinquantaine d'appels : le reste au prochain passage
         calls++;
-        const v = await pageViews(e[1], from, to);
+        const v = await pvGet(env, e[1], from, to);
         if (!v) return 'stop';                                                        // l'API ne répond pas ou limite les demandes
         const series = []; for (let i = -7; i <= -1; i++) series.push(v[addDays(day, i)] ?? 0);
         if (series.filter(Boolean).length < 6) continue;                                // article trop peu consulté pour un pari lisible
@@ -74,8 +61,9 @@ export function installEconomy(d) {
   async function settleBourse(env, ctx) {
     await ensureGameSchema(env);
     const today = dayKey(), open = await all(env, "SELECT day, slot, id, title, ref FROM bourse_market WHERE status = 'open' AND slot < 100 AND day < ? ORDER BY day LIMIT 12", today);
+    if (open.length && await pvRest(env)) return;                                   // repos après un refus de Wikimedia
     for (const m of open) {
-      const v = await pageViews(m.title, m.day, m.day);
+      const v = await pvGet(env, m.title, m.day, m.day);
       let actual = v ? (v[m.day] ?? null) : null, void_ = false;
       if (actual === null) { if (v && m.day <= addDays(today, -4)) void_ = true; else continue; }
       const claim = await run(env, "UPDATE bourse_market SET status = ?, actual = ? WHERE day = ? AND slot = ? AND status = 'open'", void_ ? 'void' : 'done', actual, m.day, m.slot);
