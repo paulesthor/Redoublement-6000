@@ -19,6 +19,7 @@ import { EVENT_ALBUMS } from './events-data.js';
 import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
 import { isBanned, bannedIds, forgetBans, BAN_MSG } from './ban.js';
 import { maintenance } from './maint.js';
+import { pvStart, pvStop } from './pvcache.js';
 import { packLockMsg, PACK_LOCK_ROUTES } from './packlock.js';
 import { ACH, achievements, statsFromInventory } from './achievements.js';
 import { battleQuestions, aiQuestions, dailyQuestions, lastAiError, tryModel } from './aiquiz.js';
@@ -2199,8 +2200,12 @@ export default {
       const t0 = Date.now();
       await maintenance(withDb(env0)).catch(e => console.error('entretien', e));   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
       // les marchés (bourse, marché noir) sont construits ICI, une fois pour tout le monde, puis rangés en base : les joueurs ne font que les lire (et plus aucune visite ne relance Wikimedia)
-      await economy.ensureMarket(env, ASSET_ORIGIN).catch(e => console.error('bourse', e));
-      if (await commu.rawOn(env).catch(() => false)) await commu.bourse.ensureMarket(env, ASSET_ORIGIN).catch(e => console.error('marché noir', e));
+      pvStart(7);   // au plus 7 demandes à Wikimedia par passage, espacées de 13 s (leur limite : environ 5 par minute) : le marché se complète sur quelques passages
+      try {
+        await economy.ensureMarket(env, ASSET_ORIGIN).catch(e => console.error('bourse', e));
+        if (await commu.rawOn(env).catch(() => false)) await commu.bourse.ensureMarket(env, ASSET_ORIGIN).catch(e => console.error('marché noir', e));
+        await economy.settleBourse(env, ctx).catch(e => console.error('règlement bourse', e));
+      } finally { pvStop(); }
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env).then(() => null, e => e);
       for (const e of [e1, e2]) if (e) console.error('cron', e);
       await events.tick(env, ctx).catch(e => console.error('événements', e));
