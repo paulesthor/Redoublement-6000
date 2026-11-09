@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.51';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.52';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -438,7 +438,7 @@ function pillsSync() {
 async function loadCommu(force) {
   if (!force && commu && Date.now() - commuAt < 25000) return commu;
   commuAt = Date.now(); try { commu = await api('/commu'); } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
-  syncEventTheme(); try { pillsSync(); syncSoundLock(); } catch { /* bandeau pas encore affiché */ } return commu;
+  syncEventTheme(); try { pillsSync(); syncSoundLock(); } catch { /* bandeau pas encore affiché */ } setTimeout(() => { try { syncEventNotice(); } catch { /* ignoré */ } }, 400); return commu;
 }
 /** Le thème rouge suit l'événement : appliqué à l'entrée, retiré à la fin (sauf si le joueur a gagné le palier 6). */
 function syncEventTheme() {
@@ -1360,10 +1360,21 @@ views.admin = async v => {
         <p class="mut" style="margin:10px 0">Lancer l'événement ouvre une page d'annonce sur l'accueil de chaque joueur, avec le bouton pour payer la taxe (${c.tax} wikibidou) et entrer.</p>
         <button id="ev-all" style="width:100%">${c.on && c.scope === 'all' ? 'L\'événement est lancé pour tous' : 'Lancer l\'événement pour TOUS'}</button>
         <button class="plain" id="ev-pause" style="width:100%;margin-top:10px" ${c.on ? '' : 'disabled'}>${c.paused ? 'Reprendre l\'événement' : 'Mettre l\'événement en pause'}</button><p class="mut" style="margin:6px 0 0;font-size:12px">La pause bloque les gains, achats, ouvertures et inscriptions. Rien n'est coupé ni remis à zéro : tout reprend tel quel.</p>
+        <h3 style="margin:16px 0 6px">Communiqué du Parti</h3>
+        <p class="mut" style="margin:0 0 6px;font-size:12px">Écran d'annonce montré une fois à chaque joueur inscrit. Les ajustements de ₽ (un par ligne : « nom +50 » ou « nom -50 ») sont appliqués au moment de la publication.</p>
+        <input id="nt-title" placeholder="Titre" style="width:100%;margin-bottom:6px"><textarea id="nt-text" rows="6" placeholder="Texte (une ligne vide sépare les paragraphes)" style="width:100%;margin-bottom:6px"></textarea>
+        <div class="row"><input id="nt-stamp" placeholder="Tampon (ex. DÉNONCÉ)" style="flex:1"><input id="nt-btn" placeholder="Bouton" style="flex:1"></div><textarea id="nt-adj" rows="2" placeholder="Michelleclebresil +50&#10;Just1e -50" style="width:100%;margin:6px 0"></textarea>
+        <div class="row"><button class="plain" id="nt-tpl" style="flex:1">Modèle : dénonciation</button><button class="plain" id="nt-prev" style="flex:1">Aperçu (moi seul)</button></div>
+        <div class="row" style="margin-top:8px"><button id="nt-pub" style="flex:1">Publier + ajuster</button><button class="plain" id="nt-clr" style="flex:1">Retirer</button></div>
         <div class="row" style="margin-top:10px"><button class="plain" id="ev-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="ev-off" style="flex:1">Fermer</button></div>
         <div class="row" style="margin-top:10px"><button class="plain" id="ev-reset" style="flex:1">Repartir de zéro (mon compte)</button><button class="plain" id="ev-end" style="flex:1">Clore + gagnant</button><button class="plain" id="ev-souv" style="flex:1">Clore les souvenirs</button></div></div>`;
       const act = (id, fn) => { const el = $(id); if (el) el.onclick = safe(async () => { await fn(); await loadCommu(true); await syncUssrUi(); if ($('#adm')) adminBody(); }); };
       if (c.on && c.scope === 'all' && $('#ev-all')) $('#ev-all').disabled = true;
+      const noticeForm = () => ({ title: $('#nt-title').value, text: $('#nt-text').value, stamp: $('#nt-stamp').value, btn: $('#nt-btn').value, adjust: $('#nt-adj').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const m = l.match(/^(.+?)\s*([+\-−]\s*\d+)$/); if (!m) throw new Error('Ajustement illisible : « ' + l + ' »'); return { name: m[1].trim(), delta: parseInt(m[2].replace('−', '-').replace(/\s+/g, ''), 10) }; }) });
+      $('#nt-tpl').onclick = () => { $('#nt-title').value = 'Dénonciation exemplaire : le Parti remercie un camarade vigilant'; $('#nt-text').value = 'Le camarade Michelleclebresil a signalé au Parti que le camarade Just1e avait honteusement volé le peuple.\n\nLe Parti a mené une enquête approfondie. Il a surtout cru le dénonciateur : c\'est plus rapide, et ça évite de se salir les mains.\n\nEn récompense de sa vigilance, 50 ₽ sont versés au camarade Michelleclebresil. 50 ₽ sont confisqués à Just1e, pour manque de discrétion.\n\nLe Parti rappelle que voler le peuple est un crime, mais se faire prendre est une faute professionnelle. La dénonciation est un devoir civique. Elle est aussi très bien payée.'; $('#nt-stamp').value = 'DÉNONCÉ'; $('#nt-btn').value = 'Vive la vigilance !'; $('#nt-adj').value = 'Michelleclebresil +50\nJust1e -50'; };
+      $('#nt-prev').onclick = safe(async () => { const f = noticeForm(); if (!f.title || !f.text) throw new Error('Titre et texte obligatoires'); noticeSheet({ ...f, adjust: f.adjust }, { preview: true }); });
+      act('#nt-pub', async () => { const f = noticeForm(); if (!(await ask('Publier le communiqué à tous les joueurs ?', [], { text: f.adjust.length ? `Les ajustements de ₽ seront appliqués immédiatement : ${f.adjust.map(x => `${x.name} ${x.delta > 0 ? '+' : ''}${x.delta}`).join(', ')}.` : 'Aucun ajustement de ₽.', ok: 'Publier' }))) throw new Error('annulé'); const r = await api('/commu/notice', f); toast(`Communiqué publié${r.applied.length ? ' · ' + r.applied.map(x => `${x.name} ${x.delta > 0 ? '+' : ''}${x.delta} ₽`).join(', ') : ''}`, 'ok'); });
+      act('#nt-clr', async () => { await api('/commu/notice', { clear: true }); toast('Communiqué retiré', 'ok'); });
       act('#ev-all', async () => { if (!(await ask('Lancer l\'événement pour TOUS les joueurs ?', [], { text: 'Chaque joueur verra l\'annonce sur son accueil et pourra payer la taxe pour entrer.', ok: 'Lancer' }))) throw new Error('annulé'); await api('/commu/set', { on: true, scope: 'all' }); toast('Événement lancé : envoi des notifications…', 'ok');
         // « La Mère patrie t'appelle » : message en direct aux joueurs connectés, puis notification push par tranches de 20
         let sent = 0; try { for (let off = 0; off < 4000; off += 20) { const r = await api('/admin/announce', { text: 'La Mère patrie t\'appelle, camarade ! Le Plan quinquennal commence : viens payer ta taxe.', offset: off }); sent += r.push || 0; if (!r.more) break; } } catch (e) { jlog('notification de lancement : ' + e.message); }
@@ -2478,6 +2489,29 @@ function syncEventDrum() {
   document.body.append(el);
 }
 
+
+// ---------- communiqué du Parti : écran d'annonce montré une fois à chaque joueur inscrit ----------
+function noticeSheet(n, { preview = false } = {}) {
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+  const money = x => x.delta > 0 ? `<li class="nt-up"><b>+${fmt(x.delta)} ₽</b> pour le camarade ${esc(x.name)}</li>` : `<li class="nt-down"><b>−${fmt(-x.delta)} ₽</b> confisqués à ${esc(x.name)}</li>`;
+  m.hidden = false;
+  m.innerHTML = `<div class="iconsheet notice" role="dialog" aria-label="Communiqué du Parti"><span class="grab" aria-hidden="true"></span>
+    <small class="nt-kick">ПАРТИЯ · COMMUNIQUÉ OFFICIEL</small>
+    <h2>${esc(n.title)}</h2>
+    <div class="nt-stamp">${esc(n.stamp || 'COMMUNIQUÉ')}</div>
+    ${String(n.text || '').split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('')}
+    ${(n.adjust || []).length ? `<ul class="nt-money">${n.adjust.map(money).join('')}</ul>` : ''}
+    <button class="ic-go" id="nt-ok" style="width:100%">${esc(n.btn || 'Pour la gloire du Plan')}</button>${preview ? '<p class="mut" style="font-size:11px">Aperçu : rien n\'est envoyé aux joueurs.</p>' : ''}</div>`;
+  $('#nt-ok').onclick = () => { close(); if (!preview) refreshMe().catch(() => {}); };
+  if (!preview) m.onclick = e => { if (e.target === m) close(); };
+}
+function syncEventNotice() {
+  try {
+    const n = commu?.notice; if (!n || !(commu.joined || me?.admin) || prefOf('wm_notice') === String(n.id)) return;
+    if (game || ['tsar', 'gulag', 'potato'].includes(tab) || ($('#modal') && !$('#modal').hidden)) return;
+    localStorage.setItem('wm_notice', String(n.id)); noticeSheet(n);
+  } catch { /* stockage indisponible */ }
+}
 // ---------- annonce du début de l'événement : page d'accueil, taxe et entrée ----------
 function syncEventStart() {
   if (!commu || !commu.on || commu.joined || commu.scope !== 'all' || !commu.since || me.admin && commu.scope !== 'all') return;

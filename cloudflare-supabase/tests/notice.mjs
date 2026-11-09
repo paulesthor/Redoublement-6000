@@ -1,0 +1,23 @@
+// Communiqué du Parti : annonce unique pour les joueurs inscrits, avec ajustements de ₽ appliqués une seule fois, à la publication.
+import './api.mjs';
+const { call, ok, DB, J, done } = globalThis.__T;
+const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
+const reg = async (n, pw = 'secret1') => { const [, r] = await call(null, 'POST', '/api/register', { name: n, password: pw }); return r.token; };
+const ADM = await reg('Chef'), MICH = await reg('Michelleclebresil'), JUST = await reg('Just1e'), OUT = await reg('Dehors');
+await q("UPDATE users SET is_admin = 1 WHERE name = 'Chef'"); await q("UPDATE users SET coins = 1000 WHERE name IN ('Michelleclebresil','Just1e')");
+await call(ADM, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(MICH, 'POST', '/api/commu/join', {}); await call(JUST, 'POST', '/api/commu/join', {});
+const wr = async n => +(await q("SELECT p.wr w FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE u.name = ?", n))[0].w;
+const base = { title: 'Dénonciation exemplaire', text: 'Le camarade a dénoncé.\n\nLe Parti remercie.', stamp: 'DÉNONCÉ', btn: 'Vive la vigilance !' };
+let [s, v] = await call(MICH, 'POST', '/api/commu/notice', { ...base, adjust: [] }); ok('communiqué réservé à l\'administrateur', s === 403, s);
+[s, v] = await call(ADM, 'POST', '/api/commu/notice', { ...base, adjust: [{ name: 'Fantôme', delta: 50 }, { name: 'Just1e', delta: -50 }] }); ok('joueur inconnu : refus, aucun ajustement appliqué', s === 404 && await wr('Just1e') === 500, s);
+[s, v] = await call(ADM, 'POST', '/api/commu/notice', { ...base, adjust: [{ name: 'Dehors', delta: 50 }] }); ok('joueur non inscrit : refusé', s === 404, s);
+[s, v] = await call(ADM, 'POST', '/api/commu/notice', { title: '', text: '', adjust: [] }); ok('titre et texte obligatoires', s === 400, s);
+[s, v] = await call(ADM, 'POST', '/api/commu/notice', { ...base, adjust: [{ name: 'michelleclebresil', delta: 50 }, { name: 'JUST1E', delta: -50 }] });
+ok('publié : +50 ₽ au dénonciateur, −50 ₽ à l\'accusé (noms insensibles à la casse)', s === 200 && await wr('Michelleclebresil') === 550 && await wr('Just1e') === 450, J(v.applied));
+[, v] = await call(JUST, 'GET', '/api/commu'); ok('le communiqué est visible par les joueurs inscrits', v.notice?.title === base.title && v.notice.adjust.length === 2, J(v.notice));
+[, v] = await call(OUT, 'GET', '/api/commu'); ok('un joueur non inscrit reçoit le communiqué sans dommage (il ne l\'affiche pas)', !!v.notice === true || v.notice === null);
+[, v] = await call(JUST, 'GET', '/api/commu'); ok('relire l\'état ne réapplique rien', await wr('Just1e') === 450 && await wr('Michelleclebresil') === 550);
+await q("UPDATE plan_progress SET wr = 30 WHERE user_id = (SELECT id FROM users WHERE name = 'Just1e')");
+[, v] = await call(ADM, 'POST', '/api/commu/notice', { ...base, adjust: [{ name: 'Just1e', delta: -50 }] }); ok('le solde ne descend jamais sous 0 (30 ₽ retirés au lieu de 50)', await wr('Just1e') === 0 && v.applied[0].delta === -30, J(v.applied));
+[, v] = await call(ADM, 'POST', '/api/commu/notice', { clear: true }); [, v] = await call(JUST, 'GET', '/api/commu'); ok('communiqué retiré', !v.notice, J(v.notice));
+done();

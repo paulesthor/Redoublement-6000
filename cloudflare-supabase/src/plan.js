@@ -105,13 +105,14 @@ export function installPlan(d) {
     await run(env, 'UPDATE plan_progress SET earned = earned + ?, wr = wr + ?, earn_ts = ? WHERE user_id = ?', allowed, allowed, Date.now(), uid);
     return allowed;
   }
+  const noticeOf = async env => { try { return JSON.parse((await setting(env, 'commu_notice')) || 'null'); } catch { return null; } };
   const commuView = async (env, user) => {
     let r = await rowOf(env, user.id); const on = await isOn(env, user), day = dayOf(); let nextIn = 0;
     if (on && +r.joined >= 1) { const g = await regen(env, user.id, r); r = g.r; nextIn = g.nextIn; }
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
     return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
-      paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, quizPer: COMMU.QUIZ_PER_ANSWER, nextPackIn: nextIn, freeEveryMin: COMMU.FREE_EVERY_MS / 60000, freeMax: COMMU.FREE_MAX, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
+      notice: on || done ? await noticeOf(env) : null, paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, quizPer: COMMU.QUIZ_PER_ANSWER, nextPackIn: nextIn, freeEveryMin: COMMU.FREE_EVERY_MS / 60000, freeMax: COMMU.FREE_MAX, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
   route('GET', '/api/commu', async ({ env, user }) => commuView(env, user));
@@ -173,6 +174,30 @@ export function installPlan(d) {
     await ensureGameSchema(env); await putSetting(env, 'commu_on', body.on ? '1' : '0'); await putSetting(env, 'commu_scope', body.scope === 'all' ? 'all' : 'admin'); if (body.on) { await putSetting(env, 'commu_done', '0'); if ((await setting(env, 'commu_on_prev')) !== '1') await putSetting(env, 'commu_start', String(Date.now())); }
     await putSetting(env, 'commu_on_prev', body.on ? '1' : '0'); if (!body.on) await putSetting(env, 'commu_paused', '0');
     return commuView(env, user);
+  });
+  // communiqué du Parti : écran d'annonce montré une fois à chaque joueur inscrit, avec d'éventuels ajustements de ₽ appliqués à la publication
+  route('POST', '/api/commu/notice', async ({ env, user, body }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env);
+    if (body.clear) { await putSetting(env, 'commu_notice', 'null'); return { ok: true, cleared: true }; }
+    const title = String(body.title || '').trim().slice(0, 90), text = String(body.text || '').trim().slice(0, 900), stamp = String(body.stamp || 'COMMUNIQUÉ').trim().slice(0, 24), btn = String(body.btn || 'Pour la gloire du Plan').trim().slice(0, 40);
+    if (!title || !text) bad('Titre et texte obligatoires', 400);
+    const adj = Array.isArray(body.adjust) ? body.adjust.slice(0, 20) : [], todo = [];
+    for (const a of adj) {
+      const name = String(a.name || '').trim(), delta = Math.trunc(+a.delta); if (!name || !Number.isFinite(delta) || !delta || Math.abs(delta) > 5000) bad('Ajustement invalide : « ' + name + ' »', 400);
+      const u = await one(env, 'SELECT u.id, u.name, p.wr, p.joined FROM users u JOIN plan_progress p ON p.user_id = u.id WHERE LOWER(u.name) = LOWER(?)', name);
+      if (!u || +u.joined < 2) bad('Joueur introuvable ou non inscrit à l\'événement : « ' + name + ' »', 404);
+      todo.push({ id: +u.id, name: u.name, delta, wr: +u.wr });
+    }
+    const applied = [];
+    for (const t of todo) {   // le solde ne descend jamais sous 0 : on retire au plus ce que le joueur possède
+      const give = t.delta > 0 ? t.delta : -Math.min(-t.delta, Math.max(0, t.wr));
+      if (give) await run(env, 'UPDATE plan_progress SET wr = GREATEST(0, wr + ?) WHERE user_id = ?', give, t.id);
+      applied.push({ name: t.name, delta: give, asked: t.delta });
+    }
+    const notice = { id: Date.now(), title, text, stamp, btn, adjust: applied.map(x => ({ name: x.name, delta: x.delta })) };
+    await putSetting(env, 'commu_notice', JSON.stringify(notice));
+    return { ok: true, notice, applied };
   });
   // pause : plus aucun gain, achat, ouverture, réclamation ni inscription ; rien n'est coupé ni remis à zéro, l'état reprend tel quel
   route('POST', '/api/commu/pause', async ({ env, user, body }) => {
