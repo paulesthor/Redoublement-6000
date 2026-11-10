@@ -2205,11 +2205,13 @@ export default {
       const t0 = Date.now();
       await maintenance(withDb(env0)).catch(e => console.error('entretien', e));   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
       // les marchés (bourse, marché noir) sont construits ICI, une fois pour tout le monde, puis rangés en base : les joueurs ne font que les lire (et plus aucune visite ne relance Wikimedia)
-      pvStart(7);   // au plus 7 demandes à Wikimedia par passage, espacées de 13 s (leur limite : environ 5 par minute) : le marché se complète sur quelques passages
+      pvStart(9);   // au plus 9 demandes à Wikimedia par passage, espacées de 13 s (leur limite : environ 5 par minute) : le reste attend le passage suivant
       try {
+        // d'abord les paris en attente (les joueurs attendent leur résultat), ensuite les marchés du jour : bourse classique ET marché noir (celui-ci n'était réglé que si un joueur ouvrait la page, sans droit de demander à Wikimedia)
+        await economy.settleBourse(env, ctx).catch(e => console.error('règlement bourse', e));
+        if (await commu.rawOn(env).catch(() => false)) await commu.bourse.settle(env).catch(e => console.error('règlement marché noir', e));
         await economy.ensureMarket(env, ASSET_ORIGIN).catch(e => console.error('bourse', e));
         if (await commu.rawOn(env).catch(() => false)) await commu.bourse.ensureMarket(env, ASSET_ORIGIN).catch(e => console.error('marché noir', e));
-        await economy.settleBourse(env, ctx).catch(e => console.error('règlement bourse', e));
       } finally { pvStop(); }
       for (let i = 0; i < 4; i++) { if (!(await settleAuctions(env, ctx).catch(e => { console.error('enchères', e); return 0; }))) break; }   // lots échus : réglés ici aussi (2 par tour)
       const e1 = await botTick(env, ctx, true).then(() => null, e => e), e2 = await refillReserve(env, 60).then(() => null, e => e);
