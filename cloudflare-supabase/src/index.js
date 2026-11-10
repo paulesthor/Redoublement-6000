@@ -149,7 +149,7 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null, 
   return picks.map((p, i) => {
     const [page, title, views] = p.ready ? [p.ready.id, p.ready.title, p.ready.views] : entries[i];
     const shiny = p.shiny !== undefined ? !!p.shiny : p.rarity === 'legendary' && Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
-    return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...(god ? { god: 1 } : {}), ...stats(title, p.rarity, shiny) };
+    return { id: shiny ? page + SHINY_OFFSET : page, title, views, rarity: p.rarity, shiny: shiny ? 1 : 0, ...(god ? { god: 1 } : {}), ...(p.ready && !shiny ? { known: 1 } : {}), ...stats(title, p.rarity, shiny) };   // known : la carte sort de la réserve, elle est déjà en base (rien à réécrire)
   });
 }
 const insertCard = (env, c) => st(env, 'INSERT OR IGNORE INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?)',
@@ -317,7 +317,7 @@ async function finishPack(env, ctx, user, drawn, spent = 0, fake = false) {
   const god = drawn.some(c => c.god), hitsOf = drawn.filter(c => c.rarity === 'legendary');
   const res = await env.DB.batch([
     st(env, `SELECT card_id FROM inventory WHERE user_id = ? AND card_id IN (${ph})`, user.id, ...ids),
-    ...drawn.map(c => insertCard(env, c)),
+    ...drawn.filter(c => !c.known).map(c => insertCard(env, c)),   // les cartes venues de la réserve existent déjà : on n'écrit que les nouvelles
     ...drawn.map(c => addCard(env, user.id, c.id)),
     ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0 AND EXISTS (SELECT 1 FROM cards WHERE id = ?1)', c.id - SHINY_OFFSET, c.id)),
     st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
@@ -399,7 +399,7 @@ async function prepareFor(env, ctx, user, stock) {
     for (let k = have; k < want; k++) {
       const drawn = await drawCards(env, ASSET_ORIGIN, PACK_SIZE, userWeights(user), null, null, user.id);
       const ids = [...new Set(drawn.map(c => c.id))];
-      await env.DB.batch(drawn.map(c => insertCard(env, c)));
+      const fresh = drawn.filter(c => !c.known); if (fresh.length) await env.DB.batch(fresh.map(c => insertCard(env, c)));   // seules les cartes absentes de la base sont écrites
       await enrich(env, ids);
       await env.DB.batch([
         ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0 AND EXISTS (SELECT 1 FROM cards WHERE id = ?1)', c.id - SHINY_OFFSET, c.id)),
