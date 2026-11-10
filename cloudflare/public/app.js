@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.72';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.73';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1326,8 +1326,18 @@ async function adminStats(box, day) {
   $('#st-days').onclick = e => { const b = e.target.closest('[data-day]'); if (b) adminStats(box, b.dataset.day).catch(x => toast(x.message)); };
   $('#st-sort').onclick = e => { const b = e.target.closest('[data-s]'); if (b) { statsSort = b.dataset.s; adminStats(box, d.day).catch(x => toast(x.message)); } };
 }
-const LOGF = { '': ['Tout', ''], error: ['Erreurs', 'level=error'], warn: ['Alertes', 'level=warn'], action: ['Actions', 'kind=action'], admin: ['Admin', 'kind=admin'], cron: ['Tâche planifiée', 'kind=cron'] };
+const LOGF = { '': ['Tout', ''], error: ['Erreurs', 'level=error'], warn: ['Alertes', 'level=warn'], action: ['Actions', 'kind=action'], admin: ['Admin', 'kind=admin'], cron: ['Tâche planifiée', 'kind=cron'], client: ['Rapports de l\'appli', 'kind=client'] };
 let logFilter = '', logQuery = '';
+/** Exporte le journal en fichier texte : feuille de partage sur téléphone (Fichiers, Messages, Mail…), sinon téléchargement ; en dernier recours, copie dans le presse-papiers. */
+async function exportLogsFile(all) {
+  toast('Préparation de l\'export…');
+  const r = await fetch('/api/admin/logs/export?h=24' + (all ? '&all=1' : ''), { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error('Export impossible (' + r.status + ')');
+  const text = await r.text(), name = `journal-clodowiki-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}${all ? '-complet' : ''}.txt`, file = new File([text], name, { type: 'text/plain' });
+  try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+  try { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('Fichier téléchargé : ' + name); return; } catch { /* téléchargement refusé */ }
+  await navigator.clipboard.writeText(text); toast('Journal copié : colle-le dans la conversation');
+}
 async function adminLogs(box, before = 0, append = false) {
   const qs = `${LOGF[logFilter][1]}${logQuery ? '&q=' + encodeURIComponent(logQuery) : ''}${before ? '&before=' + before : ''}`;
   const d = await api('/admin/logs?' + qs);
@@ -1337,7 +1347,9 @@ async function adminLogs(box, before = 0, append = false) {
     box.innerHTML = `<div class="chips wrap" id="lg-f" style="margin-bottom:8px">${Object.entries(LOGF).map(([k, [l]]) => `<button data-f="${k}" class="${k === logFilter ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="search wide" style="margin-bottom:8px">${ico('search')}<input id="lg-q" placeholder="Joueur, action ou texte" autocomplete="off" value="${esc(logQuery)}"></div>
       <p class="mut" style="margin:0 0 6px;font-size:12.5px">24 dernières heures : <b class="bad">${d.last24h.error || 0}</b> erreur(s) · <b>${d.last24h.warn || 0}</b> alerte(s) · ${d.last24h.info || 0} action(s). Journal conservé 14 jours. <button class="plain" id="lg-r" style="padding:4px 10px;margin-left:6px">Actualiser</button></p>
+      <div class="row" style="margin-bottom:8px;gap:6px"><button class="plain" id="lg-xp" style="flex:1">Exporter les problèmes (24 h)</button><button class="plain" id="lg-xa" style="flex:1">Tout exporter (24 h)</button></div>
       <div class="jlog logbox" id="lg-box"></div>`;
+    $('#lg-xp').onclick = () => exportLogsFile(false).catch(x => toast(x.message)); $('#lg-xa').onclick = () => exportLogsFile(true).catch(x => toast(x.message));
     $('#lg-f').onclick = e => { const b = e.target.closest('[data-f]'); if (b) { logFilter = b.dataset.f; adminLogs(box).catch(x => toast(x.message)); } };
     let tm; $('#lg-q').oninput = e => { clearTimeout(tm); tm = setTimeout(() => { logQuery = e.target.value.trim(); adminLogs(box).catch(x => toast(x.message)); }, 350); };
     $('#lg-r').onclick = () => adminLogs(box).catch(x => toast(x.message));

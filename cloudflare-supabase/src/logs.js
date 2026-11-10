@@ -50,3 +50,23 @@ export async function pruneLogs(env) {
   await ensure(env);
   await env.DB.prepare('DELETE FROM logs WHERE ts < ?').bind(Date.now() - RETENTION_DAYS * 86400000).run();
 }
+
+/** Export pour diagnostic : un fichier texte lisible (résumé + lignes), à envoyer tel quel. `all` = avec les actions normales ; sinon seulement erreurs, alertes, rapports de l'appli et tâche planifiée. */
+export async function exportLogs(env, { hours = 24, all = false, version = '' } = {}) {
+  await ensure(env);
+  const h = Math.min(14 * 24, Math.max(1, Math.floor(hours) || 24)), cut = Date.now() - h * 3600000;
+  const cond = all ? 'ts > ?' : "ts > ? AND (level <> 'info' OR kind IN ('client', 'cron'))";
+  const [rows, sum, kinds] = await Promise.all([
+    env.DB.prepare(`SELECT ts, level, kind, usr, route, status, ms, detail FROM logs WHERE ${cond} ORDER BY id DESC LIMIT 2500`).bind(cut).all(),
+    env.DB.prepare(`SELECT route, status, kind, count(*)::int n, max(ms)::int ms_max, round(avg(ms))::int ms_moy FROM logs WHERE ${cond} GROUP BY route, status, kind ORDER BY n DESC LIMIT 40`).bind(cut).all(),
+    env.DB.prepare(`SELECT level, kind, count(*)::int n FROM logs WHERE ${cond} GROUP BY level, kind ORDER BY n DESC`).bind(cut).all(),
+  ]);
+  const fmt = t => new Date(+t).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const out = [`JOURNAL CLODO WIKI : export du ${fmt(Date.now())} (heure de Paris)`, `Version ${version} · période : ${h} h · contenu : ${all ? 'tout' : 'erreurs, alertes, rapports de l\'appli, tâche planifiée'} · ${rows.results.length} ligne(s) (maximum 2500, les plus récentes)`, '', '== RÉSUMÉ PAR TYPE =='];
+  for (const k of kinds.results) out.push(`${k.n}\t${k.level}/${k.kind}`);
+  out.push('', '== RÉSUMÉ PAR ROUTE (nombre, statut, type, durée max / moyenne en ms) ==');
+  for (const r of sum.results) out.push(`${r.n}\t${r.status}\t${r.kind}\t${r.route}\t${r.ms_max}/${r.ms_moy}`);
+  out.push('', '== LIGNES (heure | niveau | type | joueur | route | statut | ms | détail) ==');
+  for (const e of rows.results) out.push([fmt(e.ts), e.level, e.kind, e.usr || '-', e.route, e.status, e.ms, String(e.detail || '').replace(/\s+/g, ' ')].join(' | '));
+  return out.join('\n');
+}

@@ -1,0 +1,21 @@
+// Export du journal pour diagnostic : réservé à l'administrateur, résumé + lignes.
+import './api.mjs';
+const { call, ok, DB, J, done, env, worker } = globalThis.__T;
+const { logEvent, flushLogs } = await import('../src/logs.js');
+const [, a] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = a.token;
+const [, b] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = b.token;
+await DB.prepare("UPDATE users SET is_admin = 1 WHERE name = 'Alice'").run();
+logEvent({ level: 'error', kind: 'erreur', user: 'Bob', route: 'POST /api/packs/open', status: 500, ms: 4200, detail: 'Too many subrequests' });
+logEvent({ level: 'warn', kind: 'client', user: 'Bob', route: 'x10 /packs/open', status: 500, ms: 0, detail: 'paquet 8/10, essai 4' });
+logEvent({ level: 'info', kind: 'action', user: 'Bob', route: 'POST /api/daily/claim', status: 200, ms: 90, detail: 'ok' });
+await flushLogs(env, true);
+const get = async tok => { const r = await worker.fetch(new Request('http://x/api/admin/logs/export?h=24' + (globalThis.__ALL ? '&all=1' : ''), { headers: tok ? { authorization: 'Bearer ' + tok } : {} }), env, { waitUntil() {} }); return [r.status, await r.text(), r.headers.get('content-type')]; };
+let [s, t, ct] = await get(B); ok('un joueur ne peut pas exporter', s === 403, s);
+[s, t, ct] = await get(A);
+ok('export admin : fichier texte', s === 200 && /text\/plain/.test(ct) && t.includes('JOURNAL CLODO WIKI'), J([s, ct]));
+ok('contient l\'erreur serveur et le rapport de l\'appli', t.includes('Too many subrequests') && t.includes('paquet 8/10'), t.slice(0, 400));
+ok('sans « tout » : les actions normales sont absentes', !t.includes('daily/claim'));
+globalThis.__ALL = true; [s, t] = await get(A);
+ok('avec « tout » : les actions normales sont présentes', t.includes('daily/claim'));
+ok('résumé par route présent', t.includes('RÉSUMÉ PAR ROUTE') && t.includes('/api/packs/open'));
+done();

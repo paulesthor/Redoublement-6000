@@ -17,7 +17,7 @@ import { EVENT_OFFSET } from './commu-cards.js';
 import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
 import { installSanctions, SANCTION_MSG, handicapOf } from './sanctions.js';
 import { EVENT_ALBUMS } from './events-data.js';
-import { logEvent, flushLogs, readLogs, pruneLogs } from './logs.js';
+import { logEvent, flushLogs, readLogs, pruneLogs, exportLogs } from './logs.js';
 import { isBanned, bannedIds, forgetBans, BAN_MSG } from './ban.js';
 import { maintenance } from './maint.js';
 import { pvStart, pvStop } from './pvcache.js';
@@ -2086,6 +2086,11 @@ route('GET', '/api/admin/economy', admin(async ({ env }) => {
     legendaries: { existing: +legend.taken, pool: +legend.pool * 2 }, albums24: +albums.n, openAuctions: +open.n, unique: await uniqueOn(env) };
 }));
 /** Journal de log et de contrôle (table logs de Supabase, 14 jours). */
+route('GET', '/api/admin/logs/export', admin(async ({ env, query }) => {
+  await flushLogs(env, true);
+  const text = await exportLogs(env, { hours: +query.get('h') || 24, all: query.get('all') === '1', version: CFG.VERSION });
+  return new Response(text, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+}));
 route('GET', '/api/admin/logs', admin(async ({ env, query }) => { await flushLogs(env, true); return readLogs(env, { level: query.get('level') || '', kind: query.get('kind') || '', q: (query.get('q') || '').slice(0, 60), before: +query.get('before') || 0, limit: +query.get('limit') || 100 }); }));
 route('GET', '/api/admin/fights', admin(async ({ env }) => ({ events: await all(env, 'SELECT ts, battle, players, kind, detail FROM fight_events ORDER BY id DESC LIMIT 80') })));
 route('POST', '/api/admin/announce', admin(async ({ env, ctx, body }) => {
