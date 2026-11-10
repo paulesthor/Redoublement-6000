@@ -330,7 +330,7 @@ body.noscroll{overflow:hidden}
   #topbar{padding:calc(10px + env(safe-area-inset-top)) 16px 8px;position:sticky;top:0;z-index:7;background:linear-gradient(var(--bg) 70%,transparent)}
   #topbar .wordmark{display:flex}
   #hits{margin:0 16px;height:38px;gap:10px;padding:0 12px}.hits-label{display:none}#hits-text{font-size:12px}
-  main{padding:18px 16px calc(96px + env(safe-area-inset-bottom))}
+  main{padding:18px 16px calc(68px + env(safe-area-inset-bottom))}   /* le menu du bas mesure 64 px + la zone de sécurité : 68 px suffisent (96 faisaient défiler la page alors que tout tenait) */
   .pagehead h1{font-size:24px}
   button,select,input{font-size:16px;min-height:44px}
   .card .acts button,.item button,.chips button,.seg button{min-height:0}
@@ -1743,3 +1743,5 @@ body.skin-siberie .mgrid,body.skin-or .mgrid,body.ussr-lite .mgrid{grid-template
 body.skin-siberie .mgrid>*,body.skin-or .mgrid>*,body.ussr-lite .mgrid>*,body.skin-siberie .mtile>*,body.skin-or .mtile>*{min-width:0}
 body.skin-siberie .mtile b,body.skin-siberie .mtile small,body.skin-or .mtile b,body.skin-or .mtile small{overflow-wrap:break-word;hyphens:auto}
 body.skin-siberie .mtile b{letter-spacing:.01em;font-size:13.5px}
+/* pas de rebond de la page quand elle n'a rien à défiler (iOS) */
+html,body{overscroll-behavior-y:none}
