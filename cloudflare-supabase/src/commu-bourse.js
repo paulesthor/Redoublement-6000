@@ -1,7 +1,7 @@
 // Événement communiste : « Marché noir », paris sur les vues d'articles russes et soviétiques, misés en wikiroubles.
 // Mêmes tables que la Bourse normale (créneaux 100 et plus pour ne jamais se croiser), mêmes statistiques de vues Wikimedia.
 import { BOURSE } from './economy.js';
-import { pvGet, pvRest } from './pvcache.js';
+import { pvGet, pvRest, pvMode } from './pvcache.js';
 
 export const BM = { slot0: 100, slots: 6, minStake: 10, maxStake: 200, maxBets: 6, dayStake: 600, payout: 1.8, popular: ['legendary', 'ultra', 'super'] };
 const DAY = 86400000;
@@ -34,7 +34,22 @@ export function installCommuBourse(d, h) {
     return day;
   }
   // règlement : les vues du jour sont publiées le lendemain ; mise rendue + gain (plafonné par jour) en cas de pari gagné
+  /** Reprise des paris restés en attente alors que leur marché est déjà réglé (règlement interrompu) ; chaque pari n'est payé qu'une fois (verrou sur le pari). */
+  async function recover(env) {
+    const mk = await all(env, "SELECT m.day, m.slot, m.ref, m.actual, m.status FROM bourse_market m WHERE m.slot >= ? AND m.status IN ('done','void') AND EXISTS (SELECT 1 FROM bourse_bets b WHERE b.day = m.day AND b.slot = m.slot AND b.settled = 0) ORDER BY m.day LIMIT 3", BM.slot0);
+    for (const m of mk) {
+      const void_ = m.status === 'void' || m.actual === null, actual = m.actual === null ? null : +m.actual;
+      for (const b of await all(env, 'SELECT user_id, dir, stake FROM bourse_bets WHERE day = ? AND slot = ? AND settled = 0 LIMIT 30', m.day, m.slot)) {
+        const won = !void_ && ((b.dir === 'up' && actual > m.ref) || (b.dir === 'down' && actual < m.ref)), tie = void_ || actual === m.ref, gain = won ? Math.floor(b.stake * (BM.payout - 1)) : 0, pay = tie || won ? b.stake : 0;
+        const res = await env.DB.batch([
+          st(env, 'UPDATE plan_progress SET wr = wr + ? WHERE user_id = ? AND EXISTS (SELECT 1 FROM bourse_bets WHERE user_id = ? AND day = ? AND slot = ? AND settled = 0 FOR UPDATE)', pay, b.user_id, b.user_id, m.day, m.slot),
+          st(env, 'UPDATE bourse_bets SET settled = 1, payout = ?, actual = ? WHERE user_id = ? AND day = ? AND slot = ? AND settled = 0', pay + gain, actual ?? 0, b.user_id, m.day, m.slot)]);
+        if (res[1].meta.changes && gain) await h.credit(env, +b.user_id, 'bourse', gain);
+      }
+    }
+  }
   async function settle(env) {
+    if (pvMode.patient) await recover(env).catch(e => console.error('reprise des paris du marché noir', e));   // tâche planifiée seulement
     const today = dayKey(), open = await all(env, "SELECT day, slot, id, title, ref FROM bourse_market WHERE status = 'open' AND slot >= ? AND day < ? ORDER BY day LIMIT 8", BM.slot0, today);
     for (const m of open) {
       if (await pvRest(env)) break;

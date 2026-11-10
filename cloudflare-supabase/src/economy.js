@@ -1,7 +1,7 @@
 // Gagner des wikibidou autrement : Bourse (paris sur les vues Wikipédia), « Plus ou moins », cours des cartes et alertes, banque (épargne), dividendes de collection, expéditions.
 // Les routes sont enregistrées par installEconomy(d), qui reçoit les outils de index.js.
 
-import { pageViews, viewsError, pvGet, pvRest } from './pvcache.js';
+import { pageViews, viewsError, pvGet, pvRest, pvMode } from './pvcache.js';
 export const BOURSE = { slots: 12, minStake: 10, maxStake: 500, maxBets: 8, dayStake: 2000, payout: 1.8, popularRanks: 1500 };
 export const HILO = { time: 8000, grace: 2500, minStake: 10, maxStake: 50, perDay: 2, step: 1.85, maxStreak: 5, gap: 0.15, ranks: 30000 };
 /** Joueurs privés du « Plus ou moins » (pseudo comparé sans majuscules, accents ni séparateurs) et message affiché quand ils essaient d'y accéder. */
@@ -58,8 +58,23 @@ export function installEconomy(d) {
     return day;
   }
   /** Règle les marchés des jours passés dès que les vues du jour sont publiées (4 jours d'attente au plus, sinon les mises sont rendues). */
+  /** Reprise des paris restés en attente alors que leur marché est déjà réglé (règlement interrompu en route : limite d'appels, délai dépassé). Chaque pari est payé une seule fois : le paiement ne part que si le pari est encore « en attente », verrouillé pendant l'opération. */
+  async function recoverBets(env, ctx) {
+    const mk = await all(env, "SELECT m.day, m.slot, m.title, m.ref, m.actual, m.status FROM bourse_market m WHERE m.slot < 100 AND m.status IN ('done','void') AND EXISTS (SELECT 1 FROM bourse_bets b WHERE b.day = m.day AND b.slot = m.slot AND b.settled = 0) ORDER BY m.day LIMIT 4");
+    for (const m of mk) {
+      const bets = await all(env, 'SELECT user_id, dir, stake FROM bourse_bets WHERE day = ? AND slot = ? AND settled = 0 LIMIT 40', m.day, m.slot), void_ = m.status === 'void' || m.actual === null, actual = m.actual === null ? null : +m.actual, stmts = [];
+      for (const b of bets) {
+        const won = !void_ && ((b.dir === 'up' && actual > m.ref) || (b.dir === 'down' && actual < m.ref)), tie = void_ || actual === m.ref, pay = tie ? b.stake : won ? Math.floor(b.stake * BOURSE.payout) : 0;
+        if (pay) stmts.push(st(env, 'UPDATE users SET coins = coins + ? WHERE id = ? AND EXISTS (SELECT 1 FROM bourse_bets WHERE user_id = ? AND day = ? AND slot = ? AND settled = 0 FOR UPDATE)', pay, b.user_id, b.user_id, m.day, m.slot));
+        stmts.push(st(env, 'UPDATE bourse_bets SET settled = 1, payout = ?, actual = ? WHERE user_id = ? AND day = ? AND slot = ? AND settled = 0', pay, actual ?? 0, b.user_id, m.day, m.slot));
+        notify(env, ctx, { t: 'notify', msg: tie ? `Bourse : « ${m.title} » est resté stable, mise rendue.` : won ? `Bourse : « ${m.title} » ${b.dir === 'up' ? 'monte' : 'baisse'} comme prévu : +${pay - b.stake} pièces !` : `Bourse : « ${m.title} » n'a pas suivi ton pari. Mise perdue.` }, b.user_id);
+      }
+      if (stmts.length) await env.DB.batch(stmts);
+    }
+  }
   async function settleBourse(env, ctx) {
     await ensureGameSchema(env);
+    if (pvMode.patient) await recoverBets(env, ctx).catch(e => console.error('reprise des paris', e));   // tâche planifiée seulement
     const today = dayKey(), open = await all(env, "SELECT day, slot, id, title, ref FROM bourse_market WHERE status = 'open' AND slot < 100 AND day < ? ORDER BY day LIMIT 12", today);
     if (open.length && await pvRest(env)) return;                                   // repos après un refus de Wikimedia
     for (const m of open) {

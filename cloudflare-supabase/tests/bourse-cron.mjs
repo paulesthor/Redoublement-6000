@@ -26,4 +26,14 @@ globalThis.__PV = (t, d) => d === yest ? 50 : 1;
 await worker.scheduled({}, { ...env }, ctx); await settle();
 const left = +(await q("SELECT COUNT(*) n FROM bourse_bets WHERE user_id = ? AND day = ? AND settled = 0", bobId, yest))[0].n;
 ok('tâche planifiée : les paris en attente des deux bourses sont réglés', left === 0, J({ left, bets: await q('SELECT slot, settled, payout FROM bourse_bets WHERE user_id = ?', bobId) }));
+
+// anciens paris bloqués : marché déjà réglé, pari jamais payé (règlement interrompu) -> repris une seule fois par la tâche planifiée
+const old = new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10);
+await DB.prepare("INSERT INTO bourse_market (day, slot, id, title, series, ref, status, actual) VALUES (?,?,?,?,?,?,'done',50), (?,?,?,?,?,?,'done',50)").bind(old, 1, 3, 'Lyon', '[1,1,1,1,1,1,1]', 1, old, 101, 4, 'Kiev', '[1,1,1,1,1,1,1]', 1).run();
+await DB.prepare("INSERT INTO bourse_bets (user_id, day, slot, dir, stake) VALUES (?,?,1,'up',100), (?,?,101,'up',100)").bind(bobId, old, bobId, old).run();
+const c0 = +(await q('SELECT coins c FROM users WHERE id = ?', bobId))[0].c, w0 = +(await q('SELECT wr FROM plan_progress WHERE user_id = ?', bobId))[0].wr;
+await worker.scheduled({}, { ...env }, ctx); await settle(); await worker.scheduled({}, { ...env }, ctx); await settle();
+const c1 = +(await q('SELECT coins c FROM users WHERE id = ?', bobId))[0].c, w1 = +(await q('SELECT wr FROM plan_progress WHERE user_id = ?', bobId))[0].wr;
+ok('bourse classique : pari bloqué repris et payé une seule fois (100 x 1,8)', c1 - c0 === 180 && (await q("SELECT settled FROM bourse_bets WHERE user_id = ? AND day = ? AND slot = 1", bobId, old))[0].settled === 1, J({ c0, c1 }));
+ok('marché noir : pari bloqué repris, mise rendue + gain, une seule fois', w1 - w0 >= 100 && w1 - w0 <= 180 && (await q("SELECT settled FROM bourse_bets WHERE user_id = ? AND day = ? AND slot = 101", bobId, old))[0].settled === 1, J({ w0, w1 }));
 done();
