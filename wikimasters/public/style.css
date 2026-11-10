@@ -1712,20 +1712,29 @@ body.skin-siberie::after,body.skin-or::after{width:150px;height:150px;right:-10p
 button.avatar{min-width:38px;min-height:38px;max-height:38px;aspect-ratio:1;overflow:hidden}
 @media(max-width:480px){button.avatar{min-width:34px;min-height:34px;max-height:34px}}
 
-/* ================= Accueil : petits détails par thème (décor derrière le colis, repères discrets) ================= */
-.hero.home::before,.hero.home::after{content:"";position:absolute;pointer-events:none;z-index:-1}
-/* Camarade : rayons d'affiche constructiviste et grande étoile derrière le colis ; faucille et marteau dorés dans le coin */
-body.ussr-ui .hero.home::before{left:50%;top:41%;width:min(135vw,580px);aspect-ratio:1;transform:translate(-50%,-50%);background:repeating-conic-gradient(from -4deg,rgba(192,22,29,.26) 0 5deg,transparent 5deg 15deg);-webkit-mask:radial-gradient(circle,#000 0 18%,transparent 70%);mask:radial-gradient(circle,#000 0 18%,transparent 70%)}
-body.ussr-ui .hero.home::after{left:50%;top:41%;width:min(84vw,340px);aspect-ratio:1;transform:translate(-50%,-50%);background:#c0161d;opacity:.2;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
-body.ussr-ui::after{clip-path:none;width:92px;height:92px;right:14px;top:auto;bottom:88px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='171 -1495 1494 1495'%3E%3Cpath fill='%23f4d56b' transform='scale(1 -1)' d='M1000 1495Q1237 1495 1446 1306Q1596 1151 1596 936Q1596 735 1471 597L1665 449L1525 318H1522L1337 488Q1172 378 955 378Q785 378 642 466V463L382 0H379Q175 141 171 148Q197 173 542 581Q566 610 573 610Q686 525 844 525Q1035 525 1186 629L969 827L861 712H855Q668 828 659 840L892 1098Q1175 1084 1175 1079L1049 920Q1279 745 1308 731V733Q1374 823 1374 947V983Q1374 1237 1123 1338Q986 1407 867 1407H830Q732 1407 612 1352Q782 1495 1000 1495Z'/%3E%3C/svg%3E") no-repeat center/contain;opacity:.16}
-/* Sibérie : neige immobile et crête de montagnes en bas du décor */
-body.skin-siberie .hero.home::before{left:50%;top:0;bottom:0;width:100vw;transform:translateX(-50%);background:radial-gradient(circle,rgba(191,228,255,.8) 0 1.1px,transparent 1.7px) 0 0/89px 107px,radial-gradient(circle,rgba(191,228,255,.55) 0 .9px,transparent 1.5px) 31px 47px/53px 71px,radial-gradient(circle,rgba(191,228,255,.4) 0 1.6px,transparent 2.2px) 12px 20px/131px 149px;opacity:.5;-webkit-mask:linear-gradient(transparent,#000 14%,#000 80%,transparent);mask:linear-gradient(transparent,#000 14%,#000 80%,transparent)}
-body.skin-siberie .hero.home::after{left:50%;bottom:-6px;width:100vw;height:96px;transform:translateX(-50%);-webkit-mask:linear-gradient(#000 45%,transparent);mask:linear-gradient(#000 45%,transparent);background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 380 90' preserveAspectRatio='none'%3E%3Cpath fill='%23bfe4ff' d='M0 90V62l34-24 30 18 44-36 40 38 36-20 40 26 34-30 36 24 38-18 48 20v30z'/%3E%3C/svg%3E") no-repeat bottom/100% 100%;opacity:.1}
-/* Or impérial : médaillon (anneaux et denture de pièce) derrière le colis, équerres dorées aux quatre coins de l'écran */
-body.skin-or .hero.home::before{left:50%;top:41%;width:min(112vw,470px);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,transparent 0 63%,rgba(255,217,106,.34) 63.4% 64.2%,transparent 64.6% 68%,rgba(255,217,106,.2) 68.4% 69%,transparent 69.4%)}
-body.skin-or .hero.home::after{left:50%;top:41%;width:min(112vw,470px);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:repeating-conic-gradient(rgba(255,217,106,.34) 0 .9deg,transparent .9deg 3deg);-webkit-mask:radial-gradient(circle,transparent 0 69.5%,#000 70% 73.5%,transparent 74%);mask:radial-gradient(circle,transparent 0 69.5%,#000 70% 73.5%,transparent 74%)}
-body.skin-or::before{content:"";position:fixed;inset:76px 10px 74px;pointer-events:none;z-index:-1;opacity:.5;background:
- linear-gradient(#ffd96a,#ffd96a) 0 0/24px 1.5px no-repeat,linear-gradient(#ffd96a,#ffd96a) 0 0/1.5px 24px no-repeat,
- linear-gradient(#ffd96a,#ffd96a) 100% 0/24px 1.5px no-repeat,linear-gradient(#ffd96a,#ffd96a) 100% 0/1.5px 24px no-repeat,
- linear-gradient(#ffd96a,#ffd96a) 0 100%/24px 1.5px no-repeat,linear-gradient(#ffd96a,#ffd96a) 0 100%/1.5px 24px no-repeat,
- linear-gradient(#ffd96a,#ffd96a) 100% 100%/24px 1.5px no-repeat,linear-gradient(#ffd96a,#ffd96a) 100% 100%/1.5px 24px no-repeat}
+/* ================= Ornements des thèmes (v2) : vrais dessins fins (dossier decor/, générés par tools/build-decor.py) ================= */
+/* remise à zéro des filigranes de la première version */
+body.skin-siberie{background-image:none}
+body.ussr-ui::before,body.ussr-ui::after,body.skin-siberie::before,body.skin-siberie::after,body.skin-or::before,body.skin-or::after{content:"";position:fixed;inset:0;width:auto;height:auto;clip-path:none;opacity:1;background:none;transform:none;border:0;pointer-events:none;z-index:-1;-webkit-mask:none;mask:none}
+.hero.home::before,.hero.home::after{display:none;clip-path:none;opacity:1;border-radius:0;-webkit-mask:none;mask:none;background:none;aspect-ratio:auto}
+body.ussr-ui .hero.home::before,body.ussr-ui .hero.home::after,body.skin-siberie .hero.home::before,body.skin-or .hero.home::before{display:block;content:"";position:absolute;pointer-events:none;z-index:-1}
+body.skin-siberie #topbar::after,body.skin-or #topbar::after,body.ussr-ui #topbar::after{content:"";position:absolute;pointer-events:none;background-repeat:no-repeat}
+@media(min-width:821px){body.ussr-ui #topbar,body.skin-siberie #topbar,body.skin-or #topbar{position:relative}}
+
+/* ---- Camarade : couronne d'épis autour du colis, étoile et rayons fins derrière, frise d'étoiles sous le bandeau, devise sur le bord ---- */
+body.ussr-ui .hero.home::before{margin:0;max-width:none;animation:none;left:50%;top:150px;width:min(112vw,470px);height:min(112vw,470px);aspect-ratio:auto;transform:translate(-50%,-50%);background:url(decor/urss-etoile.svg) center/62% no-repeat,repeating-conic-gradient(from -2deg,rgba(192,22,29,.22) 0 1.3deg,transparent 1.3deg 6deg);-webkit-mask:radial-gradient(circle,#000 0 34%,transparent 69%);mask:radial-gradient(circle,#000 0 34%,transparent 69%)}
+body.ussr-ui .hero.home::after{left:50%;top:150px;width:min(64vw,250px);height:min(83vw,325px);aspect-ratio:auto;transform:translate(-50%,-50%);background:url(decor/urss-epis.svg) center/100% 100% no-repeat}
+body.ussr-ui #topbar::after{left:0;right:0;bottom:-6px;height:12px;background:url(decor/urss-frise.svg) repeat-x center/44px 12px}
+body.ussr-ui::before{inset:auto;left:2px;top:112px;bottom:84px;content:"ПРОЛЕТАРИИ ВСЕХ СТРАН, СОЕДИНЯЙТЕСЬ \2605 ПРОЛЕТАРИИ ВСЕХ СТРАН, СОЕДИНЯЙТЕСЬ \2605 ПРОЛЕТАРИИ ВСЕХ СТРАН, СОЕДИНЯЙТЕСЬ";writing-mode:vertical-rl;transform:rotate(180deg);font:800 8px/1 Impact,'Arial Narrow',sans-serif;letter-spacing:.34em;color:rgba(244,213,107,.22);white-space:nowrap;overflow:hidden}
+body.ussr-ui::after{background:url(decor/urss-faucille.svg) right 12px bottom 86px/84px no-repeat;opacity:.2}
+
+/* ---- Sibérie : flocons détaillés, givre dans les coins, sapins, glaçons sous le bandeau, neige ---- */
+body.skin-siberie::after{background:url(decor/siberie-flocon-a.svg) right -20px top 136px/132px no-repeat,url(decor/siberie-flocon-b.svg) left 6px top 44%/70px no-repeat,url(decor/siberie-flocon-c.svg) right 16px top 62%/58px no-repeat,url(decor/siberie-givre-hg.svg) left 0 top 70px/178px no-repeat,url(decor/siberie-givre-bd.svg) right 0 bottom 66px/190px no-repeat,url(decor/siberie-sapins.svg) center bottom 64px/max(100vw,600px) auto no-repeat}
+body.skin-siberie #topbar::after{left:0;right:0;top:100%;height:30px;background:url(decor/siberie-glacons.svg) repeat-x left top/320px 30px}
+body.skin-siberie #hits{margin-top:24px}
+body.skin-siberie .hero.home::before{margin:0;max-width:none;animation:none;left:50%;top:0;bottom:0;width:100vw;transform:translateX(-50%);background:radial-gradient(circle,rgba(191,228,255,.8) 0 1.1px,transparent 1.7px) 0 0/89px 107px,radial-gradient(circle,rgba(191,228,255,.55) 0 .9px,transparent 1.5px) 31px 47px/53px 71px,radial-gradient(circle,rgba(191,228,255,.4) 0 1.6px,transparent 2.2px) 12px 20px/131px 149px;opacity:.5;-webkit-mask:linear-gradient(transparent,#000 14%,#000 80%,transparent);mask:linear-gradient(transparent,#000 14%,#000 80%,transparent)}
+
+/* ---- Or impérial : rosace guillochée derrière le colis, coins Art déco, ornement sous le bandeau ---- */
+body.skin-or::after{background:url(decor/or-coin-hg.svg) left 8px top 78px/58px no-repeat,url(decor/or-coin-hd.svg) right 8px top 78px/58px no-repeat,url(decor/or-coin-bg.svg) left 8px bottom 76px/58px no-repeat,url(decor/or-coin-bd.svg) right 8px bottom 76px/58px no-repeat}
+body.skin-or #topbar::after{left:50%;bottom:-8px;width:220px;height:16px;transform:translateX(-50%);background:url(decor/or-frise.svg) center/100% 100% no-repeat}
+body.skin-or .hero.home::before{margin:0;max-width:none;animation:none;left:50%;top:150px;width:min(82vw,330px);height:min(82vw,330px);aspect-ratio:auto;transform:translate(-50%,-50%);background:url(decor/or-guilloche.svg) center/100% no-repeat}
