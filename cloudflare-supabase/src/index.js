@@ -11,6 +11,7 @@ import { installMarket, MARKET } from './market.js';
 import { installSeasonZero } from './seasonzero.js';
 import { installFeed } from './feed.js';
 import { installCamp } from './camp.js';
+import { installPackGuard } from './packguard.js';
 import { installPlan, COMMU } from './plan.js';
 import { EVENT_OFFSET } from './commu-cards.js';
 import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
@@ -700,11 +701,13 @@ async function gameBadges(env, uid) {
   const qc = q.filter(r => ids.includes(r.qid) && !r.claimed && r.progress >= QUEST[r.qid].goal).length;
   return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new', ex: +(ex?.n || 0) };
 }
+const lastRepair = new Map();
 route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   if (!user.is_admin && await isBanned(env, user.id)) return { ...publicUser(user), packs: 0, nextPackIn: 0, banned: true, banMsg: BAN_MSG };   // aucune génération de paquet, aucune tâche de fond
   recordIpSoon(env, ctx, user.id, req);   // au plus une écriture par heure et par compte
   // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
   if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
+  if (now() - (lastRepair.get(user.id) || 0) > 60000) { lastRepair.set(user.id, now()); if (lastRepair.size > 5000) lastRepair.clear(); await guard.repair(env, user.id).catch(() => {}); }   // ouverture interrompue : paquet (ou pièces) rendu dès que le joueur rouvre l'appli
   const u = await refreshPacks(env, user);
   if (now() - (lastPrep.get(user.id) || 0) > 20000) { lastPrep.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, u, u.pack_stock).catch(e => console.error('prepareFor', e))); }
   if (now() - lastDailyWin >= (globalThis.__CACHE_MS ?? 30000)) { lastDailyWin = now(); ctx.waitUntil(settleDailyWinners(env, ctx).catch(() => {})); }   // au plus toutes les 30 s (et non à chaque ouverture de l'appli)
@@ -861,21 +864,25 @@ route('POST', '/api/clientlog', async ({ user, body }) => {
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   await maybeRefill(env, ctx);
   const u = await refreshPacks(env, user);
+  let guardKey = null;
   if (!testOn(u)) {                                      // mode test : paquets illimités
     if (u.pack_stock < 1) bad('Plus de booster disponible, patiente un peu !');
     const wasFull = u.pack_stock >= PACK_MAX;
-    const claimed = await run(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id);
-    if (!claimed.meta.changes) bad('Plus de booster disponible, patiente un peu !');
+    const t = await guard.take(env, u.id, st(env, 'UPDATE users SET pack_stock = pack_stock - 1, pack_ts = CASE WHEN ? = 1 THEN ? ELSE pack_ts END WHERE id = ? AND pack_stock >= 1', wasFull ? 1 : 0, now(), u.id), 'o');   // paquet pris + marqueur de remboursement, dans une seule transaction
+    if (!t.ok) bad('Plus de booster disponible, patiente un peu !');
+    guardKey = t.key;
   }
   let drawn = null;
   try {
     const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
     drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm, u.id);
     ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
-    return await finishPack(env, ctx, user, drawn, 0, fake);
-  } catch (e) {                                            // échec après avoir pris le paquet : on le rend (jamais de paquet perdu), l'appli peut réessayer
-    if (!testOn(u)) await run(env, 'UPDATE users SET pack_stock = pack_stock + 1 WHERE id = ?', u.id).catch(() => {});
-    if (drawn) await releaseLegends(env, drawn);
+    const out = await finishPack(env, ctx, user, drawn, 0, fake);
+    if (guardKey) await guard.release(env, u.id, guardKey);   // ouverture terminée : plus rien à rembourser
+    return out;
+  } catch (e) {                                            // échec après avoir pris le paquet : on le rend (jamais de paquet perdu), l'appli peut réessayer ; si ce remboursement échoue aussi, le marqueur le fera plus tard
+    if (guardKey) await guard.refund(env, u.id, guardKey);
+    if (drawn) await releaseLegends(env, drawn).catch(() => {});
     throw e;
   }
 });
@@ -890,17 +897,20 @@ const fakeGod = async (env, user) => {
 const FAKE_NEXT = ['fourniseur2caca'];
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   await maybeRefill(env, ctx);
-  const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE);
-  if (!paid.meta.changes) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
+  const paid = await guard.take(env, user.id, st(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE), 'b', String(CFG.PACK_PRICE));
+  if (!paid.ok) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
+  const guardKey = paid.key;
   let drawn = null;
   try {
     const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
     drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm, user.id);
     ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
-    return await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
-  } catch (e) {                                            // échec après paiement : les pièces sont rendues
-    await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', CFG.PACK_PRICE, user.id).catch(() => {});
-    if (drawn) await releaseLegends(env, drawn);
+    const out = await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
+    await guard.release(env, user.id, guardKey);
+    return out;
+  } catch (e) {                                            // échec après paiement : les pièces sont rendues (par le marqueur si ce remboursement-ci échoue)
+    await guard.refund(env, user.id, guardKey);
+    if (drawn) await releaseLegends(env, drawn).catch(() => {});
     throw e;
   }
 });
@@ -1047,7 +1057,8 @@ const reset = installReset({ route, bad, one, all, run, now, ensureGameSchema, p
 const market = installMarket({ one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin: ASSET_ORIGIN });
 const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
 installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle, canPlay: async (env, user) => { await commu.access(env, user, { play: true }); return true; } });   // pendant l'événement, les joueurs inscrits ont accès au camp
-const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle, assetJson, addCard, dayKey, msToMidnight, hash, now });
+const guard = installPackGuard({ st, run, all, now, ensureGameSchema, randomHex });
+const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle, assetJson, addCard, dayKey, msToMidnight, hash, now, guard });
 const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
@@ -2203,7 +2214,8 @@ export default {
     const env = meter(withDb(env0), 'R:tâche planifiée');
     ctx.waitUntil((async () => {
       const t0 = Date.now();
-      await maintenance(withDb(env0)).catch(e => console.error('entretien', e));   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
+      await maintenance(withDb(env0)).catch(e => console.error('entretien', e));
+      await guard.repair(env).catch(e => console.error('rattrapage des ouvertures', e));   // paquets pris par une ouverture abandonnée : rendus   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
       // les marchés (bourse, marché noir) sont construits ICI, une fois pour tout le monde, puis rangés en base : les joueurs ne font que les lire (et plus aucune visite ne relance Wikimedia)
       pvStart(9);   // au plus 9 demandes à Wikimedia par passage, espacées de 13 s (leur limite : environ 5 par minute) : le reste attend le passage suivant
       try {

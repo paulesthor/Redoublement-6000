@@ -48,11 +48,12 @@ export function installCommuCards(d, h) {
   route('POST', '/api/commu/open', async ({ env, origin, user }) => {
     await h.access(env, user, { play: true });
     const P = await pool(env, origin);
-    const took = await run(env, 'UPDATE plan_progress SET packs = packs - 1 WHERE user_id = ? AND packs >= 1', user.id);
-    if (!took.meta.changes) bad('Tu n\'as plus de colis : fais la queue pour en acheter (50 ₽)', 400);
+    const took = await d.guard.take(env, user.id, st(env, 'UPDATE plan_progress SET packs = packs - 1 WHERE user_id = ? AND packs >= 1', user.id), 'c');   // colis pris + marqueur de remboursement (voir packguard.js)
+    if (!took.ok) bad('Tu n\'as plus de colis : fais la queue pour en acheter (50 ₽)', 400);
+    const gk = took.key;
     let drawn;
     try { drawn = drawPack(P); if (!drawn.length) throw new Error('réservoir vide'); await env.DB.batch(drawn.map(c => insertStmt(env, c))); }
-    catch (e) { await run(env, 'UPDATE plan_progress SET packs = packs + 1 WHERE user_id = ?', user.id); throw e; }   // tirage impossible : le colis est rendu
+    catch (e) { await d.guard.refund(env, user.id, gk); throw e; }   // tirage impossible : le colis est rendu
     let before = {}, won = false;
     for (let essai = 0; essai < 12 && !won; essai++) {
       const r = await h.rowOf(env, user.id); before = json(r.cards); const next = { ...before };
@@ -60,7 +61,8 @@ export function installCommuCards(d, h) {
       const upd = await run(env, 'UPDATE plan_progress SET cards = ?, opened = opened + 1 WHERE user_id = ? AND cards = ?', JSON.stringify(next), user.id, r.cards);
       won = !!upd.meta.changes;
     }
-    if (!won) { await run(env, 'UPDATE plan_progress SET packs = packs + 1 WHERE user_id = ?', user.id); bad('Trop d\'ouvertures en même temps, réessaie', 409); }
+    if (!won) { await d.guard.refund(env, user.id, gk); bad('Trop d\'ouvertures en même temps, réessaie', 409); }
+    await d.guard.release(env, user.id, gk);   // collection à jour : plus rien à rembourser
     // collection = progression : chaque fiche NOUVELLE rapporte des points de palier (sans ₽ à dépenser), plus un bonus tous les 50 fiches différentes
     let points = 0; { const fresh = new Set(); for (const c of drawn) if (!before[EVENT_OFFSET + c.id] && !fresh.has(c.id)) { fresh.add(c.id); points += NEW_POINTS[c.r] || 1; }
       const had = Object.keys(before).length; points += (Math.floor((had + fresh.size) / 50) - Math.floor(had / 50)) * COLLECTION_BONUS;
