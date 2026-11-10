@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.78';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.79';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1972,10 +1972,12 @@ async function previewUssr(best) {
   finally { if (prevOn === null) localStorage.removeItem('wm_ussr'); else localStorage.setItem('wm_ussr', prevOn); }
 }
 views.settings = async v => {
+  const frm = await api('/me/frame').catch(() => null);   // cadres de photo gagnés et choix actuel
   const th = ussrUiOn() ? 'urss' : pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await loadCommu(true))?.perks || [])];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
   v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
     <div class="setgrp"><h3>Thème</h3>${ussrUiOn() ? '<p class="mut" style="margin:0 0 10px;font-size:13px">Pendant l\'événement, le thème rouge est imposé. Ton thème habituel (' + esc((THEME_LIST.find(t => t[0] === (prefOf('wm_theme') || 'dark')) || THEME_LIST[3])[1]) + ') revient quand tu quittes le mode communiste.</p>' : ''}<div class="themes ${ussrUiOn() ? 'locked' : ''}">${THEME_LIST.filter(t => !t[5] || perks.includes(t[5]) || th === t[0]).map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
+    ${frm && frm.owned.length ? `<div class="setgrp"><h3>Cadre de la photo</h3><div class="themes frames">${[['auto', 'Automatique', 'Le plus prestigieux de ceux que tu as gagnés'], ['none', 'Aucun cadre', 'Photo sans contour'], ...frm.owned.map(f => [f.id, f.name, ({ gold_outline: 'Cadre du gagnant', frame_gold: 'Anneau doré', frame_hammer: 'Anneau rouge et or', frame_star: 'Anneau rouge' })[f.id]])].map(([k, l, d]) => { const cl = k === 'none' ? '' : 'fr-' + (k === 'auto' ? frm.owned[0].id : k); return `<button class="theme ${k === frm.choice ? 'on' : ''}" data-fr="${k}"><span class="av ${me.av ? 'hasph' : ''} ${cl}" style="--avc:${avColor(me.name)};margin:8px 10px 8px 8px">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(String(me.name)[0]?.toUpperCase() || '?')}</span><span><b>${l}</b><small>${d}</small></span></button>`; }).join('')}</div></div>` : ''}
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
       ${soundLocked() ? '' : sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
@@ -1994,6 +1996,7 @@ views.settings = async v => {
     <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = async () => { if (ussrUiOn()) return toast('Le thème rouge est imposé pendant l\'événement'); setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); await syncUssrUi(); render(); });
+  v.querySelectorAll('[data-fr]').forEach(b => b.onclick = safe(async () => { await api('/me/frame', { frame: b.dataset.fr }); await loadCosmetics(true); await refreshMe(); toast('Cadre enregistré'); render(); }));
   $('#tx-seg').onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); $('#tx-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
   $('#st-ussrui')?.addEventListener('change', async e => {
     if (e.target.checked) { setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); }

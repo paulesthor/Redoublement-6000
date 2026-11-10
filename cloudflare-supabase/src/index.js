@@ -812,13 +812,39 @@ route('POST', '/api/me/avatar', async ({ env, user, body }) => {
   return { ok: true, v };
 });
 let cosCache = { t: 0, v: null };
+// cadres de photo : du plus prestigieux au plus simple ; le joueur choisit parmi ceux qu'il a gagnés (ou « aucun », ou « automatique » = le plus prestigieux)
+const FRAMES = ['gold_outline', 'frame_gold', 'frame_hammer', 'frame_star'];
+const FRAME_NAMES = { gold_outline: 'Champion', frame_gold: 'Politburo', frame_hammer: 'Faucille et marteau', frame_star: 'Étoile rouge' };
+const ownedFrames = pk => { try { const a = JSON.parse(pk || '[]'); return FRAMES.filter(f => a.includes(f)); } catch { return []; } };
+/** Cadre affiché : choix du joueur (n = 0 aucun, 1..4 = rang dans FRAMES) s'il le possède encore, sinon le plus prestigieux. */
+const frameShown = (pk, n) => { const own = ownedFrames(pk); if (n === null || n === undefined) return own[0] ?? null; if (+n === 0) return null; const f = FRAMES[+n - 1]; return f && own.includes(f) ? f : (own[0] ?? null); };
 route('GET', '/api/cosmetics', async ({ env }) => {
   if (cosCache.v && now() - cosCache.t < (globalThis.__CACHE_MS ?? 30000)) return cosCache.v;   // même réponse pour tous : relue au plus toutes les 30 s
   await ensureGameSchema(env);
-  const rows = await all(env, "SELECT u.id, u.name, u.avatar_v v, u.title ti, p.perks pk FROM users u LEFT JOIN plan_progress p ON p.user_id = u.id WHERE u.is_bot = 0 AND (u.avatar_v IS NOT NULL OR u.title IS NOT NULL OR p.perks LIKE '%frame_%' OR p.perks LIKE '%gold_outline%')");
-  const frameOf = pk => { try { const a = JSON.parse(pk || '[]'); return ['gold_outline', 'frame_gold', 'frame_hammer', 'frame_star'].find(f => a.includes(f)) ?? null; } catch { return null; } };   // cadre le plus prestigieux gagné pendant l'événement
-  cosCache = { t: now(), v: { players: rows.map(({ pk, ...r }) => ({ ...r, fr: frameOf(pk) })), labels: Object.fromEntries(TITLES.map(x => [x.id, x.label])) } };
+  const rows = await all(env, "SELECT u.id, u.name, u.avatar_v v, u.title ti, p.perks pk, ef.n fn FROM users u LEFT JOIN plan_progress p ON p.user_id = u.id LEFT JOIN event_progress ef ON ef.user_id = u.id AND ef.key = 'pf:frame' WHERE u.is_bot = 0 AND (u.avatar_v IS NOT NULL OR u.title IS NOT NULL OR p.perks LIKE '%frame_%' OR p.perks LIKE '%gold_outline%')");
+  cosCache = { t: now(), v: { players: rows.map(({ pk, fn, ...r }) => ({ ...r, fr: frameShown(pk, fn === null || fn === undefined ? null : +fn) })), labels: Object.fromEntries(TITLES.map(x => [x.id, x.label])) } };
   return cosCache.v;
+});
+/** Cadres gagnés par le joueur et son choix actuel : 'auto' (le plus prestigieux), 'none' ou l'identifiant d'un cadre. */
+route('GET', '/api/me/frame', async ({ env, user }) => {
+  await ensureGameSchema(env);
+  const [p, c] = await Promise.all([one(env, 'SELECT perks FROM plan_progress WHERE user_id = ?', user.id), one(env, "SELECT n FROM event_progress WHERE user_id = ? AND key = 'pf:frame'", user.id)]);
+  const owned = ownedFrames(p?.perks), n = c ? +c.n : null;
+  const choice = n === null ? 'auto' : n === 0 ? 'none' : (FRAMES[n - 1] && owned.includes(FRAMES[n - 1]) ? FRAMES[n - 1] : 'auto');
+  return { owned: owned.map(id => ({ id, name: FRAME_NAMES[id] })), choice, shown: frameShown(p?.perks, n) };
+});
+route('POST', '/api/me/frame', async ({ env, user, body }) => {
+  await ensureGameSchema(env);
+  const want = String(body.frame ?? 'auto');
+  const p = await one(env, 'SELECT perks FROM plan_progress WHERE user_id = ?', user.id), owned = ownedFrames(p?.perks);
+  if (want === 'auto') await run(env, "DELETE FROM event_progress WHERE user_id = ? AND key = 'pf:frame'", user.id);
+  else {
+    const n = want === 'none' ? 0 : FRAMES.indexOf(want) + 1;
+    if (want !== 'none' && (!n || !owned.includes(want))) bad('Tu n\'as pas gagné ce cadre', 403);
+    await run(env, "INSERT INTO event_progress (key, user_id, n) VALUES ('pf:frame', ?, ?) ON CONFLICT (key, user_id) DO UPDATE SET n = excluded.n", user.id, n);
+  }
+  cosCache = { t: 0, v: null }; profileCache.delete(user.id);   // le nouveau cadre apparaît partout tout de suite
+  return { ok: true, choice: want, shown: frameShown(p?.perks, want === 'auto' ? null : want === 'none' ? 0 : FRAMES.indexOf(want) + 1) };
 });
 route('GET', '/api/titles', async ({ env, ctx, user }) => {
   const { owned, added, ctx: c } = await syncTitles(env, user.id);
