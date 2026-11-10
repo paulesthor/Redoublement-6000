@@ -2216,7 +2216,8 @@ async function handle(req, env, ctx) {
 export default {
   async scheduled(event, env0, ctx) {
     const env = meter(withDb(env0), 'R:tâche planifiée');
-    ctx.waitUntil((async () => {
+    // le travail est ATTENDU par le gestionnaire lui-même (et non confié à waitUntil) : Cloudflare laisse alors toute la durée d'une tâche planifiée (15 min), au lieu de couper la suite peu après la fin du gestionnaire
+    await (async () => {
       const t0 = Date.now();
       await maintenance(withDb(env0)).catch(e => console.error('entretien', e));
       await guard.repair(env).catch(e => console.error('rattrapage des ouvertures', e));   // paquets pris par une ouverture abandonnée : rendus   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
@@ -2240,7 +2241,7 @@ export default {
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await flushAll(withDb(env0));
-    })());
+    })();
   },
   async fetch(req, env, ctx) { return secure(await handle(req, env, ctx)); },
 };

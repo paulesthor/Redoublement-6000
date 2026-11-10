@@ -29,7 +29,7 @@ export async function flushLogs(env, force = false) {
   try {
     await ensure(env);
     await env.DB.batch(items.map(e => env.DB.prepare('INSERT INTO logs (ts, level, kind, usr, route, status, ms, detail) VALUES (?,?,?,?,?,?,?,?)').bind(e.ts, e.level, e.kind, e.usr, e.route, e.status, e.ms, e.detail)));
-  } catch (e) { console.error('flushLogs', e); }
+  } catch (e) { console.error('flushLogs', e); buf.unshift(...items); if (buf.length > 300) buf.splice(0, buf.length - 300); }   // écriture impossible (base saturée) : on garde les lignes pour la prochaine fois au lieu de les perdre : ce sont justement celles des pannes
 }
 
 /** Lecture pour l'admin : filtres par niveau / type, recherche libre, pagination par identifiant. */
