@@ -1738,3 +1738,8 @@ body.skin-siberie .hero.home::before{margin:0;max-width:none;animation:none;left
 body.skin-or::after{background:url(decor/or-coin-hg.svg) left 8px top 78px/58px no-repeat,url(decor/or-coin-hd.svg) right 8px top 78px/58px no-repeat,url(decor/or-coin-bg.svg) left 8px bottom 76px/58px no-repeat,url(decor/or-coin-bd.svg) right 8px bottom 76px/58px no-repeat}
 body.skin-or #topbar::after{left:50%;bottom:-8px;width:220px;height:16px;transform:translateX(-50%);background:url(decor/or-frise.svg) center/100% 100% no-repeat}
 body.skin-or .hero.home::before{margin:0;max-width:none;animation:none;left:50%;top:150px;width:min(82vw,330px);height:min(82vw,330px);aspect-ratio:auto;transform:translate(-50%,-50%);background:url(decor/or-guilloche.svg) center/100% no-repeat}
+/* menus : les titres en capitales ne font plus déborder la colonne de droite (tuiles du menu « Plus », grilles de jeux) */
+body.skin-siberie .mgrid,body.skin-or .mgrid,body.ussr-lite .mgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+body.skin-siberie .mgrid>*,body.skin-or .mgrid>*,body.ussr-lite .mgrid>*,body.skin-siberie .mtile>*,body.skin-or .mtile>*{min-width:0}
+body.skin-siberie .mtile b,body.skin-siberie .mtile small,body.skin-or .mtile b,body.skin-or .mtile small{overflow-wrap:break-word;hyphens:auto}
+body.skin-siberie .mtile b{letter-spacing:.01em;font-size:13.5px}
