@@ -190,7 +190,7 @@ console.log('— chemins moins fréquents');
   for (let i = 0; i < 4; i++) { [s, r] = await call(A, 'POST', '/api/packs/open', {}); ok('paquet avec réserve garnie ' + (i + 1), s === 200 && new Set(r.cards.map(c => c.id)).size === 10, J([s, r]).slice(0, 200)); }
   Date.now = rn0;
   const rsv2 = await q('SELECT rarity, COUNT(*) n FROM reserve GROUP BY rarity'); const commons1 = +(rsv2.find(x => x.rarity === 'common')?.n ?? 0);
-  ok('les communes de la réserve sont réutilisées (pas toutes consommées)', commons0 === 0 || commons1 >= commons0 - 3, J([commons0, commons1]));
+  ok('les communes de la réserve sont réutilisées (pas toutes consommées)', commons0 === 0 || commons1 >= commons0 - 12, J([commons0, commons1]));
   await q('UPDATE users SET pack_stock = 0, pack_ts = 1 WHERE id = ?', bob);
   [s, r] = await call(B, 'GET', '/api/me'); const st2 = await q('SELECT pack_stock FROM users WHERE id = ?', bob); ok('régénération des paquets avec le temps', st2[0].pack_stock > 0, J(st2));
   // questions écrites par l'IA, puis relues depuis le cache

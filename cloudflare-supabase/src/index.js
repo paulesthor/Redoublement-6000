@@ -704,6 +704,7 @@ async function gameBadges(env, uid) {
 const lastRepair = new Map();
 route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   if (!user.is_admin && await isBanned(env, user.id)) return { ...publicUser(user), packs: 0, nextPackIn: 0, banned: true, banMsg: BAN_MSG };   // aucune génération de paquet, aucune tâche de fond
+  maybeRefill(env, ctx).catch(() => {});   // le remplissage de la réserve se fait ICI (requête légère) et non pendant une ouverture de paquet : il partageait ses 50 appels et pouvait la faire échouer
   recordIpSoon(env, ctx, user.id, req);   // au plus une écriture par heure et par compte
   // toutes les 10 min seulement : le calcul relit toute la collection (milliers de lignes)
   if (now() - (lastCheck.get(user.id) || 0) > 1200000) { lastCheck.set(user.id, now()); ctx.waitUntil(checkAchievements(env, ctx, user).catch(() => {})); }
@@ -862,7 +863,6 @@ route('POST', '/api/clientlog', async ({ user, body }) => {
   return { ok: true };
 });
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
-  await maybeRefill(env, ctx);
   const u = await refreshPacks(env, user);
   let guardKey = null;
   if (!testOn(u)) {                                      // mode test : paquets illimités
@@ -896,7 +896,6 @@ const fakeGod = async (env, user) => {
 };
 const FAKE_NEXT = ['fourniseur2caca'];
 route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
-  await maybeRefill(env, ctx);
   const paid = await guard.take(env, user.id, st(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', CFG.PACK_PRICE, user.id, CFG.PACK_PRICE), 'b', String(CFG.PACK_PRICE));
   if (!paid.ok) bad(`Pas assez de pièces (${CFG.PACK_PRICE} requises)`);
   const guardKey = paid.key;

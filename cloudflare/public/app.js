@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.71';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.72';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2109,7 +2109,7 @@ async function tenFlow(path, body, again) {
     const out = [];
     for (let i = 0; i < 10; i++) {
       let r, err;
-      for (let t = 0; t < 4 && !r; t++) {                                           // coupure réseau passagère (iPhone) : jusqu'à 3 nouveaux essais espacés
+      for (let t = 0; t < 6 && !r; t++) {                                           // coupure réseau passagère (iPhone) ou serveur surchargé : jusqu'à 5 nouveaux essais espacés (environ 25 s au total)
         try { r = await api(path, body || {}); }
         catch (e) {
           err = e; jlog(`×10 : paquet ${i + 1}, essai ${t + 1} raté (${String(e.message).slice(0, 60)})`); report('x10 ' + path, e, `paquet ${i + 1}/10, essai ${t + 1}`);
@@ -2118,7 +2118,7 @@ async function tenFlow(path, body, again) {
         }
       }
       if (!r) {
-        if (!out.length) throw err; toast(`${err?.message || 'Erreur serveur'} — ${out.length} paquet${out.length > 1 ? 's' : ''} ouvert${out.length > 1 ? 's' : ''}`); break;
+        if (!out.length) throw err; toast(`${out.length} paquet${out.length > 1 ? 's' : ''} sur 10 ouvert${out.length > 1 ? 's' : ''} (${err?.message || 'erreur serveur'}). Les ${10 - out.length} autres sont toujours dans ton stock.`); break;
       }
       r.cards.god = !!r.god; r.cards.fake = !!r.fake; out.push(r.cards); lastPack = r;
       if (i === 0) schedulePrefetch();
