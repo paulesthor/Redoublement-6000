@@ -19,12 +19,12 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.79';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.80';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
 /** Signale un incident au serveur (sans bloquer ni échouer) : permet de retrouver la cause d'un ×10 interrompu. */
-function report(where, e, extra = '') { try { fetch('/api/clientlog', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ where, status: e?.status || 0, msg: `build ${BUILD} · ${navigator.onLine ? 'en ligne' : 'hors ligne'} · ${e?.name || ''} ${String(e?.message || e).slice(0, 120)} ${extra}` }), keepalive: true }).catch(() => {}); } catch { /* sans importance */ } }
+function report(where, e, extra = '') { try { fetch('/api/clientlog', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ where, status: e?.status || 0, msg: `build ${BUILD} · ${navigator.onLine ? 'en ligne' : 'hors ligne'} · ${e?.name || ''} ${String(e?.message || e).slice(0, 120)} ${extra}${e?.raw ? ' · réponse : ' + e.raw : ''}` }), keepalive: true }).catch(() => {}); } catch { /* sans importance */ } }
 function jlog(txt) { try { const l = JSON.parse(localStorage.getItem('wm_log') || '[]'); l.push([Date.now(), txt]); localStorage.setItem('wm_log', JSON.stringify(l.slice(-40))); } catch { /* stockage indisponible */ } }
 { const nav = performance.getEntriesByType?.('navigation')?.[0]; jlog(`chargement de la page (${nav?.type || '?'}${nav?.transferSize === 0 ? ', depuis le cache' : ''}) — build ${BUILD}`); }
 window.addEventListener('error', e => jlog('erreur : ' + String(e.message).slice(0, 90)));
@@ -69,7 +69,7 @@ async function fetchJson(path, body) {
   if (r.status === 503 && /Maintenance/.test(j.error || '')) maintenanceScreen();
   if (r.status === 403 && j.banned) banScreen(j.error);
   if (j.packLock) { if (me) me.packLock = j.error; }
-  if (!r.ok) { if (j.quota) showQuota(j.until); const err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
+  if (!r.ok) { if (j.quota) showQuota(j.until); const err = new Error(j.error || 'Erreur'); err.status = r.status; if (!j.error) err.raw = `${(r.headers.get('content-type') || '?').split(';')[0]} · ray ${r.headers.get('cf-ray') || '?'} · ${raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) || '(corps vide)'}`; throw err; }
   if (quotaBar && Date.now() - quotaAt > 8000) hideQuota();   // la base répond à nouveau (on laisse 8 s après la dernière erreur pour ne pas clignoter)
   if (!body && SWR.test(path)) gcache.set(path, { t: Date.now(), raw });
   return { j, raw };

@@ -885,7 +885,7 @@ route('GET', '/api/config', async ({ env, origin }) => {
 route('POST', '/api/me/test-mode', async () => bad('Le mode test a été retiré', 403));
 /** Rapport d'incident envoyé par l'appli (ex. un ×10 interrompu) : va dans le journal pour qu'on voie le vrai message d'erreur côté joueur. */
 route('POST', '/api/clientlog', async ({ user, body }) => {
-  logEvent({ level: 'warn', kind: 'client', user: user.name, route: String(body.where || '').slice(0, 60), status: Math.floor(+body.status) || 0, ms: 0, detail: String(body.msg || '').slice(0, 300) });
+  logEvent({ level: 'warn', kind: 'client', user: user.name, route: String(body.where || '').slice(0, 60), status: Math.floor(+body.status) || 0, ms: 0, detail: String(body.msg || '').slice(0, 400) });
   return { ok: true };
 });
 route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {

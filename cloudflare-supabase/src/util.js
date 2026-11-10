@@ -83,10 +83,11 @@ export const searchBucket = t => { let h = 2166136261; for (let i = 0; i < t.len
 //  rq = requêtes HTTP, e4/e5 = erreurs 4xx/5xx, slow = requêtes > 1,5 s, hms = durée totale ;
 //  tr = allers-retours vers Supabase, nr/nw = instructions de lecture/écriture, r/w = lignes lues(renvoyées)/écrites, by = octets renvoyés, ms = temps passé à attendre la base.
 const meterAcc = new Map();
-const sigOf = sql => sql.replace(/\s+/g, ' ').trim().slice(0, 90);
-const hourTag = () => 'T:' + String(new Date().getUTCHours()).padStart(2, '0');
+const sigOf = sql => sql.slice(0, 160).replace(/\s+/g, ' ').trim().slice(0, 90);   // début seulement : inutile de parcourir un INSERT de plusieurs milliers de caractères
+let hourAt = -1, hourVal = '';
+const hourTag = () => { const h = Math.floor(Date.now() / 3600000); if (h !== hourAt) { hourAt = h; hourVal = 'T:' + String(new Date().getUTCHours()).padStart(2, '0'); } return hourVal; };
 const bump = (keys, add) => {
-  for (const k of keys) { const x = meterAcc.get(k) ?? {}; for (const [f, v] of Object.entries(add)) if (v) x[f] = (x[f] || 0) + v; meterAcc.set(k, x); }
+  for (const k of keys) { let x = meterAcc.get(k); if (!x) { x = {}; meterAcc.set(k, x); } for (const f in add) { const v = add[f]; if (v) x[f] = (x[f] || 0) + v; } }
 };
 const isRead = sql => /^\s*(select|with|values)\b/i.test(sql);
 /** Une instruction SQL terminée (ms = temps de l'aller-retour, trips = 1 pour la première instruction d'un lot). */

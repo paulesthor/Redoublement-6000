@@ -7,7 +7,10 @@ import { EVENT_ALBUMS } from './events-data.js';
 
 const TZ = 'Europe/Paris';
 /** Jour de jeu (« YYYY-MM-DD », heure de Paris) : tout se remet à zéro à minuit, heure française. */
-export const dayKey = (t = Date.now()) => new Date(t).toLocaleDateString('sv-SE', { timeZone: TZ });
+// Le formateur de dates coûte cher à créer (il l'était à chaque appel, des dizaines de fois par requête) : un seul, et le jour est mémorisé à la minute près (un jour ne change qu'à minuit).
+const DAY_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ });
+let dayMin = -1, dayVal = '';
+export const dayKey = (t = Date.now()) => { const m = Math.floor(t / 60000); if (m !== dayMin) { dayVal = DAY_FMT.format(t); dayMin = m; } return dayVal; };
 /** Millisecondes restantes avant minuit (heure de Paris). */
 export function msToMidnight(t = Date.now()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(t)).map(x => [x.type, x.value]));

@@ -60,7 +60,8 @@ const parisOff = ts => { const p = Object.fromEntries(fmtParis.formatToParts(new
 /** Heures dorées supplémentaires (jour, heure, minute à Paris) : elles se comportent exactement comme celles tirées au sort (même annonce, mêmes effets). */
 export const EXTRA_GOLDEN = [['2026-10-24', 9, 15], ['2026-11-01', 8, 45], ['2026-11-01', 23, 45], ['2026-11-02', 8, 30]];
 export const parisTs = (ds, h = 0, m = 0) => { const [y, mo, d] = ds.split('-').map(Number), base = Date.UTC(y, mo - 1, d, h, m); return base - parisOff(base - parisOff(base)); };
-export const dayOfTs = t => { const p = Object.fromEntries(fmtParis.formatToParts(new Date(t)).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}`; };
+const dayOfMemo = new Map();
+export const dayOfTs = t => { const m = Math.floor(t / 60000); let v = dayOfMemo.get(m); if (v === undefined) { const p = Object.fromEntries(fmtParis.formatToParts(new Date(t)).map(x => [x.type, x.value])); v = `${p.year}-${p.month}-${p.day}`; if (dayOfMemo.size > 400) dayOfMemo.clear(); dayOfMemo.set(m, v); } return v; };
 const A0 = dnum(WEEK_ANCHOR), S0 = dnum(SEASON_ANCHOR);
 
 /** Nombre pseudo-aléatoire de 32 bits, stable pour les mêmes paramètres (le premier est le secret). */
