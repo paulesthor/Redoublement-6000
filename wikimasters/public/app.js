@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.74';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.75';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -449,17 +449,28 @@ async function loadCommu(force) {
   if (sigC(commu) !== before && ['packs', 'album'].includes(tab) && $('#modal')?.hidden && !game && cfg) setTimeout(() => render(), 0);   // l'état a changé : l'écran se met à jour tout seul
   syncEventTheme(); try { pillsSync(); syncSoundLock(); } catch { /* bandeau pas encore affiché */ } setTimeout(() => { try { syncEventNotice(); } catch { /* ignoré */ } }, 400); return commu;
 }
-/** Le thème rouge suit l'événement : appliqué à l'entrée, retiré à la fin (sauf si le joueur a gagné le palier 6). */
+/** Thème réellement affiché : pendant l'événement le thème rouge est imposé ; sinon c'est le choix du joueur (wm_theme), que l'événement ne modifie JAMAIS (rien à restaurer à la sortie).
+ *  index.html relit wm_theme_fx avant le premier affichage : pas de flash, et le thème reste le bon après un redémarrage. */
+const themeFx = () => (ussrUiOn() ? 'urss' : (prefOf('wm_theme') || 'dark'));
+function applyTheme() {
+  try { localStorage.setItem('wm_theme_fx', themeFx()); } catch { /* stockage indisponible */ }
+  window.applyPrefs?.();
+}
 function syncEventTheme() {
-  const optOut = prefOf('wm_ussr_ui') === '0', th = prefOf('wm_theme');
-  if (eventOn() && !optOut && th !== 'urss') { if (th) setPref('wm_theme_prev', th); setPref('wm_theme', 'urss'); setPref('wm_theme_auto', '1'); }
-  else if (commu && prefOf('wm_theme_auto') === '1' && (!eventOn() || optOut)) { if (optOut || !(commu?.perks || []).includes('theme_urss')) setPref('wm_theme', prefOf('wm_theme_prev') || 'dark'); setPref('wm_theme_auto', '0'); }
+  // reprise des anciens réglages : l'ancienne version forçait le thème rouge en écrasant le choix du joueur, qu'elle gardait dans wm_theme_prev
+  if (prefOf('wm_theme_auto') === '1') { try { localStorage.setItem('wm_theme', prefOf('wm_theme_prev') || 'dark'); } catch { /* ignoré */ } }
+  try { localStorage.removeItem('wm_theme_auto'); localStorage.removeItem('wm_theme_prev'); } catch { /* ignoré */ }
+  applyTheme();
 }
 const ussrUiOn = () => { try { return (!!me?.admin && localStorage.getItem('wm_ussr_ui') === '1') || (eventOn() && localStorage.getItem('wm_ussr_ui') !== '0'); } catch { return false; } };
 const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src + '?v=' + encodeURIComponent(BUILD); s.onload = ok; s.onerror = () => no(new Error(src)); document.head.append(s); });
 /** Habillage URSS de toute l'interface (aperçu admin) : charge le script au besoin, l'allume ou l'éteint selon le réglage. */
+let skinLoad = null;
 async function syncUssrUi() {
-  if (ussrUiOn()) { try { if (!window.UssrSkin) await loadScript('/ussr-skin.js'); if (!window.ussrParcelSvg) await loadScript('/ussrpack.js').catch(() => {}); window.UssrSkin.on(); } catch { /* aperçu indisponible */ } }
+  applyTheme();
+  // habillage = thème + textes : événement (tout l'habillage rouge) ; sinon les thèmes gagnés adaptent aussi les textes et le décor, en version légère (pas de bandeau Pravda, menus complets)
+  const full = ussrUiOn(), fx = themeFx(), set = full ? 'urss' : (['urss', 'siberie', 'or'].includes(fx) ? fx : null);
+  if (set) { try { if (!window.UssrSkin) await (skinLoad ||= loadScript('/ussr-skin.js').finally(() => { skinLoad = null; })); if (full && !window.ussrParcelSvg) await loadScript('/ussrpack.js').catch(() => {}); window.UssrSkin.on({ set, lite: !full }); } catch { /* habillage indisponible */ } }
   else window.UssrSkin?.off();
 }
 /** Récompense du palier 5 : le colis et l'animation d'ouverture URSS restent disponibles dans le jeu normal, au choix du joueur (Réglages). */
@@ -1429,7 +1440,7 @@ views.admin = async v => {
         toast(`Événement lancé pour tous (${sent} notification${sent > 1 ? 's' : ''} envoyée${sent > 1 ? 's' : ''})`, 'ok'); });
       act('#ev-pause', async () => { await api('/commu/pause', { paused: !c.paused }); toast(c.paused ? 'Événement relancé' : 'Événement en pause', 'ok'); });
       act('#ev-me', async () => { await api('/commu/set', { on: true, scope: 'admin' }); toast('Ouvert pour toi seul', 'ok'); });
-      act('#ev-reset', async () => { if (!(await ask('Remettre ton compte à zéro dans l\'événement ?', [], { text: 'Tes ₽, colis, cartes et paliers de l\'événement sont effacés. Tu pourras payer la taxe et entrer comme un nouveau joueur (500 ₽ et 10 colis).', ok: 'Repartir de zéro' }))) throw new Error('annulé'); await api('/plan/reset', {}); commu = null; setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); try { localStorage.removeItem('wm_commu_start'); } catch { /* stockage indisponible */ } toast('Compte remis à zéro : tu es sorti du mode communiste', 'ok'); });
+      act('#ev-reset', async () => { if (!(await ask('Remettre ton compte à zéro dans l\'événement ?', [], { text: 'Tes ₽, colis, cartes et paliers de l\'événement sont effacés. Tu pourras payer la taxe et entrer comme un nouveau joueur (500 ₽ et 10 colis).', ok: 'Repartir de zéro' }))) throw new Error('annulé'); await api('/plan/reset', {}); commu = null; setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); try { localStorage.removeItem('wm_commu_start'); } catch { /* stockage indisponible */ } toast('Compte remis à zéro : tu es sorti du mode communiste', 'ok'); });
       act('#ev-off', async () => { await api('/commu/set', { on: false }); toast('Événement fermé', 'ok'); });
       act('#ev-end', async () => { const r = await api('/commu/finish', {}); toast(r.winner ? `Gagnant : ${r.winner.name}` : 'Événement clos', 'ok'); });
       act('#ev-souv', async () => { const r = await api('/commu/souvenirs/close', {}); toast(`${r.given} souvenir(s) attribué(s)`, 'ok'); });
@@ -1653,7 +1664,7 @@ async function refreshMe() {
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
   document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily || me.ex > 0);
-  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'hasph' : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
+  $('#me').innerHTML = `<span class="pill">${ico('packs')}${me.test ? '∞' : me.packs}</span><span class="pill gold">${ico('coin')}${fmt(me.coins)}</span><button class="avatar ${me.av ? 'hasph' : ''} ${COS.get(me.name)?.fr ? 'fr-' + COS.get(me.name).fr : ''}" id="profile" aria-label="Profil">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(me.name[0]?.toUpperCase() || '?')}</button>`;
   pillsSync(); syncSoundLock();
   $('#profile').onclick = profileSheet;
   paintEvBar();
@@ -1946,7 +1957,7 @@ views.tournament = async v => {
 };
 
 // ---------- réglages : thèmes, texte, animations, vibrations, notifications ----------
-const THEME_LIST = [['urss', 'Camarade', '#2a0f14', '#f4d56b', 'Rouge soviétique, gagné au Plan (palier 6)', 'theme_urss'], ['siberie', 'Sibérie', '#0e1d2b', '#bfe4ff', 'Bleu glacé, gagné au Plan (palier 9)', 'theme_siberie'], ['or', 'Or impérial', '#1e1708', '#ffd96a', 'Noir et or, gagné au Plan (palier 12)', 'theme_or'], ['dark', 'Sombre', '#07070b', '#ecebe6', 'Le thème d\'origine'], ['midnight', 'Minuit', '#000', '#ecebe6', 'Noir total, économise la batterie'], ['ocean', 'Océan', '#0d1726', '#8fd0ff', 'Bleu nuit'], ['forest', 'Forêt', '#0d1a13', '#9be3b0', 'Vert profond'],
+const THEME_LIST = [['urss', 'Camarade', '#2a0f14', '#f4d56b', 'Rouge et textes du Parti · palier 6', 'theme_urss'], ['siberie', 'Sibérie', '#0e1d2b', '#bfe4ff', 'Acier, glace et vocabulaire polaire · palier 9', 'theme_siberie'], ['or', 'Or impérial', '#1e1708', '#ffd96a', 'Noir, or et vocabulaire de cour · palier 12', 'theme_or'], ['dark', 'Sombre', '#07070b', '#ecebe6', 'Le thème d\'origine'], ['midnight', 'Minuit', '#000', '#ecebe6', 'Noir total, économise la batterie'], ['ocean', 'Océan', '#0d1726', '#8fd0ff', 'Bleu nuit'], ['forest', 'Forêt', '#0d1a13', '#9be3b0', 'Vert profond'],
   ['violet', 'Violet', '#171027', '#d2b4ff', 'Mauve nocturne'], ['light', 'Clair', '#f2f1ee', '#222', 'Fond blanc'], ['beige', 'Beige', '#efe6d3', '#6b5a3a', 'Papier chaleureux'], ['auto', 'Automatique', 'linear-gradient(135deg,#07070b 50%,#f2f1ee 50%)', '#888', 'Suit ton téléphone']];
 const pref = (k, d = '') => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } window.applyPrefs?.(); };
@@ -1961,15 +1972,15 @@ async function previewUssr(best) {
   finally { if (prevOn === null) localStorage.removeItem('wm_ussr'); else localStorage.setItem('wm_ussr', prevOn); }
 }
 views.settings = async v => {
-  const th = pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await loadCommu(true))?.perks || [])];
+  const th = ussrUiOn() ? 'urss' : pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await loadCommu(true))?.perks || [])];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
   v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
-    <div class="setgrp"><h3>Thème</h3><div class="themes">${THEME_LIST.filter(t => !t[5] || perks.includes(t[5]) || th === t[0]).map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
+    <div class="setgrp"><h3>Thème</h3>${ussrUiOn() ? '<p class="mut" style="margin:0 0 10px;font-size:13px">Pendant l\'événement, le thème rouge est imposé. Ton thème habituel (' + esc((THEME_LIST.find(t => t[0] === (prefOf('wm_theme') || 'dark')) || THEME_LIST[3])[1]) + ') revient quand tu quittes le mode communiste.</p>' : ''}<div class="themes ${ussrUiOn() ? 'locked' : ''}">${THEME_LIST.filter(t => !t[5] || perks.includes(t[5]) || th === t[0]).map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
       ${soundLocked() ? '' : sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
       ${commu?.on && commu.joined ? sw('st-commu', 'Mode communiste', 'Thème rouge, menus du Parti et jeux de l\'événement', prefOf('wm_ussr_ui') !== '0') : ''}
-      ${th === 'urss' && !soundLocked() ? sw('st-hymn', 'Hymne de l\'URSS', 'Joue en fond pendant le thème rouge', pref('wm_hymn', '1') !== '0') : ''}
+      ${th === 'urss' && !soundLocked() ? sw('st-hymn', 'Hymne de l\'URSS', 'Joue en fond pendant le thème rouge', ussrUiOn() ? pref('wm_hymn', '1') !== '0' : pref('wm_hymn', '0') === '1') : ''}
       ${sw('st-vib', 'Vibrations', 'Combats, ouvertures, récompenses', pref('wm_vibe', '1') !== '0')}
       ${sw('st-mot', 'Animations', 'Désactive-les pour un affichage plus sobre', pref('wm_motion', '1') !== '0')}
       ${sw('st-fast', 'Ouverture rapide des paquets', 'Les cartes s\'affichent sans la mise en scène', pref('wm_fast', '0') === '1')}<button class="plain" id="st-god" style="width:100%;margin-top:10px">Revoir l'animation GODPACK</button></div></div>
@@ -1982,11 +1993,11 @@ views.settings = async v => {
     <div class="setgrp"><h3>Notifications</h3><div class="panel"><label class="switch"><span>Notifications<small id="st-pushtxt">Vérification…</small></span><input type="checkbox" id="st-push" disabled></label></div></div>
     <div class="setgrp"><h3>Compte</h3><div class="row"><button class="plain" id="st-me" style="flex:1">Mon profil</button><button class="plain" id="st-pw" style="flex:1">Mot de passe</button><button class="plain" id="st-out" style="flex:1;color:#ff8a80">Déconnexion</button></div>
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
-  v.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); });
+  v.querySelectorAll('[data-th]').forEach(b => b.onclick = async () => { if (ussrUiOn()) return toast('Le thème rouge est imposé pendant l\'événement'); setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); await syncUssrUi(); render(); });
   $('#tx-seg').onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); $('#tx-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
   $('#st-ussrui')?.addEventListener('change', async e => {
-    if (e.target.checked) { const cur = pref('wm_theme', 'dark'); if (cur !== 'urss') setPref('wm_theme_prev', cur); setPref('wm_theme', 'urss'); setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); }
-    else { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); }
+    if (e.target.checked) { setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); }
+    else { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); }
     await syncUssrUi(); render();
   });
   $('#st-iconsheet')?.addEventListener('click', iconSheet);
@@ -2945,7 +2956,7 @@ function moreSheet() {
       <button class="plain" id="mo-cap" style="width:100%;margin-top:14px">Retourner chialer chez les capitalistes</button></div>`;
     $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
     $('#mo-icon').onclick = iconSheet;
-    $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); setPref('wm_theme', pref('wm_theme_prev', 'dark')); await syncUssrUi(); tab = 'packs'; render(); };
+    $('#mo-cap').onclick = async () => { close(); setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); await syncUssrUi(); tab = 'packs'; render(); };
     m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { close(); lastPack = null; gulagTab = null; tab = b.dataset.go; render(); });
     return;
   }

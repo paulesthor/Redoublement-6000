@@ -1,0 +1,89 @@
+// Audit de mise en page : débordements et textes coupés, avec et sans l'habillage URSS, sur plusieurs tailles d'écran (Playwright, hors de all.mjs).
+import './api.mjs';
+import { createRequire } from 'node:module';
+import http from 'node:http'; import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path';
+const require = createRequire('/opt/node22/lib/node_modules/'); const { chromium } = require('playwright');
+const { call, settle, DB, worker, env, ctx, ok, done, J } = globalThis.__T;
+const PUB = new URL('../../cloudflare/public/', import.meta.url).pathname;
+let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
+[s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
+await DB.prepare('UPDATE users SET is_admin = 1 WHERE name = ?').bind('Alice').run();
+await call(B, 'POST', '/api/dm/1', { body: 'coucou' }); await settle();
+for (let i = 0; i < 4; i++) { await call(A, 'POST', '/api/packs/open', {}); await call(B, 'POST', '/api/packs/open', {}); }
+await call(A, 'GET', '/api/auctions'); await call(B, 'GET', '/api/auctions'); await call(A, 'GET', '/api/inconnue'); await call(null, 'POST', '/api/login', { name: 'Bob', password: 'faux' }); await settle();
+const srv = http.createServer(async (q, res) => {
+  const u = new URL(q.url, 'http://x');
+  if (u.pathname.startsWith('/api/')) {
+    const chunks = []; for await (const c of q) chunks.push(c);
+    const rr = await worker.fetch(new Request('http://x' + q.url, { method: q.method, headers: q.headers, body: ['GET', 'HEAD'].includes(q.method) ? undefined : Buffer.concat(chunks) }), env, ctx);
+    res.writeHead(rr.status, { 'content-type': 'application/json' }); return res.end(await rr.text());
+  }
+  let p = path.join(PUB, u.pathname); if (p.endsWith('/')) p += 'index.html'; if (!existsSync(p)) { res.writeHead(404); return res.end(); }
+  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }[path.extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
+}).listen(8767);
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
+const mk = async (w, h) => { const c = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); if (!localStorage.getItem('wm_seen_ver')) localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, A); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8767/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(900); return p; };
+// Thèmes gagnés : le choix du joueur n'est jamais écrasé par l'événement, les textes suivent le thème, les cadres s'affichent. Captures dans le dossier de travail.
+const SHT = process.env.SHOTS || '/tmp/claude-0/-home-user-Redoublement-6000/37801998-3ced-5dcb-85ba-95e236d12c04/scratchpad/themes/';
+await import('node:fs').then(f => f.mkdirSync(SHT, { recursive: true }));
+const mkT = async (token, init = {}) => { const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block' }); await c.addInitScript(([tok, kv]) => { if (!sessionStorage.getItem('__init')) { sessionStorage.setItem('__init', '1'); for (const [k, v] of Object.entries(kv)) localStorage.setItem(k, v); } localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); localStorage.setItem('wm_sound', '0'); localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, [token, init]); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8767/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(1500); await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; }); return p; };
+await DB.prepare("UPDATE users SET coins = 2000 WHERE name = 'Bob'").run();
+await call(B, 'POST', '/api/daily/claim', {}); await call(A, 'POST', '/api/daily/claim', {});
+await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(B, 'POST', '/api/commu/join', {});
+const bobId = +(await DB.prepare("SELECT id FROM users WHERE name = 'Bob'").all()).results[0].id;
+await DB.prepare("UPDATE plan_progress SET perks = ? WHERE user_id = ?").bind(JSON.stringify(['theme_urss', 'theme_siberie', 'theme_or', 'frame_star', 'frame_hammer', 'frame_gold', 'gold_outline']), bobId).run();
+const th = p => p.evaluate(() => document.documentElement.dataset.theme);
+// 1. classique : le choix survit à un redémarrage, à l'entrée dans l'événement et à la sortie
+let p = await mkT(B, { wm_ussr_ui: '0', wm_theme: 'dark' });
+await p.evaluate(async () => { await loadCommu(true); await syncUssrUi(); tab = 'settings'; await render(); }); await p.waitForTimeout(800);
+await p.click('[data-th=siberie]'); await p.waitForTimeout(800);
+ok('classique : le thème Sibérie s\'applique', await th(p) === 'siberie' && await p.evaluate(() => document.body.classList.contains('skin-siberie')));
+await p.reload(); await p.waitForSelector('#app:not([hidden])'); await p.waitForTimeout(1800);
+ok('après redémarrage de l\'appli : thème Sibérie conservé', await th(p) === 'siberie' && await p.evaluate(() => document.body.classList.contains('skin-siberie')), await th(p));
+await p.evaluate(async () => { setPref('wm_ussr_ui', '1'); await syncUssrUi(); tab = 'packs'; await render(); }); await p.waitForTimeout(800);
+ok('événement : le thème rouge est imposé', await th(p) === 'urss' && await p.evaluate(() => document.body.classList.contains('ussr-ui') && !document.body.classList.contains('ussr-lite')));
+await p.evaluate(async () => { await loadCommu(true); await loadCommu(true); }); await p.waitForTimeout(500);
+ok('événement : le choix classique n\'est pas touché', await p.evaluate(() => localStorage.getItem('wm_theme')) === 'siberie');
+await p.evaluate(async () => { setPref('wm_ussr_ui', '0'); await syncUssrUi(); tab = 'packs'; await render(); }); await p.waitForTimeout(800);
+ok('sortie de l\'événement : thème Sibérie retrouvé', await th(p) === 'siberie' && await p.evaluate(() => document.body.classList.contains('skin-siberie') && !document.body.classList.contains('ussr-ui')));
+await p.reload(); await p.waitForSelector('#app:not([hidden])'); await p.waitForTimeout(1800);
+ok('puis redémarrage : toujours Sibérie', await th(p) === 'siberie');
+// ancienne version : thème rouge forcé, choix gardé dans wm_theme_prev -> repris
+await p.evaluate(() => { localStorage.setItem('wm_theme', 'urss'); localStorage.setItem('wm_theme_auto', '1'); localStorage.setItem('wm_theme_prev', 'or'); }); await p.reload(); await p.waitForSelector('#app:not([hidden])'); await p.waitForTimeout(1800);
+ok('migration : l\'ancien choix (Or impérial) est restitué', await th(p) === 'or', await th(p));
+// 2. textes et décor, par thème (classique)
+const shots = {};
+for (const t of ['urss', 'siberie', 'or']) {
+  await p.evaluate(async t => { setPref('wm_theme', t); setPref('wm_ussr_ui', '0'); await syncUssrUi(); tab = 'packs'; await render(); }, t); await p.waitForTimeout(900);
+  const nav = await p.$$eval('aside nav button em', e => e.map(x => x.textContent.trim()));
+  const skinned = await p.evaluate(() => document.body.className);
+  ok(`thème ${t} : textes du menu adaptés`, t === 'urss' ? nav.includes('Distribution') && nav.includes('Archives') : t === 'siberie' ? nav.includes('Colis') && nav.includes('Registre') : nav.includes('Coffres') && nav.includes('Trésor'), J(nav));
+  ok(`thème ${t} : menus complets en jeu normal`, nav.length >= 5 && nav.some(x => /Troc|Marché|Comptoir/.test(x)), J(nav));
+  ok(`thème ${t} : pas de bandeau Pravda hors événement`, !(await p.$('.us-news')));
+  await p.screenshot({ path: SHT + `${t}-1-accueil.png` });
+  await p.evaluate(async () => { tab = 'album'; await render(); }); await p.waitForTimeout(900); await p.screenshot({ path: SHT + `${t}-2-collection.png` });
+  await p.evaluate(async () => { tab = 'settings'; await render(); }); await p.waitForTimeout(900); await p.screenshot({ path: SHT + `${t}-3-reglages.png` });
+  await p.evaluate(async () => { tab = 'packs'; await render(); });
+}
+// retour au thème classique : les textes d'origine reviennent
+await p.evaluate(async () => { setPref('wm_theme', 'dark'); await syncUssrUi(); tab = 'packs'; await render(); }); await p.waitForTimeout(800);
+const navD = await p.$$eval('aside nav button em', e => e.map(x => x.textContent.trim()));
+ok('thème sombre : textes d\'origine rétablis', navD.includes('Boosters') && navD.includes('Collection'), J(navD));
+// 3. cadres : planche de comparaison (tailles 34, 42, 56, 84) sur les trois fonds
+const SVGPH = (c, d) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='${c}'/><circle cx='50' cy='40' r='20' fill='${d}'/><rect x='18' y='66' width='64' height='40' rx='20' fill='${d}'/></svg>`)}`;
+for (const t of ['urss', 'siberie', 'or', 'dark']) {
+  await p.evaluate(async t => { setPref('wm_theme', t); setPref('wm_ussr_ui', '0'); await syncUssrUi(); }, t);
+  await p.evaluate(([ph]) => {
+    document.querySelector('#fr-board')?.remove();
+    const b = document.createElement('div'); b.id = 'fr-board'; b.style.cssText = 'position:fixed;inset:60px 10px 70px;z-index:99999;background:var(--bg);border:1px solid var(--line2);padding:14px;overflow:auto;font:12px sans-serif;color:var(--fg)';
+    const fr = ['', 'frame_star', 'frame_hammer', 'frame_gold', 'gold_outline'], nm = ['sans cadre', 'Étoile rouge', 'Faucille et marteau', 'Politburo', 'Champion'];
+    b.innerHTML = fr.map((f, i) => `<div style="display:flex;align-items:center;gap:22px;margin:0 0 20px"><div style="width:110px;font-weight:700">${nm[i]}</div>${[34, 42, 56, 84].map(s => `<span class="av hasph ${f ? 'fr-' + f : ''}" style="width:${s}px;height:${s}px;--avc:#556"><img src="${ph}" alt=""></span>`).join('')}</div>`).join('');
+    document.body.append(b);
+  }, [SVGPH('#8a93a6', '#2b3042')]);
+  await p.waitForTimeout(300); await p.screenshot({ path: SHT + `cadres-${t}.png` });
+}
+await p.evaluate(() => document.querySelector('#fr-board')?.remove());
+// en-tête : le cadre de son propre profil
+await call(B, 'POST', '/api/me/avatar', { data: SVGPH('#8a93a6', '#2b3042') }).catch(() => {});
+ok('aucune erreur JS', p.errs.length === 0, J(p.errs));
+process.exit(0);

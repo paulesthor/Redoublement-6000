@@ -17,7 +17,7 @@
 window.THEME_BG = { dark: '#07070b', midnight: '#000000', ocean: '#050b14', forest: '#050d09', violet: '#0b0714', urss: '#16070a', siberie: '#07111a', or: '#110d04', light: '#f2f1ee', beige: '#efe6d3' };
 window.applyPrefs = function () {
   var g = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, r = document.documentElement;
-  var th = g('wm_theme') || 'dark'; if (th === 'auto') th = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  var th = g('wm_theme_fx') || g('wm_theme') || 'dark'; if (th === 'auto') th = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
   if (!window.THEME_BG[th]) th = 'dark';
   r.dataset.theme = th; r.dataset.text = g('wm_text') || 'm'; r.dataset.motion = g('wm_motion') === '0' ? 'off' : 'on';
   var m = document.querySelector('meta[name=theme-color]'); if (m) m.content = window.THEME_BG[th];

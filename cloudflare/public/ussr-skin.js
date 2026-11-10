@@ -4,6 +4,7 @@
  * window.UssrSkin.on() / off(). Les textes d'origine reviennent dès que l'habillage est coupé et la page redessinée. */
 (() => {
   'use strict';
+  if (window.UssrSkin) return;   // une seule copie : deux chargements simultanés se partageaient mal les textes modifiés (rien ne pouvait plus être restauré)
   const EXACT = new Map(Object.entries({
     // barre du bas et menus
     'Boosters': 'Distribution', 'Collection': 'Archives', 'Chercher': 'Recherches', 'Combats': 'Les Jeux', 'Top': 'Honneur', 'Marché': 'Marché noir', 'Messages': 'Courrier', 'Amis': 'Camarades', 'Plus': 'Plan', 'Fil': 'Pravda',
@@ -37,20 +38,39 @@
     'Ajouter un commentaire…': 'Ajouter une note au dossier…', 'Rechercher une carte': 'Rechercher une fiche', 'cartes uniques': 'fiches uniques', 'exemplaires': 'exemplaires du Plan', 'doublons': 'doublons (au kolkhoze)', 'valeur estimée (pièces)': 'valeur estimée (roubles d\'État)', 'Publier': 'Afficher', 'J\'aime': 'Approuvé',
   }));
   const plural = n => (+n > 1 ? 's' : '');
+  // Textes des thèmes gagnés (hors événement) : chaque thème renomme les menus, les titres, les boutons principaux et les raretés dans son propre registre.
+  const SIBERIE = new Map(Object.entries({
+    'Boosters': 'Colis', 'Collection': 'Registre', 'Chercher': 'Prospection', 'Combats': 'Duels', 'Top': 'Records', 'Marché': 'Troc', 'Messages': 'Radio', 'Amis': 'Équipe', 'Plus': 'Base', 'Fil': 'Journal',
+    'Ouvrir un paquet': 'Ouvrir un colis', 'Classement': 'Tableau des records', 'Succès': 'Exploits', 'Réglages': 'Équipement', 'Bourse': 'Bourse des fourrures', 'Banque': 'Réserve', 'Expéditions': 'Traversées', 'Quêtes du jour': 'Missions du jour',
+    'Albums': 'Carnets', 'Événements': 'Bulletins météo', 'Tournois': 'Championnats polaires', 'Personnaliser': 'Dossier de l\'équipe', 'Mon profil': 'Ma fiche', 'Messages privés': 'Messages radio', 'Administration': 'Poste de commandement',
+    'Ouvrir': 'Ouvrir le colis', 'Ouvrir ×10': 'Ouvrir ×10 colis', 'Ouverture…': 'Ouverture du colis…', 'Chargement…': 'Dégel en cours…', 'Dernier tirage': 'Dernier colis',
+    'Commune': 'Neige', 'Peu commune': 'Givre', 'Rare': 'Glace', 'Super rare': 'Banquise', 'Ultra rare': 'Blizzard', 'Légendaire': 'Permafrost', 'Communes': 'Neiges', 'Rares': 'Glaces',
+  }));
+  const OR = new Map(Object.entries({
+    'Boosters': 'Coffres', 'Collection': 'Trésor', 'Chercher': 'Registre', 'Combats': 'Joutes', 'Top': 'Noblesse', 'Marché': 'Comptoir', 'Messages': 'Courrier', 'Amis': 'Cour', 'Plus': 'Palais', 'Fil': 'Chronique',
+    'Ouvrir un paquet': 'Ouvrir un coffre', 'Classement': 'Tableau de la noblesse', 'Succès': 'Distinctions', 'Réglages': 'Intendance', 'Bourse': 'Bourse impériale', 'Banque': 'Trésorerie', 'Expéditions': 'Missions', 'Quêtes du jour': 'Charges du jour',
+    'Albums': 'Armoriaux', 'Événements': 'Édits', 'Personnaliser': 'Dossier de cour', 'Mon profil': 'Mon blason', 'Messages privés': 'Courrier privé', 'Administration': 'Chancellerie',
+    'Ouvrir': 'Ouvrir le coffre', 'Ouvrir ×10': 'Ouvrir ×10 coffres', 'Ouverture…': 'Ouverture du coffre…', 'Dernier tirage': 'Dernier coffre',
+    'Commune': 'Roturière', 'Peu commune': 'Bourgeoise', 'Rare': 'Noble', 'Super rare': 'Comtale', 'Ultra rare': 'Ducale', 'Légendaire': 'Impériale', 'Légendaires': 'Impériales', 'Communes': 'Roturières', 'Rares': 'Nobles',
+  }));
+  const RE_SIB = [[/^Acheter et ouvrir · (.+)$/, 'Acheter et ouvrir · $1'], [/^(\d+) paquets? disponibles?$/, (m, n) => `${n} colis disponible${plural(n)}`], [/^Ouvrir un autre paquet(.*)$/, 'Ouvrir un autre colis$1']];
+  const RE_OR = [[/^Acheter et ouvrir · (.+)$/, 'Acquérir et ouvrir · $1'], [/^(\d+) paquets? disponibles?$/, (m, n) => `${n} coffre${plural(n)} disponible${plural(n)}`], [/^Ouvrir un autre paquet(.*)$/, 'Ouvrir un autre coffre$1'], [/^Acheter ×10 · (.+)$/, 'Acquérir ×10 · $1']];
   const RE = [
     [/^Acheter et ouvrir · (.+)$/, 'Faire la queue et ouvrir · $1'], [/^Acheter ×10 · (.+)$/, 'Faire la queue ×10 · $1'], [/^Ouvrir un autre paquet(.*)$/, 'Ouvrir un autre colis$1'], [/^Acheter un autre(.*)$/, 'Faire la queue pour un autre$1'],
     [/^Carte$/, 'Fiche'], [/^Encore (\d+) cartes?$/, (m, n) => `Encore ${n} fiche${plural(n)}`], [/^(\d+) paquets? disponibles?$/, (m, n) => `${n} colis disponible${plural(n)}`], [/^paquets? disponibles?$/, 'colis disponible(s)'],
     [/prochain dans/, 'prochain colis dans'], [/^(\d+) victoires?$/, (m, n) => `${n} plan${plural(n)} dépassé${plural(n)}`], [/^Possédée ×(\d+)$/, 'Détenue ×$1'], [/^Déjà possédée$/, 'Déjà archivée'],
     [/^Voir les (\d+) commentaires$/, 'Voir les $1 notes au dossier'], [/^Quête(s?)$/, 'Norme$1'],
   ];
+  const SETS = { urss: { exact: EXACT, re: RE }, siberie: { exact: SIBERIE, re: RE_SIB }, or: { exact: OR, re: RE_OR } };
+  let cur = SETS.urss;                                                 // jeu de textes en cours
   const orig = new WeakMap(), changed = new Set();                    // texte d'origine de chaque nœud modifié : on peut tout restaurer
   const skinText = (n) => {
     const raw = n.nodeValue; if (!raw) return; const t = raw.trim(); if (!t) return;
-    let out = EXACT.get(t);
-    if (out === undefined) for (const [re, rep] of RE) if (re.test(t)) { out = t.replace(re, rep); break; }
+    let out = cur.exact.get(t);
+    if (out === undefined) for (const [re, rep] of cur.re) if (re.test(t)) { out = t.replace(re, rep); break; }
     if (out !== undefined && out !== t) { if (!orig.has(n)) { orig.set(n, raw); changed.add(new WeakRef(n)); } n.nodeValue = raw.replace(t, out); }
   };
-  const skinAttrs = el => { for (const a of ['placeholder', 'aria-label', 'title']) { const v = el.getAttribute?.(a); if (v && EXACT.has(v.trim())) el.setAttribute(a, EXACT.get(v.trim())); } };
+  const skinAttrs = el => { for (const a of ['placeholder', 'aria-label', 'title']) { const v = el.getAttribute?.(a); if (v && cur.exact.has(v.trim()) && !Array.isArray(cur.exact.get(v.trim()))) el.setAttribute(a, cur.exact.get(v.trim())); } };
   const walk = root => {
     if (!root) return;
     if (root.nodeType === 3) return skinText(root);
@@ -80,8 +100,9 @@
   // hymne : joue en boucle, doucement, tant que le thème est actif (le fichier ussr-hymne.mp3 est fourni à part ; sans fichier, rien ne se passe).
   // iOS exige un geste de l'utilisateur : la lecture démarre au premier toucher. Coupable dans Réglages (wm_hymn) ou avec les sons (wm_sound).
   let hymn = null, hymnTouch = null, hymnVis = null, hymnMissing = false;
-  let hymnHeld = false;
-  const hymnWanted = () => { if (hymnHeld) return false; try { return localStorage.getItem('wm_hymn') !== '0' && localStorage.getItem('wm_sound') !== '0'; } catch { return true; } };
+  let hymnHeld = false, curLite = false;
+  // pendant l'événement l'hymne joue sauf refus ; avec le thème Camarade hors événement, il ne joue que si le joueur l'a activé lui-même (Réglages)
+  const hymnWanted = () => { if (hymnHeld) return false; try { return (curLite ? localStorage.getItem('wm_hymn') === '1' : localStorage.getItem('wm_hymn') !== '0') && localStorage.getItem('wm_sound') !== '0'; } catch { return !curLite; } };
   const hymnStart = async () => {
     if (!active || hymnMissing || !hymnWanted()) return;
     if (!hymn) {
@@ -97,11 +118,22 @@
     document.addEventListener('visibilitychange', hymnVis);
   };
   const hymnOff = () => { document.removeEventListener('pointerdown', hymnTouch, true); document.removeEventListener('visibilitychange', hymnVis); hymn?.pause(); hymn = null; };
-  const on = () => {
-    if (active) return; active = true; setIcons(true); hymnOn(); document.body.classList.add('ussr-ui'); mountTicker(); walk(document.body);
-    obs = new MutationObserver(muts => { if (!active) return; obs.disconnect(); for (const m of muts) { if (m.type === 'characterData') skinText(m.target); else m.addedNodes.forEach(walk); } mountTicker(); obs.takeRecords(); obs.observe(document.body, { childList: true, subtree: true, characterData: true }); });
+  // opts.set : 'urss' (défaut), 'siberie' ou 'or' = jeu de textes et décor ; opts.lite : thème gagné utilisé HORS événement (mêmes textes et décor, mais ni bandeau Pravda, ni icône d'événement, ni menus réduits).
+  let curKey = '', curClasses = [];
+  const on = (opts = {}) => {
+    const set = SETS[opts.set] ? opts.set : 'urss', lite = !!opts.lite, key = set + (lite ? ':lite' : '');
+    if (active && key === curKey) return;
+    if (active) off();
+    active = true; curKey = key; cur = SETS[set]; curLite = lite;
+    curClasses = set === 'urss' ? ['ussr-ui', ...(lite ? ['ussr-lite'] : [])] : ['skin-' + set];
+    if (!lite) setIcons(true);
+    if (set === 'urss') hymnOn();
+    document.body.classList.add(...curClasses);
+    if (!lite) mountTicker();
+    walk(document.body);
+    obs = new MutationObserver(muts => { if (!active) return; obs.disconnect(); for (const m of muts) { if (m.type === 'characterData') skinText(m.target); else m.addedNodes.forEach(walk); } if (!lite) mountTicker(); obs.takeRecords(); obs.observe(document.body, { childList: true, subtree: true, characterData: true }); });
     obs.observe(document.body, { childList: true, subtree: true, characterData: true });
   };
-  const off = () => { if (!active) return; active = false; setIcons(false); hymnOff(); obs?.disconnect(); obs = null; clearInterval(tickT); ticker?.remove(); ticker = null; document.body.classList.remove('ussr-ui'); for (const r of changed) { const n = r.deref(); if (n && orig.has(n)) n.nodeValue = orig.get(n); } changed.clear(); };
-  window.UssrSkin = { on, off, hymnHold: v => { hymnHeld = !!v; if (hymnHeld) hymn?.pause(); else if (active) hymnStart(); }, hymnState: () => ({ chargé: !!hymn, enLecture: !!hymn && !hymn.paused, manquant: hymnMissing, durée: hymn?.duration || 0 }), hymnRefresh: () => (hymnWanted() ? hymnStart() : hymn?.pause()), isOn: () => active, EXACT };
+  const off = () => { if (!active) return; active = false; curKey = ''; setIcons(false); hymnOff(); obs?.disconnect(); obs = null; clearInterval(tickT); ticker?.remove(); ticker = null; document.body.classList.remove('ussr-ui', 'ussr-lite', 'skin-siberie', 'skin-or'); for (const r of changed) { const n = r.deref(); if (n && orig.has(n)) { n.nodeValue = orig.get(n); orig.delete(n); } } changed.clear(); cur = SETS.urss; };   // orig.delete : le nœud pourra être rhabillé puis restauré à nouveau
+  window.UssrSkin = { on, off, hymnHold: v => { hymnHeld = !!v; if (hymnHeld) hymn?.pause(); else if (active) hymnStart(); }, hymnState: () => ({ chargé: !!hymn, enLecture: !!hymn && !hymn.paused, manquant: hymnMissing, durée: hymn?.duration || 0 }), hymnRefresh: () => (hymnWanted() ? hymnStart() : hymn?.pause()), isOn: () => active, key: () => curKey, EXACT };
 })();
