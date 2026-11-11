@@ -78,8 +78,12 @@ export function installPlan(d) {
     const elapsed = Math.floor((nowS - ts) / every);
     if (elapsed > 0) {
       const gain = Math.min(COMMU.FREE_MAX - packs, elapsed), newTs = packs + elapsed >= COMMU.FREE_MAX ? nowS : ts + elapsed * every;
-      const upd = await run(env, 'UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n = ?', newTs, key, uid, ts);   // un seul appareil encaisse la recharge
-      if (upd.meta.changes) { await run(env, 'UPDATE plan_progress SET packs = packs + ? WHERE user_id = ?', gain, uid); r = await rowOf(env, uid); ts = newTs; packs = +(r.packs || 0); }
+      // crédit des colis ET avancée du compte à rebours dans UNE transaction : l'un sans l'autre faisait perdre un colis (date avancée, colis non ajouté) si la seconde écriture échouait ;
+      // la ligne du compte à rebours est verrouillée pendant l'opération : deux appareils simultanés ne créditent qu'une fois
+      const res = await env.DB.batch([
+        st(env, 'UPDATE plan_progress SET packs = packs + ? WHERE user_id = ? AND (SELECT n FROM event_progress WHERE key = ? AND user_id = ? FOR UPDATE) = ?', gain, uid, key, uid, ts),
+        st(env, 'UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n = ?', newTs, key, uid, ts)]);
+      if (res[0].meta.changes) { r = await rowOf(env, uid); ts = newTs; packs = +(r.packs || 0); }
       else { r = await rowOf(env, uid); const again = await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', key, uid); ts = +again.n; packs = +(r.packs || 0); }
     }
     return { r, nextIn: packs >= COMMU.FREE_MAX ? 0 : Math.max(0, (ts + every - nowS) * 1000) };
@@ -238,6 +242,30 @@ export function installPlan(d) {
     await putSetting(env, 'commu_paused', body.paused ? '1' : '0');
     if (!body.paused) await run(env, "UPDATE event_progress SET n = ? WHERE key = 'cm:packts'", Math.floor(Date.now() / 1000));   // reprise : le compte à rebours repart de maintenant
     return commuView(env, user);
+  });
+  // contrôle des colis gratuits (administrateur) : état de chaque joueur inscrit, et recharge immédiate de tous
+  route('GET', '/api/admin/commu-check', async ({ env, user }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env);
+    const nowS = Math.floor(Date.now() / 1000), every = COMMU.FREE_EVERY_MS / 1000, paused = (await setting(env, 'commu_paused')) === '1';
+    const rows = await d.all(env, "SELECT u.name, p.packs, ep.n ts FROM plan_progress p JOIN users u ON u.id = p.user_id LEFT JOIN event_progress ep ON ep.user_id = p.user_id AND ep.key = 'cm:packts' WHERE p.joined > 1 ORDER BY p.packs, u.name");
+    const players = rows.map(r => {
+      const packs = +r.packs, ts = r.ts === null || r.ts === undefined ? null : +r.ts, due = ts === null ? 0 : Math.floor((nowS - ts) / every);
+      const flag = ts === null ? 'jamais lu' : ts > nowS + 60 ? 'date dans le futur' : packs >= COMMU.FREE_MAX ? 'plein' : due >= 2 ? `en attente : ${Math.min(due, COMMU.FREE_MAX - packs)} colis seront crédités` : 'à jour';
+      return { name: r.name, packs, minutes: ts === null ? null : Math.round((nowS - ts) / 60), due: Math.max(0, Math.min(due, COMMU.FREE_MAX - packs)), flag };
+    });
+    return { paused, every: COMMU.FREE_EVERY_MS / 60000, max: COMMU.FREE_MAX, players };
+  });
+  route('POST', '/api/admin/commu-recharge', async ({ env, user }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env); if (!(await rawOn(env))) bad('L\'événement n\'est pas ouvert', 409);
+    if ((await setting(env, 'commu_paused')) === '1') bad('L\'événement est en pause : rien à recharger', 409);
+    const nowS = Math.floor(Date.now() / 1000), every = COMMU.FREE_EVERY_MS / 1000, max = COMMU.FREE_MAX;
+    // une transaction : colis crédités (lignes verrouillées), puis date du compte à rebours avancée du nombre de cycles écoulés
+    const res = await env.DB.batch([
+      st(env, `UPDATE plan_progress p SET packs = LEAST(?, p.packs + c.g) FROM (SELECT ep.user_id, FLOOR((? - ep.n) / ?) g FROM event_progress ep JOIN plan_progress pp ON pp.user_id = ep.user_id WHERE ep.key = 'cm:packts' AND pp.joined > 1 AND pp.packs < ? AND (? - ep.n) >= ? FOR UPDATE OF ep) c WHERE p.user_id = c.user_id`, max, nowS, every, max, nowS, every),
+      st(env, `UPDATE event_progress SET n = n + FLOOR((? - n) / ?) * ? WHERE key = 'cm:packts' AND (? - n) >= ? AND user_id IN (SELECT user_id FROM plan_progress WHERE joined > 1 AND packs < ?)`, nowS, every, every, nowS, every, max)]);
+    return { ok: true, credited: res[0].meta.changes };
   });
   // fin de l'événement : la cagnotte au meilleur, titre « Staline » et contour doré ; les avantages gagnés restent
   route('POST', '/api/commu/finish', async ({ env, user }) => {

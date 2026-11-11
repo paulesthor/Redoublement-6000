@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.81';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.82';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1419,6 +1419,7 @@ views.admin = async v => {
         <p class="mut" style="margin:10px 0">Lancer l'événement ouvre une page d'annonce sur l'accueil de chaque joueur, avec le bouton pour payer la taxe (${c.tax} wikibidou) et entrer.</p>
         <button id="ev-all" style="width:100%">${c.on && c.scope === 'all' ? 'L\'événement est lancé pour tous' : 'Lancer l\'événement pour TOUS'}</button>
         <button class="plain" id="ev-pause" style="width:100%;margin-top:10px" ${c.on ? '' : 'disabled'}>${c.paused ? 'Reprendre l\'événement' : 'Mettre l\'événement en pause'}</button><p class="mut" style="margin:6px 0 0;font-size:12px">La pause bloque les gains, achats, ouvertures et inscriptions. Rien n'est coupé ni remis à zéro : tout reprend tel quel.</p>
+        <div class="row" style="margin-top:12px"><button class="plain" id="ev-chk" style="flex:1" ${c.on ? '' : 'disabled'}>Vérifier les colis gratuits</button><button class="plain" id="ev-rech" style="flex:1" ${c.on && !c.paused ? '' : 'disabled'}>Recharger tout le monde</button></div><p class="mut" style="margin:6px 0 0;font-size:12px">Un colis offert toutes les 10 min, 30 au plus. La recharge est calculée à la visite du joueur ; ce bouton la crédite tout de suite à tous.</p>
         <h3 style="margin:16px 0 6px">Communiqué du Parti</h3>
         <p class="mut" style="margin:0 0 6px;font-size:12px">Écran d'annonce montré une fois à chaque joueur inscrit. Les ajustements de ₽ (un par ligne : « nom +50 » ou « nom -50 ») sont appliqués au moment de la publication.</p>
         <input id="nt-title" placeholder="Titre" style="width:100%;margin-bottom:6px"><textarea id="nt-text" rows="6" placeholder="Texte (une ligne vide sépare les paragraphes)" style="width:100%;margin-bottom:6px"></textarea>
@@ -1438,6 +1439,13 @@ views.admin = async v => {
         // « La Mère patrie t'appelle » : message en direct aux joueurs connectés, puis notification push par tranches de 20
         let sent = 0; try { for (let off = 0; off < 4000; off += 20) { const r = await api('/admin/announce', { text: 'La Mère patrie t\'appelle, camarade ! Le Plan quinquennal commence : viens payer ta taxe.', offset: off }); sent += r.push || 0; if (!r.more) break; } } catch (e) { jlog('notification de lancement : ' + e.message); }
         toast(`Événement lancé pour tous (${sent} notification${sent > 1 ? 's' : ''} envoyée${sent > 1 ? 's' : ''})`, 'ok'); });
+      $('#ev-chk')?.addEventListener('click', safe(async () => {
+        const k = await api('/admin/commu-check'), esc2 = esc; const m = $('#modal'); m.hidden = false;
+        m.innerHTML = `<div class="sheet"><h3>Colis gratuits du Parti</h3><p class="mut" style="margin:0 0 8px;font-size:12.5px">${k.paused ? '<b class="bad">ÉVÉNEMENT EN PAUSE : aucune recharge.</b> ' : ''}Un colis toutes les ${k.every} min, ${k.max} au plus. « En attente » = sera crédité à la prochaine visite du joueur.</p>
+          <div style="max-height:56vh;overflow:auto">${k.players.map(p => `<div class="row" style="align-items:center;gap:8px;margin:4px 0"><b style="flex:1;min-width:0;overflow-wrap:anywhere">${esc2(p.name)}</b><span style="width:34px;text-align:right">${p.packs}</span><small class="mut" style="flex:2;min-width:0">${p.minutes === null ? '' : 'compté il y a ' + p.minutes + ' min · '}${esc2(p.flag)}</small></div>`).join('') || '<p class="mut">Aucun joueur inscrit.</p>'}</div>
+          <button class="plain" id="chk-x" style="width:100%;margin-top:10px">Fermer</button></div>`; $('#chk-x').onclick = () => { m.hidden = true; m.innerHTML = ''; };
+      }));
+      $('#ev-rech')?.addEventListener('click', safe(async () => { if (!(await ask('Recharger les colis gratuits de tous les joueurs ?', [], { text: 'Chaque joueur reçoit tout de suite les colis qu\'il a accumulés (30 au plus).', ok: 'Recharger' }))) return; const r = await api('/admin/commu-recharge', {}); toast(`${r.credited} joueur${r.credited > 1 ? 's' : ''} rechargé${r.credited > 1 ? 's' : ''}`, 'ok'); }));
       act('#ev-pause', async () => { await api('/commu/pause', { paused: !c.paused }); toast(c.paused ? 'Événement relancé' : 'Événement en pause', 'ok'); });
       act('#ev-me', async () => { await api('/commu/set', { on: true, scope: 'admin' }); toast('Ouvert pour toi seul', 'ok'); });
       act('#ev-reset', async () => { if (!(await ask('Remettre ton compte à zéro dans l\'événement ?', [], { text: 'Tes ₽, colis, cartes et paliers de l\'événement sont effacés. Tu pourras payer la taxe et entrer comme un nouveau joueur (500 ₽ et 10 colis).', ok: 'Repartir de zéro' }))) throw new Error('annulé'); await api('/plan/reset', {}); commu = null; setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); try { localStorage.removeItem('wm_commu_start'); } catch { /* stockage indisponible */ } toast('Compte remis à zéro : tu es sorti du mode communiste', 'ok'); });
