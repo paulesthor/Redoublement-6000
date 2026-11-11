@@ -49,5 +49,11 @@ ok('Just1e 4 + 9 = 13 colis', await packs('Just1e') === 13, J(await packs('Just1
 ok('Bob 10 + 2 = 12 colis', await packs('Bob') === 12, J(await packs('Bob')));
 ok('Carole reste à 30 (plafond)', await packs('Carole') === 30);
 [s2, chk] = await call(A, 'POST', '/api/admin/commu-recharge', {}); ok('deuxième recharge : rien de plus (aucun double crédit)', chk.credited === 0 && await packs('Just1e') === 13 && await packs('Bob') === 12, J(chk));
+// cadeau ponctuel : Just1e reçoit 30 colis une seule fois
+await DB.prepare("UPDATE plan_progress SET packs = 3 WHERE user_id = (SELECT id FROM users WHERE name = 'Just1e')").run(); await DB.prepare("DELETE FROM settings WHERE key = 'commu_gift_colis-just1e-30'").run();
+await call(T['Bob'], 'GET', '/api/commu'); await call(T['Just1e'], 'GET', '/api/commu');
+ok('cadeau : Just1e passe à 30 colis', await packs('Just1e') === 30, J(await packs('Just1e')));
+await DB.prepare("UPDATE plan_progress SET packs = 12 WHERE user_id = (SELECT id FROM users WHERE name = 'Just1e')").run(); await call(T['Just1e'], 'GET', '/api/commu');
+ok('le cadeau n\'est donné qu\'une fois', await packs('Just1e') < 30, J(await packs('Just1e')));
 Date.now = real;
 done();

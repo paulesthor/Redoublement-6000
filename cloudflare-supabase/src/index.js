@@ -278,7 +278,7 @@ async function checkAchievements(env, ctx, user) {
   return stats;
 }
 const lastCheck = new Map();
-const lastPrep = new Map();
+const lastPrep = new Map(), lastPrepNext = new Map();
 
 // ---------- recherche dans tout le catalogue ----------
 const bucketCache = new Map();
@@ -733,7 +733,8 @@ route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   return { ...publicUser(u), ...(packLock ? { packLock } : {}), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
-route('GET', '/api/packs/next', async ({ env, user }) => {
+route('GET', '/api/packs/next', async ({ env, ctx, user }) => {
+  if (now() - (lastPrepNext.get(user.id) || 0) >= (globalThis.__MAINT_MS ?? 8000)) { lastPrepNext.set(user.id, now()); ctx.waitUntil(prepareFor(env, ctx, user, user.pack_stock).catch(e => console.error('prepareFor', e))); }   // c'est ICI que le paquet suivant se prépare : requête à part, sans risque pour l'ouverture du joueur
   const rows = await all(env, 'SELECT cards FROM prepared WHERE user_id = ? ORDER BY id LIMIT 2', user.id);
   const ids = rows.flatMap(r => { try { return JSON.parse(r.cards).map(c => c.id); } catch { return []; } });
   const imgs = ids.length ? await all(env, `SELECT image FROM cards WHERE image IS NOT NULL AND id IN (${placeholders(ids.length)})`, ...ids) : [];
@@ -902,7 +903,8 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   try {
     const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
     drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm, u.id);
-    ctx.waitUntil(prepareFor(env, ctx, u, Math.max(0, u.pack_stock - (testOn(u) ? 0 : 1))).catch(e => console.error('prepareFor', e)));   // le paquet suivant se prépare pendant l'animation
+    // la préparation du paquet suivant ne se fait PLUS ici : le plan gratuit compte tout le travail de la requête (même après la réponse) dans sa limite de calcul, et l'ouverture était coupée (« Worker exceeded resource limits »).
+    // Elle se fait dans la requête séparée /api/packs/next, que l'appli envoie juste après l'ouverture.
     const out = await finishPack(env, ctx, user, drawn, 0, fake);
     if (guardKey) await guard.release(env, u.id, guardKey);   // ouverture terminée : plus rien à rembourser
     return out;
@@ -929,7 +931,6 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   try {
     const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
     drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm, user.id);
-    ctx.waitUntil(prepareFor(env, ctx, { ...user, coins: user.coins - CFG.PACK_PRICE }, user.pack_stock).catch(e => console.error('prepareFor', e)));
     const out = await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
     await guard.release(env, user.id, guardKey);
     return out;

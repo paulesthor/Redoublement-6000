@@ -35,7 +35,8 @@ await settle();
 [s, r] = await call(A, 'POST', '/api/packs/buy', {}); ok('achat d\'un paquet', NOT500(s), J([s, r]).slice(0, 200));
 [s, r] = await call(A, 'GET', '/api/hits'); ok('/hits', s === 200 && Array.isArray(r.hits), J([s, r]).slice(0, 200));
 [s, r] = await call(A, 'GET', '/api/packs/next'); ok('/packs/next', s === 200);
-// préparation des paquets d'avance
+// préparation des paquets d'avance : elle se fait dans la requête /packs/next (et non plus dans celle de l'ouverture, qui dépassait la limite de calcul)
+await call(A, 'GET', '/api/packs/next'); await settle();
 const prep = await q('SELECT COUNT(*) n FROM prepared'); ok('paquets préparés d\'avance', +prep[0].n >= 1, J(prep));
 const res = await q('SELECT rarity, COUNT(*) n FROM reserve GROUP BY rarity'); console.log('   réserve :', J(res));
 

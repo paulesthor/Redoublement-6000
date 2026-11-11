@@ -136,9 +136,25 @@ export function installPlan(d) {
       try { await publishNotice(env, p.notice); } catch (e) { console.error('annonce programmée', p.key, e); }
     }
   }
+  /** Cadeaux ponctuels de colis (appliqués une seule fois, dès que le joueur est inscrit et l'événement ouvert). */
+  const GIFTS = [{ key: 'colis-just1e-30', name: 'Just1e', packs: 30 }];
+  async function runGifts(env) {
+    if (!(await rawOn(env))) return;
+    for (const g of GIFTS) {
+      if (await setting(env, 'commu_gift_' + g.key)) continue;
+      const u = await one(env, 'SELECT u.id FROM users u JOIN plan_progress p ON p.user_id = u.id WHERE LOWER(u.name) = LOWER(?) AND p.joined > 1', g.name);
+      if (!u) continue;                                             // pas encore inscrit : on réessaiera
+      const claim = await run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", 'commu_gift_' + g.key, String(Date.now())); snap.t = 0;
+      if (!claim.meta.changes) continue;                            // une autre requête s'en occupe : une seule application
+      await env.DB.batch([
+        st(env, 'UPDATE plan_progress SET packs = GREATEST(packs, ?) WHERE user_id = ?', g.packs, +u.id),
+        st(env, "UPDATE event_progress SET n = ? WHERE key = 'cm:packts' AND user_id = ?", Math.floor(Date.now() / 1000), +u.id)]);   // le compte à rebours repart de maintenant
+    }
+  }
   const noticesOf = async env => { try { const a = JSON.parse((await setting(env, 'commu_notices')) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
   const commuView = async (env, user) => {
     try { await runPending(env); } catch (e) { console.error('annonces programmées', e); }
+    try { await runGifts(env); } catch (e) { console.error('cadeaux de colis', e); }
     let r = await rowOf(env, user.id); const on = await isOn(env, user), day = dayOf(); let nextIn = 0;
     if (on && +r.joined >= 1) { const g = await regen(env, user.id, r); r = g.r; nextIn = g.nextIn; }
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
