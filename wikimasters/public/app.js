@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.84';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.85';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -447,7 +447,7 @@ async function loadCommu(force) {
   commuAt = Date.now(); const sigC = c => c ? `${c.on}:${c.joined}:${c.paused}:${c.done}` : '', before = sigC(commu);
   try { commu = await api('/commu'); try { localStorage.setItem('wm_commu', JSON.stringify({ ...commu, _t: Date.now() })); } catch { /* stockage plein */ } } catch { /* coupure réseau : on garde l'état précédent, sinon le design classique reviendrait par intermittence */ }
   if (sigC(commu) !== before && ['packs', 'album'].includes(tab) && $('#modal')?.hidden && !game && cfg) setTimeout(() => render(), 0);   // l'état a changé : l'écran se met à jour tout seul
-  syncEventTheme(); try { pillsSync(); syncSoundLock(); } catch { /* bandeau pas encore affiché */ } setTimeout(() => { try { syncEventNotice(); } catch { /* ignoré */ } }, 400); return commu;
+  syncEventTheme(); try { pillsSync(); syncSoundLock(); } catch { /* bandeau pas encore affiché */ } setTimeout(() => { try { syncEventNotice(); syncEventFinal(); } catch { /* ignoré */ } }, 400); return commu;
 }
 /** Thème réellement affiché : pendant l'événement le thème rouge est imposé ; sinon c'est le choix du joueur (wm_theme), que l'événement ne modifie JAMAIS (rien à restaurer à la sortie).
  *  index.html relit wm_theme_fx avant le premier affichage : pas de flash, et le thème reste le bon après un redémarrage. */
@@ -2594,6 +2594,60 @@ function syncEventNotice() {
     const seen = +(prefOf('wm_notice') || 0), n = list.find(x => x.id > seen); if (!n || !(commu.joined || me?.admin)) return;
     if (game || ['tsar', 'gulag', 'potato'].includes(tab) || ($('#modal') && !$('#modal').hidden)) return;
     noticeSheet(n, { next: true });
+  } catch { /* stockage indisponible */ }
+}
+
+// ---------- fin de l'événement : verdict, podium et bilan personnel (montré une fois à chaque inscrit) ----------
+/** Texte du bilan, sur le ton de l'événement : il dépend du rang et du nombre de paliers (donc de récompenses) obtenus. */
+function finalLines(d) {
+  const m = d.me, n = m.level, R = m.rewards, out = [], pl = x => (x > 1 ? 's' : '');
+  if (n === 0) out.push('Zéro palier. Le Parti a cherché ton dossier : il était vide, et il sentait la bière.', 'Tu repars les mains vides et le sourire intact. Le Parti admire cette constance dans le rien.');
+  else if (n <= 2) out.push(`${n} palier${pl(n)} sur 12. Le Parti te remercie d'avoir été là, au fond de la salle, à bâiller.`, 'Ta contribution au Plan tient en une ligne dans un rapport que personne ne lira. C\'est déjà plus que certains.');
+  else if (n <= 5) out.push(`${n} paliers sur 12. Honorable. Le Parti te regarde avec ce mélange de mépris et de reconnaissance qu'il réserve aux ouvriers qui se plaignent à voix basse.`, 'Tu as tenu ton rang : ni héros, ni déserteur. Le meilleur métier de l\'Union.');
+  else if (n <= 8) out.push(`${n} paliers sur 12. Camarade de confiance. On t'avait promis une datcha, on te donne des cadres et des thèmes. C'est pareil, en moins chauffé.`, 'Le Parti garde ton nom dans le bon tiroir, celui qu\'on ouvre rarement.');
+  else if (n <= 11) out.push(`${n} paliers sur 12. Tu as dépassé la norme. Le Parti est fier de toi, donc il se méfie.`, 'Ton dossier reste ouvert, par précaution. Ça arrive aux meilleurs.');
+  else out.push('Douze paliers sur douze. Le Plan est accompli.', 'Tu entres dans les manuels, au chapitre des remerciements, entre le tampon et la tache de graisse. Le Parti ne dit jamais merci. Là, il a failli.');
+  if (m.rank === 1) out.push(`Et Staline, c'est toi. Le Parti te remet la cagnotte${d.winner?.prize ? ` (${fmt(d.winner.prize)} wikibidou)` : ''}, un cadre doré et la certitude d'être surveillé à vie. Félicitations, camarade.`);
+  else if (m.rank <= 3) out.push(`Sur le podium, mais pas sur la plus haute marche : il n'y avait qu'une place sur le portrait officiel, et ce n'était pas la tienne.`);
+  else out.push(`Classé ${m.rank}${m.rank === 1 ? 'er' : 'e'} sur ${d.total}. Le Parti a pitié des classements, jamais des classés.`);
+  const got = [R.coins ? `${fmt(R.coins)} wikibidou` : '', R.packs ? `${R.packs} colis` : '', R.wr ? `${fmt(R.wr)} ₽` : '', R.titles.length ? `${R.titles.length} titre${pl(R.titles.length)}` : '', R.frames ? `${R.frames} cadre${pl(R.frames)}` : '', R.themes ? `${R.themes} thème${pl(R.themes)}` : '', R.souvenirs ? `${R.souvenirs} souvenir${pl(R.souvenirs)}` : ''].filter(Boolean);
+  if (got.length) out.push(`Au total, le Parti t'a donné : ${got.join(', ')}. Il ne reprend que ce qu'il avait déjà rendu inutile : les colis et les roubles s'évaporent, tout le reste est à toi.`);
+  return out;
+}
+async function eventFinal() {
+  let d; try { d = await api('/commu/final'); } catch { return; }
+  const m = $('#modal'); m.hidden = false;
+  const mark = () => { try { localStorage.setItem('wm_final', String(d.doneAt)); } catch { /* stockage indisponible */ } };
+  const close = async (to) => { mark(); m.hidden = true; m.innerHTML = ''; await loadCommu(true).catch(() => {}); await syncUssrUi().catch(() => {}); await refreshMe().catch(() => {}); tab = to || 'packs'; render(); };
+  const win = d.winner, pod = d.podium, order = [pod[1], pod[0], pod[2]].filter(Boolean);
+  const stepCls = x => 'fe-p' + x.rank;
+  const R = d.me?.rewards, tile = (v, l) => `<div><b>${v}</b><span>${l}</span></div>`;
+  const grid = R ? [R.coins ? tile('+' + fmt(R.coins), 'wikibidou gardés') : '', R.packs ? tile('+' + R.packs, 'colis du Parti') : '', R.wr ? tile('+' + fmt(R.wr) + ' ₽', 'wikiroubles') : '', R.titles.length ? tile(R.titles.length, `titre${R.titles.length > 1 ? 's' : ''}`) : '', R.frames ? tile(R.frames, `cadre${R.frames > 1 ? 's' : ''} de photo`) : '', R.themes ? tile(R.themes, `thème${R.themes > 1 ? 's' : ''}`) : '', R.souvenirs ? tile(R.souvenirs, `souvenir${R.souvenirs > 1 ? 's' : ''}`) : ''].join('') : '';
+  const lines = d.me ? finalLines(d) : [];
+  m.innerHTML = `<div class="recapsheet fe" role="dialog" aria-label="Fin de l'événement">
+    <div id="fe-a"><small class="fe-kick">ПЛАН ЗАВЕРШЁН · FIN DU PLAN QUINQUENNAL</small><div class="fe-stamp">TERMINÉ</div><h2>Le Plan est accompli</h2><p>Le Parti a fini de compter. Il avait fini de rire bien avant.</p><p class="mut">${fmt(d.total)} camarade${d.total > 1 ? 's' : ''} ${d.total > 1 ? 'ont' : 'a'} participé. Tous n'ont pas survécu au rapport.</p><button class="ic-go" id="fe-go" style="width:100%">Voir le verdict</button></div>
+    <div id="fe-b" hidden><div class="fe-drum">${DRUM_SVG}</div><h2>Et le premier du Plan est…</h2></div>
+    <div id="fe-c" hidden><small class="fe-kick">ТАБЛИЦА ПОЧЁТА · TABLEAU D'HONNEUR</small><h2>${win ? esc(win.name) : 'Personne'}</h2>
+      <p class="fe-sub">${win ? `devient <b>Staline</b> et rafle <b>${fmt(win.prize || 0)}</b> wikibidou, le cadre doré et le titre.` : 'n\'a rien gagné : Staline reste vacant. Le Parti en prend acte, sans surprise.'}</p>
+      <div class="fe-pod">${order.map(x => `<div class="${stepCls(x)}"><span class="fe-nm">${esc(x.name)}</span><span class="fe-pt">${fmt(x.points)} pts</span><i>${x.rank}</i></div>`).join('') || ''}</div>
+      <button class="ic-go" id="fe-next" style="width:100%">${d.me ? 'Voir mon bilan' : 'Fermer'}</button></div>
+    <div id="fe-d" hidden>${d.me ? `<small class="fe-kick">ЛИЧНОЕ ДЕЛО · DOSSIER PERSONNEL</small><h2>Ton bilan, ${esc(me?.name || 'camarade')}</h2>
+      <p class="fe-rank">${d.me.rank === 1 ? 'STALINE' : `${d.me.rank}${d.me.rank === 1 ? 'er' : 'e'} sur ${d.total}`}<small> · ${fmt(d.me.points)} points · ${d.me.level} palier${d.me.level > 1 ? 's' : ''}</small></p>
+      ${grid ? `<div class="fe-grid">${grid}</div>` : ''}
+      <div class="fe-txt">${lines.map(l => `<p>${esc(l)}</p>`).join('')}</div>
+      ${R.titles.length ? `<p class="fe-titles">${R.titles.map(t => `<span>${esc(t)}</span>`).join('')}</p>` : ''}
+      ${d.souvenirOpen && R.souvenirs && !(commu?.chosen || []).length ? '<button class="ic-go" id="fe-souv" style="width:100%">Choisir mes cartes souvenir</button>' : ''}
+      <button class="plain" id="fe-end" style="width:100%;margin-top:8px">Retour au jeu normal</button>` : ''}</div></div>`;
+  $('#fe-go').onclick = async () => { $('#fe-a').hidden = true; $('#fe-b').hidden = false; try { navigator.vibrate?.([40, 60, 40, 60, 120]); } catch { /* sans vibreur */ } await new Promise(r => setTimeout(r, 2000)); $('#fe-b').hidden = true; $('#fe-c').hidden = false; try { sparks?.($('.recapsheet'), 36); } catch { /* décor facultatif */ } };
+  $('#fe-next').onclick = () => { if (!d.me) return close(); $('#fe-c').hidden = true; $('#fe-d').hidden = false; };
+  $('#fe-end')?.addEventListener('click', () => close());
+  $('#fe-souv')?.addEventListener('click', () => close('commuend'));
+}
+function syncEventFinal() {
+  try {
+    if (!commu || !commu.done || !commu.doneAt || !(commu.joined || me?.admin) || prefOf('wm_final') === String(commu.doneAt)) return;
+    if (game || ['tsar', 'gulag', 'potato'].includes(tab) || ($('#modal') && !$('#modal').hidden)) return;
+    eventFinal();
   } catch { /* stockage indisponible */ }
 }
 // ---------- annonce du début de l'événement : page d'accueil, taxe et entrée ----------

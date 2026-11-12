@@ -153,6 +153,7 @@ export function installPlan(d) {
   }
   const noticesOf = async env => { try { const a = JSON.parse((await setting(env, 'commu_notices')) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
   const commuView = async (env, user) => {
+    try { await autoFinish(env); } catch (e) { console.error('clôture automatique', e); }
     try { await runPending(env); } catch (e) { console.error('annonces programmées', e); }
     try { await runGifts(env); } catch (e) { console.error('cadeaux de colis', e); }
     let r = await rowOf(env, user.id); const on = await isOn(env, user), day = dayOf(); let nextIn = 0;
@@ -160,7 +161,7 @@ export function installPlan(d) {
     const today = Object.fromEntries((await d.all(env, "SELECT key, n FROM event_progress WHERE user_id = ? AND key LIKE ?", user.id, 'cm:' + day + ':%')).map(x => [x.key.split(':')[2], +x.n]));
     const done = (await setting(env, 'commu_done')) === '1', winnerRaw = done ? await setting(env, 'commu_winner') : null, perksList = list(r.perks);
     return { on, done, winner: winnerRaw ? JSON.parse(winnerRaw) : null, entitled: perksList.filter(p => p.startsWith('souvenir_')).length, chosen: list(r.souvenirs), souvenirOpen: done && (await setting(env, 'commu_souv_closed')) !== '1', level: PLAN_MILESTONES.filter(m => +r.earned >= m.at).length, admin: !!user.is_admin, joined: joinedReal(r) || (!!user.is_admin && !on && +r.joined > 0), wr: +r.wr, earned: +r.earned, packs: +(r.packs || 0), perks: list(r.perks), pot: await pot(env), players: await players(env),
-      endsAt: COMMU.ENDS_AT,
+      endsAt: COMMU.ENDS_AT, doneAt: +((await setting(env, 'commu_done_at')) || 0),
       ...(on || done ? await (async () => { const n = await noticesOf(env); return { notices: n, notice: n.at(-1) || null }; })() : { notices: [], notice: null }), paused: on && (await setting(env, 'commu_paused')) === '1', scope: (await scopeAll(env)) ? 'all' : 'admin', since: +(await setting(env, 'commu_start')) || 0, tax: COMMU.TAX, startWr: COMMU.START_WR, startPacks: COMMU.START_PACKS, quizPer: COMMU.QUIZ_PER_ANSWER, nextPackIn: nextIn, freeEveryMin: COMMU.FREE_EVERY_MS / 60000, freeMax: COMMU.FREE_MAX, packPrice: COMMU.PACK_PRICE, caps: COMMU.CAPS, today };
   };
 
@@ -285,9 +286,9 @@ export function installPlan(d) {
     return { ok: true, credited: res[0].meta.changes };
   });
   // fin de l'événement : la cagnotte au meilleur, titre « Staline » et contour doré ; les avantages gagnés restent
-  route('POST', '/api/commu/finish', async ({ env, user }) => {
-    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
-    await ensureGameSchema(env); if ((await setting(env, 'commu_done')) === '1') bad('L\'événement est déjà terminé', 409);
+  /** Clôture de l'événement : le premier du classement (points de l'événement) rafle la cagnotte, devient Staline et reçoit le cadre doré ; l'événement se ferme, les avantages gagnés restent. */
+  async function finishEvent(env) {
+    await ensureGameSchema(env);
     const win = await one(env, 'SELECT p.user_id id, u.name, p.earned FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE p.joined > 1 AND p.earned > 0 ORDER BY p.earned DESC, p.earn_ts ASC, p.user_id ASC LIMIT 1');
     const prize = await pot(env); let winner = null;
     if (win) {
@@ -295,11 +296,46 @@ export function installPlan(d) {
       if (prize > 0) await run(env, 'UPDATE users SET coins = coins + ? WHERE id = ?', prize, +win.id);
       await grantTitle(env, +win.id, 'commu_staline'); winner = { id: +win.id, name: win.name, earned: +win.earned, prize };
     }
-    const souv = 0;
-    if (winner) await putSetting(env, 'commu_winner', JSON.stringify(winner)); else await putSetting(env, 'commu_winner', '');
+    await putSetting(env, 'commu_winner', winner ? JSON.stringify(winner) : '');
     await putSetting(env, 'commu_souv_closed', '0');
+    await putSetting(env, 'commu_done_at', String(Date.now()));
     await putSetting(env, 'commu_done', '1'); await putSetting(env, 'commu_on', '0'); await putSetting(env, 'commu_pot', 0);
-    return { ok: true, winner, souvenirs: souv, players: await players(env) };
+    return winner;
+  }
+  /** Clôture automatique à l'heure prévue (COMMU.ENDS_AT), sans rien à faire : déclenchée par la tâche planifiée ET par la première visite après l'heure. Une seule exécution (verrou). */
+  async function autoFinish(env) {
+    if (Date.now() < COMMU.ENDS_AT) return false;
+    if (!(await rawOn(env)) || (await setting(env, 'commu_done')) === '1') return false;
+    const claim = await run(env, "INSERT INTO settings (key, value) VALUES ('commu_auto_finish', ?) ON CONFLICT DO NOTHING", String(Date.now())); snap.t = 0;
+    if (!claim.meta.changes) return false;                          // une autre requête s'en occupe
+    try { await finishEvent(env); return true; } catch (e) { await run(env, "DELETE FROM settings WHERE key = 'commu_auto_finish'").catch(() => {}); snap.t = 0; throw e; }   // échec : le verrou est levé, le prochain passage réessaie
+  }
+  // fin de l'événement : la cagnotte au meilleur, titre « Staline » et contour doré ; les avantages gagnés restent
+  route('POST', '/api/commu/finish', async ({ env, user }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env); if ((await setting(env, 'commu_done')) === '1') bad('L\'événement est déjà terminé', 409);
+    const winner = await finishEvent(env);
+    return { ok: true, winner, souvenirs: 0, players: await players(env) };
+  });
+  /** Écran de fin : podium, gagnant et bilan personnel (récompenses cumulées du joueur). */
+  route('GET', '/api/commu/final', async ({ env, user }) => {
+    await ensureGameSchema(env); await autoFinish(env).catch(() => {});
+    if ((await setting(env, 'commu_done')) !== '1') bad('L\'événement n\'est pas terminé', 409);
+    const top = await d.all(env, 'SELECT u.name, p.earned FROM plan_progress p JOIN users u ON u.id = p.user_id WHERE p.joined > 1 AND p.earned > 0 ORDER BY p.earned DESC, p.earn_ts ASC, p.user_id ASC LIMIT 3');
+    const total = +((await one(env, 'SELECT COUNT(*) n FROM plan_progress WHERE joined > 1'))?.n || 0);
+    const r = await rowOf(env, user.id), joined = +r.joined > 1;
+    let me = null;
+    if (joined) {
+      const ahead = +((await one(env, 'SELECT COUNT(*) n FROM plan_progress WHERE joined > 1 AND (earned > ? OR (earned = ? AND (earn_ts < ? OR (earn_ts = ? AND user_id < ?))))', +r.earned, +r.earned, +r.earn_ts, +r.earn_ts, user.id))?.n || 0);
+      const claimed = list(r.claimed).map(Number), ms = PLAN_MILESTONES.filter(m => claimed.includes(m.id));
+      const perks = list(r.perks), has = k => perks.includes(k), cards = (() => { try { return Object.keys(JSON.parse(r.cards || '{}')).length; } catch { return 0; } })();
+      me = { rank: ahead + 1, points: +r.earned, level: ms.length, opened: +r.opened || 0, cards,
+        rewards: { coins: ms.reduce((t, m) => t + (m.coins || 0), 0), packs: ms.reduce((t, m) => t + (m.packs || 0), 0), wr: ms.reduce((t, m) => t + (m.wr || 0), 0),
+          titles: [...ms.filter(m => m.title).map(m => PLAN_TITLES.find(t => t.id === m.title)?.label).filter(Boolean), ...(has('gold_outline') ? [PLAN_TITLES.find(t => t.id === 'commu_staline').label] : [])],
+          frames: ['frame_star', 'frame_hammer', 'frame_gold', 'gold_outline'].filter(has).length, themes: ['theme_urss', 'theme_siberie', 'theme_or'].filter(has).length, anim: has('anim_urss'), souvenirs: perks.filter(k => k.startsWith('souvenir_')).length } };
+    }
+    const wraw = await setting(env, 'commu_winner'), winner = wraw ? JSON.parse(wraw) : null;
+    return { doneAt: +((await setting(env, 'commu_done_at')) || 0), total, podium: top.map((t, i) => ({ rank: i + 1, name: t.name, points: +t.earned })), winner, me, souvenirOpen: (await setting(env, 'commu_souv_closed')) !== '1' };
   });
 
   route('GET', '/api/plan', async ({ env, user }) => { const { r } = await access(env, user); return view(r); });
@@ -338,5 +374,5 @@ export function installPlan(d) {
   });
   const cc = installCommuCards(d, { access, rowOf, setting, putSetting, list });
   const bourse = installCommuBourse(d, { access, credit, cc });
-  return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc, joinedReal, bourse, rawOn };
+  return { PLAN_MILESTONES, credit, isOn, rowOf, access, cc, joinedReal, bourse, rawOn, autoFinish };
 }

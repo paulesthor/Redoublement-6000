@@ -2247,6 +2247,7 @@ export default {
     await (async () => {
       const t0 = Date.now();
       await maintenance(withDb(env0)).catch(e => console.error('entretien', e));
+      await commu.autoFinish(env).catch(e => console.error('clôture automatique de l\'événement', e));   // à l'heure prévue, sans intervention
       await guard.repair(env).catch(e => console.error('rattrapage des ouvertures', e));   // paquets pris par une ouverture abandonnée : rendus   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
       // les marchés (bourse, marché noir) sont construits ICI, une fois pour tout le monde, puis rangés en base : les joueurs ne font que les lire (et plus aucune visite ne relance Wikimedia)
       pvStart(9);   // au plus 9 demandes à Wikimedia par passage, espacées de 13 s (leur limite : environ 5 par minute) : le reste attend le passage suivant

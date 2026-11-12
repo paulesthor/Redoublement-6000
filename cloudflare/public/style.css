@@ -1748,3 +1748,22 @@ html,body{overscroll-behavior-y:none}
 /* repère de fin d'événement sur l'accueil du mode communiste : une ligne discrète avec un point rouge */
 .ev-end{display:inline-flex;align-items:center;gap:7px;margin:8px auto 0;padding:4px 11px;border:1px solid #f4d56b44;border-radius:99px;background:#2a0a0e;color:#f4d56b;font-size:12px;font-weight:600;letter-spacing:.03em;position:relative}
 .ev-end i{width:7px;height:7px;border-radius:50%;background:#e23b3b;flex:none}
+/* écran de fin de l'événement (verdict, podium, bilan) */
+.fe{background:#1c0507;border:1px solid #f4d56b66;color:#f6efd8;text-align:center}
+.fe h2{font-family:Impact,'Arial Narrow Bold','Arial Narrow',sans-serif;text-transform:uppercase;letter-spacing:.06em;color:#f6efd8;margin:6px 0 8px}
+.fe p{color:#e8dfc7}.fe .mut{color:#c9a43a}
+.fe-kick{display:block;color:#f4d56b;letter-spacing:.14em;font-size:10.5px;font-weight:700}
+.fe-stamp{display:inline-block;margin:16px 0 4px;border:5px solid #c0161d;color:#e23b3b;font-weight:900;font-size:34px;letter-spacing:.1em;padding:2px 16px;transform:rotate(-7deg);font-family:Impact,'Arial Narrow Bold',sans-serif}
+.fe-drum svg{width:108px;height:auto;animation:feDrum .45s ease-in-out infinite alternate}@keyframes feDrum{to{transform:translateY(-6px) rotate(3deg)}}
+.fe-sub{margin:0 0 14px}.fe-sub b{color:#f4d56b}
+.fe-pod{display:flex;align-items:flex-end;justify-content:center;gap:6px;margin:4px 0 16px;min-height:158px}
+.fe-pod>div{flex:1;max-width:112px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:relative;padding:8px 4px 0;border:1px solid #f4d56b55;border-bottom:0;background:#38141a}
+.fe-pod .fe-p1{height:156px;background:linear-gradient(#c0161d,#6c0b10);border-color:#f4d56b}.fe-pod .fe-p2{height:124px}.fe-pod .fe-p3{height:104px}
+.fe-pod i{font-style:normal;font-family:Impact,'Arial Narrow Bold',sans-serif;font-size:24px;color:#f4d56b;margin-top:auto;padding:6px 0}
+.fe-nm{font-weight:800;font-size:13px;overflow-wrap:anywhere;line-height:1.15}.fe-pt{font-size:11px;color:#f4d56b;margin-top:2px}
+.fe-rank{font-family:Impact,'Arial Narrow Bold',sans-serif;font-size:26px;letter-spacing:.06em;color:#f4d56b;margin:0 0 10px}.fe-rank small{font-family:var(--f-body);font-size:12.5px;letter-spacing:0;color:#e8dfc7}
+.fe-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 12px}
+.fe-grid>div{border:1px solid #f4d56b44;background:#2a0a0e;padding:8px 4px;display:flex;flex-direction:column;gap:2px}.fe-grid b{font-size:18px;color:#f4d56b}.fe-grid span{font-size:10.5px;color:#e8dfc7;letter-spacing:.03em}
+.fe-txt{text-align:left;margin:0 0 10px}.fe-txt p{margin:0 0 9px;font-size:13.5px;line-height:1.45}
+.fe-titles{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin:0 0 12px}.fe-titles span{border:1px solid #f4d56b66;color:#f4d56b;font-size:11px;padding:2px 9px;border-radius:99px;letter-spacing:.04em}
+
