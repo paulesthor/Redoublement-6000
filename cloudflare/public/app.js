@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.83';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.84';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -451,6 +451,15 @@ async function loadCommu(force) {
 }
 /** Thème réellement affiché : pendant l'événement le thème rouge est imposé ; sinon c'est le choix du joueur (wm_theme), que l'événement ne modifie JAMAIS (rien à restaurer à la sortie).
  *  index.html relit wm_theme_fx avant le premier affichage : pas de flash, et le thème reste le bon après un redémarrage. */
+/** Petit repère de fin d'événement (accueil du mode communiste) : « demain à 17 h », « aujourd'hui à 17 h » ou la date ; rien une fois l'heure passée. */
+function endNote() {
+  const t = commu?.endsAt; if (!t || t <= Date.now()) return '';
+  const P = ms => new Date(ms).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const days = Math.round((Date.parse(P(t) + 'T12:00:00Z') - Date.parse(P(Date.now()) + 'T12:00:00Z')) / 86400000);
+  const hp = Object.fromEntries(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(t)).map(x => [x.type, x.value])), hh = +hp.minute ? `${hp.hour} h ${hp.minute}` : `${hp.hour} h`;
+  const when = days <= 0 ? `aujourd'hui à ${hh}` : days === 1 ? `demain à ${hh}` : `le ${new Date(t).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long' })} à ${hh}`;
+  return `<div class="ev-end"><i></i>Fin de l'événement ${when}</div>`;
+}
 const themeFx = () => (ussrUiOn() ? 'urss' : (prefOf('wm_theme') || 'dark'));
 function applyTheme() {
   try { localStorage.setItem('wm_theme_fx', themeFx()); } catch { /* stockage indisponible */ }
@@ -2460,7 +2469,7 @@ const pauseNote = () => commu?.paused ? '<div class="commu-pause"><b>Événement
 async function eventPacks(v) {
   if (ussrOn()) await loadUssr().catch(() => {});
   await loadCommu(true); const c = commu;
-  v.innerHTML = `${lockNote()}${pauseNote()}<div class="hero home"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>
+  v.innerHTML = `${lockNote()}${pauseNote()}<div class="hero home"><h1>Ouvrir un paquet</h1><p class="sub">Les fiches du Parti : 10 articles russes et soviétiques par colis</p>${endNote()}
     <div class="packart" id="packart">${window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
     <div class="pk-actions"><button id="open" ${c.packs > 0 && !c.paused ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${c.packs >= 10 && !c.paused ? '' : 'disabled'}>Ouvrir ×10</button></div>
     <div class="stock"><p><b>${c.packs}</b> colis disponible${c.packs > 1 ? 's' : ''} · ${c.paused ? 'compte à rebours gelé' : c.packs >= (c.freeMax || 30) ? 'réserve pleine' : 'prochain dans <b id="cd"></b>'}</p><p class="mut" style="margin:2px 0 0">Un colis offert toutes les ${c.freeEveryMin || 10} min (${c.freeMax || 30} en réserve) · solde <b>${fmt(c.wr)} ₽</b></p></div>

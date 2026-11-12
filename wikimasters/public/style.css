@@ -1745,3 +1745,6 @@ body.skin-siberie .mtile b,body.skin-siberie .mtile small,body.skin-or .mtile b,
 body.skin-siberie .mtile b{letter-spacing:.01em;font-size:13.5px}
 /* pas de rebond de la page quand elle n'a rien à défiler (iOS) */
 html,body{overscroll-behavior-y:none}
+/* repère de fin d'événement sur l'accueil du mode communiste : une ligne discrète avec un point rouge */
+.ev-end{display:inline-flex;align-items:center;gap:7px;margin:8px auto 0;padding:4px 11px;border:1px solid #f4d56b44;border-radius:99px;background:#2a0a0e;color:#f4d56b;font-size:12px;font-weight:600;letter-spacing:.03em;position:relative}
+.ev-end i{width:7px;height:7px;border-radius:50%;background:#e23b3b;flex:none}
