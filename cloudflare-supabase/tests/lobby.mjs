@@ -1,6 +1,6 @@
 // Combat de cartes complet (Durable Object Lobby) contre PostgreSQL : deux joueurs, 6 tours, 18 questions, récompenses.
 import './api.mjs';
-const { call, settle, ok, DB, lobby, done, J } = globalThis.__T;
+const { call, settle, ok, DB, lobby, done, J, worker, env, ctx } = globalThis.__T;
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 class Sock { constructor() { this.log = []; this.open = true; } send(d) { if (this.open) this.log.push(JSON.parse(d)); } }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -45,6 +45,7 @@ ok('récompenses versées', c1[0].coins > c0[0].coins || c1[1].coins > c0[1].coi
 const ev = await q('SELECT kind FROM fight_events'); ok('journal des combats écrit', ev.length >= 2, J(ev));
 const left = await q('SELECT COUNT(*) n FROM fight_events WHERE kind = ?', 'erreur'); ok('aucune erreur dans le journal', +left[0].n === 0, J(left));
 console.log('— duel de quiz');
+for (let i = 0; i < 4; i++) await worker.scheduled({}, { ...env }, ctx); await settle();   // la tâche planifiée garnit la réserve de cartes enrichies (le duel de quiz en a besoin ; c'est elle qui les produit en production)
 socks[a].log.length = 0; socks[b].log.length = 0;
 await say(a, { t: 'challenge', to: b, mode: 'quiz' }); await say(b, { t: 'accept', from: a, mode: 'quiz' });
 const dend = Date.now() + 120000; let answered = 0;

@@ -1,6 +1,7 @@
 // Colis gratuits du Parti : un toutes les 10 minutes, jusqu'à 30, pour chaque joueur inscrit (même s'il n'ouvre rien).
 import './api.mjs';
 const { call, ok, DB, J, done, settle } = globalThis.__T;
+const { COMMU } = await import('../src/plan.js'); COMMU.ENDS_AT = 9e15;   // ce test avance l'horloge de plusieurs jours : la clôture automatique de l'événement ne doit pas se déclencher
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 const mkp = async n => { const [, r] = await call(null, 'POST', '/api/register', { name: n, password: 'secret1' }); return r.token; };
 const A = await mkp('Alice'); await DB.prepare("UPDATE users SET is_admin = 1 WHERE name = 'Alice'").run();
