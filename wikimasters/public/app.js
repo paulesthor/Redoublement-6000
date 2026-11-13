@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.87';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.88';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2769,7 +2769,7 @@ views.plan = async v => {
       <section class="plan-sum"><div class="plan-top"><b>${fmtR(d.earned)}</b><span>gagnés sur ${fmtR(d.totals.max)}</span></div><div class="plan-bar"><i style="width:${pct}%"></i></div>
         <p>${next ? `Prochain palier : <b>${esc(next.name)}</b> à ${fmtR(next.at)}. Courage, sac à merde.` : 'Plan accompli. Va te laver, tu pues la victoire.'}${ready ? ` <b class="plan-ready">${ready} récompense${ready > 1 ? 's' : ''} à récupérer</b>` : ''}</p>
         <p class="plan-wallet">Solde : <b>${fmtR(d.wr)}</b>${commu ? ` · cagnotte : <b>${fmt(commu.pot)}</b> wikibidou · ${commu.players} camarade${commu.players > 1 ? 's' : ''}` : ''}</p>
-        <div class="plan-demo"><button class="plain" id="plan-top">Classement général et avance des paliers</button>${me.admin ? '<button data-earn="250">+250 ₽ (démo)</button><button data-earn="1000">+1 000 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button>' : ''}</div></section>
+        <div class="plan-demo"><button class="plain" id="plan-top">Classement général et avance des paliers</button>${me.admin ? '<button data-earn="10">+10 ₽ (démo)</button><button data-earn="50">+50 ₽ (démo)</button><button class="plain" id="plan-reset">Remettre à zéro</button>' : ''}</div></section>
       <div class="road" style="--fill:${roadFill(d)}%">${d.milestones.map(m => {
         const done = d.claimed.includes(m.id), reached = d.earned >= m.at, isNext = next && next.id === m.id, rw = planChips(m), pc = Math.min(100, Math.floor(d.earned / m.at * 100));
         return `<section class="plr ${done ? 'claimed' : reached ? 'reached' : ''} ${isNext ? 'next' : ''}" data-id="${m.id}"><div class="plr-n"><b>${m.id}</b><i></i><i></i><i></i></div>
