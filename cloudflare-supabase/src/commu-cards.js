@@ -7,6 +7,9 @@ import { stats, RANK, urlOf, cardRows } from './util.js';
 export const EVENT_OFFSET = 200000000;
 export const EVENT_WEIGHTS = { common: 55, uncommon: 20, rare: 14, super: 6, ultra: 4.5, legendary: 0.5 };   // légendaire : 0,5 % par carte (150 cartes dans le réservoir)
 export const PACK = 10;
+/** Règles de tirage propres à un événement. uniqueLegends : une légendaire déjà possédée ne ressort pas tant qu'il en reste une que le joueur n'a pas (puis, une fois toutes obtenues, les doublons redeviennent possibles).
+ *  Désactivé pour l'événement communiste (ses taux n'ont pas été annoncés ainsi) ; à activer pour le prochain événement. */
+export const EVENT_RULES = { uniqueLegends: false };
 export const NEW_POINTS = { common: 1, uncommon: 2, rare: 4, super: 7, ultra: 12, legendary: 25 }, COLLECTION_BONUS = 20;   // points de palier par première obtention d'une fiche ; bonus par tranche de 50 fiches différentes
 const RARITIES = ['common', 'uncommon', 'rare', 'super', 'ultra', 'legendary'];
 let poolCache = null;
@@ -27,10 +30,14 @@ export function installCommuCards(d, h) {
     return avail[0];
   }
   // un colis : 10 cartes, jamais deux fois la même dans le colis
-  function drawPack(P) {
+  function drawPack(P, owned = null) {
     const used = new Set(), out = [];
     for (let i = 0; i < PACK; i++) {
       let r = rollRarity(P.by), c = null;
+      if (r === 'legendary' && EVENT_RULES.uniqueLegends && owned) {      // légendaire jamais en doublon : on tire d'abord parmi celles que le joueur n'a pas (et qui ne sont pas déjà dans ce colis)
+        const fresh = P.by.legendary.filter(x => !owned.has(EVENT_OFFSET + x.id) && !used.has(x.id));
+        if (fresh.length) c = pick(fresh);
+      }
       for (let t = 0; t < 30 && !c; t++) { const x = pick(P.by[r]); if (!used.has(x.id)) c = x; }
       if (!c) { r = 'common'; for (let t = 0; t < 60 && !c; t++) { const x = pick(P.by.common); if (!used.has(x.id)) c = x; } }
       if (c) { used.add(c.id); out.push(c); }
@@ -46,13 +53,13 @@ export function installCommuCards(d, h) {
 
   // ouvrir n colis (1 ou plusieurs) : un colis consommé = une ouverture ; cartes ajoutées à la collection de l'événement
   route('POST', '/api/commu/open', async ({ env, origin, user }) => {
-    await h.access(env, user, { play: true });
-    const P = await pool(env, origin);
+    const acc = await h.access(env, user, { play: true });
+    const P = await pool(env, origin), owned = EVENT_RULES.uniqueLegends ? new Set(Object.keys(json(acc.r.cards)).map(Number)) : null;
     const took = await d.guard.take(env, user.id, st(env, 'UPDATE plan_progress SET packs = packs - 1 WHERE user_id = ? AND packs >= 1', user.id), 'c');   // colis pris + marqueur de remboursement (voir packguard.js)
     if (!took.ok) bad('Tu n\'as plus de colis : fais la queue pour en acheter (50 ₽)', 400);
     const gk = took.key;
     let drawn;
-    try { drawn = drawPack(P); if (!drawn.length) throw new Error('réservoir vide'); await env.DB.batch(drawn.map(c => insertStmt(env, c))); }
+    try { drawn = drawPack(P, owned); if (!drawn.length) throw new Error('réservoir vide'); await env.DB.batch(drawn.map(c => insertStmt(env, c))); }
     catch (e) { await d.guard.refund(env, user.id, gk); throw e; }   // tirage impossible : le colis est rendu
     let before = {}, won = false;
     for (let essai = 0; essai < 12 && !won; essai++) {

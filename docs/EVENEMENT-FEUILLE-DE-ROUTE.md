@@ -68,6 +68,7 @@ Ces briques sont déjà là et servent à tous les événements :
 - **Taxe d'entrée** versée à une **cagnotte** ; le premier du classement la remporte.
 - **12 paliers** (colis, monnaie, titres, cadres, thèmes, 2 souvenirs, wikibidou du mode classique).
 - **Collection** : réservoir thématique, colis de 10 fiches, points de palier pour chaque nouvelle fiche (+ prime par 50 fiches différentes).
+- **Règle de tirage « pas de doublon de légendaire »** (`EVENT_RULES.uniqueLegends` dans `commu-cards.js`) : une légendaire déjà possédée ne ressort pas tant qu'il en reste une non possédée ; une fois toutes obtenues, les doublons redeviennent possibles. **Désactivée pour l'événement communiste** (décidé le 13/11 après des remarques de joueurs : 27 légendaires dont 5 doublons, un cas à environ 1 chance sur 18 au hasard pur), **à activer (`true`) pour le prochain événement** et à annoncer dans le règlement. Test : `tests/legend-unique.mjs`.
 - **Départ** : 500 unités de monnaie + 10 colis.
 - **Pages** : annonce, route des paliers, podium + classement général, règlement, fin et choix des souvenirs.
 - **Pilotage admin** (Administration → Événement) : ouvrir pour moi seul, lancer pour tous, fermer, clore + gagnant, clore les souvenirs, repartir de zéro.
