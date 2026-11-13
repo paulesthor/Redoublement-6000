@@ -2113,6 +2113,11 @@ route('GET', '/api/admin/economy', admin(async ({ env }) => {
     legendaries: { existing: +legend.taken, pool: +legend.pool * 2 }, albums24: +albums.n, openAuctions: +open.n, unique: await uniqueOn(env) };
 }));
 /** Journal de log et de contrôle (table logs de Supabase, 14 jours). */
+// aperçu du quiz du jour (administrateur) : questions et bonnes réponses, pour l'événement (?event=1) ou le jeu normal ; génère le quiz s'il n'existe pas encore (c'est ce que ferait le premier joueur)
+route('GET', '/api/admin/quiz-today', admin(async ({ env, origin, query }) => {
+  const day = (query.get('event') === '1' ? 'cm:' : '') + dayKey(), q = await dailyQuiz(env, origin, day), qs = JSON.parse(q.questions);
+  return { day, title: q.title, extract: q.extract, questions: qs.map(x => ({ text: x.text, options: x.options, answer: x.answer, good: x.options[x.answer] })) };
+}));
 route('GET', '/api/admin/logs/export', admin(async ({ env, query }) => {
   await flushLogs(env, true);
   const text = await exportLogs(env, { hours: +query.get('h') || 24, all: query.get('all') === '1', version: CFG.VERSION });
