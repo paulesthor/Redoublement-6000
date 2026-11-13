@@ -570,7 +570,7 @@ const views = {
     if ((ussrUiOn() || ussrOn()) && !window.ussrParcelSvg) await loadUssr().catch(() => {});
     if (eventUi()) return eventPacks(v);
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
-    v.innerHTML = `${lockNote()}${commu?.on && commu.joined && !ussrUiOn() ? '<button class="commu-banner" id="commu-enter"><b>Mode communiste</b><span>Retourne au Plan : thème rouge, colis du Parti, jeux et paliers.</span></button>' : ''}${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero home"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
+    v.innerHTML = `${lockNote()}${noelBanner()}${commu?.on && commu.joined && !ussrUiOn() ? '<button class="commu-banner" id="commu-enter"><b>Mode communiste</b><span>Retourne au Plan : thème rouge, colis du Parti, jeux et paliers.</span></button>' : ''}${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero home"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${(ussrUiOn() || ussrOn()) && window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
@@ -630,6 +630,7 @@ const views = {
       if (again === 'again') setTimeout(() => $('#buy10')?.click(), 60);
     });
     applyPackLock(v);
+    $('#noel-open')?.addEventListener('click', () => { tab = 'noelcal'; render(); });
     $('#commu-join')?.addEventListener('click', () => { tab = 'commustart'; render(); });
     $('#commu-enter')?.addEventListener('click', safe(async () => { setPref('wm_ussr_ui', '1'); setPref('wm_ussr', '1'); syncEventTheme(); await syncUssrUi(); tab = 'packs'; render(); }));
     $('#rates-btn').onclick = () => {
@@ -1382,7 +1383,7 @@ let adminTab = 'overview';   // l'onglet « Joueurs » (pièces, paquets, cartes
 views.admin = async v => {
   jlog('ouverture de l\'administration');
   if (!me.admin) { jlog('administration refusée : compte non admin'); toast('Ce compte n\'est pas administrateur.'); tab = 'packs'; return render(); }
-  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['eco', 'Économie'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['event', 'Événement'], ['probe', 'Enquête'], ['tools', 'Outils']];
+  const seg = [['overview', 'Aperçu'], ['stats', 'Tableau de bord'], ['eco', 'Économie'], ['logs', 'Journal'], ['market', 'Enchères'], ['announce', 'Annonce'], ['event', 'Événement'], ['noel', 'Noël'], ['probe', 'Enquête'], ['tools', 'Outils']];
   v.innerHTML = `${pageHead('Administration', `Build ${BUILD}`)}<div class="chips wrap" id="adm-tabs" style="margin-bottom:12px">${seg.map(([k, l]) => `<button data-k="${k}" class="${k === adminTab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="adm"></div>`;
   $('#adm-tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; adminTab = b.dataset.k; $('#adm-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); adminBody(); };
   const adminBody = async () => {
@@ -1421,6 +1422,21 @@ views.admin = async v => {
         ($('#pb-last') || {}).onclick = () => draw('');
       };
       await draw('');
+    } else if (adminTab === 'noel') {
+      const day = prefOf('wm_noel_day') || '', n = await api('/noel' + (day !== '' ? '?day=' + day : ''));
+      box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Noël : calendrier de l'avent</h3>
+        <p class="mut" style="margin:0 0 10px;font-size:13px">État : <b>${n.on ? (n.scope === 'all' ? 'ouvert à tous' : 'ouvert pour toi seul') : 'fermé'}</b> · du 1er au 24 décembre, fin le 25 à 18 h. ${n.opened} porte${n.opened > 1 ? 's' : ''} ouverte${n.opened > 1 ? 's' : ''} par ton compte.</p>
+        <div class="row"><button class="plain" id="nl-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="nl-all" style="flex:1">Lancer pour tous</button></div>
+        <button class="plain" id="nl-off" style="width:100%;margin-top:8px" ${n.on ? '' : 'disabled'}>Fermer l'événement</button>
+        <label class="fld" style="margin-top:12px">Aperçu : simuler le jour du calendrier<input id="nl-day" type="number" min="0" max="24" placeholder="vide = vraie date" value="${esc(day)}"></label>
+        <p class="mut" style="margin:0 0 8px;font-size:12px">Réservé à toi : les joueurs ont toujours la vraie date. Sert à tester les portes avant le 1er décembre.</p>
+        <button id="nl-see" style="width:100%">Voir le calendrier</button></div>`;
+      const set = async (on, scope, msg) => { await api('/noel/set', { on, scope }); toast(msg, 'ok'); adminBody(); };
+      $('#nl-me').onclick = safe(() => set(true, 'admin', 'Noël ouvert pour toi seul'));
+      $('#nl-all').onclick = safe(async () => { if (!(await ask('Lancer Noël pour TOUS les joueurs ?', [], { text: 'Le calendrier apparaît sur leur accueil ; les portes s\'ouvrent à partir du 1er décembre.', ok: 'Lancer' }))) return; await set(true, 'all', 'Noël lancé pour tous'); });
+      $('#nl-off').onclick = safe(async () => { if (!(await ask('Fermer l\'événement de Noël ?', [], { ok: 'Fermer' }))) return; await set(false, 'admin', 'Noël fermé'); });
+      $('#nl-day').onchange = e => { const v = e.target.value.trim(); try { v === '' ? localStorage.removeItem('wm_noel_day') : localStorage.setItem('wm_noel_day', String(Math.max(0, Math.min(24, +v || 0)))); } catch { /* stockage indisponible */ } };
+      $('#nl-see').onclick = () => { tab = 'noelcal'; render(); };
     } else if (adminTab === 'event') {
       const c = await loadCommu(true), st = await api('/commu/standings').catch(() => ({ players: 0, pot: 0 }));
       const state = c.done ? 'Terminé' : c.paused ? 'EN PAUSE' : c.on ? (c.scope === 'all' ? 'En cours, ouvert à tous' : 'Ouvert pour toi seul (test)') : 'Fermé';
@@ -2674,6 +2690,32 @@ views.commustart = async v => {
   $('#cs-later').onclick = () => { tab = 'packs'; render(); };
 };
 // ---------- fin de l'événement : bilan, gagnant et choix des souvenirs ----------
+
+// ---------- Noël : calendrier de l'avent ----------
+const noelBanner = () => me?.noel ? '<button class="commu-banner noel-banner" id="noel-open"><b>Calendrier de l\'Avent</b><span>Le Père Noël a une porte pour toi. Il en a aussi pour le reste de l\'équipe.</span></button>' : '';
+const NOEL_MONTH = 'déc.';
+views.noelcal = async v => {
+  const sim = me.admin ? prefOf('wm_noel_day') : null, q = sim !== null && sim !== '' ? '?day=' + sim : '';
+  let n; try { n = await api('/noel' + q); } catch (e) { toast(e.message); tab = 'packs'; return render(); }
+  if (!n.on) { tab = 'packs'; return render(); }
+  const next = n.doors.find(d => d.openable);
+  v.innerHTML = `${pageHead('Calendrier de l\'Avent', 'Le Père Noël vous remercie de votre dévouement. Il ne vous rembourse pas.')}
+    <div class="nl-sum"><b>${n.opened}</b><span> porte${n.opened > 1 ? 's' : ''} ouverte${n.opened > 1 ? 's' : ''} sur ${n.total}</span>${n.simulated ? `<i class="nl-sim">jour simulé : ${n.today}</i>` : ''}</div>
+    ${n.today === 0 ? `<p class="nl-wait">La porte n° 1 s'ouvre le 1<sup>er</sup> décembre, à minuit. Le Père Noël n'aime pas qu'on le presse.</p>` : next ? '' : `<p class="nl-wait">Tu as ouvert toutes les portes du jour. La suivante s'ouvre à minuit.</p>`}
+    <div class="nl-grid">${n.doors.map(d => `<button class="nl-door ${d.opened ? 'open' : d.openable ? (d.n === n.today ? 'today' : 'late') : 'lock'}" data-n="${d.n}" ${d.opened || d.openable ? '' : 'disabled'} aria-label="Porte ${d.n}${d.opened ? ' ouverte' : d.openable ? ' à ouvrir' : ' fermée'}">
+      <span class="nl-n">${d.n}</span><span class="nl-knob"></span>${d.opened ? `<span class="nl-got">${d.coins ? '+' + d.coins : ''}${d.packs ? ' · ' + d.packs + ' pq' : ''}</span>` : d.openable ? `<span class="nl-tag">${d.n === n.today ? 'Aujourd\'hui' : 'À ouvrir'}</span>` : `<span class="nl-tag">${d.n} ${NOEL_MONTH}</span>`}</button>`).join('')}</div>
+    <p class="mut" style="text-align:center;font-size:12.5px;padding:10px 16px">Une porte manquée reste ouvrable jusqu'au 25 décembre à 18 h. Le Père Noël est rancunier, pas radin.</p>`;
+  const reveal = r => {
+    const m = $('#modal'); m.hidden = false;
+    m.innerHTML = `<div class="recapsheet nl-reveal" role="dialog" aria-label="Porte ${r.n}"><small class="nl-kick">PÔLE NORD S.A. · NOTE DE SERVICE</small><div class="nl-bignum">${r.n}</div>
+      <p class="nl-text">${esc(r.text)}</p>
+      <div class="nl-chips">${r.reward.coins ? `<span><b>+${r.reward.coins}</b> wikibidou</span>` : ''}${r.reward.packs ? `<span><b>+${r.reward.packs}</b> paquet${r.reward.packs > 1 ? 's' : ''}</span>` : ''}</div>
+      <button class="ic-go" id="nl-ok" style="width:100%">Merci, patron</button></div>`;
+    $('#nl-ok').onclick = () => { m.hidden = true; m.innerHTML = ''; render(); };
+  };
+  v.querySelectorAll('.nl-door:not(.lock):not(.open)').forEach(b => b.onclick = safe(async () => { b.disabled = true; const r = await api('/noel/door', { n: +b.dataset.n, ...(sim ? { day: sim } : {}) }); await refreshMe(); reveal(r); }));
+  v.querySelectorAll('.nl-door.open').forEach(b => b.onclick = () => { const d = n.doors[+b.dataset.n - 1]; reveal({ n: d.n, text: d.text, reward: { coins: d.coins, packs: d.packs } }); });
+};
 views.commuend = async v => {
   await loadCommu(true); const c = commu;
   if (!c || !c.done || !(c.joined || me.admin)) { tab = 'packs'; return render(); }

@@ -1766,4 +1766,26 @@ html,body{overscroll-behavior-y:none}
 .fe-grid>div{border:1px solid #f4d56b44;background:#2a0a0e;padding:8px 4px;display:flex;flex-direction:column;gap:2px}.fe-grid b{font-size:18px;color:#f4d56b}.fe-grid span{font-size:10.5px;color:#e8dfc7;letter-spacing:.03em}
 .fe-txt{text-align:left;margin:0 0 10px}.fe-txt p{margin:0 0 9px;font-size:13.5px;line-height:1.45}
 .fe-titles{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin:0 0 12px}.fe-titles span{border:1px solid #f4d56b66;color:#f4d56b;font-size:11px;padding:2px 9px;border-radius:99px;letter-spacing:.04em}
+/* ================= Noël : calendrier de l'avent ================= */
+.noel-banner{background:linear-gradient(#143a24,#0e2a1a);border:1px solid #e8c35a66;color:#f4ead0}
+.noel-banner b{color:#e8c35a;letter-spacing:.06em}
+.nl-sum{padding:0 16px 8px;color:#f4ead0}.nl-sum b{font-size:22px;color:#e8c35a}.nl-sim{margin-left:10px;font-size:11px;color:#e8c35a;border:1px dashed #e8c35a88;border-radius:99px;padding:1px 8px;font-style:normal}
+.nl-wait{margin:0 16px 10px;padding:10px 12px;border:1px solid #e8c35a44;background:#143a24;border-radius:4px;font-size:13px;color:#f4ead0}
+.nl-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:4px 16px 8px}
+.nl-door{position:relative;aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0;border-radius:6px 6px 3px 3px;border:2px solid #e8c35a;background:#8e1f2b;color:#f4ead0;box-shadow:inset 0 0 0 4px #7a1823,inset 0 0 0 5px #e8c35a55;overflow:hidden}
+.nl-door::before{content:"";position:absolute;inset:9px;border:1.5px solid #e8c35a66;border-radius:3px}
+.nl-n{position:relative;z-index:1;font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:26px;color:#e8c35a;line-height:1}
+.nl-knob{position:absolute;right:11px;top:52%;width:7px;height:7px;border-radius:50%;background:#e8c35a;box-shadow:0 0 0 2px #7a1823}
+.nl-tag{position:relative;z-index:1;font-size:9px;letter-spacing:0;text-transform:uppercase;color:#f4ead0;opacity:.9;white-space:nowrap}
+.nl-door.today{background:#b3202a;box-shadow:inset 0 0 0 4px #8e1f2b,inset 0 0 0 5px #fff1c7,0 0 0 2px #fff1c7}
+.nl-door.today .nl-tag{font-weight:800;color:#fff1c7;font-size:7.5px;letter-spacing:-.2px}
+.nl-door.lock{background:#17322a;border-color:#e8c35a44;box-shadow:inset 0 0 0 4px #102720,inset 0 0 0 5px #e8c35a22;color:#a9b8a8}.nl-door.lock .nl-n{color:#e8c35a99}.nl-door.lock .nl-knob{background:#e8c35a66;box-shadow:0 0 0 2px #102720}
+.nl-door.open{background:#143a24;border-color:#e8c35a99;box-shadow:inset 0 0 0 4px #0e2a1a,inset 0 0 0 5px #e8c35a33}.nl-door.open .nl-n{color:#e8c35a}
+.nl-door.open::before{inset:9px;background:#0b1f15;border-color:#e8c35a44}
+.nl-got{position:relative;z-index:1;font-size:10px;color:#f4ead0;white-space:nowrap}
+.nl-reveal{background:#0e2a1a;border:1px solid #e8c35a66;color:#f4ead0;text-align:center}
+.nl-kick{display:block;color:#e8c35a;letter-spacing:.14em;font-size:10.5px;font-weight:700}
+.nl-bignum{font-family:Georgia,'Times New Roman',serif;font-size:76px;font-weight:700;color:#e8c35a;line-height:1.1;margin:6px 0}
+.nl-text{margin:0 0 12px;font-size:14px;line-height:1.5;color:#f4ead0}
+.nl-chips{display:flex;gap:8px;justify-content:center;margin:0 0 14px}.nl-chips span{border:1px solid #e8c35a66;background:#143a24;padding:6px 12px;border-radius:99px;font-size:13px}.nl-chips b{color:#e8c35a}
 

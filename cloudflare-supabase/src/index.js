@@ -12,6 +12,7 @@ import { installSeasonZero } from './seasonzero.js';
 import { installFeed } from './feed.js';
 import { installCamp } from './camp.js';
 import { installPackGuard } from './packguard.js';
+import { installNoel } from './noel.js';
 import { installPlan, COMMU } from './plan.js';
 import { EVENT_OFFSET } from './commu-cards.js';
 import { uniqueOn, claimLegend, releaseLegends, refreshUnique } from './unique.js';
@@ -716,7 +717,7 @@ route('GET', '/api/me', async ({ env, ctx, user, req }) => {
   if (!expedDone) { expedDone = true; ctx.waitUntil((async () => { await economy.capExpeditionsOnce(env); await economy.finishExpeditionsOnce(env, ctx); })().catch(() => { expedDone = false; })); }   // opération unique (la base se souvient qu'elle a eu lieu)
   const resetOn = env.RESET !== '0' && now() < RESET_AT;
   // TOUTES les lectures partent ensemble (au lieu d'une file d'attente de requêtes l'une après l'autre : chaque aller-retour vers la base coûte du temps)
-  const [badge, dm, extra, evRaw, frozen, maint, resetChosen, recap, packLock] = await Promise.all([
+  const [badge, dm, extra, evRaw, frozen, maint, resetChosen, recap, packLock, noelOn] = await Promise.all([
     friendBadge(env, user.id),
     one(env, 'SELECT COALESCE(SUM(unread), 0) n FROM convs WHERE user_id = ?', user.id).catch(() => null),
     gameBadges(env, user.id).catch(() => ({})),
@@ -726,11 +727,12 @@ route('GET', '/api/me', async ({ env, ctx, user, req }) => {
     resetOn ? reset.chosen(env, user.id).catch(() => false) : false,            // remise à zéro annoncée
     !resetOn && now() >= RESET_AT ? one(env, 'SELECT seen FROM season0_recap WHERE user_id = ?', user.id).catch(() => null) : null,   // bilan de la saison 0 à montrer une fois
     user.is_admin ? '' : packLockMsg(env),
+    noel.isOn(env, user).catch(() => false),                                   // calendrier de l'avent ouvert pour ce joueur
   ]);
   const ev = evRaw;
   if (frozen) ev.push({ id: 'freeze', kind: 'freeze', name: 'Gains suspendus', emoji: '⛔', end: frozen });
   if (resetOn) ev.push({ id: 'reset', kind: 'reset', name: 'Remise à zéro mercredi 14', emoji: '🔄', end: RESET_AT });
-  return { ...publicUser(u), ...(packLock ? { packLock } : {}), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
+  return { ...publicUser(u), ...(packLock ? { packLock } : {}), ...(noelOn ? { noel: 1 } : {}), badge, dm: dm?.n ?? 0, ...extra, ev, ...(frozen ? { sanction: { until: frozen, msg: SANCTION_MSG } } : {}), ...(resetOn ? { reset: { at: RESET_AT, chosen: resetChosen } } : {}), ...(recap && !recap.seen ? { recap: true } : {}), ...(maint ? { maintenance: user.is_admin ? 'admin' : true } : {}) };
 });
 // images des paquets préparés : le client les met en cache avant l'ouverture
 route('GET', '/api/packs/next', async ({ env, ctx, user }) => {
@@ -1085,6 +1087,7 @@ const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
 installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle, canPlay: async (env, user) => { await commu.access(env, user, { play: true }); return true; } });   // pendant l'événement, les joueurs inscrits ont accès au camp
 const guard = installPackGuard({ st, run, all, now, ensureGameSchema, randomHex });
 const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle, assetJson, addCard, dayKey, msToMidnight, hash, now, guard });
+const noel = installNoel({ route, bad, one, all, run, st, ensureGameSchema, now });   // événement de Noël : calendrier de l'avent
 const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
