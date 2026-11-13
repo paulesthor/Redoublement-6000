@@ -41,15 +41,21 @@
   const lin = (c, y0, y1, a, b) => { const g = c.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, a); g.addColorStop(1, b); return g; };
   /** Icône d'une pièce, centrée en (x, y), rayon r (pixels). */
   function icon(c, type, x, y, r, o = {}) {
+    const im = art(type); if (im) { c.save(); c.translate(x, y); if (o.rot) c.rotate(o.rot); c.globalAlpha = o.alpha ?? 1; const k = r * 2.2 / Math.max(im.width, im.height); c.drawImage(im, -im.width * k / 2, -im.height * k / 2, im.width * k, im.height * k); c.restore(); return; }
     c.save(); c.translate(x, y); if (o.rot) c.rotate(o.rot); c.globalAlpha = o.alpha ?? 1; c.lineWidth = Math.max(1, r * 0.13); c.strokeStyle = OUT; c.lineJoin = 'round';
     if (type === 'jouet') { c.fillStyle = '#b8743a'; c.beginPath(); c.arc(-r * 0.62, -r * 0.62, r * 0.32, 0, TAU); c.arc(r * 0.62, -r * 0.62, r * 0.32, 0, TAU); c.fill(); c.stroke(); c.fillStyle = '#d8934f'; c.beginPath(); c.arc(0, 0, r * 0.85, 0, TAU); c.fill(); c.stroke(); c.fillStyle = '#f2d2a6'; c.beginPath(); c.ellipse(0, r * 0.22, r * 0.38, r * 0.3, 0, 0, TAU); c.fill(); c.fillStyle = '#111'; c.beginPath(); c.arc(-r * 0.3, -r * 0.14, r * 0.1, 0, TAU); c.arc(r * 0.3, -r * 0.14, r * 0.1, 0, TAU); c.arc(0, r * 0.12, r * 0.1, 0, TAU); c.fill(); }
     else if (type === 'boite') { rr(c, -r * 0.8, -r * 0.7, r * 1.6, r * 1.5, r * 0.12, '#3fa7d6', true); c.fillStyle = '#ffffff55'; c.fillRect(-r * 0.8, -r * 0.7, r * 1.6, r * 0.4); c.fillStyle = '#f4f2ea'; c.fillRect(-r * 0.14, -r * 0.7, r * 0.28, r * 1.5); c.strokeRect(-r * 0.14, -r * 0.7, r * 0.28, r * 1.5); }
     else { c.fillStyle = '#d6479c'; for (const s of [-1, 1]) { c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(s * r * 1.1, -r * 1.0, s * r * 0.95, r * 0.15); c.quadraticCurveTo(s * r * 0.7, r * 0.7, 0, 0); c.fill(); c.stroke(); } c.beginPath(); c.arc(0, 0, r * 0.26, 0, TAU); c.fillStyle = '#f2a1cf'; c.fill(); c.stroke(); c.beginPath(); c.moveTo(-r * 0.2, r * 0.2); c.lineTo(-r * 0.5, r * 0.95); c.moveTo(r * 0.2, r * 0.2); c.lineTo(r * 0.5, r * 0.95); c.stroke(); }
     c.restore();
   }
-  const giftBox = (c, x, y, r, col) => { rr(c, x - r, y - r, r * 2, r * 2, r * 0.14, col, true); c.fillStyle = '#f4f2ea'; c.fillRect(x - r * 0.15, y - r, r * 0.3, r * 2); c.fillRect(x - r, y - r * 0.15, r * 2, r * 0.3); c.beginPath(); c.arc(x - r * 0.28, y - r - r * 0.18, r * 0.3, 0, TAU); c.arc(x + r * 0.28, y - r - r * 0.18, r * 0.3, 0, TAU); c.stroke(); };
+  const GIFT = { '#d8343c': 'gift-1', '#3fa7d6': 'gift-2', '#2f9a58': 'gift-3', '#e8c35a': 'gift-4' };
+  const giftBox = (c, x, y, r, col) => { const im = art(GIFT[col] || (col === '#3fa7d6' ? 'boite' : '')); if (im) { const k = r * 2.3 / Math.max(im.width, im.height); c.drawImage(im, x - im.width * k / 2, y - im.height * k / 2, im.width * k, im.height * k); return; } rr(c, x - r, y - r, r * 2, r * 2, r * 0.14, col, true); c.fillStyle = '#f4f2ea'; c.fillRect(x - r * 0.15, y - r, r * 0.3, r * 2); c.fillRect(x - r, y - r * 0.15, r * 2, r * 0.3); c.beginPath(); c.arc(x - r * 0.28, y - r - r * 0.18, r * 0.3, 0, TAU); c.arc(x + r * 0.28, y - r - r * 0.18, r * 0.3, 0, TAU); c.stroke(); };
 
   let cur = null;
+  const ART = {};
+  const loadArt = names => Promise.all(names.map(n => new Promise(res => { if (ART[n] !== undefined) return res(); const im = new Image(); im.onload = () => { ART[n] = im; res(); }; im.onerror = () => { ART[n] = null; res(); }; im.src = '/art/' + n + '.png'; })));
+  const ART_NAMES = ['elf-body-1', 'elf-body-2', 'jouet', 'boite', 'ruban', 'gift-1', 'gift-2', 'gift-3', 'gift-4'].concat([1, 2].flatMap(i => ['neutral', 'stressed', 'strike'].map(m => 'elf' + i + '-head-' + m)));
+  const art = n => ART[n] || null;
   const loadHead = h => new Promise(res => { if (!h) return res(null); const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = '/api/noel/atel/head/' + h.slot + '?v=' + h.v; });
   /** Visage de lutin : photo d'un joueur volontaire si elle existe, sinon visage dessiné. */
   function faceDraw(c, img, x, y, r, stress, t) {
@@ -62,7 +68,7 @@
 
   async function open(opts) {
     const { n, day, api } = opts, q = '?n=' + n + (day !== undefined && day !== null && day !== '' ? '&day=' + day : '');
-    const info = await api('/noel/atel' + q), imgs = await Promise.all((info.heads || []).map(loadHead));
+    const info = await api('/noel/atel' + q); await loadArt(ART_NAMES); const imgs = [null, null];
     const ov = el('div', 'sg-ov'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Atelier des lutins, niveau ' + n);
     document.body.append(ov); document.body.classList.add('sg-lock');
     let raf = 0, cleanup = () => {};
@@ -185,21 +191,28 @@
         const dy = strike ? 3.2 : working ? Math.sin(t * speed * 0.5 + i) * 0.45 : Math.sin(t * 2 + i) * 0.25;
         ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = OUT; ctx.lineWidth = S * 0.22;
         // corps : tunique, col blanc, boutons
+        const hdName = 'elf' + (i + 1) + '-head-' + (strike ? 'strike' : e.stress > 650 ? 'stressed' : 'neutral'), bodyIm = art('elf-body-' + (i + 1)), headIm = art(hdName), skin = ['#a9744a', '#c48d5c'][i];
+        if (bodyIm) { const bw = 27 * S, bh = bw * bodyIm.height / bodyIm.width; ctx.drawImage(bodyIm, cx - bw / 2, Y(62.4 + dy * 0.5), bw, bh); } else {
         ctx.beginPath(); ctx.moveTo(cx - 9.5 * S, Y(84)); ctx.lineTo(cx - 9 * S, Y(68 + dy * 0.5)); ctx.quadraticCurveTo(cx, Y(64.5 + dy * 0.5), cx + 9 * S, Y(68 + dy * 0.5)); ctx.lineTo(cx + 9.5 * S, Y(84)); ctx.closePath(); ctx.fillStyle = lin(ctx, Y(65), Y(84), '#3fb06a', '#1d6339'); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#ffffff22'; ctx.fillRect(cx - 8 * S, Y(68.5), 3 * S, 12 * S);
         ctx.fillStyle = '#e8c35a'; for (const yy of [70.5, 73.5]) { ctx.beginPath(); ctx.arc(cx, Y(yy + dy * 0.5), S * 0.65, 0, TAU); ctx.fill(); ctx.stroke(); }
         ctx.fillStyle = '#fbfbf6'; ctx.beginPath(); ctx.moveTo(cx - 5.5 * S, Y(65.4 + dy * 0.5)); for (let k = 0; k <= 6; k++) ctx.lineTo(cx - 5.5 * S + k * 11 / 6 * S, Y(65.4 + dy * 0.5 + (k % 2 ? 2 : 0.6))); ctx.lineTo(cx + 5.5 * S, Y(65.4 + dy * 0.5)); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
         // oreilles et tête
+        if (!headIm) {
         ctx.fillStyle = '#f1c9a0'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 7 * S, Y(57 + dy)); ctx.lineTo(cx + s * 14 * S, Y(51 + dy)); ctx.lineTo(cx + s * 7.6 * S, Y(61.5 + dy)); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-        faceDraw(ctx, imgs[i], cx, Y(57 + dy), 8 * S, e.stress, t);
+        }
+        if (headIm) { const hh = 27 * S, hw = hh * headIm.width / headIm.height; ctx.drawImage(headIm, cx - hw / 2, Y(64.4 + dy) - hh, hw, hh); } else faceDraw(ctx, imgs[i], cx, Y(57 + dy), 8 * S, e.stress, t);
         if (boosted && !strike) { ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = S * 0.5; for (let k = 0; k < 3; k++) { ctx.globalAlpha = 0.9 - k * 0.25; ctx.beginPath(); ctx.arc(cx + 5 * S, Y(61 + dy), S * (3 + k * 2.2), -0.9, 0.9); ctx.stroke(); } ctx.globalAlpha = 1; ctx.strokeStyle = OUT; }
         // bonnet : bande blanche, pompon aux couleurs du poste
+        if (!headIm) {
         ctx.beginPath(); ctx.moveTo(cx - 8.8 * S, Y(53 + dy)); ctx.quadraticCurveTo(cx - 4 * S, Y(37 + dy), cx + 11 * S, Y(42 + dy + Math.sin(t * 3 + i) * 0.5)); ctx.quadraticCurveTo(cx + 7 * S, Y(49 + dy), cx + 8.8 * S, Y(53 + dy)); ctx.quadraticCurveTo(cx, Y(49.5 + dy), cx - 8.8 * S, Y(53 + dy)); ctx.fillStyle = lin(ctx, Y(38), Y(53), '#e8444e', '#a01d26'); ctx.fill(); ctx.stroke();
         rr(ctx, cx - 9.4 * S, Y(51.6 + dy), 18.8 * S, 2.6 * S, S * 1.2, '#fbfbf6', true); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx + 11.4 * S, Y(42 + dy), S * 1.9, 0, TAU); ctx.fill(); ctx.stroke();
+        }
         // bras et marteau
         ctx.strokeStyle = '#1d6339'; ctx.lineWidth = S * 2.3; const bob = working ? Math.sin(t * speed + i) : 0;
-        if (strike) { ctx.beginPath(); ctx.moveTo(cx - 8.5 * S, Y(69 + dy)); ctx.lineTo(cx + 3 * S, Y(75 + dy)); ctx.moveTo(cx + 8.5 * S, Y(69 + dy)); ctx.lineTo(cx - 3 * S, Y(75 + dy)); ctx.stroke(); }
-        else { const lh = 74.2 - bob * 1.2, rh = 74.2 + bob * 1.2; ctx.beginPath(); ctx.moveTo(cx - 8.5 * S, Y(69 + dy)); ctx.lineTo(cx - 4.2 * S, Y(lh)); ctx.moveTo(cx + 8.5 * S, Y(69 + dy)); ctx.lineTo(cx + 4.8 * S, Y(rh)); ctx.stroke(); ctx.fillStyle = '#f1c9a0'; ctx.strokeStyle = OUT; ctx.lineWidth = S * 0.18; for (const [hx, hy] of [[-4.2, lh], [4.8, rh]]) { ctx.beginPath(); ctx.arc(cx + hx * S, Y(hy), S * 1.4, 0, TAU); ctx.fill(); ctx.stroke(); }
+        if (strike) { if (!bodyIm) { ctx.beginPath(); ctx.moveTo(cx - 8.5 * S, Y(69 + dy)); ctx.lineTo(cx + 3 * S, Y(75 + dy)); ctx.moveTo(cx + 8.5 * S, Y(69 + dy)); ctx.lineTo(cx - 3 * S, Y(75 + dy)); ctx.stroke(); } }
+        else { const lh = 74.2 - bob * 1.2, rh = 74.2 + bob * 1.2; if (!bodyIm) { ctx.beginPath(); ctx.moveTo(cx - 8.5 * S, Y(69 + dy)); ctx.lineTo(cx - 4.2 * S, Y(lh)); ctx.moveTo(cx + 8.5 * S, Y(69 + dy)); ctx.lineTo(cx + 4.8 * S, Y(rh)); ctx.stroke(); } ctx.fillStyle = bodyIm ? skin : '#f1c9a0'; ctx.strokeStyle = OUT; ctx.lineWidth = S * 0.18; for (const [hx, hy] of [[-4.2, lh], [4.8, rh]]) { ctx.beginPath(); ctx.arc(cx + hx * S, Y(hy), S * 1.4, 0, TAU); ctx.fill(); ctx.stroke(); }
           if (working) { ctx.save(); ctx.translate(cx + 4.8 * S, Y(rh)); ctx.rotate(-0.6 + bob * 0.7); ctx.fillStyle = '#7a5230'; ctx.fillRect(-S * 0.4, -S * 5, S * 0.8, S * 5); ctx.fillStyle = '#8a8d9a'; ctx.fillRect(-S * 1.7, -S * 6.2, S * 3.4, S * 1.8); ctx.strokeRect(-S * 1.7, -S * 6.2, S * 3.4, S * 1.8); ctx.restore(); } }
         ctx.strokeStyle = OUT; ctx.lineWidth = S * 0.2;
         // pancarte de grève

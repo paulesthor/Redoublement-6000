@@ -132,12 +132,18 @@
   };
   function drawChar(c, type, x, y, u, f) { c.save(); c.translate(x, y); c.scale(u, u); c.lineWidth = 0.06; c.strokeStyle = OUT; c.lineJoin = 'round'; c.lineCap = 'round'; CH[type](c, f || { mood: 'idle', t: 0 }); c.restore(); }
 
+  // ───────────── illustrations (facultatives : si un fichier manque, le dessin du code prend le relais) ─────────────
+  const ART = {};
+  const loadArt = names => Promise.all(names.map(n => ART[n] !== undefined ? ART[n] : (ART[n] = new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = '/art/' + n + '.png'; }).then(im => (ART[n] = im))))).then(() => ART);
+  const ART_NAMES = ['inspecteur', 'delegue', 'renne', 'comptable', 'pere'].flatMap(k => ['idle', 'hurt', 'down'].map(p => k + '-' + p));
+  const sprite = (c, im, cx, bottom, h) => { const w = h * im.width / im.height; c.drawImage(im, cx - w / 2, bottom - h, w, h); };
+
   // ───────────── le jeu ─────────────
   let cur = null;   // partie en cours (pour les tests : conversion vecteur → déplacement du doigt)
 
   async function open(opts) {
     const { n, day, api } = opts, q = '?n=' + n + (day !== undefined && day !== null && day !== '' ? '&day=' + day : '');
-    const info = await api('/noel/snow' + q);
+    const info = await api('/noel/snow' + q); await loadArt(ART_NAMES);
     const ov = el('div', 'sg-ov'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Tir au patron, niveau ' + n);
     document.body.append(ov); document.body.classList.add('sg-lock');
     let raf = 0, cleanup = () => {};
@@ -157,7 +163,7 @@
         <div class="sg-stats"><span><b>${left}</b> essai${left > 1 ? 's' : ''} restant${left > 1 ? 's' : ''}</span><span>Meilleur <b>${inf.best}</b></span><span><b>${inf.flocons}</b> flocons</span></div>
         <p class="sg-note">Seule ta meilleure partie du jour compte : le Père Noël ne paie que les progrès (jusqu'à ${inf.max} flocons).</p>
         <button class="sg-btn" id="sg-go" ${left > 0 ? '' : 'disabled'}>${left > 0 ? 'Prendre le poste' : 'Plus d\'essai aujourd\'hui'}</button><button class="sg-btn ghost" id="sg-quit">Retour au calendrier</button></div>`;
-      ov.querySelectorAll('canvas[data-k]').forEach(cv => { const c = cv.getContext('2d'), k = cv.dataset.k, r = P.TYPES[k].r; const u = k === 'pere' ? 44 : 50; drawChar(c, k, 60, 62 + (k === 'pere' ? 4 : 0), u, { mood: 'idle', t: 0 }); void r; });
+      ov.querySelectorAll('canvas[data-k]').forEach(cv => { const c = cv.getContext('2d'), k = cv.dataset.k, r = P.TYPES[k].r; const u = k === 'pere' ? 44 : 50, im = ART[k + '-idle']; if (im) sprite(c, im, 60, 116, 108); else drawChar(c, k, 60, 62 + (k === 'pere' ? 4 : 0), u, { mood: 'idle', t: 0 }); void r; });
       ov.querySelector('#sg-quit').onclick = close;
       const go = ov.querySelector('#sg-go'); go.onclick = async () => { go.disabled = true; try { ac(); const r = await api('/noel/snow/start', { n, ...(day ? { day } : {}) }); play(r.attempt); } catch (e) { opts.toast && opts.toast(e.message); go.disabled = false; } };
     }
@@ -350,7 +356,8 @@
           const bob = v.down ? 0 : Math.sin(clock * 2.2 + i * 1.7) * 0.12, shk = v.hurtT > 0 ? Math.sin(clock * 60) * 0.28 : 0;
           ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, v.alpha)); const cx = wx(v.x + shk), cy = wy(v.y + bob);
           if (v.down) { ctx.translate(cx, cy); ctx.rotate(-v.rot); ctx.translate(-cx, -cy); }
-          drawChar(ctx, t.type, cx, cy, t.r * S, { mood: v.mood, blink: v.blink > 0, t: clock });
+          { const landed = v.down && v.y <= 0.6, im = ART[t.type + '-' + (landed ? 'down' : v.mood === 'hurt' || v.down ? 'hurt' : 'idle')];
+            if (im) { const hh = (landed ? 1.55 : 2.2) * t.r * S; sprite(ctx, im, cx, cy + t.r * S * (landed ? 1.0 : 1.05), hh); } else drawChar(ctx, t.type, cx, cy, t.r * S, { mood: v.mood, blink: v.blink > 0, t: clock }); }
           if (!v.down && t.hp > 1) { for (let k = 0; k < t.hp; k++) { const px = cx + (k - (t.hp - 1) / 2) * S * 2.6, py = wy(v.y + t.r) - S * 2.6; ctx.fillStyle = k < v.hp ? '#e8c35a' : '#ffffff22'; ctx.strokeStyle = '#0e1519'; ctx.lineWidth = Math.max(1, S * 0.16); ctx.beginPath(); ctx.roundRect(px - S * 1.0, py - S * 0.5, S * 2.0, S * 1.0, S * 0.35); ctx.fill(); ctx.stroke(); } }
           if (v.mood === 'hurt' && !v.down) { for (let k = 0; k < 3; k++) { const a = clock * 6 + k * 2.1; star5(ctx, cx + Math.cos(a) * S * t.r * 0.9, wy(v.y + t.r * 1.05) + Math.sin(a) * S * 0.7, S * 0.6, '#ffd34d'); } }
           ctx.restore();
