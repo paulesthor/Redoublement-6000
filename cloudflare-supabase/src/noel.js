@@ -3,6 +3,7 @@
 // Chaque porte ne s'ouvre qu'une fois par joueur : la récompense est créditée dans la même transaction que l'enregistrement de l'ouverture (jamais l'un sans l'autre).
 import { dayKey } from './game.js';
 import './snowphys.js';
+import './elfsim.js';
 
 export const NOEL = { START: Date.parse('2026-12-01T00:00:00+01:00'), END: Date.parse('2026-12-25T18:00:00+01:00'), DOORS: 24 };
 // Récompenses PROVISOIRES (à équilibrer avec le reste de l'événement) : wikibidou du jeu normal et paquets du jeu normal.
@@ -83,52 +84,71 @@ export function installNoel(d) {
     if (!res[1].meta.changes) bad('Porte déjà ouverte', 409);
     return { ok: true, n, reward: { coins: o.coins, packs: o.packs }, text: o.text };
   });
-  // ───── Boules de neige : un niveau par porte, 3 essais par jour et par niveau, le serveur rejoue chaque lancer ─────
-  const SNOW_TRIES = 3, P = globalThis.SnowPhys;
+  // ───── Jeux de l'événement : un niveau par porte, 3 essais par jour et par niveau, le serveur rejoue chaque partie ─────
+  // Chaque jeu fournit : level(n), play(level, entrée) → { score, … }, flocons(score). L'entrée envoyée par le téléphone n'est jamais un score : seulement les gestes du joueur.
+  const TRIES = 3, P = globalThis.SnowPhys, EL = globalThis.ElfSim;
   const prog = async (env, key, uid) => +((await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', key, uid))?.n || 0);
   /** Niveau jouable : le jour même ou la veille (comme les portes). */
-  async function snowGuard(env, user, body) {
+  async function gameGuard(env, user, body) {
     await ensureGameSchema(env);
     if (!(await isOn(env, user))) bad('L\'événement de Noël n\'est pas ouvert', 403);
     if (Date.now() > NOEL.END && !user.is_admin) bad('Événement terminé', 403);
     const day = dayFor(user, body.day === undefined ? null : body.day), n = Math.floor(+body.n || day);
-    if (!(n >= 1 && n <= NOEL.DOORS) || !canOpen(n, day)) bad('Ce niveau n\'est pas jouable aujourd\'hui : le tir au patron se joue le jour même ou le lendemain', 403);
+    if (!(n >= 1 && n <= NOEL.DOORS) || !canOpen(n, day)) bad('Ce niveau n\'est pas jouable aujourd\'hui : il se joue le jour même ou le lendemain', 403);
     return n;
   }
-  const snowView = async (env, user, n) => ({
-    n, level: P.level(n), tries: SNOW_TRIES, used: await prog(env, 'nl:snow:att:' + n, user.id), best: await prog(env, 'nl:snow:best:' + n, user.id),
-    flocons: await prog(env, 'nl:flocons', user.id), max: P.flocons(1e9),
+  function installGame(id, g) {
+    const base = '/api/noel/' + id;
+    const view = async (env, user, n) => ({
+      n, level: g.level(n), tries: TRIES, used: await prog(env, 'nl:' + id + ':att:' + n, user.id), best: await prog(env, 'nl:' + id + ':best:' + n, user.id),
+      flocons: await prog(env, 'nl:flocons', user.id), max: g.flocons(1e9), ...(g.extra ? await g.extra(env, user) : {}),
+    });
+    route('GET', base, async ({ env, user, query }) => { const n = await gameGuard(env, user, { n: query.get('n') || undefined, day: query.get('day') === null ? undefined : query.get('day') }); return view(env, user, n); });
+    route('POST', base + '/start', async ({ env, user, body }) => {
+      const n = await gameGuard(env, user, body), key = 'nl:' + id + ':att:' + n;
+      const r = await run(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,1) ON CONFLICT (key, user_id) DO UPDATE SET n = event_progress.n + 1 WHERE event_progress.n < ?', key, user.id, TRIES);
+      if (!r.meta.changes) bad('Plus d\'essai pour ce niveau. Le patron a posé un jour de repos, vous aussi.', 409);
+      return { ...(await view(env, user, n)), attempt: await prog(env, key, user.id) };
+    });
+    route('POST', base + '/submit', async ({ env, user, body }) => {
+      const n = await gameGuard(env, user, body), a = Math.floor(+body.a);
+      const used = await prog(env, 'nl:' + id + ':att:' + n, user.id);
+      if (!(a >= 1 && a <= used)) bad('Essai inconnu', 400);
+      const input = g.parse(body), res = g.play(g.level(n), input), newFl = g.flocons(res.score);
+      const before = await prog(env, 'nl:flocons', user.id);
+      const claim = 'nl:' + id + ':done:' + n + ':' + a, bestKey = 'nl:' + id + ':best:' + n, flKey = 'nl:' + id + ':fl:' + n, token = now() * 1000 + Math.floor(Math.random() * 1000);
+      const has = 'EXISTS (SELECT 1 FROM event_claims WHERE key = ? AND user_id = ? AND ts = ?)';
+      // une seule transaction : l'essai est clos (une fois), le meilleur score retenu, et seule la progression en flocons est créditée
+      const out = await env.DB.batch([
+        st(env, 'INSERT INTO event_claims (key, user_id, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', claim, user.id, token),
+        st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', 'nl:flocons', user.id),
+        st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', flKey, user.id),
+        st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', bestKey, user.id),
+        st(env, `UPDATE event_progress t SET n = t.n + ? - f.n FROM event_progress f WHERE t.key = 'nl:flocons' AND t.user_id = ? AND f.key = ? AND f.user_id = ? AND f.n < ? AND ${has}`, newFl, user.id, flKey, user.id, newFl, claim, user.id, token),
+        st(env, `UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n < ? AND ${has}`, newFl, flKey, user.id, newFl, claim, user.id, token),
+        st(env, `UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n < ? AND ${has}`, res.score, bestKey, user.id, res.score, claim, user.id, token),
+      ]);
+      if (!out[0].meta.changes) bad('Cet essai est déjà terminé', 409);
+      const v = await view(env, user, n);
+      return { ok: true, ...res, ...v, gained: v.flocons - before };
+    });
+  }
+  installGame('snow', { level: P.level, flocons: P.flocons, parse: body => { const t = Array.isArray(body.throws) ? body.throws.slice(0, P.BALLS).map(x => [Math.round(+x?.[0]) || 0, Math.round(+x?.[1]) || 0]) : []; if (!t.length) bad('Aucun lancer', 400); return t; }, play: P.play });
+  // Atelier des lutins : deux lutins dont la tête peut être celle de joueurs VOLONTAIRES (liste réglée par l'administrateur, jamais par défaut)
+  installGame('atel', {
+    level: EL.level, flocons: EL.flocons, play: EL.play, parse: body => { if (!Array.isArray(body.inputs)) bad('Aucune action', 400); return body.inputs; },
+    extra: async (env, user) => {
+      let ids = []; try { ids = JSON.parse((await setting(env, 'noel_heads')) || '[]'); } catch { /* liste illisible : aucune tête */ }
+      const rows = ids.length ? await d.all(env, `SELECT id, avatar_v v FROM users WHERE id IN (${ids.map(() => '?').join(',')}) AND avatar_v IS NOT NULL AND is_bot = 0`, ...ids) : [];
+      return { heads: ids.map(i => rows.find(r => +r.id === +i)).filter(Boolean).map(r => ({ id: +r.id, v: r.v })).slice(0, 2) };
+    },
   });
-  route('GET', '/api/noel/snow', async ({ env, user, query }) => { const n = await snowGuard(env, user, { n: query.get('n') || undefined, day: query.get('day') === null ? undefined : query.get('day') }); return snowView(env, user, n); });
-  route('POST', '/api/noel/snow/start', async ({ env, user, body }) => {
-    const n = await snowGuard(env, user, body), key = 'nl:snow:att:' + n;
-    const r = await run(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,1) ON CONFLICT (key, user_id) DO UPDATE SET n = event_progress.n + 1 WHERE event_progress.n < ?', key, user.id, SNOW_TRIES);
-    if (!r.meta.changes) bad('Plus d\'essai pour ce niveau. Le patron a posé un jour de repos, vous aussi.', 409);
-    return { ...(await snowView(env, user, n)), attempt: await prog(env, key, user.id) };
-  });
-  route('POST', '/api/noel/snow/submit', async ({ env, user, body }) => {
-    const n = await snowGuard(env, user, body), a = Math.floor(+body.a);
-    const used = await prog(env, 'nl:snow:att:' + n, user.id);
-    if (!(a >= 1 && a <= used)) bad('Essai inconnu', 400);
-    const throws = Array.isArray(body.throws) ? body.throws.slice(0, P.BALLS).map(t => [Math.round(+t?.[0]) || 0, Math.round(+t?.[1]) || 0]) : [];
-    if (!throws.length) bad('Aucun lancer', 400);
-    const lv = P.level(n), res = P.play(lv, throws), newFl = P.flocons(res.score);
-    const before = await prog(env, 'nl:flocons', user.id);
-    const claim = 'nl:snow:done:' + n + ':' + a, bestKey = 'nl:snow:best:' + n, flKey = 'nl:snow:fl:' + n, token = now() * 1000 + Math.floor(Math.random() * 1000);
-    const has = 'EXISTS (SELECT 1 FROM event_claims WHERE key = ? AND user_id = ? AND ts = ?)';
-    // une seule transaction : l'essai est clos (une fois), le meilleur score retenu, et seule la progression en flocons est créditée
-    const out = await env.DB.batch([
-      st(env, 'INSERT INTO event_claims (key, user_id, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', claim, user.id, token),
-      st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', 'nl:flocons', user.id),
-      st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', flKey, user.id),
-      st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', bestKey, user.id),
-      st(env, `UPDATE event_progress t SET n = t.n + ? - f.n FROM event_progress f WHERE t.key = 'nl:flocons' AND t.user_id = ? AND f.key = ? AND f.user_id = ? AND f.n < ? AND ${has}`, newFl, user.id, flKey, user.id, newFl, claim, user.id, token),
-      st(env, `UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n < ? AND ${has}`, newFl, flKey, user.id, newFl, claim, user.id, token),
-      st(env, `UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n < ? AND ${has}`, res.score, bestKey, user.id, res.score, claim, user.id, token),
-    ]);
-    if (!out[0].meta.changes) bad('Cet essai est déjà terminé', 409);
-    const v = await snowView(env, user, n);
-    return { ok: true, score: res.score, bonus: res.bonus, all: res.all, results: res.results, ...v, gained: v.flocons - before };
+  route('POST', '/api/noel/atel/heads', async ({ env, user, body }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env);
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(x => Math.floor(+x)).filter(x => x > 0))].slice(0, 2);
+    if (ids.length) { const ok = await d.all(env, `SELECT id FROM users WHERE id IN (${ids.map(() => '?').join(',')}) AND is_bot = 0`, ...ids); if (ok.length !== ids.length) bad('Joueur inconnu', 404); }
+    await putSetting(env, 'noel_heads', JSON.stringify(ids)); return { ok: true, ids };
   });
   route('POST', '/api/noel/set', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);

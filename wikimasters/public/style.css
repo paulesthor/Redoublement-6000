@@ -1819,3 +1819,4 @@ body.sg-lock{overflow:hidden}
 .sg-lvl b{font-size:44px;display:inline;margin:0 0 0 8px}.sg-roster{margin-bottom:8px}.sg-roster div{width:84px}.sg-how{margin-bottom:8px;font-size:12px}.sg-orient{display:none}.sg-note{display:none}
 .sg-score{font-size:56px}.sg-stars svg{width:30px;height:30px}.sg-btn{padding:11px}.sg-brief{margin:4px 0 8px;font-size:13px}.sg-stats{margin-bottom:10px}}
 .sg-lvl i{margin-left:12px;vertical-align:middle}
+.el-duo div{width:128px}.el-duo canvas{width:84px;height:84px}
