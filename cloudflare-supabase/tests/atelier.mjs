@@ -31,7 +31,7 @@ ok('flocons : 1 pour 40 points, plafond 120', E.flocons(400) === 10 && E.flocons
 Date.now = () => Date.parse('2026-12-05T10:00:00+01:00');
 let [s, r] = await call(B, 'GET', '/api/noel/atel'); ok('événement fermé : refusé', s === 403);
 await call(A, 'POST', '/api/noel/set', { on: true, scope: 'all' });
-[s, r] = await call(B, 'GET', '/api/noel/atel'); ok('niveau du jour = 5, aucune tête par défaut', s === 200 && r.n === 5 && r.used === 0 && Array.isArray(r.heads) && r.heads.length === 0, J(r).slice(0, 100));
+[s, r] = await call(B, 'GET', '/api/noel/atel'); ok('niveau du jour = 5, les deux têtes proposées par défaut', s === 200 && r.n === 5 && r.used === 0 && Array.isArray(r.heads) && r.heads.length === 2, J(r).slice(0, 100));
 [s, r] = await call(B, 'POST', '/api/noel/atel/submit', { n: 5, a: 1, inputs: b1.inputs }); ok('envoi sans essai commencé refusé', s === 400);
 [s, r] = await call(B, 'POST', '/api/noel/atel/start', { n: 5 }); ok('essai 1 commencé', s === 200 && r.attempt === 1);
 [s, r] = await call(B, 'POST', '/api/noel/atel/submit', { n: 5, a: 1, score: 99999, gifts: 99, inputs: b1.inputs });
@@ -48,13 +48,20 @@ const both = await Promise.all([call(C, 'POST', '/api/noel/atel/submit', { n: 5,
 ok('envois simultanés : un seul accepté', both.filter(x => x[0] === 200).length === 1, J(both.map(x => x[0])));
 const cf = (await q("SELECT n FROM event_progress WHERE key = 'nl:flocons' AND user_id = (SELECT id FROM users WHERE name = 'Carl')"))[0];
 ok('flocons de Carl créditées une seule fois', +cf.n === E.flocons(b1.score), J(cf));
-// têtes de joueurs : réservé à l'administrateur, volontaires seulement, avatar requis
-const idB = (await q("SELECT id FROM users WHERE name = 'Bob'"))[0].id;
-[s, r] = await call(B, 'POST', '/api/noel/atel/heads', { ids: [idB] }); ok('seul l\'administrateur règle les têtes', s === 403);
-[s, r] = await call(A, 'POST', '/api/noel/atel/heads', { ids: [999999] }); ok('joueur inconnu refusé', s === 404);
-[s, r] = await call(A, 'POST', '/api/noel/atel/heads', { ids: [idB] }); ok('têtes réglées', s === 200 && J(r.ids) === J([+idB]));
-[s, r] = await call(C, 'GET', '/api/noel/atel'); ok('sans photo de profil : aucune tête affichée', r.heads.length === 0);
-await DB.prepare("UPDATE users SET avatar_v = 7 WHERE name = 'Bob'").run();
-[s, r] = await call(C, 'GET', '/api/noel/atel'); ok('avec photo : la tête est proposée', r.heads.length === 1 && r.heads[0].id === +idB && r.heads[0].v === 7, J(r.heads));
-[s, r] = await call(A, 'POST', '/api/noel/atel/heads', { ids: [] }); [s, r] = await call(C, 'GET', '/api/noel/atel'); ok('retrait immédiat', r.heads.length === 0);
+// têtes des lutins : envoyées par l'administrateur, affichées seulement après confirmation de l'accord
+const JPG = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 0x4A, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xFF, 0xD9]).toString('base64');
+[s, r] = await call(B, 'POST', '/api/noel/atel/head', { slot: 0, data: JPG }); ok('seul l\'administrateur envoie une tête', s === 403);
+[s, r] = await call(A, 'POST', '/api/noel/atel/head', { slot: 5, data: JPG }); ok('poste inconnu refusé', s === 400);
+[s, r] = await call(A, 'POST', '/api/noel/atel/head', { slot: 0, data: 'AAAA' + 'A'.repeat(20) }); ok('fichier qui n\'est pas un JPEG refusé', s === 400);
+[s, r] = await call(A, 'POST', '/api/noel/atel/head', { slot: 0, data: 'é' }); ok('contenu invalide refusé', s === 400);
+[s, r] = await call(A, 'POST', '/api/noel/atel/head', { slot: 0, data: JPG }); ok('tête 1 enregistrée', s === 200);
+[s, r] = await call(A, 'POST', '/api/noel/atel/head', { slot: 1, data: JPG }); ok('tête 2 enregistrée', s === 200);
+[s, r] = await call(A, 'POST', '/api/noel/atel/heads-ok', { ok: false }); [s, r] = await call(C, 'GET', '/api/noel/atel'); ok('têtes masquées par l\'administrateur : aucune tête affichée', r.heads.length === 0);
+[s, r] = await call(null, 'GET', '/api/noel/atel/head/0'); ok('et l\'image n\'est pas servie', s === 404);
+[s, r] = await call(B, 'POST', '/api/noel/atel/heads-ok', { ok: true }); ok('seul l\'administrateur confirme', s === 403);
+[s, r] = await call(A, 'POST', '/api/noel/atel/heads-ok', { ok: true }); ok('accord confirmé', s === 200);
+[s, r] = await call(C, 'GET', '/api/noel/atel'); ok('les deux têtes sont proposées', r.heads.length === 2 && r.heads[0].slot === 0 && r.heads[1].v > 0, J(r.heads));
+[s, r] = await call(null, 'GET', '/api/noel/atel/head/1'); ok('image servie', s === 200);
+[s, r] = await call(A, 'POST', '/api/noel/atel/heads-ok', { ok: false }); [s, r] = await call(C, 'GET', '/api/noel/atel'); ok('retrait immédiat de l\'accord : plus aucune tête', r.heads.length === 0);
+[s, r] = await call(A, 'POST', '/api/noel/atel/head', { slot: 0, data: null }); [s, r] = await call(A, 'GET', '/api/noel/atel/heads-admin'); ok('suppression d\'une tête envoyée : retour à la tête d\'origine', s === 200 && r.custom[0] === false && r.custom[1] === true && r.builtin[0] === true, J(r));
 done();

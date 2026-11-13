@@ -4,6 +4,7 @@
 import { dayKey } from './game.js';
 import './snowphys.js';
 import './elfsim.js';
+import { HEADS } from './noel-heads.js';
 
 export const NOEL = { START: Date.parse('2026-12-01T00:00:00+01:00'), END: Date.parse('2026-12-25T18:00:00+01:00'), DOORS: 24 };
 // Récompenses PROVISOIRES (à équilibrer avec le reste de l'événement) : wikibidou du jeu normal et paquets du jeu normal.
@@ -137,18 +138,36 @@ export function installNoel(d) {
   // Atelier des lutins : deux lutins dont la tête peut être celle de joueurs VOLONTAIRES (liste réglée par l'administrateur, jamais par défaut)
   installGame('atel', {
     level: EL.level, flocons: EL.flocons, play: EL.play, parse: body => { if (!Array.isArray(body.inputs)) bad('Aucune action', 400); return body.inputs; },
-    extra: async (env, user) => {
-      let ids = []; try { ids = JSON.parse((await setting(env, 'noel_heads')) || '[]'); } catch { /* liste illisible : aucune tête */ }
-      const rows = ids.length ? await d.all(env, `SELECT id, avatar_v v FROM users WHERE id IN (${ids.map(() => '?').join(',')}) AND avatar_v IS NOT NULL AND is_bot = 0`, ...ids) : [];
-      return { heads: ids.map(i => rows.find(r => +r.id === +i)).filter(Boolean).map(r => ({ id: +r.id, v: r.v })).slice(0, 2) };
+    extra: async (env) => {
+      if ((await setting(env, 'noel_heads_ok')) === '0') return { heads: [] };   // affichées par défaut (accord des deux joueurs confirmé) ; l'administrateur peut les masquer
+      const heads = []; for (const k of [0, 1]) { const v = (await setting(env, 'noel_head_v' + k)) || (HEADS[k] ? '1' : null); if (v) heads.push({ slot: k, v: +v }); }
+      return { heads };
     },
   });
-  route('POST', '/api/noel/atel/heads', async ({ env, user, body }) => {
+  // Têtes des deux lutins : images envoyées par l'administrateur (jamais dans le code), stockées en base, affichées seulement après confirmation de l'accord des joueurs.
+  route('GET', '/api/noel/atel/head/:slot', async ({ env, params }) => {
+    const k = +params.slot, data = (k === 0 || k === 1) && (await setting(env, 'noel_heads_ok')) !== '0' ? ((await setting(env, 'noel_head_' + k)) || HEADS[k] || null) : null;
+    if (!data) return new Response('', { status: 404, headers: { 'cache-control': 'no-store' } });
+    return new Response(Uint8Array.from(atob(data), c => c.charCodeAt(0)), { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
+  }, false);
+  route('POST', '/api/noel/atel/head', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
-    await ensureGameSchema(env);
-    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(x => Math.floor(+x)).filter(x => x > 0))].slice(0, 2);
-    if (ids.length) { const ok = await d.all(env, `SELECT id FROM users WHERE id IN (${ids.map(() => '?').join(',')}) AND is_bot = 0`, ...ids); if (ok.length !== ids.length) bad('Joueur inconnu', 404); }
-    await putSetting(env, 'noel_heads', JSON.stringify(ids)); return { ok: true, ids };
+    await ensureGameSchema(env); const k = Math.floor(+body.slot);
+    if (k !== 0 && k !== 1) bad('Poste inconnu', 400);
+    if (body.data === null) { await run(env, 'DELETE FROM settings WHERE key IN (?, ?)', 'noel_head_' + k, 'noel_head_v' + k); return { ok: true }; }
+    const data = String(body.data || '');
+    if (!/^[A-Za-z0-9+/=]+$/.test(data) || data.length > 260000) bad('Image invalide ou trop lourde', 400);
+    let head; try { head = atob(data.slice(0, 8)); } catch { bad('Image invalide', 400); }
+    if (head.charCodeAt(0) !== 0xFF || head.charCodeAt(1) !== 0xD8) bad('Seul le format JPEG est accepté', 400);
+    await putSetting(env, 'noel_head_' + k, data); await putSetting(env, 'noel_head_v' + k, String(now())); return { ok: true, v: now() };
+  });
+  route('POST', '/api/noel/atel/heads-ok', async ({ env, user, body }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env); await putSetting(env, 'noel_heads_ok', body.ok ? '1' : '0'); return { ok: !!body.ok };
+  });
+  route('GET', '/api/noel/atel/heads-admin', async ({ env, user }) => {
+    if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
+    await ensureGameSchema(env); return { ok: (await setting(env, 'noel_heads_ok')) !== '0', custom: [!!(await setting(env, 'noel_head_0')), !!(await setting(env, 'noel_head_1'))], builtin: HEADS.map(h => !!h) };
   });
   route('POST', '/api/noel/set', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);

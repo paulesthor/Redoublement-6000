@@ -1423,14 +1423,24 @@ views.admin = async v => {
       };
       await draw('');
     } else if (adminTab === 'noel') {
-      const day = prefOf('wm_noel_day') || '', n = await api('/noel' + (day !== '' ? '?day=' + day : ''));
+      const day = prefOf('wm_noel_day') || '', n = await api('/noel' + (day !== '' ? '?day=' + day : '')), hd = await api('/noel/atel/heads-admin');
       box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Noël : calendrier de l'avent</h3>
         <p class="mut" style="margin:0 0 10px;font-size:13px">État : <b>${n.on ? (n.scope === 'all' ? 'ouvert à tous' : 'ouvert pour toi seul') : 'fermé'}</b> · du 1er au 24 décembre, fin le 25 à 18 h. ${n.opened} porte${n.opened > 1 ? 's' : ''} ouverte${n.opened > 1 ? 's' : ''} par ton compte.</p>
         <div class="row"><button class="plain" id="nl-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="nl-all" style="flex:1">Lancer pour tous</button></div>
         <button class="plain" id="nl-off" style="width:100%;margin-top:8px" ${n.on ? '' : 'disabled'}>Fermer l'événement</button>
         <label class="fld" style="margin-top:12px">Aperçu : simuler le jour du calendrier<input id="nl-day" type="number" min="0" max="24" placeholder="vide = vraie date" value="${esc(day)}"></label>
         <p class="mut" style="margin:0 0 8px;font-size:12px">Réservé à toi : les joueurs ont toujours la vraie date. Sert à tester les portes avant le 1er décembre.</p>
-        <button id="nl-see" style="width:100%">Voir le calendrier</button></div>`;
+        <button id="nl-see" style="width:100%">Voir le calendrier</button></div>
+        <div class="panel" style="margin-top:12px"><h3 style="margin:0 0 6px">Atelier des lutins : les deux têtes</h3>
+        <p class="mut" style="margin:0 0 10px;font-size:12.5px">Deux photos recadrées sont déjà enregistrées. Elles ne s'affichent que si tu confirmes que les deux joueurs sont d'accord ; tu peux les retirer à tout moment en décochant.</p>
+        <label class="switch"><span>Affichage des têtes<small>Les deux joueurs ont donné leur accord</small></span><input type="checkbox" id="nl-hok" ${hd.ok ? 'checked' : ''}></label>
+        <div class="row" style="margin-top:8px"><label class="plain" style="flex:1;text-align:center;cursor:pointer">Remplacer la tête 1<input type="file" accept="image/*" id="nl-h0" hidden></label><label class="plain" style="flex:1;text-align:center;cursor:pointer">Remplacer la tête 2<input type="file" accept="image/*" id="nl-h1" hidden></label></div>
+        <div class="row" style="margin-top:8px"><button class="plain" id="nl-hr0" style="flex:1" ${hd.custom[0] ? '' : 'disabled'}>Revenir à l'origine (1)</button><button class="plain" id="nl-hr1" style="flex:1" ${hd.custom[1] ? '' : 'disabled'}>Revenir à l'origine (2)</button></div></div>`;
+      $('#nl-hok').onchange = safe(async e => { await api('/noel/atel/heads-ok', { ok: e.target.checked }); toast(e.target.checked ? 'Têtes affichées' : 'Têtes masquées', 'ok'); });
+      for (const k of [0, 1]) {
+        $('#nl-hr' + k).onclick = safe(async () => { await api('/noel/atel/head', { slot: k, data: null }); toast('Tête d\'origine rétablie', 'ok'); adminBody(); });
+        $('#nl-h' + k).onchange = safe(async e => { const f = e.target.files[0]; if (!f) return; const img = await new Promise((ok, no) => { const im = new Image(), u = URL.createObjectURL(f); im.onload = () => ok(im); im.onerror = () => no(new Error('Image illisible')); im.src = u; }); const s = Math.min(img.width, img.height), c = document.createElement('canvas'); c.width = c.height = 256; c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 256, 256); await api('/noel/atel/head', { slot: k, data: c.toDataURL('image/jpeg', 0.85).split(',')[1] }); toast('Tête enregistrée', 'ok'); adminBody(); });
+      }
       const set = async (on, scope, msg) => { await api('/noel/set', { on, scope }); toast(msg, 'ok'); adminBody(); };
       $('#nl-me').onclick = safe(() => set(true, 'admin', 'Noël ouvert pour toi seul'));
       $('#nl-all').onclick = safe(async () => { if (!(await ask('Lancer Noël pour TOUS les joueurs ?', [], { text: 'Le calendrier apparaît sur leur accueil ; les portes s\'ouvrent à partir du 1er décembre.', ok: 'Lancer' }))) return; await set(true, 'all', 'Noël lancé pour tous'); });

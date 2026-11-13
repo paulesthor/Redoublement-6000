@@ -16,7 +16,7 @@ const srv = http.createServer(async (q, res) => {
   if (u.pathname.startsWith('/api/')) {
     const chunks = []; for await (const c of q) chunks.push(c);
     const rr = await worker.fetch(new Request('http://x' + q.url, { method: q.method, headers: q.headers, body: ['GET', 'HEAD'].includes(q.method) ? undefined : Buffer.concat(chunks) }), env, ctx);
-    res.writeHead(rr.status, { 'content-type': 'application/json' }); return res.end(await rr.text());
+    res.writeHead(rr.status, { 'content-type': rr.headers.get('content-type') || 'application/json' }); return res.end(Buffer.from(await rr.arrayBuffer()));
   }
   let p = path.join(PUB, u.pathname); if (p.endsWith('/')) p += 'index.html'; if (!existsSync(p)) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }[path.extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
@@ -34,8 +34,8 @@ const bobId = +(await DB.prepare("SELECT id FROM users WHERE name = 'Bob'").all(
 await DB.prepare("UPDATE plan_progress SET perks = ? WHERE user_id = ?").bind(JSON.stringify(['theme_urss', 'theme_siberie', 'theme_or', 'frame_star', 'frame_hammer', 'frame_gold', 'gold_outline']), bobId).run();
 const th = p => p.evaluate(() => document.documentElement.dataset.theme);
 
-await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
-await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
+await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' }); await call(A, 'POST', '/api/noel/atel/heads-ok', { ok: true });
+await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' }); await call(A, 'POST', '/api/noel/atel/heads-ok', { ok: true });
 const DAY = 9;
 let p = await mkT(A, { wm_noel_day: String(DAY), wm_ussr_ui: '0' });
 await p.setViewportSize({ width: 844, height: 390 });
@@ -54,7 +54,7 @@ const t0 = Date.now(); while (Date.now() - t0 < 140000) {
   if (r.T > 560 && shot === 1) { await p.screenshot({ path: SHT + 'el-3-jeu.png' }); shot = 2; }
   await p.waitForTimeout(45);
 }
-await p.waitForSelector('.sg-score', { timeout: 20000 }); await p.waitForTimeout(1600);
+try { await p.waitForSelector('.sg-score', { timeout: 20000 }); } catch (e) { await p.screenshot({ path: SHT + 'el-err.png' }); console.log('ERREURS', J(p.errs), await p.evaluate(() => JSON.stringify({ t: ElfGame.cur && ElfGame.cur.st.tick, ov: document.querySelector('.sg-ov')?.className }))); throw e; } await p.waitForTimeout(1600);
 const sc = +(await p.textContent('#sg-sc')); ok('bilan : score du serveur', sc > 0, String(sc));
 ok('bilan : flocons gagnés', /\+\d+\s*flocons/.test(await p.textContent('.sg-card')), await p.textContent('.sg-stats'));
 await p.screenshot({ path: SHT + 'el-4-bilan.png' });
