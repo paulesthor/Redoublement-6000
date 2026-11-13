@@ -2,6 +2,7 @@
 // Une porte s'ouvre le jour même (heure de Paris) et reste ouvrable le lendemain seulement : si on se connecte le 3, on peut récupérer la porte 2 mais plus la porte 1.
 // Chaque porte ne s'ouvre qu'une fois par joueur : la récompense est créditée dans la même transaction que l'enregistrement de l'ouverture (jamais l'un sans l'autre).
 import { dayKey } from './game.js';
+import './snowphys.js';
 
 export const NOEL = { START: Date.parse('2026-12-01T00:00:00+01:00'), END: Date.parse('2026-12-25T18:00:00+01:00'), DOORS: 24 };
 // Récompenses PROVISOIRES (à équilibrer avec le reste de l'événement) : wikibidou du jeu normal et paquets du jeu normal.
@@ -81,6 +82,53 @@ export function installNoel(d) {
     ]);
     if (!res[1].meta.changes) bad('Porte déjà ouverte', 409);
     return { ok: true, n, reward: { coins: o.coins, packs: o.packs }, text: o.text };
+  });
+  // ───── Boules de neige : un niveau par porte, 3 essais par jour et par niveau, le serveur rejoue chaque lancer ─────
+  const SNOW_TRIES = 3, P = globalThis.SnowPhys;
+  const prog = async (env, key, uid) => +((await one(env, 'SELECT n FROM event_progress WHERE key = ? AND user_id = ?', key, uid))?.n || 0);
+  /** Niveau jouable : le jour même ou la veille (comme les portes). */
+  async function snowGuard(env, user, body) {
+    await ensureGameSchema(env);
+    if (!(await isOn(env, user))) bad('L\'événement de Noël n\'est pas ouvert', 403);
+    if (Date.now() > NOEL.END && !user.is_admin) bad('Événement terminé', 403);
+    const day = dayFor(user, body.day === undefined ? null : body.day), n = Math.floor(+body.n || day);
+    if (!(n >= 1 && n <= NOEL.DOORS) || !canOpen(n, day)) bad('Ce niveau n\'est pas jouable aujourd\'hui : le tir au patron se joue le jour même ou le lendemain', 403);
+    return n;
+  }
+  const snowView = async (env, user, n) => ({
+    n, level: P.level(n), tries: SNOW_TRIES, used: await prog(env, 'nl:snow:att:' + n, user.id), best: await prog(env, 'nl:snow:best:' + n, user.id),
+    flocons: await prog(env, 'nl:flocons', user.id), max: P.flocons(1e9),
+  });
+  route('GET', '/api/noel/snow', async ({ env, user, query }) => { const n = await snowGuard(env, user, { n: query.get('n') || undefined, day: query.get('day') === null ? undefined : query.get('day') }); return snowView(env, user, n); });
+  route('POST', '/api/noel/snow/start', async ({ env, user, body }) => {
+    const n = await snowGuard(env, user, body), key = 'nl:snow:att:' + n;
+    const r = await run(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,1) ON CONFLICT (key, user_id) DO UPDATE SET n = event_progress.n + 1 WHERE event_progress.n < ?', key, user.id, SNOW_TRIES);
+    if (!r.meta.changes) bad('Plus d\'essai pour ce niveau. Le patron a posé un jour de repos, vous aussi.', 409);
+    return { ...(await snowView(env, user, n)), attempt: await prog(env, key, user.id) };
+  });
+  route('POST', '/api/noel/snow/submit', async ({ env, user, body }) => {
+    const n = await snowGuard(env, user, body), a = Math.floor(+body.a);
+    const used = await prog(env, 'nl:snow:att:' + n, user.id);
+    if (!(a >= 1 && a <= used)) bad('Essai inconnu', 400);
+    const throws = Array.isArray(body.throws) ? body.throws.slice(0, P.BALLS).map(t => [Math.round(+t?.[0]) || 0, Math.round(+t?.[1]) || 0]) : [];
+    if (!throws.length) bad('Aucun lancer', 400);
+    const lv = P.level(n), res = P.play(lv, throws), newFl = P.flocons(res.score);
+    const before = await prog(env, 'nl:flocons', user.id);
+    const claim = 'nl:snow:done:' + n + ':' + a, bestKey = 'nl:snow:best:' + n, flKey = 'nl:snow:fl:' + n, token = now() * 1000 + Math.floor(Math.random() * 1000);
+    const has = 'EXISTS (SELECT 1 FROM event_claims WHERE key = ? AND user_id = ? AND ts = ?)';
+    // une seule transaction : l'essai est clos (une fois), le meilleur score retenu, et seule la progression en flocons est créditée
+    const out = await env.DB.batch([
+      st(env, 'INSERT INTO event_claims (key, user_id, ts) VALUES (?,?,?) ON CONFLICT DO NOTHING', claim, user.id, token),
+      st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', 'nl:flocons', user.id),
+      st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', flKey, user.id),
+      st(env, 'INSERT INTO event_progress (key, user_id, n) VALUES (?,?,0) ON CONFLICT DO NOTHING', bestKey, user.id),
+      st(env, `UPDATE event_progress t SET n = t.n + ? - f.n FROM event_progress f WHERE t.key = 'nl:flocons' AND t.user_id = ? AND f.key = ? AND f.user_id = ? AND f.n < ? AND ${has}`, newFl, user.id, flKey, user.id, newFl, claim, user.id, token),
+      st(env, `UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n < ? AND ${has}`, newFl, flKey, user.id, newFl, claim, user.id, token),
+      st(env, `UPDATE event_progress SET n = ? WHERE key = ? AND user_id = ? AND n < ? AND ${has}`, res.score, bestKey, user.id, res.score, claim, user.id, token),
+    ]);
+    if (!out[0].meta.changes) bad('Cet essai est déjà terminé', 409);
+    const v = await snowView(env, user, n);
+    return { ok: true, score: res.score, bonus: res.bonus, all: res.all, results: res.results, ...v, gained: v.flocons - before };
   });
   route('POST', '/api/noel/set', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l\'administrateur', 403);
