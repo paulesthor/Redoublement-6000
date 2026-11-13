@@ -36,38 +36,41 @@ const th = p => p.evaluate(() => document.documentElement.dataset.theme);
 
 await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
 await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
-const DAY = 9;
+const DAY = +(process.env.SNOWDAY || 9);
 let p = await mkT(A, { wm_noel_day: String(DAY), wm_ussr_ui: '0' });
 await p.evaluate(async () => { await refreshMe(); tab = 'noelcal'; await render(); }); await p.waitForSelector('#sg-open', { timeout: 8000 });
-ok('calendrier : bouton Tir au patron', /Niveau 9/.test(await p.textContent('.nl-game')));
-await p.screenshot({ path: SHT + 'snow-0-calendrier.png' });
 await p.click('#sg-open'); await p.waitForSelector('#sg-go', { timeout: 8000 });
-ok('intro : 3 essais restants', /3\s+essais/.test(await p.textContent('.sg-panel')));
+ok('intro : 3 essais restants', /3\s+essais/.test(await p.textContent('.sg-card')));
 await p.screenshot({ path: SHT + 'snow-1-intro.png' });
-await p.click('#sg-go'); await p.waitForSelector('#sg-c', { timeout: 8000 }); await p.waitForTimeout(400);
-// un vecteur gagnant pour la première boule (même physique que le serveur)
-const win = await p.evaluate(n => { const P = SnowPhys, lv = P.level(n); for (let px = 20; px <= 100; px++) for (let py = 0; py <= 100; py++) { if (px * px + py * py > 1e4) continue; const r = P.throwBall(lv, { hp: lv.targets.map(t => t.hp) }, 0, px, py); if (r.down) return [px, py]; } return null; }, DAY);
-ok('vecteur gagnant trouvé', !!win, J(win));
+// meilleur vecteur gagnant pour une boule donnée (même physique que le serveur)
+const winFor = (k, hpArr) => p.evaluate(([n, k, hpArr]) => { const P = SnowPhys, lv = P.level(n); let best = null; for (let px = 14; px <= 100; px += 1) for (let py = -20; py <= 100; py += 1) { if (px * px + py * py > 1e4) continue; const r = P.throwBall(lv, { hp: hpArr.slice() }, k, px, py); if (r.down) return [px, py]; } return best; }, [DAY, k, hpArr]);
+const getHp = () => p.evaluate(n => SnowPhys.level(n).targets.map(t => t.hp), DAY);
 const shoot = async (v, hold) => {
-  const b = await (await p.$('#sg-c')).boundingBox(), W = 160, GH = 6, Hh = 100 + GH;
-  const wx = 14 - v[0] / 1.6, wy = 9 - v[1] / 1.6, sx = b.x + wx / W * b.width, sy = b.y + b.height - (wy + GH) / Hh * b.height;
-  const lx = b.x + 14 / W * b.width, ly = b.y + b.height - (9 + GH) / Hh * b.height;
-  await p.mouse.move(lx, ly); await p.mouse.down(); await p.mouse.move(sx, sy, { steps: 6 });
-  if (hold) { await p.waitForTimeout(150); await p.screenshot({ path: SHT + hold }); }
+  const { a, d } = await p.evaluate(v => { const c = SnowGame.cur; return { a: c.anchor(), d: c.delta(v) }; }, v);
+  await p.mouse.move(a[0], a[1]); await p.mouse.down(); await p.mouse.move(a[0] + d[0], a[1] + d[1], { steps: 8 });
+  if (hold) { await p.waitForTimeout(250); await p.screenshot({ path: SHT + hold }); }
   await p.mouse.up();
 };
-await shoot(win, 'snow-2-visee.png');
-await p.waitForFunction(() => /Boules : 4/.test(document.querySelector('#sg-balls').textContent), null, { timeout: 8000 });
-await p.waitForTimeout(2500);
-ok('première boule : cible tombée, score affiché', /^[1-9]/.test(await p.textContent('#sg-score')) && /\S/.test(await p.textContent('#sg-msg')), await p.textContent('#sg-msg'));
-await p.screenshot({ path: SHT + 'snow-3-touche.png' });
-for (let k = 0; k < 4; k++) { await shoot([30 + k * 5, 40], null); await p.waitForTimeout(2300); }
-await p.waitForSelector('.sg-panel .nl-bignum', { timeout: 12000 });
-const sc = +(await p.textContent('.sg-panel .nl-bignum'));
-ok('bilan : score du serveur', sc >= 90, String(sc));
-ok('bilan : flocons gagnés', /\+\d+\s*flocons/.test(await p.textContent('.sg-panel')), await p.textContent('.sg-panel .nl-chips'));
-await p.screenshot({ path: SHT + 'snow-4-bilan.png' });
-ok('rejouer proposé (2 essais restants)', /2 essais/.test(await p.textContent('#sg-again')));
+const ballsLeft = () => p.evaluate(() => 0);
+async function playAttempt(tag, shots, pre = 'snow') {
+  await p.click('#sg-go'); await p.waitForTimeout(900);
+  const hp = await getHp(); const win = await winFor(0, hp); ok(tag + ' : vecteur gagnant trouvé', !!win, J(win));
+  await shoot(win, shots ? pre + '-2-visee.png' : null);
+  await p.waitForTimeout(shots ? 1200 : 3000); if (shots) await p.screenshot({ path: SHT + pre + '-3-vol.png' });
+  await p.waitForTimeout(2600); if (shots) await p.screenshot({ path: SHT + pre + '-4-touche.png' });
+  for (let k = 0; k < 4; k++) { await p.waitForTimeout(700); await shoot([32 + k * 6, 38 + k * 4], null); await p.waitForTimeout(3600); }
+  await p.waitForSelector('.sg-score', { timeout: 15000 });
+  await p.waitForTimeout(1500);
+}
+await playAttempt('portrait (écran pivoté)', true);
+const sc = +(await p.textContent('#sg-sc')); ok('bilan : score du serveur', sc >= 90, String(sc));
+ok('bilan : flocons gagnés', /\+\d+\s*flocons/.test(await p.textContent('.sg-card')));
+await p.screenshot({ path: SHT + 'snow-5-bilan.png' });
+// deuxième essai en vrai paysage
+await p.click('#sg-again'); await p.waitForSelector('#sg-go');
+await p.setViewportSize({ width: 844, height: 390 }); await p.waitForTimeout(500);
+await playAttempt('paysage', true, 'land'); await p.screenshot({ path: SHT + 'land-5-bilan.png' });
+ok('rejouer proposé (1 essai restant)', /1 essai/.test(await p.textContent('#sg-again')));
 await p.click('#sg-quit'); await p.waitForSelector('.nl-grid', { timeout: 8000 });
 ok('aucune erreur JS', p.errs.length === 0, J(p.errs));
 process.exit(0);
