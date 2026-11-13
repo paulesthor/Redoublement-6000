@@ -21,7 +21,7 @@ Humour noir d'entreprise, comme l'événement communiste : le Père Noël est un
 - Musique : à décider (le mode URSS avait l'hymne ; pour Noël, soit rien, soit une boucle discrète libre de droits).
 
 ## 4. Les jeux
-1. **Calendrier de l'Avent** (premier jet fait) : 24 portes, une par jour, rattrapage possible jusqu'au 25. Récompenses provisoires (wikibidou et paquets du jeu normal).
+1. **Calendrier de l'Avent** (premier jet fait) : 24 portes, une par jour ; une porte se récupère **le jour même ou le lendemain seulement** (se connecter le 3 permet la porte 2 mais plus la 1). Récompenses provisoires (wikibidou et paquets du jeu normal).
 2. **Bataille de boules de neige** : on règle l'angle et la force pour lancer des boules sur des cibles (inspecteurs, bonhommes de neige, cheminée du patron), avec du vent. Un niveau par jour, rattaché à la porte du jour. **Anti-triche** : les niveaux (cibles, vent) sont tirés par le serveur ; le téléphone envoie seulement l'angle et la force de chaque lancer ; le serveur rejoue la trajectoire et calcule le score.
 3. **L'Atelier des lutins** : les lutins construisent les cadeaux. Option retenue par défaut : **chaîne de montage en action** (pas d'idle) : des pièces arrivent sur des tapis, on les glisse vers la bonne machine avant qu'elles tombent. Postes de 90 secondes. Le **coup de fouet** accélère un poste mais énerve le lutin (grève si trop). Score converti en flocons, plafonné par jour.
 

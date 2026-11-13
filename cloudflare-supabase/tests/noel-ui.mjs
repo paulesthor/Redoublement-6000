@@ -35,7 +35,7 @@ await DB.prepare("UPDATE plan_progress SET perks = ? WHERE user_id = ?").bind(JS
 const th = p => p.evaluate(() => document.documentElement.dataset.theme);
 
 await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
-for (const n of [1, 2, 3, 5, 6]) await call(A, 'POST', '/api/noel/door', { n, day: 9 });
+for (const n of [1, 2, 3, 5, 6]) await call(A, 'POST', '/api/noel/door', { n, day: n });
 let p = await mkT(A, { wm_noel_day: '9', wm_ussr_ui: '0' });
 await p.evaluate(async () => { await refreshMe(); tab = 'packs'; await render(); }); await p.waitForTimeout(600);
 ok('accueil : bandeau du calendrier de l\'Avent', !!(await p.$('#noel-open')), await p.evaluate(() => !!me.noel));
@@ -43,7 +43,8 @@ await p.screenshot({ path: SHT + 'noel-0-accueil.png' });
 await p.click('#noel-open'); await p.waitForSelector('.nl-grid', { timeout: 8000 }); await p.waitForTimeout(500);
 ok('calendrier : 24 portes, 5 ouvertes, aujourd\'hui = 9', (await p.$$('.nl-door')).length === 24 && (await p.$$('.nl-door.open')).length === 5 && !!(await p.$('.nl-door.today')) && /5/.test(await p.textContent('.nl-sum')), await p.textContent('.nl-sum'));
 ok('portes futures verrouillées', (await p.$$('.nl-door.lock')).length === 15);
-ok('portes manquées (4, 7, 8) ouvrables', (await p.$$('.nl-door.late')).length === 3);
+ok('porte 8 : dernier jour pour l\'ouvrir', (await p.$$('.nl-door.late')).length === 1);
+ok('portes 4 et 7 : manquées, perdues et non cliquables', (await p.$$('.nl-door.miss')).length === 2 && (await p.$$('.nl-door.miss:not(:disabled)')).length === 0);
 await p.screenshot({ path: SHT + 'noel-1-calendrier.png' });
 await p.click('.nl-door.today'); await p.waitForSelector('#nl-ok', { timeout: 6000 }); await p.waitForTimeout(400);
 ok('ouverture : récompense et texte de la porte 9', /9/.test(await p.textContent('.nl-bignum')) && /syndicat/.test(await p.textContent('.nl-text')), await p.textContent('.nl-text'));

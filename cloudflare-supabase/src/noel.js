@@ -1,5 +1,5 @@
 // Événement de Noël : calendrier de l'avent (24 portes), module indépendant de l'événement communiste.
-// Une porte s'ouvre à partir de son jour (heure de Paris) ; elle reste ouvrable ensuite (rattrapage) jusqu'à la fin de l'événement.
+// Une porte s'ouvre le jour même (heure de Paris) et reste ouvrable le lendemain seulement : si on se connecte le 3, on peut récupérer la porte 2 mais plus la porte 1.
 // Chaque porte ne s'ouvre qu'une fois par joueur : la récompense est créditée dans la même transaction que l'enregistrement de l'ouverture (jamais l'un sans l'autre).
 import { dayKey } from './game.js';
 
@@ -52,6 +52,8 @@ export function installNoel(d) {
   /** Jour simulé : réservé à l'administrateur (aperçu avant le 1er décembre) ; les joueurs n'ont que le vrai jour. */
   const dayFor = (user, q) => { const sim = Math.floor(+q); return user.is_admin && sim >= 0 && sim <= 24 && q !== null && q !== undefined && q !== '' ? sim : doorToday(); };
 
+  /** Une porte s'ouvre le jour même ou le lendemain (rattrapage d'un jour), pas avant ni plus tard. */
+  const canOpen = (n, day) => n === day || n === day - 1;
   async function state(env, user, day) {
     await ensureGameSchema(env);
     const rows = await d.all(env, "SELECT key FROM event_claims WHERE user_id = ? AND key LIKE 'nl:door:%'", user.id);
@@ -59,7 +61,7 @@ export function installNoel(d) {
     return {
       on: await isOn(env, user), scope: (await setting(env, 'noel_scope')) === 'all' ? 'all' : 'admin', start: NOEL.START, end: NOEL.END, today: day, simulated: user.is_admin && day !== doorToday(),
       opened: done.size, total: NOEL.DOORS,
-      doors: DOORS.map(o => ({ n: o.n, opened: done.has(o.n), openable: o.n <= day && !done.has(o.n), ...(done.has(o.n) ? { coins: o.coins, packs: o.packs, text: o.text } : {}) })),
+      doors: DOORS.map(o => ({ n: o.n, opened: done.has(o.n), openable: canOpen(o.n, day) && !done.has(o.n), missed: !done.has(o.n) && o.n < day - 1, ...(done.has(o.n) ? { coins: o.coins, packs: o.packs, text: o.text } : {}) })),
     };
   }
   route('GET', '/api/noel', async ({ env, user, query }) => state(env, user, dayFor(user, query.get('day'))));
@@ -69,7 +71,8 @@ export function installNoel(d) {
     if (Date.now() > NOEL.END && !user.is_admin) bad('Le calendrier est fermé : l\'événement est terminé', 403);
     const n = Math.floor(+body.n), day = dayFor(user, body.day === undefined ? null : body.day);
     if (!(n >= 1 && n <= NOEL.DOORS)) bad('Porte inconnue', 404);
-    if (n > day) bad('Cette porte n\'est pas encore ouvrable : patience, camarade du Pôle Nord', 403);
+    if (n > day) bad('Cette porte n\'est pas encore ouvrable : patience, le Père Noël n\'aime pas qu\'on le presse', 403);
+    if (n < day - 1) bad('Trop tard : une porte se récupère le jour même ou le lendemain, pas après. Le Père Noël ne fait pas de rattrapage.', 403);
     const o = DOORS[n - 1], key = 'nl:door:' + n, token = now() * 1000 + Math.floor(Math.random() * 1000);
     // une seule transaction : l'ouverture est enregistrée ET la récompense créditée ; la récompense ne part que pour la requête qui a réellement enregistré l'ouverture (jeton unique)
     const res = await env.DB.batch([
