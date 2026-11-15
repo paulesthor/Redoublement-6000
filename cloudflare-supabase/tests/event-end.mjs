@@ -2,6 +2,7 @@
 import './api.mjs';
 const { call, ok, DB, J, done, env, worker, ctx, settle } = globalThis.__T;
 const { COMMU } = await import('../src/plan.js');
+Date.now = () => COMMU.ENDS_AT - 3600000;   // horloge simulée : une heure avant la clôture (la vraie date de fin est dépassée)
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
 const mk = async n => { await call(null, 'POST', '/api/register', { name: n, password: 'secret1' }); const [, l] = await call(null, 'POST', '/api/login', { name: n, password: 'secret1' }); return l.token; };
 const A = await mk('Alice'); await DB.prepare("UPDATE users SET is_admin = 1 WHERE name = 'Alice'").run();
@@ -16,7 +17,7 @@ await set('Carole', 3200, 2, [1, 2, 3, 4, 5, 6, 7, 8], ['souvenir_1', 'frame_sta
 await set('Dimitri', 700, 3, [1, 2], ['souvenir_1']);
 await set('Eva', 0, 4, [], []);
 await DB.prepare("INSERT INTO settings (key, value) VALUES ('commu_pot', '1200') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
-// avant l'heure : rien ne se ferme
+// avant l'heure : rien ne se ferme (horloge simulée : la vraie date de fin est dépassée)
 let [s, v] = await call(T['Carole'], 'GET', '/api/commu'); ok('avant l\'heure : l\'événement reste ouvert', v.on === true && !v.done, J({ on: v.on, done: v.done }));
 [s, v] = await call(T['Carole'], 'GET', '/api/commu/final'); ok('écran de fin refusé avant la clôture', s === 409);
 // à l'heure : la première visite clôt l'événement

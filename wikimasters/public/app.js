@@ -2745,11 +2745,13 @@ views.commuend = async v => {
       <h3 class="sec" style="padding:0 16px">Tes cartes souvenir</h3>
       ${n === 0 ? '<div class="plan-sum"><p class="plan-wallet">Aucun souvenir gagné : il fallait atteindre le palier 2 (un souvenir) puis le palier 11 (un deuxième). Le Parti ne distribue pas de cadeaux aux retardataires.</p></div>'
       : c.chosen.length ? `<div class="plan-sum"><p class="plan-wallet">${c.chosen.length > 1 ? `Tes ${c.chosen.length} souvenirs sont dans ta collection normale, avec leur tampon` : 'Ton souvenir est dans ta collection normale, avec son tampon'} de l'URSS.</p></div><div class="grid ev-grid souvgrid">${S.cards.filter(x => picked.has(String(x.id))).map(x => cardHtml(x, { souv: true })).join('')}</div>`
-      : open ? `<div class="plan-sum"><p class="plan-wallet">Choisis <b>${n}</b> fiche${n > 1 ? 's' : ''} parmi tes ${S.owned}. Elle${n > 1 ? 's' : ''} entrer${n > 1 ? 'ont' : 'a'} dans ta collection normale, définitivement, avec un contour de souvenir. <b>${sel.length} / ${n}</b> choisie${sel.length > 1 ? 's' : ''}.</p></div>
+      : open ? `<div class="plan-sum"><p class="plan-wallet">Choisis <b>${n}</b> fiche${n > 1 ? 's' : ''} parmi tes ${S.owned}. Elle${n > 1 ? 's' : ''} entrer${n > 1 ? 'ont' : 'a'} dans ta collection normale, définitivement, avec un contour de souvenir. Le bouton de confirmation reste en bas de l'écran pendant que tu fais défiler ta collection.</p></div>
         <div class="grid ev-grid souvgrid">${S.cards.map(x => cardHtml(x, { souv: false, cls: sel.includes(x.id) ? 'souvpick' : '' })).join('')}</div>
-        <div style="padding:8px 16px 18px"><button id="sv-ok" style="width:100%" ${sel.length ? '' : 'disabled'}>Confirmer mes souvenirs</button></div>`
+        <div class="sv-bar" id="sv-bar"><span class="sv-count"><b>${sel.length} / ${n}</b> choisie${sel.length > 1 ? 's' : ''}</span><button id="sv-ok" ${sel.length ? '' : 'disabled'}>Confirmer mes souvenirs</button></div>`
       : '<div class="plan-sum"><p class="plan-wallet">Le choix des souvenirs est clos.</p></div>'}`;
     if (open) {
+      const bar = $('#sv-bar'), nav = document.querySelector('aside nav'), aside = document.querySelector('aside');   // la barre se pose juste au-dessus du menu du bas (téléphone), ou tout en bas (ordinateur)
+      if (bar) bar.style.bottom = (nav && aside && getComputedStyle(aside).position === 'fixed' ? nav.offsetHeight : 0) + 'px';
       v.querySelectorAll('.souvgrid .card').forEach(el => el.onclick = e => { e.stopPropagation(); const id = +el.dataset.id; sel = sel.includes(id) ? sel.filter(x => x !== id) : sel.length < n ? [...sel, id] : [...sel.slice(1), id]; draw(); });
       $('#sv-ok')?.addEventListener('click', safe(async () => {
         if (!(await ask(`Garder ces ${sel.length} fiche${sel.length > 1 ? 's' : ''} comme souvenir${sel.length > 1 ? 's' : ''} ?`, [], { text: 'Le choix est définitif : le Parti ne reprend pas ses cadeaux, mais il ne les échange pas non plus.', ok: 'Confirmer' }))) return;

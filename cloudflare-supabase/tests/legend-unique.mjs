@@ -1,6 +1,7 @@
 // Règle d'événement « pas de doublon de légendaire » (désactivée par défaut, à activer pour le prochain événement).
 import './api.mjs';
 const { call, ok, DB, J, done } = globalThis.__T;
+{ const { COMMU } = await import('../src/plan.js'); COMMU.ENDS_AT = 9e15; }   // date de fin réelle dépassée : ce test ne concerne pas la clôture
 const { EVENT_RULES, EVENT_WEIGHTS } = await import('../src/commu-cards.js');
 const mk = async n => { await call(null, 'POST', '/api/register', { name: n, password: 'secret1' }); const [, l] = await call(null, 'POST', '/api/login', { name: n, password: 'secret1' }); return l.token; };
 const A = await mk('Alice'); await DB.prepare("UPDATE users SET is_admin = 1 WHERE name = 'Alice'").run(); const B = await mk('Bob'), C = await mk('Carole');

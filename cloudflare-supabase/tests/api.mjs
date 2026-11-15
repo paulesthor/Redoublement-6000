@@ -43,4 +43,5 @@ const settle = async () => { while (waits.length) await Promise.allSettled(waits
 let fails = 0; const ok = (n, c, d = '') => { console.log((c ? '  ok  ' : '  ÉCHEC ') + n + (c ? '' : ' ' + String(d).slice(0, 300))); if (!c) fails++; };
 const J = x => JSON.stringify(x);
 export { call, settle, ok, DB, pg, env, lobby, worker, ctx, fails as _f };
+{ const { COMMU } = await import('../src/plan.js'); if (!process.env.REAL_END) COMMU.ENDS_AT = Date.parse('2099-01-01T00:00:00Z'); }   // la vraie date de fin de l'événement est passée : les tests le gardent ouvert (REAL_END=1 pour la date réelle) ; les tests de clôture raisonnent par rapport à COMMU.ENDS_AT
 globalThis.__T = { log, trips, tripStats, call, settle, ok, DB, pg, env, lobby, worker, ctx, J, done: async () => { console.log(fails ? `\n${fails} ÉCHEC(S)` : '\nTOUT PASSE'); if (globalThis.__wipe) { await globalThis.__wipe(); console.log('(base Supabase vidée après les tests)'); } process.exit(fails ? 1 : 0); } };

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import http from 'node:http'; import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path';
 const require = createRequire('/opt/node22/lib/node_modules/'); const { chromium } = require('playwright');
 const { call, settle, DB, worker, env, ctx, ok, done, J } = globalThis.__T;
+const { COMMU } = await import('../src/plan.js'); COMMU.ENDS_AT = 9e15;   // date de fin réelle dépassée : le test pilote lui-même la clôture
 const PUB = new URL('../../cloudflare/public/', import.meta.url).pathname;
 let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
 [s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
@@ -44,6 +45,10 @@ await pb.waitForSelector('.souvgrid .card', { timeout: 10000 }); await pb.screen
 const txt = await pb.textContent('#view');
 ok('bilan : gagnant, tes paliers, ce que tu gardes (thème Sibérie, titre)', txt.includes('Fin du Plan quinquennal') && txt.includes('Sibérie') && /palier/.test(txt) && txt.includes('Choisis'), txt.slice(0, 160));
 ok('choix : 1 souvenir à choisir pour 1 droit (palier 2)', txt.includes('0 / 1'), txt.slice(160, 300));
+await pb.evaluate(() => { const g = document.querySelector('.souvgrid'); for (let i = 0; i < 40; i++) g.append(g.children[0].cloneNode(true)); window.scrollTo(0, 0); });   // collection très longue : le bouton doit rester visible sans descendre
+await pb.waitForTimeout(300); const r0 = await pb.evaluate(() => { const b = document.querySelector('#sv-ok').getBoundingClientRect(), n = document.querySelector('aside nav').getBoundingClientRect(); return { top: b.top, bottom: b.bottom, navTop: n.top, h: innerHeight, scrollY }; });
+ok('le bouton Confirmer reste visible en bas de l\'écran, au-dessus du menu, sans faire défiler', r0.scrollY === 0 && r0.bottom <= r0.navTop + 1 && r0.top > 0, JSON.stringify(r0)); await pb.evaluate(() => { document.querySelectorAll('#modal, .fe, #event-final').forEach(e => { e.hidden = true; e.style.display = 'none'; }); }); await pb.screenshot({ path: SHE + 'end-1b-bouton-fixe.png' });
+await pb.evaluate(() => { const g = document.querySelector('.souvgrid'); while (g.children.length > 3) g.lastChild.remove(); });
 await pb.click('.souvgrid .card'); await pb.waitForTimeout(300); ok('la fiche touchée est marquée', !!(await pb.$('.souvgrid .card.souvpick')));
 await pb.click('.souvgrid .card:nth-of-type(2)'); await pb.waitForTimeout(300); ok('un seul choix possible : le second remplace le premier', (await pb.$$('.souvgrid .card.souvpick')).length === 1);
 await pb.click('#sv-ok'); await pb.waitForSelector('.modal button, #modal button', { timeout: 5000 }); await pb.screenshot({ path: SHE + 'end-2-confirm.png' });
