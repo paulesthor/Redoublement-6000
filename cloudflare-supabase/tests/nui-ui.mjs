@@ -1,0 +1,110 @@
+// Audit de mise en page : débordements et textes coupés, avec et sans l'habillage URSS, sur plusieurs tailles d'écran (Playwright, hors de all.mjs).
+import './api.mjs';
+import { createRequire } from 'node:module';
+import http from 'node:http'; import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path';
+const require = createRequire('/opt/node22/lib/node_modules/'); const { chromium } = require('playwright');
+const { call, settle, DB, worker, env, ctx, ok, done, J } = globalThis.__T;
+const PUB = new URL('../../cloudflare/public/', import.meta.url).pathname;
+let [s, r] = await call(null, 'POST', '/api/register', { name: 'Alice', password: 'secret1' }); const A = r.token;
+[s, r] = await call(null, 'POST', '/api/register', { name: 'Bob', password: 'secret2' }); const B = r.token;
+await DB.prepare('UPDATE users SET is_admin = 1 WHERE name = ?').bind('Alice').run();
+await call(B, 'POST', '/api/dm/1', { body: 'coucou' }); await settle();
+for (let i = 0; i < 4; i++) { await call(A, 'POST', '/api/packs/open', {}); await call(B, 'POST', '/api/packs/open', {}); }
+await call(A, 'GET', '/api/auctions'); await call(B, 'GET', '/api/auctions'); await call(A, 'GET', '/api/inconnue'); await call(null, 'POST', '/api/login', { name: 'Bob', password: 'faux' }); await settle();
+const srv = http.createServer(async (q, res) => {
+  const u = new URL(q.url, 'http://x');
+  if (u.pathname.startsWith('/api/')) {
+    const chunks = []; for await (const c of q) chunks.push(c);
+    const rr = await worker.fetch(new Request('http://x' + q.url, { method: q.method, headers: q.headers, body: ['GET', 'HEAD'].includes(q.method) ? undefined : Buffer.concat(chunks) }), env, ctx);
+    res.writeHead(rr.status, { 'content-type': 'application/json' }); return res.end(await rr.text());
+  }
+  let p = path.join(PUB, u.pathname); if (p.endsWith('/')) p += 'index.html'; if (!existsSync(p)) { res.writeHead(404); return res.end(); }
+  res.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }[path.extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
+}).listen(8767);
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
+const mk = async (w, h) => { const c = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: 'block' }); await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); if (!localStorage.getItem('wm_seen_ver')) localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, A); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8767/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(900); return p; };
+// Thèmes gagnés : le choix du joueur n'est jamais écrasé par l'événement, les textes suivent le thème, les cadres s'affichent. Captures dans le dossier de travail.
+const SHT = process.env.SHOTS || '/tmp/claude-0/-home-user-Redoublement-6000/37801998-3ced-5dcb-85ba-95e236d12c04/scratchpad/themes/';
+await import('node:fs').then(f => f.mkdirSync(SHT, { recursive: true }));
+const mkT = async (token, init = {}) => { const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block' }); await c.addInitScript(([tok, kv]) => { if (!sessionStorage.getItem('__init')) { sessionStorage.setItem('__init', '1'); for (const [k, v] of Object.entries(kv)) localStorage.setItem(k, v); } localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); localStorage.setItem('wm_sound', '0'); localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, [token, init]); const p = await c.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.goto('http://localhost:8767/'); await p.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(1500); await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; }); return p; };
+await DB.prepare("UPDATE users SET coins = 2000 WHERE name = 'Bob'").run();
+await call(B, 'POST', '/api/daily/claim', {}); await call(A, 'POST', '/api/daily/claim', {});
+await call(A, 'POST', '/api/commu/set', { on: true, scope: 'all' }); await call(B, 'POST', '/api/commu/join', {});
+const bobId = +(await DB.prepare("SELECT id FROM users WHERE name = 'Bob'").all()).results[0].id;
+await DB.prepare("UPDATE plan_progress SET perks = ? WHERE user_id = ?").bind(JSON.stringify(['theme_urss', 'theme_siberie', 'theme_or', 'frame_star', 'frame_hammer', 'frame_gold', 'gold_outline']), bobId).run();
+const th = p => p.evaluate(() => document.documentElement.dataset.theme);
+
+await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
+await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
+// audit de mise en forme exécuté dans la page : renvoie la liste des défauts trouvés
+const AUDIT = () => {
+  const issues = [], W = innerWidth, de = document.documentElement, root = document.querySelector('.nu-sheet') || document.querySelector('#view');
+  if (de.scrollWidth > W + 1) { const cul = [...document.querySelectorAll('body *')].filter(e => e.tagName !== 'SCRIPT' && e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().right > W + 1).slice(0, 3).map(e => `${e.tagName}.${String(e.className?.baseVal ?? e.className).slice(0, 24)}`); issues.push(`débordement horizontal de la page (${de.scrollWidth} > ${W}) : ${cul.join(', ')}`); }
+  const q = s => [...root.querySelectorAll(s)].filter(e => e.getBoundingClientRect().width > 0);
+  for (const e of q('.nu-hello,.nu-hero,.nu-tile,.nu-row,.nu-feat,.nu-sec,.nu-list,.nu-tiles,.nu-search,.nu-btn,.nu-ghost,.nu-link,.nu-back,.nu-evts,.nu-tx,.nu-ft,.pagehead')) {
+    const r = e.getBoundingClientRect(), pr = e.parentElement.getBoundingClientRect();
+    if (r.left < -0.5 || r.right > W + 0.5) issues.push(`hors écran : ${e.className}`);
+    if (r.left < pr.left - 1 || r.right > pr.right + 1) issues.push(`déborde de son conteneur : ${e.className} ${e.textContent.trim().slice(0, 24)}`);
+  }
+  for (const e of q('.nu-tile b,.nu-tile small,.nu-tx b,.nu-tx small,.nu-ft b,.nu-ft i,.nu-ft small,.nu-ghost,.nu-btn,.nu-hello h2,.pagehead h1,.nu-sec>h3 span'))
+    if (e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1) issues.push(`texte coupé : ${e.className || e.tagName} « ${e.textContent.trim().slice(0, 30)} »`);
+  const boxes = c => [...c.children].filter(k => { const r = k.getBoundingClientRect(), cs = getComputedStyle(k); return r.width > 0 && r.height > 0 && cs.position !== 'absolute' && cs.position !== 'fixed'; });
+  for (const c of [root, ...q('.nu-tiles,.nu-list,.nu-hero,.nu-evts,.nu-links,.nu-two,.nu-sec,.nu-hello')]) {
+    const k = boxes(c);
+    for (let i = 0; i < k.length; i++) for (let j = i + 1; j < k.length; j++) { const a = k[i].getBoundingClientRect(), b = k[j].getBoundingClientRect(); const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top); if (ox > 1 && oy > 1) issues.push(`recouvrement : ${k[i].className || k[i].tagName} / ${k[j].className || k[j].tagName}`); }
+  }
+  for (const g of q('.nu-tiles,.nu-two')) { const hs = [...g.children].map(k => Math.round(k.getBoundingClientRect().height)); if (Math.max(...hs) - Math.min(...hs) > 1) issues.push(`hauteurs inégales dans une rangée : ${hs}`); }
+  for (const b of q('.nu-tile,.nu-row,.nu-feat,.nu-search,.nu-btn,.nu-ghost,.nu-link,.nu-back')) if (b.getBoundingClientRect().height < 43.5) issues.push(`zone tactile trop petite (${Math.round(b.getBoundingClientRect().height)} px) : ${b.className}`);
+  for (const e of q('.nu-tile b,.nu-tile small,.nu-tx b,.nu-tx small,.nu-ft small,.nu-ft i,.nu-link,.nu-sec>h3')) if (parseFloat(getComputedStyle(e).fontSize) < 10.5) issues.push(`texte trop petit : ${e.className}`);
+  if (W <= 820 && !document.querySelector('.nu-sheet')) {   // en bas de page, le dernier bloc ne passe pas sous la barre du bas
+    scrollTo(0, 1e6); const nav = document.querySelector('aside nav').getBoundingClientRect(), last = [...document.querySelectorAll('#view > *')].filter(e => e.getBoundingClientRect().height > 0 && !e.hidden).pop();
+    if (last && last.getBoundingClientRect().bottom > nav.top + 1) issues.push(`le dernier bloc passe sous la barre du bas (${Math.round(last.getBoundingClientRect().bottom)} > ${Math.round(nav.top)})`); scrollTo(0, 0);
+  }
+  return issues;
+};
+const WIDTHS = [320, 360, 390, 430, 768, 1100];
+const nuMock = { v: 84 };
+let p = await mkT(A, { wm_nui: '1', wm_ussr_ui: '0' });
+await p.route('**/api/bank', r => r.request().method() === 'GET' ? r.fulfill({ json: { coins: 690, savings: { amount: 0, rate: 0.006, perDay: 0, cap: 5000, lockDays: 7, fee: 0.1, locked: 0, frozen: 0, interest: 0 }, dividends: { daily: 12, cap: 100, raw: 12, maxDays: 7, byRarity: [3, 2, 0, 0, 0, 0], bonus: 0, albums: 0, claimable: nuMock.v, days: 1 } } }) : r.fallback());
+await p.route('**/api/bank/dividends/claim', r => { nuMock.v = 0; return r.fulfill({ json: { got: 84 } }); });
+await p.evaluate(async () => { await refreshMe(); });
+ok('la nouvelle interface est active pour l\'administrateur', await p.evaluate(() => nuiOn() && document.body.classList.contains('nui')));
+ok('barre du bas : 5 entrées (Accueil, Collection, Jouer, Marché, Menu)', (await p.$$('aside nav button')).length === 5 && /Accueil/.test(await p.textContent('aside nav')) && /Menu/.test(await p.textContent('aside nav')));
+const SCREENS = [['packs', 'accueil'], ['coll', 'collection'], ['jouer', 'jouer'], ['marche', 'marché'], ['bank', 'banque (sous-écran)'], ['dquiz', 'quiz du jour (sous-écran)'], ['albums', 'albums (sous-écran)'], ['settings', 'réglages (sous-écran)']];
+for (const w of WIDTHS) {
+  await p.setViewportSize({ width: w, height: w >= 1000 ? 900 : 844 });
+  for (const [t, name] of SCREENS) {
+    await p.evaluate(async t => { tab = t; await render(); }, t); await p.waitForTimeout(t === 'packs' ? 900 : 500);
+    const iss = await p.evaluate(AUDIT);
+    ok(`${w} px · ${name} : mise en forme propre`, iss.length === 0, [...new Set(iss)].slice(0, 5).join(' | '));
+    if (w === 390 || (w === 320 && t === 'packs')) await p.screenshot({ path: SHT + `nui-${w}-${t}.png` });
+  }
+  await p.evaluate(() => nuMenu()); await p.waitForTimeout(400);
+  const iss = await p.evaluate(AUDIT); ok(`${w} px · menu : mise en forme propre`, iss.length === 0, [...new Set(iss)].slice(0, 5).join(' | '));
+  if (w === 390) await p.screenshot({ path: SHT + 'nui-390-menu.png' });
+  await p.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });
+}
+await p.setViewportSize({ width: 390, height: 844 });
+// parcours
+nuMock.v = 84;
+await p.evaluate(async () => { tab = 'packs'; await render(); }); await p.waitForTimeout(900);
+ok('accueil : trois tuiles (Quiz, Quêtes, Banque) quand des dividendes attendent', (await p.$$('.nu-tiles .nu-tile')).length === 3 && /\+84/.test(await p.textContent('#nu-bank')), await p.textContent('#nu-today'));
+ok('accueil : l\'événement de Noël est présenté', /Calendrier de l'Avent/.test(await p.textContent('#view')));
+ok('accueil : plus de tuile « Récompense »', !/Récompense/.test(await p.textContent('#nu-today')));
+await p.click('#nu-bank'); await p.waitForTimeout(1500);
+ok('toucher la tuile Banque récupère les dividendes (puis la tuile disparaît)', (await p.$$('.nu-tiles .nu-tile')).length === 2 && !(await p.$('#nu-bank')));
+await p.screenshot({ path: SHT + 'nui-390-accueil-sans-banque.png' });
+await p.click('aside nav [data-tab=coll]'); await p.waitForSelector('.nu-search'); ok('barre : Collection ouvre le hub', /Chercher une carte/.test(await p.textContent('#view')));
+await p.click('.nu-row[data-nugo=albums]'); await p.waitForTimeout(700);
+ok('sous-écran : bouton retour « Collection » et entrée Collection allumée', !!(await p.$('.nu-back')) && /Collection/.test(await p.textContent('.nu-back')) && /on/.test(await p.getAttribute('aside nav [data-tab=coll]', 'class')));
+await p.click('.nu-back'); await p.waitForSelector('.nu-search'); ok('retour : revient au hub Collection', true);
+await p.click('aside nav [data-tab=jouer]'); await p.waitForSelector('.nu-feat'); ok('barre : Jouer présente l\'événement et les combats', /Noël au Pôle Nord/.test(await p.textContent('#view')) && /Combats/.test(await p.textContent('#view')));
+await p.click('aside nav [data-tab=menu]'); await p.waitForSelector('.nu-sheet'); ok('barre : Menu ouvre la liste (Communauté, Mon compte, Administration)', /Communauté/.test(await p.textContent('.nu-sheet')) && /Mon compte/.test(await p.textContent('.nu-sheet')) && /Administration/.test(await p.textContent('.nu-sheet')));
+await p.click('.nu-sheet [data-go=settings]'); await p.waitForSelector('#st-nui'); ok('réglages : l\'interrupteur de la nouvelle interface est là', await p.isChecked('#st-nui'));
+await p.evaluate(() => { const c = document.querySelector('#st-nui'); c.checked = false; c.dispatchEvent(new Event('change')); }); await p.waitForTimeout(600);
+ok('interrupteur coupé : retour à l\'ancienne barre (Boosters…)', /Boosters/.test(await p.textContent('aside nav')) && !(await p.evaluate(() => document.body.classList.contains('nui'))));
+// un joueur ordinaire ne voit jamais la nouvelle interface, même avec le réglage
+const Bt = (await call(null, 'POST', '/api/register', { name: 'Zoe', password: 'secret3' }))[1].token;
+const pz = await mkT(Bt, { wm_nui: '1', wm_ussr_ui: '0' }); ok('joueur ordinaire : ancienne interface, quoi qu\'il y ait dans ses réglages', await pz.evaluate(() => !nuiOn() && !document.body.classList.contains('nui') && /Boosters/.test(document.querySelector('aside nav').textContent)));
+ok('aucune erreur JS', p.errs.length === 0 && pz.errs.length === 0, J([...p.errs, ...pz.errs]));
+process.exit(0);

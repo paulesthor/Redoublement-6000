@@ -498,7 +498,7 @@ function jeuxHub(v) {
   v.innerHTML = `${pauseNote()}${pageHead('Les Jeux du Peuple', 'Le Parti vous divertit. Il n\'a pas le choix, vous non plus.')}<div class="mgrid" style="padding:0 16px">${eventAccess() ? T('gulag', 'shield', 'Le Camp', 'Exploite des détenus pour la science' + (eventAccess() ? cap('camp') : '')) + T('potato', 'shield', 'Kolkhoze', 'Plante des patates, enterre tes soucis' + (eventAccess() ? cap('potato') : '')) + T('tsar', 'shield', 'Le Dernier Tsar', 'Bute le tsar, c\'est gratuit' + (eventAccess() ? cap('tsar') : '')) : ''}${T('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Fini · repose ton cerveau' : 'Prouve que t\'es pas un con')}${T('bourse', 'market', 'Marché noir', 'Parie sur les vues, vends ta grand-mère' + (eventAccess() ? cap('bourse') : ''))}${ev ? '' : T('duel', 'duel', 'Duels', 'Casse la gueule à un camarade')}</div>`;
   v.querySelectorAll('[data-jeu]').forEach(b => b.onclick = () => { const k = b.dataset.jeu; gulagTab = null; if (k === 'duel') duelDirect = true; tab = k; render(); });
 }
-const pageHead = (title, sub = '') => `<div class="pagehead"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
+const pageHead = (title, sub = '') => `<div class="pagehead">${nuiOn() && NPARENT[tab] ? `<button class="nu-back" data-back="${NPARENT[tab][0]}">${ico('chev', 'flip')}${esc(NPARENT[tab][1])}</button>` : ''}<h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
 /** Contrôle segmenté : ouvre une autre vue du même groupe (ex. Enchères / Échanges). */
 const seg = (items, current) => `<div class="seg">${items.map(([k, label]) => `<button class="${k === current ? 'on' : ''}" data-seg="${k}">${esc(label)}</button>`).join('')}</div>`;
 const bindSeg = v => v.querySelectorAll('[data-seg]').forEach(b => b.onclick = () => { tab = b.dataset.seg; render(); });
@@ -570,7 +570,7 @@ const views = {
     if ((ussrUiOn() || ussrOn()) && !window.ussrParcelSvg) await loadUssr().catch(() => {});
     if (eventUi()) return eventPacks(v);
     const d = cfg.drop, tot = Object.values(d).reduce((a, b) => a + b, 0), pct = x => +(x / tot * 100).toFixed(2);
-    v.innerHTML = `${lockNote()}${noelBanner()}${commu?.on && commu.joined && !ussrUiOn() ? '<button class="commu-banner" id="commu-enter"><b>Mode communiste</b><span>Retourne au Plan : thème rouge, colis du Parti, jeux et paliers.</span></button>' : ''}${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero home"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
+    v.innerHTML = nuiOn() ? nuHomeHtml() : `${lockNote()}${noelBanner()}${commu?.on && commu.joined && !ussrUiOn() ? '<button class="commu-banner" id="commu-enter"><b>Mode communiste</b><span>Retourne au Plan : thème rouge, colis du Parti, jeux et paliers.</span></button>' : ''}${commu?.on && !commu.joined ? '<button class="commu-banner" id="commu-join"><b>Événement communiste</b><span>Entre dans le Plan : taxe de ' + commu.tax + ' wikibidou, ' + commu.startWr + ' ₽ de départ.</span></button>' : ''}<div class="hero home"><button class="info" id="rates-btn" aria-label="Taux de drop" title="Taux de drop">?</button><h1>Ouvrir un paquet</h1>
       <p class="sub">Découvre ${cfg.packSize} nouvelles cartes Wikipédia</p>
       <div class="packart" id="packart">${(ussrUiOn() || ussrOn()) && window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
@@ -580,7 +580,7 @@ const views = {
       <button id="buy10" class="plain buy" ${me.coins >= cfg.packPrice * 10 ? '' : 'disabled'}>Acheter ×10 · ${fmt(cfg.packPrice * 10)} pièces</button></div>
       <div class="lastpack" id="lastpack" hidden><h3 class="sec">Dernier tirage</h3><div id="out" class="grid"></div></div></div>`;
     // hauteur disponible sous l'en-tête et au-dessus de la barre du bas : les espaces de l'accueil s'en déduisent en pourcentage
-    const hero = v.querySelector('.hero');
+    const hero = v.querySelector('.hero, .nu-hero');
     const setAvail = () => {
       if (!hero.isConnected) return window.removeEventListener('resize', setAvail);
       const nav = document.querySelector('aside nav').getBoundingClientRect();
@@ -630,6 +630,7 @@ const views = {
       if (again === 'again') setTimeout(() => $('#buy10')?.click(), 60);
     });
     applyPackLock(v);
+    if (nuiOn()) nuHomeAsync(v);
     $('#noel-open')?.addEventListener('click', () => { tab = 'noelcal'; render(); });
     $('#commu-join')?.addEventListener('click', () => { tab = 'commustart'; render(); });
     $('#commu-enter')?.addEventListener('click', safe(async () => { setPref('wm_ussr_ui', '1'); setPref('wm_ussr', '1'); syncEventTheme(); await syncUssrUi(); tab = 'packs'; render(); }));
@@ -1294,7 +1295,7 @@ const recentHits = [];
 // ---------- squelette ----------
 const EXTRA = new Set(['search', 'rank', 'msg', 'friends', 'more']);   // onglets rangés sous « Plus » sur téléphone
 function markTab() { try { syncEventDrum(); } catch { /* tambour indisponible */ }
-  const g = GROUP[tab]; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === g || (b.dataset.tab === 'more' && EXTRA.has(g)))); }
+  const nu = nuiOn(), g = nu ? NGROUP[tab] : GROUP[tab]; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === g || (!nu && b.dataset.tab === 'more' && EXTRA.has(g)))); }
 /** Copie l'en-tête de chaque colonne dans les cellules (data-label) : le CSS mobile affiche les lignes comme des fiches. */
 function labelTables(root) {
   root.querySelectorAll('table').forEach(t => {
@@ -1704,6 +1705,10 @@ async function refreshMe() {
   if (me.maintenance === true) maintenanceScreen();
   { const c = COS.get(me.name) ?? { id: me.id, name: me.name }; c.id = me.id; c.v = me.av; c.ti = me.title; COS.set(me.name, c); }
   loadCosmetics();
+  syncNui();
+  document.querySelector('nav [data-tab=menu]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || !!me.daily);
+  document.querySelector('nav [data-tab=jouer]')?.classList.toggle('has-badge', me.qc > 0 || me.dq === 'new');
+  document.querySelector('nav [data-tab=coll]')?.classList.toggle('has-badge', me.ex > 0);
   document.querySelector('nav [data-tab=friends]')?.classList.toggle('has-badge', me.badge > 0);
   document.querySelector('nav [data-tab=msg]')?.classList.toggle('has-badge', me.dm > 0);
   document.querySelector('nav [data-tab=more]')?.classList.toggle('has-badge', me.dm > 0 || me.badge > 0 || me.qc > 0 || me.dq === 'new' || !!me.daily || me.ex > 0);
@@ -2032,6 +2037,7 @@ views.settings = async v => {
     ${!me.admin && !eventOn() && perks.includes('anim_urss') ? `<div class="setgrp"><h3>Colis du Parti (récompense du Plan)</h3><div class="panel">${sw('st-ussr', 'Colis et animation URSS', 'Garde le colis du Parti et son animation d\'ouverture dans le jeu normal', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Voir le colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Voir le dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Voir la matriochka</button></div></div></div>` : ''}
+    ${me.admin ? `<div class="setgrp"><h3>Interface (aperçu administrateur)</h3><div class="panel">${sw('st-nui', 'Nouvelle interface', 'Barre à 5 entrées, accueil « Aujourd\'hui », menu en liste. Visible par toi seul.', prefOf('wm_nui') === '1')}</div></div>` : ''}
     ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussrui', 'Interface URSS complète', 'Menus, textes, rarités en grades, bandeau Pravda, décor rouge', pref('wm_ussr_ui', '0') === '1')}${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-cm-on" style="flex:1">Ouvrir pour moi seul (test réel)</button><button class="plain" id="st-cm-off" style="flex:1">Fermer</button><button class="plain" id="st-cm-end" style="flex:1">Clore + gagnant</button><button class="plain" id="st-cm-souv" style="flex:1">Clore les souvenirs</button></div></div></div>` : ''}
@@ -2052,6 +2058,7 @@ views.settings = async v => {
   $('#st-cm-souv')?.addEventListener('click', safe(async () => { const r = await api('/commu/souvenirs/close', {}); toast(`Choix clos : ${r.given} souvenir${r.given > 1 ? 's' : ''} attribué${r.given > 1 ? 's' : ''} d'office`, 'ok'); render(); }));
   $('#st-cm-end')?.addEventListener('click', safe(async () => { const r = await api('/commu/finish', {}); await loadCommu(true); await syncUssrUi(); toast(r.winner ? `Gagnant : ${r.winner.name} (${fmt(r.winner.prize)} wikibidou)` : 'Événement clos, aucun gagnant', 'ok'); render(); }));
   $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
+  $('#st-nui')?.addEventListener('change', e => { setPref('wm_nui', e.target.checked ? '1' : '0'); syncNui(); render(); });
   $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
   v.querySelectorAll('[data-ussr-test]').forEach(b => b.onclick = safe(async () => { await previewUssr(b.dataset.ussrTest); render(); }));
   $('#st-snd')?.addEventListener('change', e => { setPref('wm_sound', e.target.checked ? '1' : '0'); window.UssrSkin?.hymnRefresh?.(); });
@@ -3074,6 +3081,125 @@ function iconSheet() {
   $('#ic-copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Lien copié, colle-le dans Safari', 'ok'); } catch { toast(link); } };
 }
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
+// ---------- nouvelle interface (aperçu réservé à l'administrateur : réglage « Nouvelle interface ») ----------
+// Cinq entrées : Accueil · Collection · Jouer · Marché · Menu. Les anciens écrans restent les mêmes ; seul le rangement change.
+const nuiOn = () => !!me?.admin && prefOf('wm_nui') === '1' && !ussrUiOn();
+/** Entrée de la barre du bas qui s'allume selon l'écran affiché. */
+const NGROUP = {
+  packs: 'packs', commustart: 'packs',
+  coll: 'coll', album: 'coll', albums: 'coll', search: 'coll', trades: 'coll', expeditions: 'coll',
+  jouer: 'jouer', duel: 'jouer', tournaments: 'jouer', tournament: 'jouer', quests: 'jouer', dquiz: 'jouer', hilo: 'jouer', events: 'jouer', noelcal: 'jouer', potato: 'jouer', gulag: 'jouer', tsar: 'jouer', plan: 'jouer', commutop: 'jouer', commurules: 'jouer', commuend: 'jouer',
+  marche: 'marche', market: 'marche', bourse: 'marche', bank: 'marche', trends: 'marche', themepacks: 'marche',
+  feed: 'menu', msg: 'menu', chat: 'menu', friends: 'menu', rank: 'menu', ach: 'menu', settings: 'menu', customize: 'menu', admin: 'menu', player: 'menu',
+};
+/** Écran → [écran parent, libellé du retour] : un bouton « ‹ parent » s'ajoute en haut des sous-écrans. */
+const NPARENT = {
+  album: ['coll', 'Collection'], albums: ['coll', 'Collection'], search: ['coll', 'Collection'], trades: ['coll', 'Collection'], expeditions: ['coll', 'Collection'],
+  market: ['marche', 'Marché'], bourse: ['marche', 'Marché'], bank: ['marche', 'Marché'], trends: ['marche', 'Marché'], themepacks: ['marche', 'Marché'],
+  duel: ['jouer', 'Jouer'], tournaments: ['jouer', 'Jouer'], tournament: ['tournaments', 'Tournois'], quests: ['jouer', 'Jouer'], dquiz: ['jouer', 'Jouer'], hilo: ['jouer', 'Jouer'], events: ['jouer', 'Jouer'], noelcal: ['jouer', 'Jouer'], potato: ['jouer', 'Jouer'], gulag: ['jouer', 'Jouer'], tsar: ['jouer', 'Jouer'],
+  feed: ['menu', 'Menu'], msg: ['menu', 'Menu'], chat: ['msg', 'Messages'], friends: ['menu', 'Menu'], rank: ['menu', 'Menu'], ach: ['menu', 'Menu'], settings: ['menu', 'Menu'], customize: ['menu', 'Menu'], admin: ['menu', 'Menu'],
+};
+const NUI_NAV = [['packs', 'home', 'Accueil'], ['coll', 'album', 'Collection'], ['jouer', 'play', 'Jouer'], ['marche', 'market', 'Marché'], ['menu', 'menu', 'Menu']]
+  .map(([k, i, l]) => `<button data-tab="${k}"><span class="t"><svg class="ic"><use href="#i-${i}"/></svg></span><em>${l}</em></button>`).join('');
+/** Bascule la barre du bas (et la classe du <body>) selon l'état de la nouvelle interface. */
+function syncNui() {
+  const on = nuiOn(), nav = document.querySelector('aside nav'); if (!nav) return;
+  document.body.classList.toggle('nui', on);
+  const want = on ? 'nui' : 'old'; if ((nav.dataset.mode || 'old') === want) return;
+  if (!nav.dataset.old) nav.dataset.old = nav.innerHTML;
+  nav.innerHTML = on ? NUI_NAV : nav.dataset.old; nav.dataset.mode = want;
+  nav.querySelectorAll('button').forEach(b => { b.onclick = () => navGo(b); });
+  try { markTab(); } catch { /* écran pas encore prêt */ }
+}
+let nuDv = 0;   // dividendes de collection à récupérer (dernier montant connu)
+const nuHello = () => { const h = new Date().getHours(); return h >= 5 && h < 18 ? 'Bonjour' : 'Bonsoir'; };
+const nuTile = (go, icon, label, sub, hot = false, id = '') => `<button class="nu-tile${hot ? ' hot' : ''}" ${id ? `id="${id}"` : `data-nugo="${go}"`}><span class="nu-ti">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
+const nuRow = (go, icon, label, sub, badge = 0) => `<button class="nu-row" data-nugo="${go}"><span class="nu-ti">${ico(icon)}</span><span class="nu-tx"><b>${label}</b><small>${sub}</small></span>${badge ? `<i class="nu-bd">${badge > 9 ? '9+' : badge}</i>` : ''}${ico('chev', 'nu-ch')}</button>`;
+const nuList = rows => `<div class="nu-list">${rows.join('')}</div>`;
+const nuSec = (title, inner, note = '') => `<section class="nu-sec"><h3><span>${title}</span>${note ? `<em>${note}</em>` : ''}</h3>${inner}</section>`;
+const nuFeat = (go, kicker, title, sub, cls = '') => `<button class="nu-feat ${cls}" data-nugo="${go}"><span class="nu-ft"><small>${kicker}</small><b>${title}</b><i>${sub}</i></span>${ico('chev', 'nu-ch')}</button>`;
+function nuTiles() {
+  const quiz = me.dq === 'done' ? 'Terminé · à demain' : me.dq === 'run' ? 'En cours' : 'Nouveau';
+  return `<div class="nu-tiles n${nuDv > 0 ? 3 : 2}">${nuTile('dquiz', 'book', 'Quiz du jour', quiz, me.dq === 'new')}${nuTile('quests', 'medal', 'Quêtes', me.qc > 0 ? `${me.qc} à réclamer` : 'Défis du jour', me.qc > 0)}${nuDv > 0 ? nuTile('', 'building', 'Banque', `+${fmt(nuDv)} à récupérer`, true, 'nu-bank') : ''}</div>`;
+}
+function nuEvents() {
+  const ev = [];
+  if (me.noel) ev.push(['noel-open', 'ÉVÉNEMENT', 'Calendrier de l\'Avent', 'Portes, Tir au patron et Atelier des lutins']);
+  if (commu?.on && !commu.joined) ev.push(['commu-join', 'ÉVÉNEMENT', 'Événement communiste', `Entre dans le Plan : taxe de ${commu.tax} wikibidou, ${commu.startWr} ₽ de départ`]);
+  if (commu?.on && commu.joined && !ussrUiOn()) ev.push(['commu-enter', 'ÉVÉNEMENT', 'Mode communiste', 'Retourne au Plan : thème rouge, colis du Parti']);
+  if (!ev.length) return '';
+  return nuSec('En ce moment', `<div class="nu-evts">${ev.map(([id, k, t, s]) => `<button class="nu-feat ev" id="${id}"><span class="nu-ft"><small>${k}</small><b>${t}</b><i>${s}</i></span>${ico('chev', 'nu-ch')}</button>`).join('')}</div>`, ev.length > 1 ? `${ev.length} événements` : '');
+}
+/** Accueil de la nouvelle interface : mêmes boutons (mêmes identifiants) que l'ancien, donc la même logique d'ouverture de paquets. */
+const nuHomeHtml = () => `${lockNote()}
+  <section class="nu-hello"><h2>${nuHello()} ${esc(me.name)}</h2><p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''} · prochain dans <b id="cd"></b>`}</p></section>
+  <div class="nu-hero"><div class="packart" id="packart">${packSvg('full', { anim: false })}</div>
+    <button id="open" class="nu-btn" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir un paquet</button>
+    <div class="nu-two"><button id="open10" class="nu-ghost" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button><button id="buy" class="nu-ghost" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter · ${cfg.packPrice} ${ico('coin')}</button></div>
+    <div class="nu-links"><button id="buy10" class="nu-link" ${me.coins >= cfg.packPrice * 10 ? '' : 'disabled'}>Acheter ×10 · ${fmt(cfg.packPrice * 10)} pièces</button><button class="nu-link" id="rates-btn">Taux de drop</button></div></div>
+  <section class="nu-sec"><h3><span>Aujourd'hui</span></h3><div id="nu-today">${nuTiles()}</div></section>
+  ${nuEvents()}
+  <div class="lastpack" id="lastpack" hidden><h3 class="sec">Dernier tirage</h3><div id="out" class="grid"></div></div>`;
+function nuBind(v) {
+  v.querySelectorAll('[data-nugo]').forEach(b => { b.onclick = () => { lastPack = null; tab = b.dataset.nugo; render(); }; });
+  const bk = v.querySelector('#nu-bank');
+  if (bk) bk.onclick = safe(async () => { bk.disabled = true; try { const r = await api('/bank/dividends/claim', {}); nuDv = 0; toast(`+${fmt(r.got)} pièces de dividendes`, 'ok'); await refreshMe(); render(); } catch (e) { bk.disabled = false; throw e; } });
+}
+/** Après l'affichage de l'accueil : récupère les dividendes de collection (le seul chiffre qui n'est pas déjà connu). */
+function nuHomeAsync(v) {
+  nuBind(v);
+  api('/bank').then(b => { const c = +(b?.dividends?.claimable || 0); if (c !== nuDv) { nuDv = c; const t = v.querySelector('#nu-today'); if (t) { t.innerHTML = nuTiles(); nuBind(v); } } }).catch(() => {});
+}
+views.coll = async v => {
+  const S = await api('/album/stats').catch(() => null);
+  v.innerHTML = `${pageHead('Collection', 'Tes cartes, et ce qui sert à les compléter')}
+    <button class="nu-search" data-nugo="search">${ico('search')}<span>Chercher une carte</span></button>
+    ${nuFeat('album', 'MA COLLECTION', S ? `${fmt(S.uniques)} cartes uniques` : 'Voir ma collection', S ? `${fmt(S.copies)} exemplaires${S.total ? ` · ${Math.round(S.uniques / S.total * 100)} % du catalogue` : ''}` : 'Trier, filtrer, revendre', 'plain')}
+    ${nuSec('Compléter', nuList([nuRow('albums', 'album', 'Albums', 'Séries de cartes à compléter'), nuRow('trades', 'swap', 'Échanges', 'Troquer des cartes'), nuRow('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)]))}`;
+  nuBind(v);
+};
+views.jouer = async v => {
+  v.innerHTML = `${pageHead('Jouer', 'Combats, défis et événements')}
+    ${me.noel ? nuFeat('noelcal', 'ÉVÉNEMENT · JUSQU\'AU 25 DÉCEMBRE', 'Noël au Pôle Nord (S.A.)', 'Calendrier de l\'Avent, Tir au patron, Atelier des lutins', 'ev') : ''}
+    ${commu?.on && eventAccess() ? nuFeat(commu.joined ? 'plan' : 'commustart', 'ÉVÉNEMENT', 'Événement communiste', commu.joined ? 'Paliers du Plan, jeux du Parti' : 'Entre dans le Plan', 'ev') : ''}
+    ${nuSec('Affrontements', nuList([nuRow('duel', 'duel', 'Combats', 'Défie un joueur, ou parie sur un combat'), nuRow('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')]))}
+    ${nuSec('Défis et mini-jeux', `<div class="nu-tiles n2">${nuTile('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new')}${nuTile('quests', 'medal', 'Quêtes', me.qc > 0 ? `${me.qc} à réclamer` : 'Défis du jour', me.qc > 0)}${nuTile('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${nuTile('events', 'spark', 'Événements', 'Défis, saison, surprises', (me.ev || []).length > 0)}</div>`)}
+    ${me.admin ? nuSec('Démos (administrateur)', nuList([nuRow('potato', 'leaf', 'Patates', 'Jeu 3D (test)'), nuRow('gulag', 'building', 'Camp', 'Gestion (démo)'), nuRow('tsar', 'book', 'Le Dernier Tsar', 'Cartes à glisser (démo)')])) : ''}`;
+  nuBind(v);
+};
+views.marche = async v => {
+  const b = await api('/bank').catch(() => null); if (b) nuDv = +(b.dividends?.claimable || 0);
+  v.innerHTML = `${pageHead('Marché', 'Acheter, vendre et gagner des pièces')}
+    ${nuFeat('market', 'PLACE DES JOUEURS', 'Marché', 'Enchères, échanges et ventes', 'plain')}
+    ${nuSec('Gagner des pièces', nuList([nuRow('bank', 'building', 'Banque', nuDv > 0 ? `Dividendes : +${fmt(nuDv)} à récupérer` : 'Épargne et dividendes', nuDv > 0 ? 1 : 0), nuRow('bourse', 'market', 'Bourse', 'Paris sur les vues Wikipédia'), nuRow('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires'), nuRow('trends', 'chart', 'Tendances', 'Cours et alertes')]))}`;
+  nuBind(v);
+};
+/** Menu : liste en groupes (ouvre une feuille). */
+function nuMenu() {
+  const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
+  const row = (go, icon, label, sub, badge = 0) => nuRow(go, icon, label, sub, badge).replace('data-nugo=', 'data-go=');
+  m.hidden = false;
+  m.innerHTML = `<div class="moresheet nu-sheet" role="dialog" aria-label="Menu"><span class="grab" aria-hidden="true"></span>
+    <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
+    ${me.daily ? nuSec('À récupérer', nuList([row('daily', 'spark', 'Récompense du jour', 'À récupérer', 1)])) : ''}
+    ${nuSec('Communauté', nuList([row('feed', 'feed', 'Fil', 'Légendaires et réactions'), row('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm || 0), row('friends', 'friends', 'Amis', 'QR code, demandes', me.badge || 0), row('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')]))}
+    ${nuSec('Mon compte', nuList([row('profile', 'user', 'Mon profil', 'Vitrine et statistiques'), row('ach', 'medal', 'Succès', 'Objectifs et primes'), row('customize', 'heart', 'Personnaliser', 'Photo, titres, cadres'), row('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')]))}
+    ${me.admin ? nuSec('Administration', nuList([row('admin', 'shield', 'Administration', 'Tableau de bord')])) : ''}</div>`;
+  $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
+    const k = b.dataset.go; close();
+    if (k === 'profile') return playerSheet(me.id);
+    if (k === 'daily') return me.daily ? dailyModal() : toast('Tu as déjà récupéré ta récompense du jour, reviens demain !');
+    lastPack = null; tab = k; if (game?.view === 'end') game = null; render();
+  });
+}
+document.addEventListener('click', e => {   // bouton « ‹ parent » des sous-écrans
+  const b = e.target.closest?.('[data-back]'); if (!b) return;
+  const t = b.dataset.back; if (game?.view === 'end') game = null;
+  if (t === 'menu') return nuMenu();
+  lastPack = null; tab = t; render();
+});
+
 function moreSheet() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
   const g = GROUP[tab];
@@ -3106,7 +3232,8 @@ function moreSheet() {
     lastPack = null; tab = k; if (game?.view === 'end') game = null; render();
   });
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (b.dataset.tab === 'more') return moreSheet(); if (tab !== b.dataset.tab) lastPack = null; duelDirect = false; tab = b.dataset.tab; if (game?.view === 'end') game = null; render(); });
+const navGo = b => { const k = b.dataset.tab; if (k === 'more') return moreSheet(); if (k === 'menu') return nuMenu(); if (tab !== k) lastPack = null; duelDirect = false; tab = k; if (game?.view === 'end') game = null; render(); };
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => navGo(b));
 async function start() {
   $('#auth').hidden = true;                       // pas de formulaire de connexion qui clignote quand on est déjà connecté
   $('#boot').hidden = false;
