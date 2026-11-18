@@ -88,7 +88,7 @@ export function installSeasonZero(d) {
     for (const tb of BACKUP) await step(`sauvegarde de ${tb}`, () => env.DB.batch([st(env, `CREATE TABLE IF NOT EXISTS bk_s0_${tb} AS SELECT * FROM ${tb}`), st(env, `ALTER TABLE bk_s0_${tb} ENABLE ROW LEVEL SECURITY`)]));   // RLS : jamais lisibles par l'API publique
     stmts.push(st(env, `TRUNCATE ${WIPE.join(', ')}`));                          // instantané (un DELETE sur de grosses tables dépassait la limite de temps)
     stmts.push(st(env, `DELETE FROM event_claims WHERE NOT (${KEEP_CLAIMS})`));
-    stmts.push(st(env, `UPDATE users SET coins = ?, pack_stock = ?, pack_ts = ?, packs_opened = 0, test_mode = 0, showcase = NULL, drop_w = NULL, duel_wins = 0, duel_losses = 0, daily_day = NULL, daily_streak = 0, div_day = NULL, title = ? WHERE is_bot = 0`, START.coins, START.packs, t, FOUNDER_TITLE));
+    stmts.push(st(env, `UPDATE users SET coins = ?, pack_stock = ?, pack_ts = ?, packs_opened = 0, test_mode = 0, showcase = NULL, drop_w = NULL, duel_wins = 0, duel_losses = 0, daily_day = NULL, daily_streak = 0, div_day = NULL, leg_pulled = 0, title = ? WHERE is_bot = 0`, START.coins, START.packs, t, FOUNDER_TITLE));
     for (const uid of humans) {
       const f = founders.get(uid), c = cardRows.get(f.id), fresh = d.fresh.get(f.id);
       if (!c && fresh) stmts.push(insertCard(env, { id: fresh[0], title: fresh[1], views: fresh[2], rarity: 'legendary', shiny: 0, ...stats(fresh[1], 'legendary', false) }));

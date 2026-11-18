@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.96';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.97';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2391,8 +2391,9 @@ views.trends = async v => {
 views.bank = async v => {
   const d = await api('/bank'), s = d.savings, dv = d.dividends, rn = ['Communes', 'Peu communes', 'Rares', 'Super rares', 'Ultra rares', 'Légendaires'];
   v.innerHTML = `${pageHead('Banque', 'Épargne et dividendes de ta collection')}
-    <div class="panel minesum"><div><small>Épargne</small><b>${ico('coin')}${fmt(s.amount)}</b></div><p class="mut">+${(s.rate * 100).toFixed(1)} % par jour (≈ ${fmt(s.perDay)} pièces/jour) · plafond ${fmt(s.cap)} · retrait avant ${s.lockDays} jours après le dernier dépôt : ${Math.round(s.fee * 100)} % de frais${s.interest ? ` · dont ${fmt(s.interest)} d'intérêts à venir` : ''}.${s.locked > Date.now() ? ` Libre sans frais dans ${cdTxt(s.locked - Date.now())}.` : ''}</p>
+    <div class="panel minesum"><div><small>Épargne</small><b>${ico('coin')}${fmt(s.amount)}</b></div><p class="mut">+${(s.rate * 100).toFixed(2).replace('.', ',')} % par jour (≈ ${fmt(s.perDay)} pièces/jour) · plafond ${fmt(s.cap)} · retrait avant ${s.lockDays} jours après le dernier dépôt : ${Math.round(s.fee * 100)} % de frais${s.interest ? ` · dont ${fmt(s.interest)} d'intérêts à venir` : ''}.${s.locked > Date.now() ? ` Libre sans frais dans ${cdTxt(s.locked - Date.now())}.` : ''}</p>
       <div class="row"><button id="bk-in" style="flex:1">Déposer</button><button class="plain" id="bk-out" style="flex:1" ${s.amount ? '' : 'disabled'}>Retirer</button></div></div>
+    ${s.leg ? `<div class="panel"><h3 style="margin:0 0 6px">Légendaires de paquet</h3><p class="mut" style="margin:0 0 8px">Chaque légendaire tirée dans un paquet (jamais par échange ni au marché) ajoute <b>+${(s.leg.rate * 100).toFixed(2).replace('.', ',')} % de taux par jour</b> et <b>+${fmt(s.leg.cap)} de plafond</b> à ton épargne.</p><div class="bar" style="height:8px;border-radius:99px;background:var(--line);overflow:hidden"><i style="display:block;height:100%;width:${Math.round(s.leg.n / s.leg.max * 100)}%;background:var(--gold)"></i></div><p class="mut" style="margin:6px 0 0;font-size:13px">${s.leg.n} / ${s.leg.max}${s.leg.n >= s.leg.max ? ' · maximum atteint' : ''}</p></div>` : ''}
     <div class="panel"><h3 style="margin:0 0 6px">Dividendes de collection</h3><p class="mut" style="margin:0 0 8px">Ta collection te rapporte <b>${fmt(dv.daily)} pièces par jour</b>${dv.raw > dv.cap ? ` (plafonné à ${fmt(dv.cap)} par jour)` : ''}. Tu peux cumuler jusqu'à ${dv.maxDays} jours.</p>
       <div class="divlist">${dv.byRarity.map((x, i) => x ? `<div><span class="rar ${cfg.rarities[i]}">${rn[i]}</span><b>${fmt(x)}</b></div>` : '').join('')}${dv.bonus ? `<div><span>Albums complétés (${dv.albums})</span><b>${fmt(dv.bonus)}</b></div>` : ''}</div>
       <div class="row"><button id="dv-go" style="flex:1" ${dv.claimable ? '' : 'disabled'}>${dv.claimable ? `Récupérer ${fmt(dv.claimable)} pièces (${dv.days} jour${dv.days > 1 ? 's' : ''})` : 'Déjà récupérés aujourd\'hui'}</button></div></div>`;

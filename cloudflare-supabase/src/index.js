@@ -321,7 +321,7 @@ async function finishPack(env, ctx, user, drawn, spent = 0, fake = false) {
     ...drawn.filter(c => !c.known).map(c => insertCard(env, c)),   // les cartes venues de la réserve existent déjà : on n'écrit que les nouvelles
     ...drawn.map(c => addCard(env, user.id, c.id)),
     ...drawn.filter(c => c.shiny).map(c => st(env, 'UPDATE cards SET extract = (SELECT extract FROM cards WHERE id = ?1), image = (SELECT image FROM cards WHERE id = ?1), enriched = (SELECT enriched FROM cards WHERE id = ?1) WHERE id = ?2 AND enriched = 0 AND EXISTS (SELECT 1 FROM cards WHERE id = ?1)', c.id - SHINY_OFFSET, c.id)),
-    st(env, 'UPDATE users SET packs_opened = packs_opened + 1 WHERE id = ?', user.id),
+    st(env, 'UPDATE users SET packs_opened = packs_opened + 1, leg_pulled = leg_pulled + ? WHERE id = ?', hitsOf.length, user.id),
     ...(god ? [st(env, 'INSERT INTO hits (username, title, shiny, ts) VALUES (?,?,?,?)', user.name, 'un GODPACK', 0, now())] : []),
     ...hitsOf.map(c => st(env, 'INSERT INTO hits (username, title, shiny, ts) VALUES (?,?,?,?)', user.name, c.title, c.shiny, now())),
     ...hitsOf.map(c => feed.postStmt(env, user.id, c.id)),   // chaque légendaire devient une publication du fil d'actualité

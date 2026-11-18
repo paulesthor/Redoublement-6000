@@ -192,5 +192,30 @@ console.log('— courbe des dividendes (saturante)');
   [s, r] = await call(A, 'POST', '/api/admin/bank-curve', { mode: 'n\'importe quoi' }); ok('réglage : valeur inconnue → coupé', r.mode === 'off');
   await DB.prepare('UPDATE users SET is_admin = 0 WHERE name = ?').bind('Alice').run(); Object.assign(DIV, keep);
 }
+console.log('— légendaires de paquet : taux et plafond de la banque');
+{ const { bankFor, BANK } = await import('../src/economy.js');
+  ok('banque : sans légendaire de paquet, taux et plafond d\'origine', bankFor(0).rate === BANK.rate && bankFor(0).cap === 5000 && bankFor(undefined).n === 0 && bankFor(-4).n === 0);
+  ok('banque : 3 légendaires → +0,12 % de taux et +600 de plafond', Math.abs(bankFor(3).rate - 0.0072) < 1e-9 && bankFor(3).cap === 5600);
+  ok('banque : au plus 25 légendaires comptent (1,6 % et 10 000 au maximum)', Math.abs(bankFor(25).rate - 0.016) < 1e-9 && bankFor(25).cap === 10000 && bankFor(999).cap === 10000 && bankFor(999).n === 25);
+  const ua = (await q("SELECT id FROM users WHERE name = 'Alice'"))[0].id, ub = (await q("SELECT id FROM users WHERE name = 'Bob'"))[0].id, day = Math.floor(Date.now() / 86400000);
+  ok('compteur : il suit exactement les légendaires sorties des paquets', await (async () => {
+    await q('UPDATE users SET leg_pulled = 0, pack_stock = 30, drop_w = ? WHERE id = ?', JSON.stringify({ legendary: 1 }), ua); let legs = 0;
+    for (let i = 0; i < 12; i++) { const [st, rr] = await call(A, 'POST', '/api/packs/open', {}); if (st === 200) legs += (rr.cards || []).filter(c => c.rarity === 'legendary').length; }
+    const got = (await q('SELECT leg_pulled FROM users WHERE id = ?', ua))[0].leg_pulled; await q('UPDATE users SET drop_w = NULL WHERE id = ?', ua); return legs > 0 && got === legs;
+  })());
+  await q('DELETE FROM savings WHERE user_id IN (?, ?)', ua, ub); await q('UPDATE users SET coins = 100000 WHERE id IN (?, ?)', ua, ub);
+  await q('INSERT INTO savings (user_id, amount, acc_day, locked_until) VALUES (?,?,?,0)', ua, 5000, day); await q('INSERT INTO savings (user_id, amount, acc_day, locked_until) VALUES (?,?,?,0)', ub, 5000, day);
+  await q('UPDATE users SET leg_pulled = 0 WHERE id = ?', ua);
+  [s, r] = await call(A, 'POST', '/api/bank/deposit', { amount: 1 }); ok('banque : sans légendaire, plafond de 5 000 inchangé', s === 400, J([s, r]));
+  await q('UPDATE users SET leg_pulled = 5 WHERE id = ?', ua);
+  [s, r] = await call(A, 'GET', '/api/bank'); ok('banque : 5 légendaires → taux 0,80 %, plafond 6 000, progression renvoyée', Math.abs(r.savings.rate - 0.008) < 1e-9 && r.savings.cap === 6000 && r.savings.perDay === 40 && r.savings.leg.n === 5 && r.savings.leg.max === 25, J(r.savings));
+  [s, r] = await call(A, 'POST', '/api/bank/deposit', { amount: 1000 }); ok('banque : le plafond relevé permet de déposer 1 000 de plus', s === 200 && r.amount === 6000, J([s, r]));
+  [s, r] = await call(A, 'POST', '/api/bank/deposit', { amount: 1 }); ok('banque : au-delà du nouveau plafond, refusé', s === 400);
+  await q('UPDATE users SET leg_pulled = 0 WHERE id = ?', ub);
+  [s, r] = await call(B, 'GET', '/api/bank'); ok('banque : les autres joueurs gardent le taux d\'origine', r.savings.rate === 0.006 && r.savings.cap === 5000 && r.savings.leg.n === 0, J(r.savings));
+  await q('UPDATE savings SET acc_day = ? WHERE user_id = ?', day - 10, ua);
+  [s, r] = await call(A, 'GET', '/api/bank'); ok('banque : les intérêts sont calculés au taux du joueur (10 jours à 0,80 %)', r.savings.amount === Math.floor(6000 * Math.pow(1.008, 10)), J(r.savings));
+  const tx = (await q("SELECT 1 x FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'leg_pulled'").catch(() => [{ x: 1 }])); ok('banque : colonne du compteur créée', tx.length === 1);
+}
 Date.now = realNow;
 done();

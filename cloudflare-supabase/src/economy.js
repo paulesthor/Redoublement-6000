@@ -7,11 +7,13 @@ export const HILO = { time: 8000, grace: 2500, minStake: 10, maxStake: 50, perDa
 /** Joueurs privés du « Plus ou moins » (pseudo comparé sans majuscules, accents ni séparateurs) et message affiché quand ils essaient d'y accéder. */
 export const HILO_BLOCKED = ['michelleclebresil', 'michelecestlebresil'], HILO_BLOCKED_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const hiloBlocked = u => HILO_BLOCKED.includes(String(u?.name || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''));
-export const BANK = { rate: 0.006, cap: 5000, lockDays: 7, fee: 0.1 };               // 0,6 % par jour, 5 000 pièces au plus, retrait avant 7 jours : 10 % de frais
+export const BANK = { rate: 0.006, cap: 5000, lockDays: 7, fee: 0.1, legRate: 0.0004, legCap: 200, legMax: 25 };               // 0,6 % par jour, 5 000 pièces au plus, retrait avant 7 jours : 10 % de frais
 export const DIV = { rate: [0.02, 0.1, 0.4, 1.5, 5, 20], lvl: 0.25, shiny: 2, album: 20, maxDays: 2, cap: 100, extra: 150, span: 3000 };   // plafond : au plus 100 pièces par jour, quelle que soit la taille de la collection   // pièces par carte et par jour, selon la rareté
 // Équilibrage : une expédition rapporte à peu près autant qu'un autre mini-jeu (quelques dizaines à ~150 pièces). Gain = valeur des cartes × durée × k, plafonné par durée.
 export const EXPED = { slots: 2, maxCards: 12, hours: [[1, 1], [4, 3.2], [8, 6]], base: [3, 6, 15, 40, 120, 400], pack: { 1: 0.005, 4: 0.03, 8: 0.08 }, k: 0.02, cap: { 1: 30, 4: 80, 8: 150 } };
 const DAY = 86400000;
+/** Taux et plafond de l'épargne d'un joueur : chaque légendaire tirée en paquet (compteur, au plus legMax) ajoute legRate au taux et legCap au plafond. */
+export const bankFor = n => { const k = Math.min(BANK.legMax, Math.max(0, Math.floor(+n || 0))); return { n: k, rate: BANK.rate + k * BANK.legRate, cap: BANK.cap + k * BANK.legCap }; };
 /** Gain quotidien des dividendes. Sans courbe : plafonné à DIV.cap. Avec la courbe : identique jusqu'à DIV.cap, puis de plus en plus lent vers DIV.cap + DIV.extra (jamais dépassé). */
 export const divGain = (raw, curve) => curve && raw > DIV.cap ? Math.floor(DIV.cap + DIV.extra * (1 - Math.exp(-(raw - DIV.cap) / DIV.span))) : Math.min(DIV.cap, Math.floor(raw));
 const ymd = d => d.replace(/-/g, '');
@@ -227,9 +229,10 @@ export function installEconomy(d) {
   /** Épargne avec intérêts composés par jour entier écoulé. */
   async function savings(env, uid) {
     const s = await one(env, 'SELECT * FROM savings WHERE user_id = ?', uid);
-    if (!s) return { amount: 0, accDay: dayNo(now()), locked: 0, interest: 0 };
-    const days = Math.max(0, dayNo(now()) - s.acc_day), amount = days ? Math.floor(s.amount * Math.pow(1 + BANK.rate, days)) : s.amount;
-    return { amount, accDay: dayNo(now()), locked: s.locked_until, interest: amount - s.amount, stored: s.amount, since: s.acc_day };
+    if (!s) return { amount: 0, accDay: dayNo(now()), locked: 0, interest: 0, ...bankFor((await one(env, 'SELECT leg_pulled FROM users WHERE id = ?', uid))?.leg_pulled) };
+    const bk = bankFor((await one(env, 'SELECT leg_pulled FROM users WHERE id = ?', uid))?.leg_pulled);
+    const days = Math.max(0, dayNo(now()) - s.acc_day), amount = days ? Math.floor(s.amount * Math.pow(1 + bk.rate, days)) : s.amount;
+    return { amount, accDay: dayNo(now()), locked: s.locked_until, interest: amount - s.amount, stored: s.amount, since: s.acc_day, ...bk };
   }
   const saveSavings = (env, uid, amount, locked) => run(env, `INSERT INTO savings (user_id, amount, acc_day, locked_until) VALUES (?,?,?,?) ON CONFLICT (user_id) DO UPDATE SET amount = excluded.amount, acc_day = excluded.acc_day, locked_until = excluded.locked_until`, uid, amount, dayNo(now()), locked);
   /** Courbe des dividendes : « off » (plafond fixe), « admin » (aperçu pour l'administrateur), « all » (tout le monde). */
@@ -249,7 +252,7 @@ export function installEconomy(d) {
     await ensureGameSchema(env);
     const [s, dv] = await Promise.all([savings(env, user.id), dividends(env, user)]);
     const frozen = await savingsFrozen?.(env, user) || 0;
-    return { coins: user.coins, savings: { frozen, amount: s.amount, interest: s.interest, locked: s.locked, rate: BANK.rate, cap: BANK.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * BANK.rate) }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
+    return { coins: user.coins, savings: { frozen, amount: s.amount, interest: s.interest, locked: s.locked, rate: s.rate, cap: s.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * s.rate), leg: { n: s.n, max: BANK.legMax, rate: BANK.legRate, cap: BANK.legCap, baseRate: BANK.rate, baseCap: BANK.cap } }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
   });
   /** Administrateur : répartition des « scores de collection » (valeur des dividendes sans plafond) pour régler une future banque indexée sur la collection. Lecture seule. */
   route('GET', '/api/admin/bank-sim', async ({ env, user }) => {
@@ -280,7 +283,7 @@ export function installEconomy(d) {
     await ensureGameSchema(env);
     const amount = Math.floor(+body.amount); if (!(amount >= 1)) bad('Montant invalide');
     const s = await savings(env, user.id);
-    if (s.amount + amount > BANK.cap) bad(`Plafond de ${BANK.cap} pièces d’épargne (il te reste ${Math.max(0, BANK.cap - s.amount)} de marge)`);
+    if (s.amount + amount > s.cap) bad(`Plafond de ${s.cap} pièces d’épargne (il te reste ${Math.max(0, s.cap - s.amount)} de marge)`);
     const paid = await run(env, 'UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?', amount, user.id, amount);
     if (!paid.meta.changes) bad('Pas assez de pièces');
     await saveSavings(env, user.id, s.amount + amount, now() + BANK.lockDays * DAY);
