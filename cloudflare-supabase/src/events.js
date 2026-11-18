@@ -42,7 +42,7 @@ const ALWAYS_ON = new Set(['weekly', 'hunt', 'season']);
 const PUSH_KINDS = new Set(['golden', 'nounique', 'shiny', 'theme', 'album', 'goal']);   // les seuls événements annoncés par notification
 export const KINDS = {
   golden: { name: 'Heure dorée', emoji: '✨', desc: `Pendant 1 heure, les légendaires sont ${EV.goldenLegend} fois plus fréquentes et les ultra rares ${EV.goldenUltra} fois dans tous les paquets.` },
-  nounique: { name: 'Heure sans original', emoji: '🔓', desc: 'Pendant 1 heure, les légendaires ne sont plus uniques : tu peux tirer une légendaire que quelqu\'un possède déjà. Ces cartes sont des cartes normales, échangeables.' },
+  nounique: { name: 'Heure collective', emoji: '★', desc: 'Pendant 1 heure, la propriété privée des légendaires est abolie : tu peux tirer une légendaire que quelqu\'un possède déjà. Ces cartes restent des cartes normales, échangeables.' },
   shiny: { name: 'Week-end shiny', emoji: '💎', desc: `Les légendaires ont ${EV.shinyMult} fois plus de chances d'être shiny, jusqu'à lundi 9 h.` },
   theme: { name: 'Festival des catégories', emoji: '🎪', desc: `Les paquets thématiques coûtent ${EV.themePrice} pièces et contiennent une légendaire garantie, jusqu'à lundi 9 h.` },
   album: { name: 'Album éphémère', emoji: '🎁', desc: 'Une série de cartes à compléter en 7 jours, avec récompense et titre exclusifs. Elles tombent bien plus souvent dans les paquets.' },

@@ -1976,3 +1976,9 @@ html[data-theme=light] .nu-prev,html[data-theme=beige] .nu-prev{filter:invert(1)
 .nc-mine .mut{font-size:13px;line-height:1.5;margin:0 0 10px}
 .nc-mine .plain{background:transparent;border:1px solid #e8c35a99;color:#f4ead0;border-radius:8px;padding:12px;min-height:44px;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
 .nc-mine .nc-one{margin:0 0 10px}
+
+/* ---------- Heure collective et communiqué « Fin de la propriété privée » ---------- */
+.evchip.nounique{border-color:#e8c35a;background:linear-gradient(90deg,#b3141b,#7a0f14);color:#f6e7c1}
+.nu-list .nu-row.red,.nu-row.red{background:linear-gradient(90deg,#b3141b,#7a0f14);border-color:#e8c35a;color:#f6e7c1}.nu-row.red small,.nu-row.red .nu-meta{color:#f6e7c1cc}.nu-row.red .nu-ti{color:#e8c35a}
+#modal>div.recapsheet.nc-red{background:linear-gradient(#a3151b,#6d0d12);border:1px solid #e8c35a;color:#f6e7c1;text-align:left}.nc-red h2{margin:6px 0 10px;color:#fff;font-size:24px;line-height:1.15}.nc-red p{margin:0 0 10px;font-size:14px;line-height:1.5;color:#f6e7c1}.nc-red b{color:#e8c35a}
+.nc-kick{display:block;color:#e8c35a;letter-spacing:.14em;font-size:10.5px;font-weight:700}.nc-sign{font-style:italic;text-align:right;color:#e8c35a!important}

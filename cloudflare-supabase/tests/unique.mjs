@@ -75,7 +75,7 @@ ok('aucun joueur simulé n\'enchérit sur une légendaire', (await q('SELECT COU
   await q('UPDATE users SET is_admin = 0 WHERE id <> ?', alice); [s] = await call(B, 'GET', '/api/admin/economy'); ok('économie : refusée à un joueur non administrateur', s === 403, s);
   [s, r] = await call(A, 'GET', '/api/admin/economy'); ok('économie : chiffres pour l\'administrateur', s === 200 && r.players >= 2 && r.coins > 0 && r.legendaries.existing > 0 && Array.isArray(r.top), J([s, r]));
   ok('économie : répartition des collections par rareté et par joueur', r.collections?.byRarity?.length > 0 && r.collections.cardsPerPlayer.max >= r.collections.cardsPerPlayer.median && r.collections.cardsPerPlayer.median > 0, J(r.collections)); }
-// 6) cartes d'album : jamais uniques ; heure sans original : unicité suspendue
+// 6) cartes d'album : jamais uniques ; heure collective : unicité suspendue
 { await q('DELETE FROM legend_taken'); CFG.SHINY_CHANCE = 0; CFG.GODPACK_CHANCE = 0;
   const albumCard = { r: 256 };   // Adolf Hitler, album « dictateurs »
   const a1 = await draw(10, heavy, { cards: [albumCard] }, null, alice), a2 = await draw(10, heavy, { cards: [albumCard] }, null, bob), a3 = await draw(10, heavy, { cards: [albumCard] }, null, alice);
@@ -86,8 +86,8 @@ ok('aucun joueur simulé n\'enchérit sur une légendaire', (await q('SELECT COU
   const nl = [...n1, ...n2].filter(c => c.rarity === 'legendary');
   ok('carte hors album : toujours unique (une seule fois, le reste devient ultra)', nl.length === 1, J(nl.length));
   const free = await draw(10, heavy, normal, { noUnique: true }, alice), fl = free.filter(c => c.rarity === 'legendary');
-  ok('heure sans original : la même carte légendaire sort de nouveau', fl.length === 1 && fl[0].id === nl[0].id, J(fl.length));
-  ok('heure sans original : ce sont des cartes normales (aucune marque), rien ne change pour la réserve', (await q('SELECT COUNT(*) n FROM legend_taken WHERE card_id = ?', nl[0].id))[0].n === 1);
+  ok('heure collective : la même carte légendaire sort de nouveau', fl.length === 1 && fl[0].id === nl[0].id, J(fl.length));
+  ok('heure collective : ce sont des cartes normales (aucune marque), rien ne change pour la réserve', (await q('SELECT COUNT(*) n FROM legend_taken WHERE card_id = ?', nl[0].id))[0].n === 1);
   const after = await draw(10, heavy, normal, null, bob); ok('après l\'heure, l\'unicité reprend', after.filter(c => c.rarity === 'legendary').length === 0, J(after.filter(c => c.rarity === 'legendary').length));
   const ids = await __testHooks.albumCardIds(env, origin);
   ok('toutes les cartes des albums sont reconnues comme non uniques (42 albums × 8 cartes)', ids.has(1696582) && ids.size >= 300, ids.size);

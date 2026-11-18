@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '11.01';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '11.02';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -3064,6 +3064,24 @@ function newsScreen(then) {
   $('#nw-go').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   return true;
 }
+/** Communiqué : fin de la propriété privée (cartes d'album non uniques, heure collective). Une seule fois par joueur. */
+function collectifScreen(then) {
+  let seen = true; try { seen = localStorage.getItem('wm_news_collectif') === '1'; } catch { /* stockage indisponible : on n'insiste pas */ }
+  if (seen || !me || me.maintenance || $('#modal').hidden === false) return false;
+  const m = $('#modal'); m.hidden = false;
+  m.innerHTML = `<div class="recapsheet nc-red" role="dialog" aria-label="Fin de la propriété privée"><small class="nc-kick">COMITÉ CENTRAL · COMMUNIQUÉ</small><h2>Fin de la propriété privée</h2>
+    <p>Camarades, le Comité central des légendaires a étudié la question de la carte unique. Il a conclu que posséder seul une carte que tout le monde veut est une pratique bourgeoise, et qu'elle sera corrigée.</p>
+    <p><b>Article 1.</b> Toutes les cartes des albums (Stars du football, grandes entreprises, dictateurs et les autres) cessent d'être uniques. Elles appartiennent désormais à tous les joueurs qui les tirent, autant de fois qu'il le faut.</p>
+    <p><b>Article 2.</b> De temps en temps, pendant une heure, l'unicité de toutes les légendaires est suspendue : c'est l'<b>Heure collective</b>. Une légendaire déjà possédée par un camarade peut alors sortir de nouveau de ton paquet. Elle t'appartient, elle est échangeable, et personne ne t'en demandera compte.</p>
+    <p><b>Article 3.</b> Les anciens propriétaires d'une légendaire unique sont invités à rester calmes. Aucune réclamation ne sera examinée : elles sont traitées comme les pétitions du Goulag, avec toute l'attention qu'elles méritent.</p>
+    <p class="nc-sign">Le Parti vous remercie de votre compréhension.</p>
+    <button class="ic-go" id="nc-gotit" style="width:100%">Compris, camarade</button></div>`;
+  const close = () => { try { localStorage.setItem('wm_news_collectif', '1'); } catch { /* ignoré */ } m.hidden = true; m.innerHTML = ''; then?.(); };
+  $('#nc-gotit').onclick = close; m.onclick = e => { if (e.target === m) close(); };
+  return true;
+}
+/** Écrans de nouveautés, dans l'ordre : nouvelle interface, puis fin de la propriété privée. */
+const newsScreens = then => newsScreen(() => { if (!collectifScreen(then)) then?.(); }) || collectifScreen(then);
 function recapScreen(then) {
   if (!me?.recap) return false;
   const m = $('#modal'); m.hidden = false; m.innerHTML = '<div class="recapsheet"><p class="mut" style="text-align:center">Chargement…</p></div>';
@@ -3153,9 +3171,9 @@ function nuTiles() {
 const NEV_SYSTEM = new Set(['freeze', 'reset', 'seasonend']);
 const NEV_ICON = { golden: 'coin', nounique: 'spark', shiny: 'spark', theme: 'packs', album: 'album', goal: 'friends', weekly: 'medal', hunt: 'search', season: 'trophy' };
 const NEV_GO = { album: 'albums', theme: 'themepacks' };
-const NEV_HINT = { golden: 'Légendaires plus fréquentes', nounique: 'Légendaires déjà prises : tirables à nouveau', shiny: 'Plus de chances d\'être shiny', theme: 'Paquets thématiques à prix réduit', album: 'Série à compléter en 7 jours', goal: 'Objectif collectif : tous ensemble', weekly: 'Défi de la semaine', hunt: 'Carte recherchée du jour', season: 'Saison en cours' };
+const NEV_HINT = { golden: 'Légendaires plus fréquentes', nounique: 'Propriété privée abolie : légendaires tirables à nouveau', shiny: 'Plus de chances d\'être shiny', theme: 'Paquets thématiques à prix réduit', album: 'Série à compléter en 7 jours', goal: 'Objectif collectif : tous ensemble', weekly: 'Défi de la semaine', hunt: 'Carte recherchée du jour', season: 'Saison en cours' };
 /** Événements du jeu en cours (heure dorée, album éphémère…) : une ligne chacun, dans la même liste que les autres blocs. */
-const nuEventRows = () => (me.ev || []).filter(e => !NEV_SYSTEM.has(e.kind)).map(e => nuRow(NEV_GO[e.kind] || 'events', NEV_ICON[e.kind] || 'spark', esc(frTypo(stripEmoji(e.name))), NEV_HINT[e.kind] || 'Événement en cours', 0, evLeft(e.end - Date.now())));
+const nuEventRows = () => (me.ev || []).filter(e => !NEV_SYSTEM.has(e.kind)).map(e => { const row = nuRow(NEV_GO[e.kind] || 'events', NEV_ICON[e.kind] || 'spark', esc(frTypo(stripEmoji(e.name))), NEV_HINT[e.kind] || 'Événement en cours', 0, evLeft(e.end - Date.now())); return e.kind === 'nounique' ? row.replace('class="nu-row"', 'class="nu-row red"') : row; });
 function nuEvents() {
   const ev = [];
   if (me.noel) ev.push(['noel-open', 'Événement', 'Calendrier de l\'Avent', 'Portes, Tir au patron et Atelier des lutins']);
@@ -3368,7 +3386,7 @@ async function start() {
     const daily0 = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
     // à partir du 25 décembre : la visite du Petit Jésus (une seule fois par joueur), avant la récompense du jour
     const daily = () => { if (Date.now() < Date.parse('2026-12-25T00:00:00+01:00') || game) return daily0(); api('/noel/gift').then(async g => { if (g.available && !g.claimed && $('#modal').hidden) { if (!window.NoelCards) await loadScript('/noelcards.js'); await window.NoelCards.gift(ncCtx()); } daily0(); }).catch(daily0); };
-    const next = () => { if (!recapScreen(daily) && !resetScreen(daily) && !seasonReveal(daily) && !newsScreen(daily)) daily(); };
+    const next = () => { if (!recapScreen(daily) && !resetScreen(daily) && !seasonReveal(daily) && !newsScreens(daily)) daily(); };
     if (!game && !sanctionScreen(next)) next();
   }, 900);
 }

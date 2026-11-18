@@ -20,10 +20,10 @@ console.log('— calendrier (pur calcul)');
 {
   const t0 = Date.parse('2026-10-12T00:00:00Z'), ev = eventsIn(SECRET, t0, t0 + 365 * DAY), by = k => ev.filter(e => e.kind === k && e.start >= t0 && e.start < t0 + 365 * DAY);
   ok('heures dorées : environ 38 % des jours (110 à 170 sur un an)', by('golden').length > 110 && by('golden').length < 170, by('golden').length);
-  ok('heures sans original : environ 38 % des jours, comme les heures dorées (110 à 170 sur un an)', by('nounique').length > 110 && by('nounique').length < 170, by('nounique').length);
-  ok('heures sans original : 1 h, entre 12 h et 22 h (heure de Paris)', by('nounique').every(e => e.end - e.start === 3600000 && parisHour(e.start) >= 12 && parisHour(e.start) <= 22), by('nounique').length);
-  ok('heures sans original : jamais en même temps qu\'une heure dorée', by('nounique').every(n => !by('golden').some(g => n.start < g.end && g.start < n.end)));
-  ok('heure sans original : l\'effet « unicité suspendue » est signalé aux tirages', modsFrom([{ kind: 'nounique' }]).noUnique === true && modsFrom([{ kind: 'golden' }]).noUnique === false);
+  ok('heures collectives : environ 38 % des jours, comme les heures dorées (110 à 170 sur un an)', by('nounique').length > 110 && by('nounique').length < 170, by('nounique').length);
+  ok('heures collectives : 1 h, entre 12 h et 22 h (heure de Paris)', by('nounique').every(e => e.end - e.start === 3600000 && parisHour(e.start) >= 12 && parisHour(e.start) <= 22), by('nounique').length);
+  ok('heures collectives : jamais en même temps qu\'une heure dorée', by('nounique').every(n => !by('golden').some(g => n.start < g.end && g.start < n.end)));
+  ok('heure collective : l\'effet « unicité suspendue » est signalé aux tirages', modsFrom([{ kind: 'nounique' }]).noUnique === true && modsFrom([{ kind: 'golden' }]).noUnique === false);
   ok('heures dorées : 1 h, entre 12 h et 22 h (heure de Paris), au quart d\'heure', by('golden').filter(e => e.id.split(':').length === 2).every(e => e.end - e.start === 3600000 && parisHour(e.start) >= 12 && parisHour(e.start) <= 21 && e.start % 900000 === 0));
   ok('week-ends shiny : un toutes les 3 semaines environ, du samedi 9 h au lundi 9 h (48 h)', by('shiny').length >= 16 && by('shiny').length <= 19 && by('shiny').every(e => Math.abs(e.end - e.start - 48 * 3600000) <= 3600000 && parisHour(e.start) === 9 && new Date(e.start).getUTCDay() === 6));
   ok('festival des catégories : jamais en même temps que le week-end shiny', !by('theme').some(a => by('shiny').some(b => a.start < b.end && b.start < a.end)) && by('theme').length >= 11);
