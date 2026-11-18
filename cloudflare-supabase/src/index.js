@@ -76,7 +76,14 @@ function userWeights(u) {
 /** Empreinte des taux d'un joueur : un paquet préparé avec d'autres taux est jeté. */
 const weightKey = u => (u?.drop_w ?? '') + (handicapOf(u) ? '|h' : '');
 /** Raretés d'un GODPACK : uniquement des ultra rares et des légendaires, au moins une légendaire. */
-const godRarities = n => { const r = Array.from({ length: n }, () => Math.random() < CFG.GODPACK_LEGEND ? 'legendary' : 'ultra'); if (!r.includes('legendary')) r[Math.floor(Math.random() * n)] = 'legendary'; return r; };
+/** Godpack : au moins 3 légendaires (parfois plus), le reste en ultra rare (la rareté juste en dessous), jamais rien de plus bas. */
+const GOD_MIN_LEGEND = 3;
+const godRarities = n => {
+  const r = Array.from({ length: n }, () => Math.random() < CFG.GODPACK_LEGEND ? 'legendary' : 'ultra');
+  const need = Math.min(GOD_MIN_LEGEND, n);
+  while (r.filter(x => x === 'legendary').length < need) { const ultra = r.map((x, i) => x === 'ultra' ? i : -1).filter(i => i >= 0); r[ultra[Math.floor(Math.random() * ultra.length)]] = 'legendary'; }
+  return r;
+};
 /** Raretés dont les cartes de la réserve sont réutilisées (lecture seule) : elles ne coûtent presque aucune écriture. */
 const REUSE = { common: 1, uncommon: 1 }, REUSE_RENEW = 0.25;
 const reserveCountsCache = { t: 0, v: {} };
@@ -1097,7 +1104,7 @@ const events = installEvents({ route, bad, one, all, run, st, notify, ensureGame
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
-export const __testHooks = { albumCardIds: (env, o) => albumCardIds(env, o), resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, get market() { return market; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
+export const __testHooks = { godRarities: n => godRarities(n), albumCardIds: (env, o) => albumCardIds(env, o), resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, get market() { return market; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
 const ALBUM_COINS = 5000;                                    // pièces pour un album complété (rien d'autre : ni paquets, ni shiny)

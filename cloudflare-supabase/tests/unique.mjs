@@ -92,5 +92,15 @@ ok('aucun joueur simulé n\'enchérit sur une légendaire', (await q('SELECT COU
   const ids = await __testHooks.albumCardIds(env, origin);
   ok('toutes les cartes des albums sont reconnues comme non uniques (42 albums × 8 cartes)', ids.has(1696582) && ids.size >= 300, ids.size);
 }
+// 7) godpack : au moins 3 légendaires, le reste en ultra rare, rien en dessous
+{ const runs = Array.from({ length: 3000 }, () => __testHooks.godRarities(10)), cnt = r => r.filter(x => x === 'legendary').length;
+  ok('godpack : seulement des légendaires et des ultra rares', runs.every(r => r.length === 10 && r.every(x => x === 'legendary' || x === 'ultra')));
+  ok('godpack : au moins 3 légendaires dans chaque paquet', runs.every(r => cnt(r) >= 3), J(Math.min(...runs.map(cnt))));
+  ok('godpack : parfois plus de 3 légendaires', runs.some(r => cnt(r) > 3) && Math.max(...runs.map(cnt)) >= 6, J(Math.max(...runs.map(cnt))));
+  ok('godpack : en moyenne un peu plus de 3 légendaires', runs.reduce((t, r) => t + cnt(r), 0) / runs.length > 3 && runs.reduce((t, r) => t + cnt(r), 0) / runs.length < 4.5);
+  ok('godpack : un paquet plus petit garde au plus n légendaires', __testHooks.godRarities(2).every(x => x === 'legendary'));
+  CFG.GODPACK_CHANCE = 1; CFG.SHINY_CHANCE = 0; let real = []; for (let i = 0; i < 12; i++) real.push(await draw(10, CFG.DROP, null, null, i % 2 ? alice : bob)); CFG.GODPACK_CHANCE = 0;
+  ok('vrais godpacks : au moins 3 légendaires et jamais en dessous d\'ultra rare', real.every(pk => pk.every(c => c.rarity === 'legendary' || c.rarity === 'ultra') && pk.filter(c => c.rarity === 'legendary').length >= 3), J(real.map(pk => pk.filter(c => c.rarity === 'legendary').length)));
+}
 CFG.DROP.legendary = saveL; CFG.GODPACK_CHANCE = saveG; CFG.SHINY_CHANCE = saveS;
 done();
