@@ -15,6 +15,7 @@ export const EV = {
   goldenLegend: 3, goldenUltra: 1.5, shinyMult: 3, themePrice: 90,
   albumChance: 0.08, huntChance: 0.007,                                        // part des paquets qui contiennent une carte de l'album éphémère / la carte recherchée du jour
   goldenPerDay: 38,                                                          // chance (en %) qu'une heure dorée tombe un jour donné
+  noUniquePerDay: 38,                                                        // même fréquence pour l'heure sans original (unicité des légendaires suspendue)
   weekly: { c: 400, p: 2, titleAfter: 4 },
   hunt: { first: { c: 500, p: 2 }, other: { c: 60 } },
   goal: { minPlayers: 10, perPlayer: 40, min: 150, c: 250, p: 2, minOpen: 10 }, // objectif = 40 paquets par joueur (150 au minimum) ; il faut avoir ouvert 10 paquets pour être récompensé
@@ -38,9 +39,10 @@ export const themeIdOf = (secret, idx) => {
 /** Points d'une action selon le thème. */
 export const seasonPts = (themeId, ev) => { let pts = 0; for (const [k, v] of Object.entries(ev)) pts += (SEASON_THEMES[themeId].pts[k] || 0) * (v || 0); return pts; };
 const ALWAYS_ON = new Set(['weekly', 'hunt', 'season']);
-const PUSH_KINDS = new Set(['golden', 'shiny', 'theme', 'album', 'goal']);   // les seuls événements annoncés par notification
+const PUSH_KINDS = new Set(['golden', 'nounique', 'shiny', 'theme', 'album', 'goal']);   // les seuls événements annoncés par notification
 export const KINDS = {
   golden: { name: 'Heure dorée', emoji: '✨', desc: `Pendant 1 heure, les légendaires sont ${EV.goldenLegend} fois plus fréquentes et les ultra rares ${EV.goldenUltra} fois dans tous les paquets.` },
+  nounique: { name: 'Heure sans original', emoji: '🔓', desc: 'Pendant 1 heure, les légendaires ne sont plus uniques : tu peux tirer une légendaire que quelqu\'un possède déjà. Ces cartes sont des cartes normales, échangeables.' },
   shiny: { name: 'Week-end shiny', emoji: '💎', desc: `Les légendaires ont ${EV.shinyMult} fois plus de chances d'être shiny, jusqu'à lundi 9 h.` },
   theme: { name: 'Festival des catégories', emoji: '🎪', desc: `Les paquets thématiques coûtent ${EV.themePrice} pièces et contiennent une légendaire garantie, jusqu'à lundi 9 h.` },
   album: { name: 'Album éphémère', emoji: '🎁', desc: 'Une série de cartes à compléter en 7 jours, avec récompense et titre exclusifs. Elles tombent bien plus souvent dans les paquets.' },
@@ -93,6 +95,11 @@ export function eventsIn(secret, t0, t1) {
       const hour = 12 + H(secret, 'goldh', ds) % 10, min = [0, 15, 30, 45][H(secret, 'goldm', ds) % 4], start = parisTs(ds, hour, min);
       push({ id: 'golden:' + ds, kind: 'golden', start, end: start + HOUR });
     }
+    if (H(secret, 'nouq', ds) % 100 < EV.noUniquePerDay) {                      // jamais en même temps que l'heure dorée : elle glisse juste après
+      const hour = 12 + H(secret, 'nouqh', ds) % 10, min = [0, 15, 30, 45][H(secret, 'nouqm', ds) % 4]; let start = parisTs(ds, hour, min);
+      if (H(secret, 'gold', ds) % 100 < EV.goldenPerDay) { const gs = parisTs(ds, 12 + H(secret, 'goldh', ds) % 10, [0, 15, 30, 45][H(secret, 'goldm', ds) % 4]); if (Math.abs(start - gs) < HOUR) start = gs + HOUR; }
+      push({ id: 'nounique:' + ds, kind: 'nounique', start, end: start + HOUR });
+    }
     push({ id: 'hunt:' + ds, kind: 'hunt', start: parisTs(ds, 0, 0), end: parisTs(dstr(n + 1), 0, 0), day: ds });
     if (dowOf(ds) === 1) {
       const w = weeklyOf(secret, ds);
@@ -127,9 +134,10 @@ export function eventsIn(secret, t0, t1) {
 export const activeIn = (list, t) => list.filter(e => e.start <= t && t < e.end);
 /** Effets des événements en cours sur les tirages. */
 export function modsFrom(active) {
-  const m = { legend: 1, ultra: 1, shiny: 1, themePrice: null, themeGuarantee: false, album: null };
+  const m = { legend: 1, ultra: 1, shiny: 1, themePrice: null, themeGuarantee: false, album: null, noUnique: false };
   for (const e of active) {
     if (e.kind === 'golden') { m.legend *= EV.goldenLegend; m.ultra *= EV.goldenUltra; }
+    if (e.kind === 'nounique') m.noUnique = true;
     if (e.kind === 'shiny') m.shiny *= EV.shinyMult;
     if (e.kind === 'theme') { m.themePrice = EV.themePrice; m.themeGuarantee = true; }
     if (e.kind === 'album') m.album = e.album;
@@ -201,12 +209,12 @@ export function installEvents(d) {
   /** Modificateurs de tirage pour UN paquet : effets continus (heure dorée, shiny, festival) + tirages au sort de l'album éphémère et de la carte recherchée. */
   async function drawMods(env, origin) {
     if (env.EVENTS === '0') return { legend: 1, ultra: 1, shiny: 1, themeGuarantee: false, themePrice: null, direct: false };
-    const m = await mods(env), out = { legend: m.legend, ultra: m.ultra, shiny: m.shiny, themeGuarantee: m.themeGuarantee, themePrice: m.themePrice };
+    const m = await mods(env), out = { legend: m.legend, ultra: m.ultra, shiny: m.shiny, themeGuarantee: m.themeGuarantee, themePrice: m.themePrice, noUnique: !!m.noUnique };
     try {
       if (m.album && Math.random() < EV.albumChance) { const a = (await eventAlbums(env, origin)).find(x => x.id === m.album); if (a) out.album = a.cards; }
       if (Math.random() < EV.huntChance) { const h = await huntCard(env, origin); if (h) out.hunt = h; }
     } catch (e) { console.error('drawMods', e); }
-    out.direct = out.legend > 1 || out.ultra > 1 || out.shiny > 1 || !!out.album || !!out.hunt;     // un paquet préparé d'avance ne peut pas en profiter : tirage direct
+    out.direct = out.legend > 1 || out.ultra > 1 || out.shiny > 1 || out.noUnique || !!out.album || !!out.hunt;     // un paquet préparé d'avance ne peut pas en profiter : tirage direct
     return out;
   }
 

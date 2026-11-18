@@ -18,10 +18,11 @@ ok('réglage coupé : aucune réservation', (await q('SELECT COUNT(*) n FROM leg
 await q("INSERT INTO settings (key, value) VALUES ('unique_on', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"); refreshUnique();
 CFG.SHINY_CHANCE = 0.3; packs = [];
 for (let i = 0; i < 30; i++) packs.push(...await draw(10, heavy, null, null, i % 2 ? alice : bob));
-const legs = packs.filter(c => c.rarity === 'legendary'), ids = legs.map(c => c.id);
+const albumIds = await __testHooks.albumCardIds(env, origin), baseId = c => (c.id >= SH ? c.id - SH : c.id), notAlbum = c => !albumIds.has(baseId(c));
+const allLegs = packs.filter(c => c.rarity === 'legendary'), legs = allLegs.filter(notAlbum), ids = legs.map(c => c.id);   // les cartes d'album ne sont jamais uniques : on les écarte de ces vérifications
 ok('30 paquets presque tous légendaires : aucune carte en double (normales et shiny)', ids.length > 200 && new Set(ids).size === ids.length, J([ids.length, new Set(ids).size]));
 ok('des shiny et des normales sont sorties, jamais deux fois la même version', legs.some(c => c.shiny) && legs.some(c => !c.shiny));
-ok('chaque légendaire tirée est réservée', (await q('SELECT COUNT(*) n FROM legend_taken'))[0].n === ids.length, J([(await q('SELECT COUNT(*) n FROM legend_taken'))[0].n, ids.length]));
+ok('chaque légendaire tirée est réservée (les cartes d\'album aussi, une seule fois)', (await q('SELECT COUNT(*) n FROM legend_taken'))[0].n === new Set(allLegs.map(c => c.id)).size, J([(await q('SELECT COUNT(*) n FROM legend_taken'))[0].n, new Set(allLegs.map(c => c.id)).size]));
 // la version normale et la version shiny du même article peuvent exister toutes les deux (2 exemplaires au total)
 const both = legs.filter(c => c.shiny).filter(c => legs.some(d => !d.shiny && d.id === c.id - SH)); ok('une version normale et une version shiny du même article sont deux cartes distinctes', legs.every(c => new Set(legs.filter(d => d.id === c.id)).size === 1));
 // 3) sans identifiant de joueur : comportement d'avant (pas de réservation)
@@ -45,7 +46,7 @@ await releaseLegends(env, [tl[1]]); ok('une carte non donnée retourne dans la r
 await q('DELETE FROM legend_taken'); await q('DELETE FROM inventory WHERE rar = 5'); CFG.DROP.legendary = 3000;   // réserve ET collections vidées : sinon une légendaire gardée d'un test précédent peut ressortir (le tirage ne la voit plus réservée)
  await q('UPDATE users SET pack_stock = 40, coins = 10000');
 for (let i = 0; i < 12; i++) { await call(A, 'POST', '/api/packs/open', {}); await call(B, 'POST', '/api/packs/buy', {}); } await settle();
-const inv = await q('SELECT card_id, COUNT(*) n, SUM(qty) q FROM inventory WHERE rar = 5 GROUP BY card_id');
+const albumIds2 = await __testHooks.albumCardIds(env, origin), inv = (await q('SELECT card_id, COUNT(*) n, SUM(qty) q FROM inventory WHERE rar = 5 GROUP BY card_id')).filter(x => !albumIds2.has(+x.card_id >= SH ? +x.card_id - SH : +x.card_id));   // les cartes d'album ne sont jamais uniques
 ok('vrais paquets : chaque légendaire existe une seule fois', inv.length > 20 && inv.every(x => +x.n === 1 && +x.q === 1), J([inv.length, inv.filter(x => +x.n > 1 || +x.q > 1).length]));
 ok('la réserve correspond aux légendaires en collection (ou préparées)', +(await q('SELECT COUNT(*) n FROM legend_taken'))[0].n >= inv.length);
 // 8) les joueurs simulés n'enchérissent jamais sur une légendaire
@@ -74,5 +75,22 @@ ok('aucun joueur simulé n\'enchérit sur une légendaire', (await q('SELECT COU
   await q('UPDATE users SET is_admin = 0 WHERE id <> ?', alice); [s] = await call(B, 'GET', '/api/admin/economy'); ok('économie : refusée à un joueur non administrateur', s === 403, s);
   [s, r] = await call(A, 'GET', '/api/admin/economy'); ok('économie : chiffres pour l\'administrateur', s === 200 && r.players >= 2 && r.coins > 0 && r.legendaries.existing > 0 && Array.isArray(r.top), J([s, r]));
   ok('économie : répartition des collections par rareté et par joueur', r.collections?.byRarity?.length > 0 && r.collections.cardsPerPlayer.max >= r.collections.cardsPerPlayer.median && r.collections.cardsPerPlayer.median > 0, J(r.collections)); }
+// 6) cartes d'album : jamais uniques ; heure sans original : unicité suspendue
+{ await q('DELETE FROM legend_taken'); CFG.SHINY_CHANCE = 0; CFG.GODPACK_CHANCE = 0;
+  const albumCard = { r: 256 };   // Adolf Hitler, album « dictateurs »
+  const a1 = await draw(10, heavy, { cards: [albumCard] }, null, alice), a2 = await draw(10, heavy, { cards: [albumCard] }, null, bob), a3 = await draw(10, heavy, { cards: [albumCard] }, null, alice);
+  const ac = [...a1, ...a2, ...a3].filter(c => c.rarity === 'legendary' && c.id === 1696582);
+  ok('carte d\'un album : tirable plusieurs fois, par plusieurs joueurs (jamais unique)', ac.length === 3, J(ac.length));
+  await q('DELETE FROM legend_taken'); await q("INSERT INTO legend_taken (card_id, ts) VALUES (?, 1), (?, 1)", 20446, 20446 + SH);
+  const normal = { cards: [{ r: 1 }] }, n1 = await draw(10, heavy, normal, null, alice), n2 = await draw(10, heavy, normal, null, bob);
+  const nl = [...n1, ...n2].filter(c => c.rarity === 'legendary');
+  ok('carte hors album : toujours unique (une seule fois, le reste devient ultra)', nl.length === 1, J(nl.length));
+  const free = await draw(10, heavy, normal, { noUnique: true }, alice), fl = free.filter(c => c.rarity === 'legendary');
+  ok('heure sans original : la même carte légendaire sort de nouveau', fl.length === 1 && fl[0].id === nl[0].id, J(fl.length));
+  ok('heure sans original : ce sont des cartes normales (aucune marque), rien ne change pour la réserve', (await q('SELECT COUNT(*) n FROM legend_taken WHERE card_id = ?', nl[0].id))[0].n === 1);
+  const after = await draw(10, heavy, normal, null, bob); ok('après l\'heure, l\'unicité reprend', after.filter(c => c.rarity === 'legendary').length === 0, J(after.filter(c => c.rarity === 'legendary').length));
+  const ids = await __testHooks.albumCardIds(env, origin);
+  ok('toutes les cartes des albums sont reconnues comme non uniques (42 albums × 8 cartes)', ids.has(1696582) && ids.size >= 300, ids.size);
+}
 CFG.DROP.legendary = saveL; CFG.GODPACK_CHANCE = saveG; CFG.SHINY_CHANCE = saveS;
 done();

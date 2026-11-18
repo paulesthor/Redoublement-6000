@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.98';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.99';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -3145,9 +3145,9 @@ function nuTiles() {
 }
 /** Avis qui restent dans la barre du haut (états du compte ou du jeu) ; les autres événements sont listés dans « En ce moment ». */
 const NEV_SYSTEM = new Set(['freeze', 'reset', 'seasonend']);
-const NEV_ICON = { golden: 'coin', shiny: 'spark', theme: 'packs', album: 'album', goal: 'friends', weekly: 'medal', hunt: 'search', season: 'trophy' };
+const NEV_ICON = { golden: 'coin', nounique: 'spark', shiny: 'spark', theme: 'packs', album: 'album', goal: 'friends', weekly: 'medal', hunt: 'search', season: 'trophy' };
 const NEV_GO = { album: 'albums', theme: 'themepacks' };
-const NEV_HINT = { golden: 'Légendaires plus fréquentes', shiny: 'Plus de chances d\'être shiny', theme: 'Paquets thématiques à prix réduit', album: 'Série à compléter en 7 jours', goal: 'Objectif collectif : tous ensemble', weekly: 'Défi de la semaine', hunt: 'Carte recherchée du jour', season: 'Saison en cours' };
+const NEV_HINT = { golden: 'Légendaires plus fréquentes', nounique: 'Légendaires déjà prises : tirables à nouveau', shiny: 'Plus de chances d\'être shiny', theme: 'Paquets thématiques à prix réduit', album: 'Série à compléter en 7 jours', goal: 'Objectif collectif : tous ensemble', weekly: 'Défi de la semaine', hunt: 'Carte recherchée du jour', season: 'Saison en cours' };
 /** Événements du jeu en cours (heure dorée, album éphémère…) : une ligne chacun, dans la même liste que les autres blocs. */
 const nuEventRows = () => (me.ev || []).filter(e => !NEV_SYSTEM.has(e.kind)).map(e => nuRow(NEV_GO[e.kind] || 'events', NEV_ICON[e.kind] || 'spark', esc(frTypo(stripEmoji(e.name))), NEV_HINT[e.kind] || 'Événement en cours', 0, evLeft(e.end - Date.now())));
 function nuEvents() {

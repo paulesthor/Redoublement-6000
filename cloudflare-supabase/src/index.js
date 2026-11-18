@@ -86,7 +86,7 @@ async function reserveCounts(env) {
 }
 async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null, uid = null) {
   const { ranges } = await getMeta(env, origin);
-  const uniq = !!uid && await uniqueOn(env);                                   // légendaires uniques : chaque légendaire tirée est réservée (une seule par article, une seule shiny)
+  const uniq = !!uid && await uniqueOn(env), albumIds = uniq ? await albumCardIds(env, origin) : new Set();                                   // légendaires uniques : chaque légendaire tirée est réservée (une seule par article, une seule shiny)
   if (ev && (ev.legend > 1 || ev.ultra > 1)) w = { ...w, legendary: w.legendary * ev.legend, ultra: w.ultra * ev.ultra };     // heure dorée
   if (theme) w = { ...w, legendary: w.legendary * CFG.THEME_LEGEND_MULT };               // paquet thématique : plus de légendaires, toutes de la catégorie
   const god = !theme && n === PACK_SIZE && Math.random() < CFG.GODPACK_CHANCE * (w._god ?? 1);           // très rare : tout le paquet est ultra rare ou légendaire
@@ -112,8 +112,9 @@ async function drawCards(env, origin, n, w = CFG.DROP, theme = null, ev = null, 
   /** Réserve une légendaire précise (shiny avec la chance habituelle, sinon normale) : { rank, entry, shiny } ou null si elle existe déjà. */
   const legendOf = async rank => {
     const e = await entryAt(env, origin, rank), shinyRoll = Math.random() < CFG.SHINY_CHANCE * (ev?.shiny || 1);
-    if (shinyRoll && await claimLegend(env, e[0] + SHINY_OFFSET)) return { rank, entry: e, shiny: 1 };
-    return (await claimLegend(env, e[0])) ? { rank, entry: e, shiny: 0 } : null;
+    const free = !!ev?.noUnique || albumIds.has(e[0]);                          // carte d'un album, ou heure sans original : la carte peut exister en plusieurs exemplaires (on la réserve quand même si elle est libre)
+    if (shinyRoll && (await claimLegend(env, e[0] + SHINY_OFFSET) || free)) return { rank, entry: e, shiny: 1 };
+    return (await claimLegend(env, e[0]) || free) ? { rank, entry: e, shiny: 0 } : null;
   };
   const fixed = new Map();
   if (uniq) for (let i = 0; i < rarities.length; i++) {
@@ -1096,7 +1097,7 @@ const events = installEvents({ route, bad, one, all, run, st, notify, ensureGame
   albumGroups: (env, origin) => albumList(env, origin), eventAlbums: (env, origin) => eventAlbums(env, origin) });
 
 // ---------- albums thématiques : séries de cartes légendaires (dictateurs, footballeurs…), récompense à la complétion ----------
-export const __testHooks = { resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, get market() { return market; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
+export const __testHooks = { albumCardIds: (env, o) => albumCardIds(env, o), resetAlbums: () => { albumsCache = null; }, get sanctions() { return sanctions; }, get events() { return events; }, get market() { return market; }, drawCards };   // utilisé par les tests pour changer de fichier d'albums
 let albumsCache = null, albumImgs = { t: 0, m: new Map() };
 const albumList = async (env, origin) => { try { return (albumsCache ??= (await assetJson(env, origin, '/catalog/albums.json')).albums); } catch { return []; } };   // pas encore de fichier d'albums : liste vide
 const ALBUM_COINS = 5000;                                    // pièces pour un album complété (rien d'autre : ni paquets, ni shiny)
@@ -1104,6 +1105,13 @@ const albumReward = a => a.ev ? events.eventAlbumReward(a) : ({ c: ALBUM_COINS, 
 /** Albums éphémères (cartes + dates), lus une fois dans le catalogue statique. */
 let eventAlbumsCache = null;
 const eventAlbums = async (env, origin) => { try { return (eventAlbumsCache ??= (await assetJson(env, origin, '/catalog/albums-events.json')).albums); } catch { return []; } };
+/** Identifiants de toutes les cartes qui font partie d'un album (permanents et éphémères) : elles ne sont jamais uniques. */
+let albumIdsCache = { a: null, e: null, set: new Set() };
+async function albumCardIds(env, origin) {
+  const [a, e] = await Promise.all([albumList(env, origin), eventAlbums(env, origin)]);
+  if (albumIdsCache.a !== a || albumIdsCache.e !== e) albumIdsCache = { a, e, set: new Set([...a, ...e].flatMap(x => (x.cards || []).map(c => c.id))) };
+  return albumIdsCache.set;
+}
 /** Albums affichés et récupérables : les albums permanents + l'album éphémère du moment (avec sa date de fin). */
 async function albumsAll(env, origin) {
   const base = await albumList(env, origin), m = await events.mods(env);
