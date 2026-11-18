@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.91';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.92';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -2040,7 +2040,7 @@ views.settings = async v => {
     ${!me.admin && !eventOn() && perks.includes('anim_urss') ? `<div class="setgrp"><h3>Colis du Parti (récompense du Plan)</h3><div class="panel">${sw('st-ussr', 'Colis et animation URSS', 'Garde le colis du Parti et son animation d\'ouverture dans le jeu normal', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Voir le colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Voir le dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Voir la matriochka</button></div></div></div>` : ''}
-    ${me.admin ? `<div class="setgrp"><h3>Interface (aperçu administrateur)</h3><div class="panel">${sw('st-nui', 'Nouvelle interface', 'Barre à 5 entrées, accueil « Aujourd\'hui », menu en liste. Visible par toi seul.', prefOf('wm_nui') === '1')}</div></div>` : ''}
+    ${me.admin ? `<div class="setgrp"><h3>Interface (administrateur)</h3><div class="panel">${sw('st-nui', 'Nouvelle interface', 'Décoche pour revenir à l\'ancienne barre. Les autres joueurs n\'ont pas ce choix.', prefOf('wm_nui') !== '0')}</div></div>` : ''}
     ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussrui', 'Interface URSS complète', 'Menus, textes, rarités en grades, bandeau Pravda, décor rouge', pref('wm_ussr_ui', '0') === '1')}${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Tester colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Tester dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Tester matriochka</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-iconsheet" style="flex:1">Aperçu : écran « nouvelle icône »</button></div><div class="row" style="margin-top:10px"><button class="plain" id="st-cm-on" style="flex:1">Ouvrir pour moi seul (test réel)</button><button class="plain" id="st-cm-off" style="flex:1">Fermer</button><button class="plain" id="st-cm-end" style="flex:1">Clore + gagnant</button><button class="plain" id="st-cm-souv" style="flex:1">Clore les souvenirs</button></div></div></div>` : ''}
@@ -3035,19 +3035,18 @@ function seasonReveal(then, force = false) {
   return true;
 }
 /** Bilan de la saison 0 + ouverture du Pack Fondateur (une seule fois, juste après la remise à zéro). */
-/** Écran de nouveautés (une seule fois par joueur) : le fil d'actualité, idée de Justin. */
+/** Écran de nouveautés (une seule fois par joueur) : la nouvelle interface. */
 function newsScreen(then) {
-  let seen = true; try { seen = localStorage.getItem('wm_news_feed') === '1'; } catch { /* stockage indisponible : on n'insiste pas */ }
-  if (seen || !me || me.maintenance || $('#modal').hidden === false) return false;
+  let seen = true; try { seen = localStorage.getItem('wm_news_nui') === '1'; } catch { /* stockage indisponible : on n'insiste pas */ }
+  if (seen || !me || me.maintenance || $('#modal').hidden === false || ussrUiOn()) return false;
   const m = $('#modal'); m.hidden = false;
-  m.innerHTML = `<div class="recapsheet" role="dialog" aria-label="Nouveauté : le fil"><p class="rsx">📸</p><h2>Nouveau : le Fil !</h2>
-    <p>Chaque <b>légendaire</b> tirée par un joueur devient une publication, comme sur un réseau social : tu vois la carte, qui l'a tirée, et tu peux mettre un <b>❤ J'aime</b> ou laisser un <b>commentaire</b>.</p>
-    <p class="mut">Astuce : touche deux fois la carte pour liker. Le Fil est dans la barre du bas.</p>
-    <p style="text-align:center;margin:14px 0"><span style="display:inline-block;background:#ffffff12;border:1px solid var(--line2);border-radius:14px;padding:8px 14px;font-size:14px">💡 Une idée de <b>Justin</b> — merci à lui !</span></p>
-    <div class="row"><button id="nw-go" style="flex:1">Voir le Fil</button><button class="plain" id="nw-x" style="flex:1">Plus tard</button></div></div>`;
-  const close = () => { try { localStorage.setItem('wm_news_feed', '1'); } catch { /* ignoré */ } m.hidden = true; m.innerHTML = ''; };
-  $('#nw-go').onclick = () => { close(); tab = 'feed'; render(); };
-  $('#nw-x').onclick = () => { close(); then?.(); };
+  m.innerHTML = `<div class="recapsheet" role="dialog" aria-label="Nouveauté : la nouvelle interface"><h2>Nouvelle interface</h2>
+    <p>L'appli est rangée autrement : une barre à <b>5 entrées</b> (Accueil, Collection, Jouer, Marché, Menu), un accueil « Aujourd'hui » avec le quiz, les quêtes et la banque, et un seul onglet <b>Personnaliser</b> pour les titres, les badges et les thèmes.</p>
+    <p class="mut">Tout ce que tu connaissais est toujours là : si tu cherches un écran, regarde dans le Menu.</p>
+    <p style="text-align:center;margin:14px 0"><span style="display:inline-block;background:#ffffff12;border:1px solid var(--line2);border-radius:14px;padding:8px 14px;font-size:14px">Pas content ? Ce n'est pas le problème de Justine. Les réclamations sont traitées comme les pétitions du Goulag : avec toute l'attention qu'elles méritent.</span></p>
+    <div class="row"><button id="nw-go" style="flex:1">Compris</button></div></div>`;
+  const close = () => { try { localStorage.setItem('wm_news_nui', '1'); } catch { /* ignoré */ } m.hidden = true; m.innerHTML = ''; then?.(); };
+  $('#nw-go').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   return true;
 }
 function recapScreen(then) {
@@ -3088,7 +3087,7 @@ function iconSheet() {
 /** Menu « Plus » : tous les écrans qui ne tiennent pas dans la barre du bas, rangés par thème. D'autres écrans (quêtes, boutique…) viendront s'y ajouter. */
 // ---------- nouvelle interface (aperçu réservé à l'administrateur : réglage « Nouvelle interface ») ----------
 // Cinq entrées : Accueil · Collection · Jouer · Marché · Menu. Les anciens écrans restent les mêmes ; seul le rangement change.
-const nuiOn = () => !!me?.admin && prefOf('wm_nui') === '1' && !ussrUiOn();
+const nuiOn = () => !ussrUiOn() && !(me?.admin && prefOf('wm_nui') === '0');   // pour tout le monde ; seul l'administrateur peut revenir à l'ancienne interface
 /** Entrée de la barre du bas qui s'allume selon l'écran affiché. */
 const NGROUP = {
   packs: 'packs', commustart: 'packs',

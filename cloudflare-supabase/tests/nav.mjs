@@ -65,7 +65,7 @@ ok('aucune erreur JavaScript (ordinateur)', p.errs.length === 0, J(p.errs));
 console.log('— joueur ordinaire (non admin)');
 {
   const c = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
-  await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_push_ask', '1'); if (!localStorage.getItem('wm_seen_ver')) localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, B);
+  await c.addInitScript(tok => { localStorage.setItem('wm_token', tok); localStorage.setItem('wm_news_feed', '1'); localStorage.setItem('wm_news_nui', '1'); if (localStorage.getItem('wm_nui') === null) localStorage.setItem('wm_nui', '0'); localStorage.setItem('wm_push_ask', '1'); if (!localStorage.getItem('wm_seen_ver')) localStorage.setItem('wm_seen_ver', '99'); window.WebSocket = class { constructor() { this.readyState = 1; setTimeout(() => this.onopen?.(), 0); } send() {} close() {} }; }, B);
   const q = await c.newPage(); q.errs = []; q.on('pageerror', e => q.errs.push(e.message));
   await q.goto('http://localhost:8767/'); await q.waitForSelector('#app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(900);
   await q.evaluate(() => { const m = document.querySelector('#modal'); m.hidden = true; m.innerHTML = ''; });   // récompense du jour
