@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '11.02';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '11.03';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1424,32 +1424,7 @@ views.admin = async v => {
       };
       await draw('');
     } else if (adminTab === 'noel') {
-      const day = prefOf('wm_noel_day') || '', n = await api('/noel' + (day !== '' ? '?day=' + day : '')), hd = await api('/noel/atel/heads-admin');
-      box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Noël : calendrier de l'avent</h3>
-        <p class="mut" style="margin:0 0 10px;font-size:13px">État : <b>${n.on ? (n.scope === 'all' ? 'ouvert à tous' : 'ouvert pour toi seul') : 'fermé'}</b> · du 1er au 24 décembre, fin le 25 à 18 h. ${n.opened} porte${n.opened > 1 ? 's' : ''} ouverte${n.opened > 1 ? 's' : ''} par ton compte.</p>
-        <div class="row"><button class="plain" id="nl-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="nl-all" style="flex:1">Lancer pour tous</button></div>
-        <button class="plain" id="nl-off" style="width:100%;margin-top:8px" ${n.on ? '' : 'disabled'}>Fermer l'événement</button>
-        <label class="fld" style="margin-top:12px">Aperçu : simuler le jour du calendrier<input id="nl-day" type="number" min="0" max="24" placeholder="vide = vraie date" value="${esc(day)}"></label>
-        <p class="mut" style="margin:0 0 8px;font-size:12px">Réservé à toi : les joueurs ont toujours la vraie date. Sert à tester les portes avant le 1er décembre.</p>
-        <button id="nl-see" style="width:100%">Voir le calendrier</button></div>
-        <div class="panel" style="margin-top:12px"><h3 style="margin:0 0 6px">Atelier des lutins : les deux têtes</h3>
-        <p class="mut" style="margin:0 0 10px;font-size:12.5px">Deux photos recadrées sont déjà enregistrées. Elles ne s'affichent que si tu confirmes que les deux joueurs sont d'accord ; tu peux les retirer à tout moment en décochant.</p>
-        <label class="switch"><span>Affichage des têtes<small>Les deux joueurs ont donné leur accord</small></span><input type="checkbox" id="nl-hok" ${hd.ok ? 'checked' : ''}></label>
-        <div class="row" style="margin-top:8px"><label class="plain" style="flex:1;text-align:center;cursor:pointer">Remplacer la tête 1<input type="file" accept="image/*" id="nl-h0" hidden></label><label class="plain" style="flex:1;text-align:center;cursor:pointer">Remplacer la tête 2<input type="file" accept="image/*" id="nl-h1" hidden></label></div>
-        <div class="row" style="margin-top:8px"><button class="plain" id="nl-hr0" style="flex:1" ${hd.custom[0] ? '' : 'disabled'}>Revenir à l'origine (1)</button><button class="plain" id="nl-hr1" style="flex:1" ${hd.custom[1] ? '' : 'disabled'}>Revenir à l'origine (2)</button></div></div>`;
-      $('#nl-hok').onchange = safe(async e => { await api('/noel/atel/heads-ok', { ok: e.target.checked }); toast(e.target.checked ? 'Têtes affichées' : 'Têtes masquées', 'ok'); });
-      for (const k of [0, 1]) {
-        $('#nl-hr' + k).onclick = safe(async () => { await api('/noel/atel/head', { slot: k, data: null }); toast('Tête d\'origine rétablie', 'ok'); adminBody(); });
-        $('#nl-h' + k).onchange = safe(async e => { const f = e.target.files[0]; if (!f) return; const img = await new Promise((ok, no) => { const im = new Image(), u = URL.createObjectURL(f); im.onload = () => ok(im); im.onerror = () => no(new Error('Image illisible')); im.src = u; }); const s = Math.min(img.width, img.height), c = document.createElement('canvas'); c.width = c.height = 256; c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 256, 256); await api('/noel/atel/head', { slot: k, data: c.toDataURL('image/jpeg', 0.85).split(',')[1] }); toast('Tête enregistrée', 'ok'); adminBody(); });
-      }
-      const set = async (on, scope, msg) => { await api('/noel/set', { on, scope }); toast(msg, 'ok'); adminBody(); };
-      $('#nl-me').onclick = safe(() => set(true, 'admin', 'Noël ouvert pour toi seul'));
-      $('#nl-all').onclick = safe(async () => { if (!(await ask('Lancer Noël pour TOUS les joueurs ?', [], { text: 'Le calendrier apparaît sur leur accueil ; les portes s\'ouvrent à partir du 1er décembre.', ok: 'Lancer' }))) return; await set(true, 'all', 'Noël lancé pour tous'); });
-      $('#nl-off').onclick = safe(async () => { if (!(await ask('Fermer l\'événement de Noël ?', [], { ok: 'Fermer' }))) return; await set(false, 'admin', 'Noël fermé'); });
-      $('#nl-day').onchange = e => { const v = e.target.value.trim(); try { v === '' ? localStorage.removeItem('wm_noel_day') : localStorage.setItem('wm_noel_day', String(Math.max(0, Math.min(24, +v || 0)))); } catch { /* stockage indisponible */ } };
-      $('#nl-see').onclick = () => { tab = 'noelcal'; render(); };
-      box.insertAdjacentHTML('beforeend', '<div id="nc-admin" style="margin-top:12px"></div>');
-      try { if (!window.NoelCards) await loadScript('/noelcards.js'); await window.NoelCards.admin($('#nc-admin'), ncCtx()); } catch (e) { $('#nc-admin').innerHTML = '<p class="mut">Cartes de Noël indisponibles : ' + esc(e.message) + '</p>'; }
+      await noelAdminPanels(box, adminBody);
     } else if (adminTab === 'event') {
       const c = await loadCommu(true), st = await api('/commu/standings').catch(() => ({ players: 0, pot: 0 }));
       const state = c.done ? 'Terminé' : c.paused ? 'EN PAUSE' : c.on ? (c.scope === 'all' ? 'En cours, ouvert à tous' : 'Ouvert pour toi seul (test)') : 'Fermé';
@@ -2050,6 +2025,7 @@ views.settings = async v => {
     ${!me.admin && !eventOn() && perks.includes('anim_urss') ? `<div class="setgrp"><h3>Colis du Parti (récompense du Plan)</h3><div class="panel">${sw('st-ussr', 'Colis et animation URSS', 'Garde le colis du Parti et son animation d\'ouverture dans le jeu normal', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <div class="row" style="margin-top:10px"><button class="plain" data-ussr-test="rare" style="flex:1">Voir le colis</button><button class="plain" data-ussr-test="ultra" style="flex:1">Voir le dossier</button><button class="plain" data-ussr-test="legendary" style="flex:1">Voir la matriochka</button></div></div></div>` : ''}
+    ${me.admin ? `<div class="setgrp"><h3>Onglet Noël (test)</h3><div class="panel">${sw('st-noeltab', 'Onglet Noël', 'Ajoute « Noël » au menu : calendrier, cartes, hotte, photos et réglages de l\'événement. Visible par toi seul.', prefOf('wm_noel_tab') === '1')}</div></div>` : ''}
     ${me.admin ? `<div class="setgrp"><h3>Interface (administrateur)</h3><div class="panel">${sw('st-nui', 'Nouvelle interface', 'Décoche pour revenir à l\'ancienne barre. Les autres joueurs n\'ont pas ce choix.', prefOf('wm_nui_off') !== '1')}</div></div>` : ''}
     ${me.admin ? `<div class="setgrp"><h3>Ambiance URSS (aperçu admin)</h3><div class="panel">${sw('st-ussrui', 'Interface URSS complète', 'Menus, textes, rarités en grades, bandeau Pravda, décor rouge', pref('wm_ussr_ui', '0') === '1')}${sw('st-ussr', 'Ouvertures de paquet URSS', 'Colis du Parti, dossier secret, matriochka, grades militaires', pref('wm_ussr', '0') === '1')}
       <label class="fld" style="margin-top:10px">Forme du paquet<select id="st-ussrshape">${[['auto', 'Automatique (selon la meilleure carte)'], ['colis', 'Toujours le colis'], ['dossier', 'Colis puis dossier secret'], ['matriochka', 'Colis, dossier puis matriochka']].map(([k, l]) => `<option value="${k}" ${pref('wm_ussr_shape', 'auto') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -2072,6 +2048,7 @@ views.settings = async v => {
   $('#st-cm-souv')?.addEventListener('click', safe(async () => { const r = await api('/commu/souvenirs/close', {}); toast(`Choix clos : ${r.given} souvenir${r.given > 1 ? 's' : ''} attribué${r.given > 1 ? 's' : ''} d'office`, 'ok'); render(); }));
   $('#st-cm-end')?.addEventListener('click', safe(async () => { const r = await api('/commu/finish', {}); await loadCommu(true); await syncUssrUi(); toast(r.winner ? `Gagnant : ${r.winner.name} (${fmt(r.winner.prize)} wikibidou)` : 'Événement clos, aucun gagnant', 'ok'); render(); }));
   $('#st-ussr')?.addEventListener('change', e => setPref('wm_ussr', e.target.checked ? '1' : '0'));
+  $('#st-noeltab')?.addEventListener('change', e => { setPref('wm_noel_tab', e.target.checked ? '1' : '0'); toast(e.target.checked ? 'Onglet Noël ajouté au menu' : 'Onglet Noël retiré', 'ok'); render(); });
   $('#st-nui')?.addEventListener('change', e => { setPref('wm_nui_off', e.target.checked ? '0' : '1'); syncNui(); render(); });
   $('#st-ussrshape')?.addEventListener('change', e => setPref('wm_ussr_shape', e.target.value));
   v.querySelectorAll('[data-ussr-test]').forEach(b => b.onclick = safe(async () => { await previewUssr(b.dataset.ussrTest); render(); }));
@@ -2727,6 +2704,51 @@ views.commustart = async v => {
 // ---------- Noël : calendrier de l'avent ----------
 const noelBanner = () => me?.noel ? '<button class="commu-banner noel-banner" id="noel-open"><b>Calendrier de l\'Avent</b><span>Le Père Noël a une porte pour toi. Il en a aussi pour le reste de l\'équipe.</span></button>' : '';
 const NOEL_MONTH = 'déc.';
+/** Panneaux d'administration de Noël (état, aperçu, Atelier des lutins, cartes, photos) : écran Administration et onglet Noël. */
+async function noelAdminPanels(box, again) {
+  const day = prefOf('wm_noel_day') || '', n = await api('/noel' + (day !== '' ? '?day=' + day : '')), hd = await api('/noel/atel/heads-admin');
+  box.innerHTML = `<div class="panel"><h3 style="margin:0 0 6px">Noël : calendrier de l'avent</h3>
+    <p class="mut" style="margin:0 0 10px;font-size:13px">État : <b>${n.on ? (n.scope === 'all' ? 'ouvert à tous' : 'ouvert pour toi seul') : 'fermé'}</b> · du 1er au 24 décembre, fin le 25 à 18 h. ${n.opened} porte${n.opened > 1 ? 's' : ''} ouverte${n.opened > 1 ? 's' : ''} par ton compte.</p>
+    <div class="row"><button class="plain" id="nl-me" style="flex:1">Ouvrir pour moi seul</button><button class="plain" id="nl-all" style="flex:1">Lancer pour tous</button></div>
+    <button class="plain" id="nl-off" style="width:100%;margin-top:8px" ${n.on ? '' : 'disabled'}>Fermer l'événement</button>
+    <label class="fld" style="margin-top:12px">Aperçu : simuler le jour du calendrier<input id="nl-day" type="number" min="0" max="24" placeholder="vide = vraie date" value="${esc(day)}"></label>
+    <p class="mut" style="margin:0 0 8px;font-size:12px">Réservé à toi : les joueurs ont toujours la vraie date. Sert à tester les portes avant le 1er décembre.</p>
+    <button id="nl-see" style="width:100%">Voir le calendrier</button></div>
+    <div class="panel" style="margin-top:12px"><h3 style="margin:0 0 6px">Atelier des lutins : les deux têtes</h3>
+    <p class="mut" style="margin:0 0 10px;font-size:12.5px">Deux photos recadrées sont déjà enregistrées. Elles ne s'affichent que si tu confirmes que les deux joueurs sont d'accord ; tu peux les retirer à tout moment en décochant.</p>
+    <label class="switch"><span>Affichage des têtes<small>Les deux joueurs ont donné leur accord</small></span><input type="checkbox" id="nl-hok" ${hd.ok ? 'checked' : ''}></label>
+    <div class="row" style="margin-top:8px"><label class="plain" style="flex:1;text-align:center;cursor:pointer">Remplacer la tête 1<input type="file" accept="image/*" id="nl-h0" hidden></label><label class="plain" style="flex:1;text-align:center;cursor:pointer">Remplacer la tête 2<input type="file" accept="image/*" id="nl-h1" hidden></label></div>
+    <div class="row" style="margin-top:8px"><button class="plain" id="nl-hr0" style="flex:1" ${hd.custom[0] ? '' : 'disabled'}>Revenir à l'origine (1)</button><button class="plain" id="nl-hr1" style="flex:1" ${hd.custom[1] ? '' : 'disabled'}>Revenir à l'origine (2)</button></div></div>`;
+  $('#nl-hok').onchange = safe(async e => { await api('/noel/atel/heads-ok', { ok: e.target.checked }); toast(e.target.checked ? 'Têtes affichées' : 'Têtes masquées', 'ok'); });
+  for (const k of [0, 1]) {
+    $('#nl-hr' + k).onclick = safe(async () => { await api('/noel/atel/head', { slot: k, data: null }); toast('Tête d\'origine rétablie', 'ok'); again(); });
+    $('#nl-h' + k).onchange = safe(async e => { const f = e.target.files[0]; if (!f) return; const img = await new Promise((ok, no) => { const im = new Image(), u = URL.createObjectURL(f); im.onload = () => ok(im); im.onerror = () => no(new Error('Image illisible')); im.src = u; }); const s = Math.min(img.width, img.height), c = document.createElement('canvas'); c.width = c.height = 256; c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 256, 256); await api('/noel/atel/head', { slot: k, data: c.toDataURL('image/jpeg', 0.85).split(',')[1] }); toast('Tête enregistrée', 'ok'); again(); });
+  }
+  const set = async (on, scope, msg) => { await api('/noel/set', { on, scope }); toast(msg, 'ok'); again(); };
+  $('#nl-me').onclick = safe(() => set(true, 'admin', 'Noël ouvert pour toi seul'));
+  $('#nl-all').onclick = safe(async () => { if (!(await ask('Lancer Noël pour TOUS les joueurs ?', [], { text: 'Le calendrier apparaît sur leur accueil ; les portes s\'ouvrent à partir du 1er décembre.', ok: 'Lancer' }))) return; await set(true, 'all', 'Noël lancé pour tous'); });
+  $('#nl-off').onclick = safe(async () => { if (!(await ask('Fermer l\'événement de Noël ?', [], { ok: 'Fermer' }))) return; await set(false, 'admin', 'Noël fermé'); });
+  $('#nl-day').onchange = e => { const v = e.target.value.trim(); try { v === '' ? localStorage.removeItem('wm_noel_day') : localStorage.setItem('wm_noel_day', String(Math.max(0, Math.min(24, +v || 0)))); } catch { /* stockage indisponible */ } };
+  $('#nl-see').onclick = () => { tab = 'noelcal'; render(); };
+  box.insertAdjacentHTML('beforeend', '<div id="nc-admin" style="margin-top:12px"></div>');
+  try { if (!window.NoelCards) await loadScript('/noelcards.js'); await window.NoelCards.admin($('#nc-admin'), ncCtx()); } catch (e) { $('#nc-admin').innerHTML = '<p class="mut">Cartes de Noël indisponibles : ' + esc(e.message) + '</p>'; }
+}
+/** Onglet Noël (administrateur, activé dans Réglages) : tout l'événement au même endroit. */
+const noelTab = () => !!me?.admin && prefOf('wm_noel_tab') === '1';
+views.noelhub = async v => {
+  if (!me.admin) { tab = 'packs'; return render(); }
+  let n; try { n = await api('/noel'); } catch (e) { toast(e.message); n = { on: false }; }
+  v.innerHTML = `${pageHead('Noël', 'Calendrier, cartes, hotte, photos et réglages, au même endroit')}
+    <div class="panel"><h3 style="margin:0 0 6px">Accès rapide</h3>
+      <p class="mut" style="margin:0 0 10px;font-size:13px">${n.on ? (n.scope === 'all' ? 'Événement ouvert à tous les joueurs.' : 'Événement ouvert pour toi seul : les joueurs ne voient rien.') : 'Événement fermé : ouvre-le pour toi seul plus bas pour tout tester.'}</p>
+      <div class="row" style="align-items:stretch"><button id="nh-cal" style="flex:1" ${n.on ? '' : 'disabled'}>Calendrier de l'Avent</button><button class="plain" id="nh-alb" style="flex:1" ${n.on ? '' : 'disabled'}>Album de Noël</button></div></div>
+    <div id="nl-extra"></div>
+    <div id="nh-admin" style="margin-top:12px"></div>`;
+  $('#nh-cal').onclick = () => { tab = 'noelcal'; render(); };
+  $('#nh-alb').onclick = () => { tab = 'albums'; render(); };
+  (async () => { try { if (!window.NoelCards) await loadScript('/noelcards.js'); if (n.on) await window.NoelCards.mount($('#nl-extra'), ncCtx()); } catch { /* facultatif */ } })();
+  try { await noelAdminPanels($('#nh-admin'), () => render()); } catch (e) { $('#nh-admin').innerHTML = '<p class="mut">Panneaux indisponibles : ' + esc(e.message) + '</p>'; }
+};
 /** Outils de l'appli confiés à noelcards.js (hotte, photos, animation du 25, écran administrateur). */
 const ncCtx = () => ({ api, toast, safe, ask, fmt, token: () => token, render, refreshMe, go: t => { tab = t; render(); } });
 views.noelcal = async v => {
@@ -3127,14 +3149,14 @@ const NGROUP = {
   coll: 'coll', album: 'coll', albums: 'coll', search: 'coll', trades: 'coll', expeditions: 'coll',
   jouer: 'jouer', duel: 'jouer', tournaments: 'jouer', tournament: 'jouer', quests: 'jouer', dquiz: 'jouer', hilo: 'jouer', events: 'jouer', noelcal: 'jouer', potato: 'jouer', gulag: 'jouer', tsar: 'jouer', plan: 'jouer', commutop: 'jouer', commurules: 'jouer', commuend: 'jouer',
   marche: 'marche', market: 'marche', bourse: 'marche', bank: 'marche', trends: 'marche', themepacks: 'marche',
-  perso: 'menu', feed: 'menu', msg: 'menu', chat: 'menu', friends: 'menu', rank: 'menu', ach: 'menu', settings: 'menu', customize: 'menu', admin: 'menu', player: 'menu',
+  perso: 'menu', noelhub: 'menu', feed: 'menu', msg: 'menu', chat: 'menu', friends: 'menu', rank: 'menu', ach: 'menu', settings: 'menu', customize: 'menu', admin: 'menu', player: 'menu',
 };
 /** Écran → [écran parent, libellé du retour] : un bouton « ‹ parent » s'ajoute en haut des sous-écrans. */
 const NPARENT = {
   album: ['coll', 'Collection'], albums: ['coll', 'Collection'], search: ['coll', 'Collection'], trades: ['coll', 'Collection'], expeditions: ['coll', 'Collection'],
   market: ['marche', 'Marché'], bourse: ['marche', 'Marché'], bank: ['marche', 'Marché'], trends: ['marche', 'Marché'], themepacks: ['marche', 'Marché'],
   duel: ['jouer', 'Jouer'], tournaments: ['jouer', 'Jouer'], tournament: ['tournaments', 'Tournois'], quests: ['jouer', 'Jouer'], dquiz: ['jouer', 'Jouer'], hilo: ['jouer', 'Jouer'], events: ['jouer', 'Jouer'], noelcal: ['jouer', 'Jouer'], potato: ['jouer', 'Jouer'], gulag: ['jouer', 'Jouer'], tsar: ['jouer', 'Jouer'],
-  perso: ['menu', 'Menu'], feed: ['menu', 'Menu'], msg: ['menu', 'Menu'], chat: ['msg', 'Messages'], friends: ['menu', 'Menu'], rank: ['menu', 'Menu'], ach: ['menu', 'Menu'], settings: ['menu', 'Menu'], customize: ['menu', 'Menu'], admin: ['menu', 'Menu'],
+  perso: ['menu', 'Menu'], noelhub: ['menu', 'Menu'], feed: ['menu', 'Menu'], msg: ['menu', 'Menu'], chat: ['msg', 'Messages'], friends: ['menu', 'Menu'], rank: ['menu', 'Menu'], ach: ['menu', 'Menu'], settings: ['menu', 'Menu'], customize: ['menu', 'Menu'], admin: ['menu', 'Menu'],
 };
 const NUI_NAV = [['packs', 'home', 'Accueil'], ['coll', 'album', 'Collection'], ['jouer', 'play', 'Jouer'], ['marche', 'market', 'Marché'], ['menu', 'menu', 'Menu']]
   .map(([k, i, l]) => `<button data-tab="${k}"><span class="t"><svg class="ic"><use href="#i-${i}"/></svg></span><em>${l}</em></button>`).join('');
@@ -3307,7 +3329,7 @@ function nuMenu() {
     ${me.daily ? nuSec('À récupérer', nuList([row('daily', 'spark', 'Récompense du jour', 'À récupérer', 1)])) : ''}
     ${nuSec('Communauté', nuList([row('feed', 'feed', 'Fil', 'Légendaires et réactions'), row('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm || 0), row('friends', 'friends', 'Amis', 'QR code, demandes', me.badge || 0), row('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')]))}
     ${nuSec('Mon compte', nuList([row('profile', 'user', 'Mon profil', 'Vitrine et statistiques'), row('ach', 'medal', 'Succès', 'Objectifs et primes'), row('perso', 'heart', 'Personnaliser', 'Profil, titres, badges, apparence'), row('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')]))}
-    ${me.admin ? nuSec('Administration', nuList([row('admin', 'shield', 'Administration', 'Tableau de bord')])) : ''}</div>`;
+    ${me.admin ? nuSec('Administration', nuList([row('admin', 'shield', 'Administration', 'Tableau de bord'), ...(noelTab() ? [row('noelhub', 'spark', 'Noël', 'Calendrier, cartes, photos, réglages')] : [])])) : ''}</div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const k = b.dataset.go; close();
@@ -3346,7 +3368,7 @@ function moreSheet() {
     <h3>Gagner des pièces</h3><div class="mgrid">${T('events', 'spark', 'Événements', 'Défis, saison, surprises', (me.ev || []).length)}${T('bourse', 'market', 'Bourse', 'Paris sur les vues')}${T('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${T('trends', 'trophy', 'Tendances', 'Cours et alertes')}${T('bank', 'building', 'Banque', 'Épargne et dividendes')}${T('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)}</div>
     <h3>Explorer</h3><div class="mgrid">${T('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires')}${T('albums', 'album', 'Albums', 'Séries de cartes à compléter')}${T('search', 'search', 'Chercher', 'Trouver une carte')}${T('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')}${T('ach', 'medal', 'Succès', 'Objectifs et primes')}${T('trades', 'swap', 'Échanges', 'Troquer des cartes')}</div>
     <h3>Social</h3><div class="mgrid">${T('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm)}${T('friends', 'friends', 'Amis', 'QR code, demandes', me.badge)}</div>
-    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${me.admin && !ussrUiOn() ? T('potato', 'shield', 'Patates (test)', 'Jeu 3D, aperçu admin') + T('gulag', 'shield', 'Camp (démo)', 'Gestion, aperçu admin') + T('tsar', 'shield', 'Le Dernier Tsar (démo)', 'Cartes à glisser, aperçu admin') + T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
+    <h3>Mon compte</h3><div class="mgrid">${T('profile', 'user', 'Mon profil', 'Vitrine et stats')}${T('customize', 'medal', 'Personnaliser', 'Photo et titres')}${T('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')}${noelTab() ? T('noelhub', 'spark', 'Noël', 'Calendrier, cartes, photos, réglages') : ''}${me.admin && !ussrUiOn() ? T('potato', 'shield', 'Patates (test)', 'Jeu 3D, aperçu admin') + T('gulag', 'shield', 'Camp (démo)', 'Gestion, aperçu admin') + T('tsar', 'shield', 'Le Dernier Tsar (démo)', 'Cartes à glisser, aperçu admin') + T('admin', 'shield', 'Admin', 'Tableau de bord, journal') : ''}</div></div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     const k = b.dataset.go; close();
