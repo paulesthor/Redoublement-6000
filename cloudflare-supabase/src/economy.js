@@ -8,10 +8,12 @@ export const HILO = { time: 8000, grace: 2500, minStake: 10, maxStake: 50, perDa
 export const HILO_BLOCKED = ['michelleclebresil', 'michelecestlebresil'], HILO_BLOCKED_MSG = 'T\'avais qu\'à pas tricher gros sac à merde.';
 export const hiloBlocked = u => HILO_BLOCKED.includes(String(u?.name || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''));
 export const BANK = { rate: 0.006, cap: 5000, lockDays: 7, fee: 0.1 };               // 0,6 % par jour, 5 000 pièces au plus, retrait avant 7 jours : 10 % de frais
-export const DIV = { rate: [0.02, 0.1, 0.4, 1.5, 5, 20], lvl: 0.25, shiny: 2, album: 20, maxDays: 2, cap: 100 };   // plafond : au plus 100 pièces par jour, quelle que soit la taille de la collection   // pièces par carte et par jour, selon la rareté
+export const DIV = { rate: [0.02, 0.1, 0.4, 1.5, 5, 20], lvl: 0.25, shiny: 2, album: 20, maxDays: 2, cap: 100, extra: 150, span: 3000 };   // plafond : au plus 100 pièces par jour, quelle que soit la taille de la collection   // pièces par carte et par jour, selon la rareté
 // Équilibrage : une expédition rapporte à peu près autant qu'un autre mini-jeu (quelques dizaines à ~150 pièces). Gain = valeur des cartes × durée × k, plafonné par durée.
 export const EXPED = { slots: 2, maxCards: 12, hours: [[1, 1], [4, 3.2], [8, 6]], base: [3, 6, 15, 40, 120, 400], pack: { 1: 0.005, 4: 0.03, 8: 0.08 }, k: 0.02, cap: { 1: 30, 4: 80, 8: 150 } };
 const DAY = 86400000;
+/** Gain quotidien des dividendes. Sans courbe : plafonné à DIV.cap. Avec la courbe : identique jusqu'à DIV.cap, puis de plus en plus lent vers DIV.cap + DIV.extra (jamais dépassé). */
+export const divGain = (raw, curve) => curve && raw > DIV.cap ? Math.floor(DIV.cap + DIV.extra * (1 - Math.exp(-(raw - DIV.cap) / DIV.span))) : Math.min(DIV.cap, Math.floor(raw));
 const ymd = d => d.replace(/-/g, '');
 const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * DAY).toISOString().slice(0, 10);
 
@@ -230,18 +232,22 @@ export function installEconomy(d) {
     return { amount, accDay: dayNo(now()), locked: s.locked_until, interest: amount - s.amount, stored: s.amount, since: s.acc_day };
   }
   const saveSavings = (env, uid, amount, locked) => run(env, `INSERT INTO savings (user_id, amount, acc_day, locked_until) VALUES (?,?,?,?) ON CONFLICT (user_id) DO UPDATE SET amount = excluded.amount, acc_day = excluded.acc_day, locked_until = excluded.locked_until`, uid, amount, dayNo(now()), locked);
-  async function dividends(env, uid) {
+  /** Courbe des dividendes : « off » (plafond fixe), « admin » (aperçu pour l'administrateur), « all » (tout le monde). */
+  const curveMode = async env => (await one(env, "SELECT value FROM settings WHERE key = 'div_curve'").catch(() => null))?.value || 'off';
+  const curveFor = async (env, user) => { const m = await curveMode(env); return m === 'all' || (m === 'admin' && !!user.is_admin); };
+  async function dividends(env, user) {
+    const uid = user.id, curve = await curveFor(env, user);
     const [rows, albums, u] = await Promise.all([all(env, 'SELECT rar, sh, COUNT(*) n, COALESCE(SUM(lvl), 0) l FROM inventory WHERE user_id = ? GROUP BY rar, sh', uid), albumCount(env, uid), one(env, 'SELECT div_day FROM users WHERE id = ?', uid)]);
     const by = DIV.rate.map(() => 0); let daily = 0;
     for (const r of rows) { const v = (r.n + r.l * DIV.lvl) * DIV.rate[r.rar] * (r.sh ? DIV.shiny : 1); by[r.rar] += v; daily += v; }
     const bonus = albums * DIV.album; daily += bonus;
     const today = dayKey(), last = u?.div_day, gap = !last ? 1 : Math.max(0, Math.round((Date.parse(today + 'T12:00:00Z') - Date.parse(last + 'T12:00:00Z')) / DAY));
-    const days = Math.min(DIV.maxDays, gap), raw = Math.floor(daily), capped = Math.min(DIV.cap, raw);
-    return { daily: capped, raw, cap: DIV.cap, byRarity: by.map(Math.floor), albums, bonus, days, maxDays: DIV.maxDays, claimable: capped * days, today };
+    const days = Math.min(DIV.maxDays, gap), raw = Math.floor(daily), capped = divGain(raw, curve);
+    return { daily: capped, raw, cap: curve ? DIV.cap + DIV.extra : DIV.cap, curve, byRarity: by.map(Math.floor), albums, bonus, days, maxDays: DIV.maxDays, claimable: capped * days, today };
   }
   route('GET', '/api/bank', async ({ env, user }) => {
     await ensureGameSchema(env);
-    const [s, dv] = await Promise.all([savings(env, user.id), dividends(env, user.id)]);
+    const [s, dv] = await Promise.all([savings(env, user.id), dividends(env, user)]);
     const frozen = await savingsFrozen?.(env, user) || 0;
     return { coins: user.coins, savings: { frozen, amount: s.amount, interest: s.interest, locked: s.locked, rate: BANK.rate, cap: BANK.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * BANK.rate) }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
   });
@@ -257,10 +263,16 @@ export function installEconomy(d) {
     ]);
     const score = new Map(), cards = new Map(), albums = new Map(alb.map(r => [r.user_id, r.n])), savings = new Map(sav.map(r => [r.user_id, r.amount]));
     for (const r of inv) { score.set(r.user_id, (score.get(r.user_id) || 0) + (r.n + r.l * DIV.lvl) * DIV.rate[r.rar] * (r.sh ? DIV.shiny : 1)); cards.set(r.user_id, (cards.get(r.user_id) || 0) + r.n); }
-    const list = users.map(u => { const sc = Math.floor((score.get(u.id) || 0) + (albums.get(u.id) || 0) * DIV.album); return { name: u.name, score: sc, cards: cards.get(u.id) || 0, albums: albums.get(u.id) || 0, savings: savings.get(u.id) || 0, today: Math.min(DIV.cap, sc) }; }).sort((a, b) => b.score - a.score);
+    const list = users.map(u => { const sc = Math.floor((score.get(u.id) || 0) + (albums.get(u.id) || 0) * DIV.album); return { name: u.name, score: sc, cards: cards.get(u.id) || 0, albums: albums.get(u.id) || 0, savings: savings.get(u.id) || 0, today: divGain(sc, false), curve: divGain(sc, true) }; }).sort((a, b) => b.score - a.score);
     const q = f => { const v = list.map(x => x.score).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(f * v.length))] : 0; };
     const tiers = [['Débutant', 0, 20], ['Régulier', 20, 100], ['Confirmé', 100, 400], ['Vétéran', 400, Infinity]].map(([name, lo, hi]) => ({ name, lo, hi: hi === Infinity ? null : hi, n: list.filter(x => x.score >= lo && x.score < hi).length }));
-    return { players: list.length, cap: DIV.cap, atCap: list.filter(x => x.score >= DIV.cap).length, perDayNow: list.reduce((t, x) => t + x.today, 0), perDayUncapped: list.reduce((t, x) => t + x.score, 0), q: { min: q(0), p25: q(0.25), med: q(0.5), p75: q(0.75), p90: q(0.9), max: q(1) }, tiers, top: list.slice(0, 10), savingsTotal: list.reduce((t, x) => t + x.savings, 0), savers: list.filter(x => x.savings > 0).length };
+    return { players: list.length, cap: DIV.cap, atCap: list.filter(x => x.score >= DIV.cap).length, perDayNow: list.reduce((t, x) => t + x.today, 0), perDayUncapped: list.reduce((t, x) => t + x.score, 0), perDayCurve: list.reduce((t, x) => t + x.curve, 0), mode: await curveMode(env), maxCurve: DIV.cap + DIV.extra, q: { min: q(0), p25: q(0.25), med: q(0.5), p75: q(0.75), p90: q(0.9), max: q(1) }, tiers, top: list.slice(0, 10), savingsTotal: list.reduce((t, x) => t + x.savings, 0), savers: list.filter(x => x.savings > 0).length };
+  });
+  route('POST', '/api/admin/bank-curve', async ({ env, user, body }) => {
+    if (!user.is_admin) bad('Réservé à l’administrateur', 403);
+    const mode = ['off', 'admin', 'all'].includes(body.mode) ? body.mode : 'off';
+    await run(env, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?', 'div_curve', mode, mode);
+    return { ok: true, mode };
   });
   const frozenMsg = async (env, user) => { const u = await savingsFrozen?.(env, user); if (u) bad(`Ton épargne est gelée jusqu'au ${new Date(u).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' })}.`, 403); };
   route('POST', '/api/bank/deposit', async ({ env, user, body }) => {
@@ -287,7 +299,7 @@ export function installEconomy(d) {
   });
   route('POST', '/api/bank/dividends/claim', async ({ env, ctx, user }) => {
     await ensureGameSchema(env);
-    const dv = await dividends(env, user.id);
+    const dv = await dividends(env, user);
     if (!dv.claimable) bad('Aucun dividende à récupérer pour le moment');
     const ok_ = await run(env, 'UPDATE users SET coins = coins + ?, div_day = ? WHERE id = ? AND (div_day IS NULL OR div_day < ?)', dv.claimable, dv.today, user.id, dv.today);
     if (!ok_.meta.changes) bad('Déjà récupérés aujourd’hui');

@@ -171,5 +171,26 @@ const x0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/
 await DB.prepare('UPDATE users SET is_admin = 1 WHERE name = ?').bind('Alice').run();
 [s, r] = await call(A, 'GET', '/api/admin/bank-sim'); ok('simulation banque : l\'administrateur voit scores, paliers et pièces par jour', s === 200 && r.players >= 2 && r.tiers.length === 4 && r.tiers.reduce((t, x) => t + x.n, 0) === r.players && r.perDayUncapped >= r.perDayNow && r.q.max >= r.q.min, J([s, r]));
 await DB.prepare('UPDATE users SET is_admin = 0 WHERE name = ?').bind('Alice').run();
+console.log('— courbe des dividendes (saturante)');
+{ const { divGain, DIV } = await import('../src/economy.js');
+  ok('courbe : identique au plafond actuel jusqu\'à 100 de score', [0, 1, 50, 99, 100].every(x => divGain(x, true) === divGain(x, false) && divGain(x, true) === x));
+  ok('courbe : sans courbe, plafond à 100 comme avant', divGain(5000, false) === 100 && divGain(18500, false) === 100);
+  const pts = [100, 150, 300, 600, 1500, 3000, 5000, 10000, 18500, 50000, 1e6].map(x => [x, divGain(x, true)]);
+  ok('courbe : ne baisse jamais (aucun joueur ne gagne moins qu\'avant)', pts.every(([x, g], i) => g >= 100 && (i === 0 || g >= pts[i - 1][1])), J(pts));
+  ok('courbe : ne dépasse jamais 250, même pour une collection énorme', pts.every(([, g]) => g <= 250) && divGain(1e9, true) <= 250, J(pts));
+  ok('courbe : repères — 300 → 109, 1 500 → 155, 5 000 → 220, 18 500 → 249', divGain(300, true) === 109 && Math.abs(divGain(1500, true) - 155) <= 1 && Math.abs(divGain(5000, true) - 220) <= 1 && divGain(18500, true) >= 249, J(pts));
+  ok('courbe : un joueur à 18 500 gagne 2,5 fois un joueur à 100 (et non 185 fois)', divGain(18500, true) / divGain(100, true) < 2.6);
+  const keep = { ...DIV }; Object.assign(DIV, { cap: 1, extra: 10, span: 5 });
+  [s, r] = await call(B, 'GET', '/api/bank'); const bobOff = r.dividends; ok('réglage coupé : plafond fixe pour tout le monde', bobOff.curve === false && bobOff.daily === 1, J(bobOff));
+  await DB.prepare('UPDATE users SET is_admin = 1 WHERE name = ?').bind('Alice').run();
+  [s, r] = await call(A, 'POST', '/api/admin/bank-curve', { mode: 'admin' }); ok('réglage : mode « moi seul » enregistré', s === 200 && r.mode === 'admin', J([s, r]));
+  [s, r] = await call(A, 'GET', '/api/bank'); const aliceCurve = r.dividends; [s, r] = await call(B, 'GET', '/api/bank');
+  ok('mode « moi seul » : l\'administrateur a la courbe, pas les autres joueurs', aliceCurve.curve === true && aliceCurve.daily > 1 && aliceCurve.daily <= 11 && aliceCurve.cap === 11 && r.dividends.curve === false && r.dividends.daily === 1, J([aliceCurve, r.dividends]));
+  [s, r] = await call(B, 'POST', '/api/admin/bank-curve', { mode: 'all' }); ok('réglage : refusé à un joueur ordinaire', s === 403);
+  [s, r] = await call(A, 'POST', '/api/admin/bank-curve', { mode: 'all' }); [s, r] = await call(B, 'GET', '/api/bank'); ok('mode « tout le monde » : tous les joueurs ont la courbe', r.dividends.curve === true && r.dividends.daily >= 1, J(r.dividends));
+  [s, r] = await call(A, 'GET', '/api/admin/bank-sim'); ok('simulation : total par jour avec la courbe ≥ total actuel, et mode renvoyé', r.perDayCurve >= r.perDayNow && r.mode === 'all' && r.maxCurve === 11, J([r.perDayNow, r.perDayCurve, r.mode]));
+  [s, r] = await call(A, 'POST', '/api/admin/bank-curve', { mode: 'n\'importe quoi' }); ok('réglage : valeur inconnue → coupé', r.mode === 'off');
+  await DB.prepare('UPDATE users SET is_admin = 0 WHERE name = ?').bind('Alice').run(); Object.assign(DIV, keep);
+}
 Date.now = realNow;
 done();
