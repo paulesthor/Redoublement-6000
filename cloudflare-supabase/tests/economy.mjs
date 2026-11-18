@@ -194,6 +194,7 @@ console.log('— courbe des dividendes (saturante)');
 }
 console.log('— légendaires de paquet : taux et plafond de la banque');
 { const { bankFor, BANK } = await import('../src/economy.js');
+  await q("INSERT INTO settings (key, value) VALUES ('bank_leg', 'all') ON CONFLICT (key) DO UPDATE SET value = 'all'");
   ok('banque : sans légendaire de paquet, taux et plafond d\'origine', bankFor(0).rate === BANK.rate && bankFor(0).cap === 5000 && bankFor(undefined).n === 0 && bankFor(-4).n === 0);
   ok('banque : 3 légendaires → +0,12 % de taux et +600 de plafond', Math.abs(bankFor(3).rate - 0.0072) < 1e-9 && bankFor(3).cap === 5600);
   ok('banque : au plus 25 légendaires comptent (1,6 % et 10 000 au maximum)', Math.abs(bankFor(25).rate - 0.016) < 1e-9 && bankFor(25).cap === 10000 && bankFor(999).cap === 10000 && bankFor(999).n === 25);
@@ -215,6 +216,16 @@ console.log('— légendaires de paquet : taux et plafond de la banque');
   [s, r] = await call(B, 'GET', '/api/bank'); ok('banque : les autres joueurs gardent le taux d\'origine', r.savings.rate === 0.006 && r.savings.cap === 5000 && r.savings.leg.n === 0, J(r.savings));
   await q('UPDATE savings SET acc_day = ? WHERE user_id = ?', day - 10, ua);
   [s, r] = await call(A, 'GET', '/api/bank'); ok('banque : les intérêts sont calculés au taux du joueur (10 jours à 0,80 %)', r.savings.amount === Math.floor(6000 * Math.pow(1.008, 10)), J(r.savings));
+  // réglage : coupé / moi seul / tout le monde
+  await q('UPDATE users SET leg_pulled = 5 WHERE id IN (?, ?)', ua, ub); await q('UPDATE users SET is_admin = 1 WHERE id = ?', ua);
+  [s, r] = await call(B, 'POST', '/api/admin/bank-leg', { mode: 'all' }); ok('légendaires : réglage refusé à un joueur ordinaire', s === 403);
+  [s, r] = await call(A, 'POST', '/api/admin/bank-leg', { mode: 'off' }); [s, r] = await call(A, 'GET', '/api/bank'); const aOff = r.savings; [s, r] = await call(B, 'GET', '/api/bank');
+  ok('légendaires : coupé → personne n\'a de bonus et la carte disparaît', aOff.rate === 0.006 && aOff.cap === 5000 && aOff.leg === null && r.savings.rate === 0.006 && r.savings.leg === null, J([aOff, r.savings]));
+  [s, r] = await call(A, 'POST', '/api/admin/bank-leg', { mode: 'admin' }); [s, r] = await call(A, 'GET', '/api/bank'); const aAd = r.savings; [s, r] = await call(B, 'GET', '/api/bank');
+  ok('légendaires : « moi seul » → l\'administrateur a le bonus, pas les autres', aAd.cap === 6000 && aAd.leg.n === 5 && r.savings.cap === 5000 && r.savings.leg === null, J([aAd.cap, r.savings.cap]));
+  [s, r] = await call(A, 'POST', '/api/admin/bank-leg', { mode: 'all' }); [s, r] = await call(B, 'GET', '/api/bank'); ok('légendaires : « tout le monde » → bonus pour tous', r.savings.cap === 6000 && r.savings.leg.n === 5, J(r.savings));
+  await q("DELETE FROM settings WHERE key = 'bank_leg'"); [s, r] = await call(B, 'GET', '/api/bank'); ok('légendaires : sans réglage enregistré, par défaut administrateur seul', r.savings.cap === 5000 && r.savings.leg === null, J(r.savings));
+  await q('UPDATE users SET is_admin = 0 WHERE id = ?', ua);
   const tx = (await q("SELECT 1 x FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'leg_pulled'").catch(() => [{ x: 1 }])); ok('banque : colonne du compteur créée', tx.length === 1);
 }
 Date.now = realNow;

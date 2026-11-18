@@ -226,11 +226,18 @@ export function installEconomy(d) {
 
   // ======================= BANQUE (épargne) ET DIVIDENDES =======================
   const dayNo = t => Math.floor(t / DAY);
+  /** Bonification « légendaires de paquet » : réglage « off » (personne), « admin » (administrateur seul, par défaut) ou « all » (tout le monde). Le compteur, lui, compte toujours. */
+  const legMode = async env => (await one(env, "SELECT value FROM settings WHERE key = 'bank_leg'").catch(() => null))?.value || 'admin';
+  async function legFor(env, uid) {
+    const [u, m] = await Promise.all([one(env, 'SELECT leg_pulled, is_admin FROM users WHERE id = ?', uid), legMode(env)]);
+    const raw = Math.max(0, Math.floor(+u?.leg_pulled || 0)), on = m === 'all' || (m === 'admin' && !!u?.is_admin);
+    return { ...bankFor(on ? raw : 0), on, raw };
+  }
   /** Épargne avec intérêts composés par jour entier écoulé. */
   async function savings(env, uid) {
     const s = await one(env, 'SELECT * FROM savings WHERE user_id = ?', uid);
-    if (!s) return { amount: 0, accDay: dayNo(now()), locked: 0, interest: 0, ...bankFor((await one(env, 'SELECT leg_pulled FROM users WHERE id = ?', uid))?.leg_pulled) };
-    const bk = bankFor((await one(env, 'SELECT leg_pulled FROM users WHERE id = ?', uid))?.leg_pulled);
+    if (!s) return { amount: 0, accDay: dayNo(now()), locked: 0, interest: 0, ...(await legFor(env, uid)) };
+    const bk = await legFor(env, uid);
     const days = Math.max(0, dayNo(now()) - s.acc_day), amount = days ? Math.floor(s.amount * Math.pow(1 + bk.rate, days)) : s.amount;
     return { amount, accDay: dayNo(now()), locked: s.locked_until, interest: amount - s.amount, stored: s.amount, since: s.acc_day, ...bk };
   }
@@ -252,7 +259,7 @@ export function installEconomy(d) {
     await ensureGameSchema(env);
     const [s, dv] = await Promise.all([savings(env, user.id), dividends(env, user)]);
     const frozen = await savingsFrozen?.(env, user) || 0;
-    return { coins: user.coins, savings: { frozen, amount: s.amount, interest: s.interest, locked: s.locked, rate: s.rate, cap: s.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * s.rate), leg: { n: s.n, max: BANK.legMax, rate: BANK.legRate, cap: BANK.legCap, baseRate: BANK.rate, baseCap: BANK.cap } }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
+    return { coins: user.coins, savings: { frozen, amount: s.amount, interest: s.interest, locked: s.locked, rate: s.rate, cap: s.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * s.rate), leg: !s.on ? null : { n: s.n, max: BANK.legMax, rate: BANK.legRate, cap: BANK.legCap, baseRate: BANK.rate, baseCap: BANK.cap } }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
   });
   /** Administrateur : répartition des « scores de collection » (valeur des dividendes sans plafond) pour régler une future banque indexée sur la collection. Lecture seule. */
   route('GET', '/api/admin/bank-sim', async ({ env, user }) => {
@@ -269,7 +276,13 @@ export function installEconomy(d) {
     const list = users.map(u => { const sc = Math.floor((score.get(u.id) || 0) + (albums.get(u.id) || 0) * DIV.album); return { name: u.name, score: sc, cards: cards.get(u.id) || 0, albums: albums.get(u.id) || 0, savings: savings.get(u.id) || 0, today: divGain(sc, false), curve: divGain(sc, true) }; }).sort((a, b) => b.score - a.score);
     const q = f => { const v = list.map(x => x.score).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(f * v.length))] : 0; };
     const tiers = [['Débutant', 0, 20], ['Régulier', 20, 100], ['Confirmé', 100, 400], ['Vétéran', 400, Infinity]].map(([name, lo, hi]) => ({ name, lo, hi: hi === Infinity ? null : hi, n: list.filter(x => x.score >= lo && x.score < hi).length }));
-    return { players: list.length, cap: DIV.cap, atCap: list.filter(x => x.score >= DIV.cap).length, perDayNow: list.reduce((t, x) => t + x.today, 0), perDayUncapped: list.reduce((t, x) => t + x.score, 0), perDayCurve: list.reduce((t, x) => t + x.curve, 0), mode: await curveMode(env), maxCurve: DIV.cap + DIV.extra, q: { min: q(0), p25: q(0.25), med: q(0.5), p75: q(0.75), p90: q(0.9), max: q(1) }, tiers, top: list.slice(0, 10), savingsTotal: list.reduce((t, x) => t + x.savings, 0), savers: list.filter(x => x.savings > 0).length };
+    return { players: list.length, cap: DIV.cap, atCap: list.filter(x => x.score >= DIV.cap).length, perDayNow: list.reduce((t, x) => t + x.today, 0), perDayUncapped: list.reduce((t, x) => t + x.score, 0), perDayCurve: list.reduce((t, x) => t + x.curve, 0), mode: await curveMode(env), legMode: await legMode(env), maxCurve: DIV.cap + DIV.extra, q: { min: q(0), p25: q(0.25), med: q(0.5), p75: q(0.75), p90: q(0.9), max: q(1) }, tiers, top: list.slice(0, 10), savingsTotal: list.reduce((t, x) => t + x.savings, 0), savers: list.filter(x => x.savings > 0).length };
+  });
+  route('POST', '/api/admin/bank-leg', async ({ env, user, body }) => {
+    if (!user.is_admin) bad('Réservé à l’administrateur', 403);
+    const mode = ['off', 'admin', 'all'].includes(body.mode) ? body.mode : 'off';
+    await run(env, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?', 'bank_leg', mode, mode);
+    return { ok: true, mode };
   });
   route('POST', '/api/admin/bank-curve', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l’administrateur', 403);
