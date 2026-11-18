@@ -1826,25 +1826,43 @@ body.sg-lock{overflow:hidden}
 .sv-bar .sv-count{flex:none;font-size:13px;color:var(--gold);white-space:nowrap}.sv-bar .sv-count b{font-size:17px}
 .sv-bar button{flex:1;min-width:0;padding:13px}
 
+/* rangées de boutons des réglages : elles passent à la ligne au lieu de dépasser sur les petits écrans (320 px) */
+.setgrp .row>button{flex:1 1 112px!important;min-width:0}
+
 /* ================= Nouvelle interface (aperçu administrateur) =================
    Règles de mise en forme : toutes les grilles utilisent minmax(0,1fr) (aucun bloc ne déborde), les textes passent à la ligne au lieu d'être coupés,
-   les éléments d'une même rangée ont la même hauteur, les zones tactiles font au moins 44 px, les espacements sont multiples de 4 (8 / 12 / 20). */
-body.nui{--nu-acc:#e8c35a;--nu-r:18px}
+   les éléments d'une même rangée ont la même hauteur, les zones tactiles font au moins 44 px, les espacements sont des multiples de 4 (8 / 12 / 20).
+   Couleurs et arrondis viennent de variables propres à chaque thème (section 1) : aucune couleur n'est écrite en dur plus bas. */
+
+/* 1. jetons de thème : accent (et sa version « r,g,b » pour les transparences) et arrondis */
+body.nui{--nu-acc:#e8c35a;--nu-acc-rgb:232,195,90;--nu-r:18px;--nu-rs:14px;--nu-pill:99px}
+html[data-theme=ocean] body.nui{--nu-acc:#8fd0ff;--nu-acc-rgb:143,208,255}
+html[data-theme=forest] body.nui{--nu-acc:#9be3b0;--nu-acc-rgb:155,227,176}
+html[data-theme=violet] body.nui{--nu-acc:#d2b4ff;--nu-acc-rgb:210,180,255}
+html[data-theme=light] body.nui{--nu-acc:#c7a54d;--nu-acc-rgb:199,165,77}   /* clair et beige : la page est inversée par un filtre, la couleur est donnée avant inversion (elle donne un or foncé lisible) */
+html[data-theme=beige] body.nui{--nu-acc:#d4a95a;--nu-acc-rgb:212,169,90}
+html[data-theme=urss] body.nui{--nu-acc:#f4d56b;--nu-acc-rgb:244,213,107;--nu-r:4px;--nu-rs:3px;--nu-pill:3px}
+html[data-theme=siberie] body.nui{--nu-acc:#bfe4ff;--nu-acc-rgb:191,228,255;--nu-r:4px;--nu-rs:3px;--nu-pill:3px}
+html[data-theme=or] body.nui{--nu-acc:#ffd96a;--nu-acc-rgb:255,217,106;--nu-r:3px;--nu-rs:2px;--nu-pill:2px}
+
+/* 2. en-têtes, accueil */
 body.nui .pagehead{margin-bottom:16px}
 .nu-back{display:inline-flex;align-items:center;gap:2px;min-height:44px;margin:-8px 0 0;padding:0 10px 0 0;background:none!important;border:0;box-shadow:none!important;color:var(--mut)!important;font-size:13.5px;font-weight:600}
 .nu-back svg.ic{width:18px;height:18px}.flip{transform:rotate(180deg)}
 .nu-hello{padding:0 2px}.nu-hello h2{font:700 24px/1.2 var(--f-disp);overflow-wrap:anywhere}.nu-hello p{margin:4px 0 0;color:var(--mut);font-size:14px}.nu-hello p b{color:var(--fg)}
 .nu-hero{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:16px;min-width:0}
-.nu-hero::before{content:"";position:absolute;top:-10px;left:50%;width:min(420px,100vw);height:300px;transform:translateX(-50%);background:radial-gradient(closest-side,#e8c35a24,transparent);pointer-events:none;z-index:0}
+.nu-hero::before{content:"";position:absolute;top:-10px;left:50%;width:min(420px,100vw);height:300px;transform:translateX(-50%);background:radial-gradient(closest-side,rgba(var(--nu-acc-rgb),.14),transparent);pointer-events:none;z-index:0}
 .nu-hero>*{position:relative;z-index:1}
 body.nui .nu-hero .packart{width:124px;height:176px;margin:4px 0 0;animation:float 5s ease-in-out infinite}
 body.nui .nu-btn{width:100%;max-width:560px;min-height:52px;padding:14px 20px;font-size:16px;border-radius:var(--nu-r)}
 .nu-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%;max-width:560px}
-body.nui .nu-ghost{min-height:48px;padding:10px 8px;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--panel2);color:var(--fg);border:1px solid var(--line2);box-shadow:none;font-size:13.5px;line-height:1.25;text-align:center;border-radius:14px}
+body.nui .nu-ghost{min-height:48px;padding:10px 8px;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--panel2);color:var(--fg);border:1px solid var(--line2);box-shadow:none;font-size:13.5px;line-height:1.25;text-align:center;border-radius:var(--nu-rs)}
 body.nui .nu-ghost:disabled{opacity:.45}.nu-ghost svg.ic{width:15px;height:15px;flex:none}
 .nu-links{display:flex;flex-wrap:wrap;justify-content:center;gap:0 20px}
 body.nui .nu-link{min-height:44px;padding:0 6px;background:none;border:0;box-shadow:none;color:var(--mut);font-size:12.5px;font-weight:500;text-decoration:underline;text-underline-offset:3px}
 body.nui .nu-link:disabled{opacity:.45}
+
+/* 3. sections, tuiles, listes */
 .nu-sec{margin-top:20px;min-width:0}
 .nu-sec>h3{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0 0 12px;font:700 12px/1.2 var(--f-disp);letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
 .nu-sec>h3 em{font:500 12px/1.2 var(--f-body);letter-spacing:0;text-transform:none;font-style:normal;white-space:nowrap}
@@ -1853,21 +1871,78 @@ body.nui .nu-tile{display:flex;flex-direction:column;align-items:flex-start;just
 body.nui .nu-tile.hot{border-color:var(--nu-acc)}
 .nu-tile b{font:700 13.5px/1.25 var(--f-body);overflow-wrap:break-word;max-width:100%}
 .nu-tile small{font:500 11.5px/1.3 var(--f-body);color:var(--mut);overflow-wrap:break-word;max-width:100%}.nu-tile.hot small{color:var(--nu-acc)}
-.nu-ti{flex:none;width:36px;height:36px;border-radius:11px;background:var(--panel2);display:flex;align-items:center;justify-content:center;color:var(--nu-acc);margin-bottom:4px}.nu-row .nu-ti{margin:0}
+.nu-ti{flex:none;width:36px;height:36px;border-radius:max(2px,calc(var(--nu-rs) - 3px));background:var(--panel2);display:flex;align-items:center;justify-content:center;color:var(--nu-acc);margin-bottom:4px}.nu-row .nu-ti{margin:0}
 .nu-list{background:var(--panel);border:1px solid var(--line2);border-radius:var(--nu-r);overflow:hidden}
 body.nui .nu-row{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:12px;text-align:left;background:none;color:var(--fg);border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none}
 body.nui .nu-row:last-child{border-bottom:0}
 .nu-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}.nu-tx b{font:600 14.5px/1.3 var(--f-body);overflow-wrap:break-word}.nu-tx small{font:500 12px/1.3 var(--f-body);color:var(--mut);overflow-wrap:break-word}
 .nu-ch{flex:none;width:18px;height:18px;color:var(--mut)}
 .nu-bd{flex:none;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#ff4d5e;color:#fff;font:700 11px/20px var(--f-body);font-style:normal;text-align:center}
-body.nui .nu-feat{display:flex;align-items:center;gap:12px;width:100%;min-width:0;padding:16px;text-align:left;color:var(--fg);background:var(--panel);border:1px solid var(--line2);border-radius:22px;box-shadow:none}
+.nu-meta{flex:none;font:600 12px/1 var(--f-body);font-style:normal;color:var(--nu-acc);background:rgba(var(--nu-acc-rgb),.12);border-radius:var(--nu-pill);padding:6px 10px;white-space:nowrap}
+body.nui .nu-feat{display:flex;align-items:center;gap:12px;width:100%;min-width:0;padding:16px;text-align:left;color:var(--fg);background:var(--panel);border:1px solid var(--line2);border-radius:calc(var(--nu-r) + 4px);box-shadow:none}
 body.nui .nu-feat+.nu-feat{margin-top:12px}.nu-search+.nu-feat{margin-top:12px}
-body.nui .nu-feat.ev{background:linear-gradient(135deg,#1a2e22,#101b15)}
+body.nui .nu-feat.ev{background:linear-gradient(135deg,rgba(var(--nu-acc-rgb),.16),var(--panel) 70%)}
 .nu-ft{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}.nu-ft small{font:700 10.5px/1.3 var(--f-body);letter-spacing:.14em;text-transform:uppercase;color:var(--nu-acc)}
 .nu-ft b{font:700 18px/1.25 var(--f-disp);overflow-wrap:break-word}.nu-ft i{font:500 12.5px/1.35 var(--f-body);font-style:normal;color:var(--mut);overflow-wrap:break-word}
-.nu-evts{display:flex;flex-direction:column;gap:12px}
-body.nui .nu-search{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:12px 14px;text-align:left;background:var(--panel);color:var(--mut);border:1px solid var(--line2);border-radius:14px;box-shadow:none;font-weight:500}
+.nu-evts{display:flex;flex-direction:column;gap:12px}.nu-evts+.nu-list{margin-top:12px}body.nui .nu-evts>.nu-feat{margin-top:0}
+body.nui .nu-search{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:12px 14px;text-align:left;background:var(--panel);color:var(--mut);border:1px solid var(--line2);border-radius:var(--nu-rs);box-shadow:none;font-weight:500}
 body.nui .nu-tile:active,body.nui .nu-row:active,body.nui .nu-feat:active{transform:scale(.99)}
 .nu-sheet .nu-sec{margin-top:16px}.nu-sheet .nu-sec:first-of-type{margin-top:12px}
-/* rangées de boutons des réglages : elles passent à la ligne au lieu de dépasser sur les petits écrans (320 px) */
-.setgrp .row>button{flex:1 1 112px!important;min-width:0}
+
+/* 4. avis système de la barre du haut (sanction, remise à zéro, fin de saison, maintenance) : alignés sur la marge de la page */
+body.nui #evb{flex-direction:column;gap:8px;margin:12px 28px 0}
+@media(max-width:820px){body.nui #evb{margin:12px 16px 0}}
+body.nui .evchip{width:100%;justify-content:flex-start;min-height:44px;padding:10px 14px;border:1px solid var(--line2);border-left:3px solid var(--nu-acc);border-radius:var(--nu-rs);background:var(--panel);box-shadow:none;animation:none;color:var(--fg);font-size:13px;line-height:1.3;text-align:left}
+body.nui .evchip b{font-weight:700}
+
+/* 5. Personnaliser */
+body.nui .nu-seg{display:flex;gap:4px;margin:0 0 16px;padding:4px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--nu-rs)}
+body.nui .nu-seg button{flex:1;min-width:0;min-height:44px;padding:8px 6px;background:none;color:var(--mut);border:0;border-radius:max(2px,calc(var(--nu-rs) - 4px));box-shadow:none;font-size:13.5px;font-weight:600}
+body.nui .nu-seg button.on{background:var(--panel2);color:var(--fg)}
+.nu-profile{display:flex;align-items:center;gap:14px;padding:16px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--nu-r)}
+.nu-avbig{flex:none}.nu-avbig .av{width:64px;height:64px;font-size:26px}
+.nu-one{margin-top:12px}.nu-one .nu-ghost{width:100%}
+#pe-body>.nu-two{margin-top:12px;max-width:none}
+.nu-opts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+body.nui .nu-opt{display:flex;align-items:center;gap:12px;width:100%;min-width:0;min-height:60px;padding:12px;text-align:left;background:var(--panel);color:var(--fg);border:1px solid var(--line2);border-radius:var(--nu-r);box-shadow:none}
+.nu-opt .av{flex:none;width:44px;height:44px;font-size:18px}
+body.nui .nu-opt.on,body.nui .nu-theme.on{border-color:var(--nu-acc);box-shadow:0 0 0 1px var(--nu-acc) inset}
+.nu-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 4px;font-size:13.5px;color:var(--mut)}.nu-summary b{color:var(--fg);font-size:16px}
+details.nu-grp{margin-top:12px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--nu-r);overflow:hidden}
+.nu-grp>summary{display:flex;align-items:center;gap:12px;min-height:52px;padding:12px 14px;cursor:pointer;list-style:none}
+.nu-grp>summary::-webkit-details-marker{display:none}
+.nu-grp>summary b{flex:1;min-width:0;font:700 14.5px/1.3 var(--f-body);overflow-wrap:break-word}
+.nu-cnt{flex:none;font:600 12px/1 var(--f-body);font-style:normal;color:var(--mut)}
+.nu-grp>summary .nu-ch{transition:transform .2s}.nu-grp[open]>summary .nu-ch{transform:rotate(90deg)}
+.nu-grp>.nu-list{border:0;border-top:1px solid var(--line);border-radius:0}
+body.nui .nu-title{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:12px 14px;text-align:left;background:none;color:var(--fg);border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none}
+body.nui .nu-title:last-child{border-bottom:0}body.nui .nu-title:disabled{opacity:1;cursor:default}
+body.nui .nu-title:not(.ok) .nu-tx b{color:var(--mut)}body.nui .nu-title.on{background:rgba(var(--nu-acc-rgb),.08)}
+.nu-chip{flex:none;display:inline-flex;align-items:center;gap:5px;font:600 12px/1 var(--f-body);font-style:normal;color:var(--mut);border:1px solid var(--line2);border-radius:var(--nu-pill);padding:7px 10px;white-space:nowrap}
+.nu-chip.hot{color:var(--nu-acc);border-color:var(--nu-acc)}.nu-chip svg.ic{width:13px;height:13px}
+.nu-bar{display:block;height:5px;margin-top:6px;border-radius:3px;background:var(--panel2);overflow:hidden}.nu-bar i{display:block;height:100%;background:var(--nu-acc);border-radius:3px}
+.nu-badges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:12px;padding:12px;border-top:1px solid var(--line)}
+.nu-badge{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:12px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--nu-rs)}
+.nu-badge.done{border-color:var(--nu-acc)}
+.nu-medal{flex:none;width:36px;height:36px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;color:var(--mut);margin-bottom:4px}
+.nu-badge.done .nu-medal{color:var(--nu-acc);background:rgba(var(--nu-acc-rgb),.14)}
+.nu-badge b{font:700 13px/1.3 var(--f-body);overflow-wrap:break-word;max-width:100%}.nu-badge small{flex:1;font:500 11.5px/1.35 var(--f-body);color:var(--mut);overflow-wrap:break-word;max-width:100%}
+.nu-badge .nu-bar{width:100%}.nu-prog{font:600 11px/1 var(--f-body);font-style:normal;color:var(--mut)}
+.nu-themes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:12px}.nu-themes.locked{opacity:.6}
+body.nui .nu-theme{display:flex;flex-direction:column;align-items:stretch;gap:10px;min-width:0;padding:10px;text-align:left;background:var(--panel);color:var(--fg);border:1px solid var(--line2);border-radius:var(--nu-r);box-shadow:none}
+body.nui .nu-theme:disabled{opacity:.55}
+.nu-prev{display:flex;flex-direction:column;gap:6px;padding:10px;height:64px;border-radius:var(--nu-rs);background:var(--pb);border:1px solid rgba(128,128,128,.35)}
+.nu-prev i{display:block}.nu-prev i:nth-child(1){height:6px;width:50%;border-radius:3px;background:var(--pa)}.nu-prev i:nth-child(2){height:10px;border-radius:4px;background:rgba(128,128,128,.3)}.nu-prev i:nth-child(3){height:10px;width:70%;border-radius:4px;background:var(--pa);opacity:.8}
+.nu-note{margin:0 0 12px;padding:12px 14px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--nu-rs);color:var(--mut);font-size:13px;line-height:1.4}
+
+/* 6. thèmes d'événement (Camarade, Sibérie, Or impérial) : la règle générale de ces habillages met tous les boutons en majuscules et en gras ;
+   la nouvelle interface la neutralise pour ses blocs (sinon les libellés s'allongent et débordent) et reprend le registre propre à chaque thème. */
+body.nui button.nu-tile,body.nui button.nu-row,body.nui button.nu-feat,body.nui button.nu-search,body.nui button.nu-back,body.nui button.nu-title,body.nui button.nu-opt,body.nui button.nu-theme,body.nui button.nu-link,body.nui .nu-seg button,body.nui button.nu-chip{text-transform:none!important;letter-spacing:normal!important;font-weight:600!important}
+body.nui.ussr-ui .nu-tile b,body.nui.ussr-ui .nu-tx b,body.nui.ussr-ui .nu-ft b,body.nui.skin-siberie .nu-tile b,body.nui.skin-siberie .nu-tx b,body.nui.skin-siberie .nu-ft b{text-transform:uppercase;letter-spacing:.03em}
+body.nui.skin-or .nu-hello h2,body.nui.skin-or .nu-ft b,body.nui.skin-or .nu-tile b,body.nui.skin-or .nu-tx b,body.nui.skin-or .nu-sec>h3{font-family:Georgia,'Times New Roman',serif}
+body.nui.skin-or .nu-sec>h3{font-variant:small-caps;letter-spacing:.06em;text-transform:none;font-size:15px}
+body.nui.ussr-ui .nu-hello h2{font-family:Impact,'Arial Narrow Bold','Arial Narrow',sans-serif;text-transform:uppercase;letter-spacing:.06em;font-weight:400}
+/* clair et beige : la page est inversée par un filtre, les aperçus de thème sont réinversés pour montrer leurs vraies couleurs */
+html[data-theme=light] .nu-prev,html[data-theme=beige] .nu-prev{filter:invert(1) hue-rotate(180deg)}
+/* grand écran : plus de colonnes pour les thèmes et les badges */
+@media(min-width:900px){.nu-themes{grid-template-columns:repeat(4,minmax(0,1fr))}.nu-badges{grid-template-columns:repeat(4,minmax(0,1fr))}.nu-tiles.n2{grid-template-columns:repeat(4,minmax(0,1fr))}}

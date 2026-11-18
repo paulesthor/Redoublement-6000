@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.90';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.91';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -575,7 +575,7 @@ const views = {
       <div class="packart" id="packart">${(ussrUiOn() || ussrOn()) && window.ussrParcelSvg ? `<div class="us-home">${window.ussrParcelSvg()}</div>` : packSvg('full', { anim: false })}</div>
       <div class="pk-actions"><button id="open" ${me.packs || me.test ? '' : 'disabled'}>Ouvrir</button><button id="open10" class="plain open10" ${me.packs >= 10 || me.test ? '' : 'disabled'}>Ouvrir ×10</button>
       <div class="stock"><div class="pips">${Array.from({ length: 10 }, (_, i) => `<i class="${i < me.packs ? 'on' : ''}"></i>`).join('')}</div>
-        <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''} · prochain dans <b id="cd"></b>`}</p></div>
+        <p>${me.test ? '<b>∞</b> paquets · mode test' : `<b>${me.packs}</b> <span>paquet${me.packs > 1 ? 's' : ''} disponible${me.packs > 1 ? 's' : ''}</span> · <span>prochain dans</span> <b id="cd"></b>`}</p></div>
       <button id="buy" class="plain buy" ${me.coins >= cfg.packPrice ? '' : 'disabled'}>Acheter et ouvrir · ${cfg.packPrice} pièces</button>
       <button id="buy10" class="plain buy" ${me.coins >= cfg.packPrice * 10 ? '' : 'disabled'}>Acheter ×10 · ${fmt(cfg.packPrice * 10)} pièces</button></div>
       <div class="lastpack" id="lastpack" hidden><h3 class="sec">Dernier tirage</h3><div id="out" class="grid"></div></div></div>`;
@@ -1718,11 +1718,13 @@ async function refreshMe() {
   paintEvBar();
 }
 /** Bandeau des événements en cours (heure dorée, week-end shiny…) sous l'en-tête, sur tous les écrans. */
+/** Durée restante lisible : « 6 j 4 h », « 2 h 05 », « 41 min ». */
+const evLeft = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
 function paintEvBar() {
   let b = $('#evb'); if (!b) { b = document.createElement('div'); b.id = 'evb'; b.onclick = async e => { if (e.target.closest('.evchip.maint')) { if (window.confirm('Lever la maintenance ? Les joueurs pourront rejouer tout de suite.')) { await api('/admin/maintenance', { off: true }); await refreshMe(); paintEvBar(); toast('Maintenance levée'); } return; }  if (e.target.closest('.evchip.reset')) return resetScreen(null, true); if (e.target.closest('.evchip.seasonend')) return seasonReveal(null, true); if (e.target.closest('.evchip:not(.freeze)')) { tab = 'events'; markTab(); render(); } }; $('#view').before(b); }
-  const left = ms => { const m = Math.max(0, Math.ceil(ms / 60000)); return m >= 1440 ? `${Math.floor(m / 1440)} j ${Math.floor(m % 1440 / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
-  const list = me.ev || [];
-  b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${e.emoji} <b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join('') + (me.maintenance === 'admin' ? '<button class="evchip maint">🔧 <b>Maintenance active</b> · les joueurs sont bloqués · lever</button>' : ''); b.hidden = !list.length && me.maintenance !== 'admin';
+  const left = evLeft, nu = nuiOn();
+  const list = nu ? (me.ev || []).filter(e => NEV_SYSTEM.has(e.kind)) : (me.ev || []);   // nouvelle interface : les événements ordinaires sont présentés sur l'accueil, la barre ne garde que les avis système
+  b.innerHTML = list.map(e => `<button class="evchip ${e.kind}">${nu ? '' : e.emoji + ' '}<b>${esc(e.name)}</b> · ${left(e.end - Date.now())}</button>`).join('') + (me.maintenance === 'admin' ? `<button class="evchip maint">${nu ? '' : '🔧 '}<b>Maintenance active</b> · les joueurs sont bloqués · lever</button>` : ''); b.hidden = !list.length && me.maintenance !== 'admin';
 }
 const bindPlayers = root => root.querySelectorAll('[data-pl]').forEach(el => el.onclick = e => { if (e.target.closest('button')) return; playerSheet(el.dataset.pl); });
 /** Profil d'un joueur : stats, meilleures cartes, succès. */
@@ -2024,9 +2026,10 @@ views.settings = async v => {
   const th = ussrUiOn() ? 'urss' : pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), perks = [...((await api('/camp').catch(() => null))?.perks || []), ...((await loadCommu(true))?.perks || [])];
   const sw = (id, label, sub, on) => `<label class="switch"><span>${label}<small>${sub}</small></span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`;
   v.innerHTML = `${pageHead('Réglages', 'Apparence, jeu et notifications')}
-    <div class="setgrp"><h3>Thème</h3>${ussrUiOn() ? '<p class="mut" style="margin:0 0 10px;font-size:13px">Pendant l\'événement, le thème rouge est imposé. Ton thème habituel (' + esc((THEME_LIST.find(t => t[0] === (prefOf('wm_theme') || 'dark')) || THEME_LIST[3])[1]) + ') revient quand tu quittes le mode communiste.</p>' : ''}<div class="themes ${ussrUiOn() ? 'locked' : ''}">${THEME_LIST.filter(t => !t[5] || perks.includes(t[5]) || th === t[0]).map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
+    ${nuiOn() ? '<div class="setgrp"><h3>Apparence</h3><button class="plain" style="width:100%" id="st-perso">Thèmes, cadre de la photo, taille du texte : dans Personnaliser</button></div>' : `<div class="setgrp"><h3>Thème</h3>${ussrUiOn() ? '<p class="mut" style="margin:0 0 10px;font-size:13px">Pendant l\'événement, le thème rouge est imposé. Ton thème habituel (' + esc((THEME_LIST.find(t => t[0] === (prefOf('wm_theme') || 'dark')) || THEME_LIST[3])[1]) + ') revient quand tu quittes le mode communiste.</p>' : ''}<div class="themes ${ussrUiOn() ? 'locked' : ''}">${THEME_LIST.filter(t => !t[5] || perks.includes(t[5]) || th === t[0]).map(([k, l, bg, ac, d]) => `<button class="theme ${k === th ? 'on' : ''}" data-th="${k}"><span class="sw" style="background:${bg}"><i style="background:${ac}"></i></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></div>
     ${frm && frm.owned.length ? `<div class="setgrp"><h3>Cadre de la photo</h3><div class="themes frames">${[['auto', 'Automatique', 'Le plus prestigieux de ceux que tu as gagnés'], ['none', 'Aucun cadre', 'Photo sans contour'], ...frm.owned.map(f => [f.id, f.name, ({ gold_outline: 'Cadre du gagnant', frame_gold: 'Anneau doré', frame_hammer: 'Anneau rouge et or', frame_star: 'Anneau rouge' })[f.id]])].map(([k, l, d]) => { const cl = k === 'none' ? '' : 'fr-' + (k === 'auto' ? frm.owned[0].id : k); return `<button class="theme ${k === frm.choice ? 'on' : ''}" data-fr="${k}"><span class="av ${me.av ? 'hasph' : ''} ${cl}" style="--avc:${avColor(me.name)};margin:8px 10px 8px 8px">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(String(me.name)[0]?.toUpperCase() || '?')}</span><span><b>${l}</b><small>${d}</small></span></button>`; }).join('')}</div></div>` : ''}
     <div class="setgrp"><h3>Taille du texte</h3><div class="seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+`}
     <div class="setgrp"><h3>Jeu</h3><div class="panel">
       ${soundLocked() ? '' : sw('st-snd', 'Sons', 'Déchirure et ouverture des paquets', pref('wm_sound', '1') !== '0')}
       ${commu?.on && commu.joined ? sw('st-commu', 'Mode communiste', 'Thème rouge, menus du Parti et jeux de l\'événement', prefOf('wm_ussr_ui') !== '0') : ''}
@@ -2046,7 +2049,8 @@ views.settings = async v => {
       <p class="build">Build ${BUILD}${cfg?.version && cfg.version !== BUILD ? ` · serveur ${esc(cfg.version)} — recharge l'appli` : ''}</p></div>`;
   v.querySelectorAll('[data-th]').forEach(b => b.onclick = async () => { if (ussrUiOn()) return toast('Le thème rouge est imposé pendant l\'événement'); setPref('wm_theme', b.dataset.th); v.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); await syncUssrUi(); render(); });
   v.querySelectorAll('[data-fr]').forEach(b => b.onclick = safe(async () => { await api('/me/frame', { frame: b.dataset.fr }); await loadCosmetics(true); await refreshMe(); toast('Cadre enregistré'); render(); }));
-  $('#tx-seg').onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); $('#tx-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+  const txs = $('#tx-seg'); if (txs) txs.onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); txs.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+  $('#st-perso')?.addEventListener('click', () => { tab = 'perso'; render(); });
   $('#st-ussrui')?.addEventListener('change', async e => {
     if (e.target.checked) { setPref('wm_ussr', '1'); setPref('wm_ussr_ui', '1'); }
     else { setPref('wm_ussr_ui', '0'); setPref('wm_ussr', '0'); }
@@ -2084,6 +2088,7 @@ views.settings = async v => {
 
 // ---------- personnalisation du profil : photo et titre ----------
 views.customize = async v => {
+  if (nuiOn()) { tab = 'perso'; markTab(); return views.perso(v); }
   const d = await api('/titles'); await loadCosmetics(true);
   const cur = d.current;
   const card = t => `<button class="titlecard ${t.unlocked ? 'ok' : ''} ${t.season ? 'season' : ''} ${cur === t.id ? 'on' : ''}" data-ti="${t.id}" ${t.unlocked ? '' : 'disabled'}>
@@ -3090,14 +3095,14 @@ const NGROUP = {
   coll: 'coll', album: 'coll', albums: 'coll', search: 'coll', trades: 'coll', expeditions: 'coll',
   jouer: 'jouer', duel: 'jouer', tournaments: 'jouer', tournament: 'jouer', quests: 'jouer', dquiz: 'jouer', hilo: 'jouer', events: 'jouer', noelcal: 'jouer', potato: 'jouer', gulag: 'jouer', tsar: 'jouer', plan: 'jouer', commutop: 'jouer', commurules: 'jouer', commuend: 'jouer',
   marche: 'marche', market: 'marche', bourse: 'marche', bank: 'marche', trends: 'marche', themepacks: 'marche',
-  feed: 'menu', msg: 'menu', chat: 'menu', friends: 'menu', rank: 'menu', ach: 'menu', settings: 'menu', customize: 'menu', admin: 'menu', player: 'menu',
+  perso: 'menu', feed: 'menu', msg: 'menu', chat: 'menu', friends: 'menu', rank: 'menu', ach: 'menu', settings: 'menu', customize: 'menu', admin: 'menu', player: 'menu',
 };
 /** Écran → [écran parent, libellé du retour] : un bouton « ‹ parent » s'ajoute en haut des sous-écrans. */
 const NPARENT = {
   album: ['coll', 'Collection'], albums: ['coll', 'Collection'], search: ['coll', 'Collection'], trades: ['coll', 'Collection'], expeditions: ['coll', 'Collection'],
   market: ['marche', 'Marché'], bourse: ['marche', 'Marché'], bank: ['marche', 'Marché'], trends: ['marche', 'Marché'], themepacks: ['marche', 'Marché'],
   duel: ['jouer', 'Jouer'], tournaments: ['jouer', 'Jouer'], tournament: ['tournaments', 'Tournois'], quests: ['jouer', 'Jouer'], dquiz: ['jouer', 'Jouer'], hilo: ['jouer', 'Jouer'], events: ['jouer', 'Jouer'], noelcal: ['jouer', 'Jouer'], potato: ['jouer', 'Jouer'], gulag: ['jouer', 'Jouer'], tsar: ['jouer', 'Jouer'],
-  feed: ['menu', 'Menu'], msg: ['menu', 'Menu'], chat: ['msg', 'Messages'], friends: ['menu', 'Menu'], rank: ['menu', 'Menu'], ach: ['menu', 'Menu'], settings: ['menu', 'Menu'], customize: ['menu', 'Menu'], admin: ['menu', 'Menu'],
+  perso: ['menu', 'Menu'], feed: ['menu', 'Menu'], msg: ['menu', 'Menu'], chat: ['msg', 'Messages'], friends: ['menu', 'Menu'], rank: ['menu', 'Menu'], ach: ['menu', 'Menu'], settings: ['menu', 'Menu'], customize: ['menu', 'Menu'], admin: ['menu', 'Menu'],
 };
 const NUI_NAV = [['packs', 'home', 'Accueil'], ['coll', 'album', 'Collection'], ['jouer', 'play', 'Jouer'], ['marche', 'market', 'Marché'], ['menu', 'menu', 'Menu']]
   .map(([k, i, l]) => `<button data-tab="${k}"><span class="t"><svg class="ic"><use href="#i-${i}"/></svg></span><em>${l}</em></button>`).join('');
@@ -3114,7 +3119,7 @@ function syncNui() {
 let nuDv = 0;   // dividendes de collection à récupérer (dernier montant connu)
 const nuHello = () => { const h = new Date().getHours(); return h >= 5 && h < 18 ? 'Bonjour' : 'Bonsoir'; };
 const nuTile = (go, icon, label, sub, hot = false, id = '') => `<button class="nu-tile${hot ? ' hot' : ''}" ${id ? `id="${id}"` : `data-nugo="${go}"`}><span class="nu-ti">${ico(icon)}</span><b>${label}</b><small>${sub}</small></button>`;
-const nuRow = (go, icon, label, sub, badge = 0) => `<button class="nu-row" data-nugo="${go}"><span class="nu-ti">${ico(icon)}</span><span class="nu-tx"><b>${label}</b><small>${sub}</small></span>${badge ? `<i class="nu-bd">${badge > 9 ? '9+' : badge}</i>` : ''}${ico('chev', 'nu-ch')}</button>`;
+const nuRow = (go, icon, label, sub, badge = 0, meta = '') => `<button class="nu-row" data-nugo="${go}"><span class="nu-ti">${ico(icon)}</span><span class="nu-tx"><b>${label}</b><small>${sub}</small></span>${meta ? `<i class="nu-meta">${meta}</i>` : ''}${badge ? `<i class="nu-bd">${badge > 9 ? '9+' : badge}</i>` : ''}${ico('chev', 'nu-ch')}</button>`;
 const nuList = rows => `<div class="nu-list">${rows.join('')}</div>`;
 const nuSec = (title, inner, note = '') => `<section class="nu-sec"><h3><span>${title}</span>${note ? `<em>${note}</em>` : ''}</h3>${inner}</section>`;
 const nuFeat = (go, kicker, title, sub, cls = '') => `<button class="nu-feat ${cls}" data-nugo="${go}"><span class="nu-ft"><small>${kicker}</small><b>${title}</b><i>${sub}</i></span>${ico('chev', 'nu-ch')}</button>`;
@@ -3122,13 +3127,21 @@ function nuTiles() {
   const quiz = me.dq === 'done' ? 'Terminé · à demain' : me.dq === 'run' ? 'En cours' : 'Nouveau';
   return `<div class="nu-tiles n${nuDv > 0 ? 3 : 2}">${nuTile('dquiz', 'book', 'Quiz du jour', quiz, me.dq === 'new')}${nuTile('quests', 'medal', 'Quêtes', me.qc > 0 ? `${me.qc} à réclamer` : 'Défis du jour', me.qc > 0)}${nuDv > 0 ? nuTile('', 'building', 'Banque', `+${fmt(nuDv)} à récupérer`, true, 'nu-bank') : ''}</div>`;
 }
+/** Avis qui restent dans la barre du haut (états du compte ou du jeu) ; les autres événements sont listés dans « En ce moment ». */
+const NEV_SYSTEM = new Set(['freeze', 'reset', 'seasonend']);
+const NEV_ICON = { golden: 'coin', shiny: 'spark', theme: 'packs', album: 'album', goal: 'friends', weekly: 'medal', hunt: 'search', season: 'trophy' };
+const NEV_GO = { album: 'albums', theme: 'themepacks' };
+const NEV_HINT = { golden: 'Légendaires plus fréquentes', shiny: 'Plus de chances d\'être shiny', theme: 'Paquets thématiques à prix réduit', album: 'Série à compléter en 7 jours', goal: 'Objectif collectif : tous ensemble', weekly: 'Défi de la semaine', hunt: 'Carte recherchée du jour', season: 'Saison en cours' };
+/** Événements du jeu en cours (heure dorée, album éphémère…) : une ligne chacun, dans la même liste que les autres blocs. */
+const nuEventRows = () => (me.ev || []).filter(e => !NEV_SYSTEM.has(e.kind)).map(e => nuRow(NEV_GO[e.kind] || 'events', NEV_ICON[e.kind] || 'spark', esc(frTypo(stripEmoji(e.name))), NEV_HINT[e.kind] || 'Événement en cours', 0, evLeft(e.end - Date.now())));
 function nuEvents() {
   const ev = [];
-  if (me.noel) ev.push(['noel-open', 'ÉVÉNEMENT', 'Calendrier de l\'Avent', 'Portes, Tir au patron et Atelier des lutins']);
-  if (commu?.on && !commu.joined) ev.push(['commu-join', 'ÉVÉNEMENT', 'Événement communiste', `Entre dans le Plan : taxe de ${commu.tax} wikibidou, ${commu.startWr} ₽ de départ`]);
-  if (commu?.on && commu.joined && !ussrUiOn()) ev.push(['commu-enter', 'ÉVÉNEMENT', 'Mode communiste', 'Retourne au Plan : thème rouge, colis du Parti']);
-  if (!ev.length) return '';
-  return nuSec('En ce moment', `<div class="nu-evts">${ev.map(([id, k, t, s]) => `<button class="nu-feat ev" id="${id}"><span class="nu-ft"><small>${k}</small><b>${t}</b><i>${s}</i></span>${ico('chev', 'nu-ch')}</button>`).join('')}</div>`, ev.length > 1 ? `${ev.length} événements` : '');
+  if (me.noel) ev.push(['noel-open', 'Événement', 'Calendrier de l\'Avent', 'Portes, Tir au patron et Atelier des lutins']);
+  if (commu?.on && !commu.joined) ev.push(['commu-join', 'Événement', 'Événement communiste', `Entre dans le Plan : taxe de ${commu.tax} wikibidou, ${commu.startWr} ₽ de départ`]);
+  if (commu?.on && commu.joined && !ussrUiOn()) ev.push(['commu-enter', 'Événement', 'Mode communiste', 'Retourne au Plan : thème rouge, colis du Parti']);
+  const rows = nuEventRows(), n = ev.length + rows.length;
+  if (!n) return '';
+  return nuSec('En ce moment', `${ev.length ? `<div class="nu-evts">${ev.map(([id, k, t, s]) => `<button class="nu-feat ev" id="${id}"><span class="nu-ft"><small>${k}</small><b>${t}</b><i>${s}</i></span>${ico('chev', 'nu-ch')}</button>`).join('')}</div>` : ''}${rows.length ? nuList(rows) : ''}`, n > 1 ? `${n} en cours` : '');
 }
 /** Accueil de la nouvelle interface : mêmes boutons (mêmes identifiants) que l'ancien, donc la même logique d'ouverture de paquets. */
 const nuHomeHtml = () => `${lockNote()}
@@ -3154,14 +3167,14 @@ views.coll = async v => {
   const S = await api('/album/stats').catch(() => null);
   v.innerHTML = `${pageHead('Collection', 'Tes cartes, et ce qui sert à les compléter')}
     <button class="nu-search" data-nugo="search">${ico('search')}<span>Chercher une carte</span></button>
-    ${nuFeat('album', 'MA COLLECTION', S ? `${fmt(S.uniques)} cartes uniques` : 'Voir ma collection', S ? `${fmt(S.copies)} exemplaires${S.total ? ` · ${Math.round(S.uniques / S.total * 100)} % du catalogue` : ''}` : 'Trier, filtrer, revendre', 'plain')}
+    ${nuFeat('album', 'Ma collection', S ? `${fmt(S.uniques)} cartes uniques` : 'Voir ma collection', S ? `${fmt(S.copies)} exemplaires${S.total ? ` · ${Math.round(S.uniques / S.total * 100)} % du catalogue` : ''}` : 'Trier, filtrer, revendre', 'plain')}
     ${nuSec('Compléter', nuList([nuRow('albums', 'album', 'Albums', 'Séries de cartes à compléter'), nuRow('trades', 'swap', 'Échanges', 'Troquer des cartes'), nuRow('expeditions', 'pin', 'Expéditions', 'Envoie tes doublons', me.ex || 0)]))}`;
   nuBind(v);
 };
 views.jouer = async v => {
   v.innerHTML = `${pageHead('Jouer', 'Combats, défis et événements')}
-    ${me.noel ? nuFeat('noelcal', 'ÉVÉNEMENT · JUSQU\'AU 25 DÉCEMBRE', 'Noël au Pôle Nord (S.A.)', 'Calendrier de l\'Avent, Tir au patron, Atelier des lutins', 'ev') : ''}
-    ${commu?.on && eventAccess() ? nuFeat(commu.joined ? 'plan' : 'commustart', 'ÉVÉNEMENT', 'Événement communiste', commu.joined ? 'Paliers du Plan, jeux du Parti' : 'Entre dans le Plan', 'ev') : ''}
+    ${me.noel ? nuFeat('noelcal', 'Événement · jusqu\'au 25 décembre', 'Noël au Pôle Nord (S.A.)', 'Calendrier de l\'Avent, Tir au patron, Atelier des lutins', 'ev') : ''}
+    ${commu?.on && eventAccess() ? nuFeat(commu.joined ? 'plan' : 'commustart', 'Événement', 'Événement communiste', commu.joined ? 'Paliers du Plan, jeux du Parti' : 'Entre dans le Plan', 'ev') : ''}
     ${nuSec('Affrontements', nuList([nuRow('duel', 'duel', 'Combats', 'Défie un joueur, ou parie sur un combat'), nuRow('tournaments', 'trophy', 'Tournois', 'Mise et combats à 4')]))}
     ${nuSec('Défis et mini-jeux', `<div class="nu-tiles n2">${nuTile('dquiz', 'book', 'Quiz du jour', me.dq === 'done' ? 'Terminé · à demain' : 'Gagne des paquets', me.dq === 'new')}${nuTile('quests', 'medal', 'Quêtes', me.qc > 0 ? `${me.qc} à réclamer` : 'Défis du jour', me.qc > 0)}${nuTile('hilo', 'spark', 'Plus ou moins', 'Quitte ou double')}${nuTile('events', 'spark', 'Événements', 'Défis, saison, surprises', (me.ev || []).length > 0)}</div>`)}
     ${me.admin ? nuSec('Démos (administrateur)', nuList([nuRow('potato', 'leaf', 'Patates', 'Jeu 3D (test)'), nuRow('gulag', 'building', 'Camp', 'Gestion (démo)'), nuRow('tsar', 'book', 'Le Dernier Tsar', 'Cartes à glisser (démo)')])) : ''}`;
@@ -3170,10 +3183,80 @@ views.jouer = async v => {
 views.marche = async v => {
   const b = await api('/bank').catch(() => null); if (b) nuDv = +(b.dividends?.claimable || 0);
   v.innerHTML = `${pageHead('Marché', 'Acheter, vendre et gagner des pièces')}
-    ${nuFeat('market', 'PLACE DES JOUEURS', 'Marché', 'Enchères, échanges et ventes', 'plain')}
+    ${nuFeat('market', 'Place des joueurs', 'Marché', 'Enchères, échanges et ventes', 'plain')}
     ${nuSec('Gagner des pièces', nuList([nuRow('bank', 'building', 'Banque', nuDv > 0 ? `Dividendes : +${fmt(nuDv)} à récupérer` : 'Épargne et dividendes', nuDv > 0 ? 1 : 0), nuRow('bourse', 'market', 'Bourse', 'Paris sur les vues Wikipédia'), nuRow('themepacks', 'packs', 'Paquets du jour', 'Une catégorie de légendaires'), nuRow('trends', 'chart', 'Tendances', 'Cours et alertes')]))}`;
   nuBind(v);
 };
+// ---------- Personnaliser (nouvelle interface) : profil, titres, badges et apparence dans un seul onglet ----------
+const stripEmoji = s => String(s).replace(/^[\p{Extended_Pictographic}️‍\s]+/u, '');
+/** Typographie française : espace insécable à l'intérieur des guillemets, pour que « » ne reste jamais seul en fin de ligne. */
+const frTypo = s => String(s).replace(/«\s/g, '« ').replace(/\s»/g, ' »');
+let persoSec = 'profil';
+/** Groupe d'un titre : un thème de jeu ou un événement (les titres sont nombreux, on les range). */
+const nuTitleGroup = t => {
+  const id = t.id;
+  if (id.startsWith('plan_')) return 'plan'; if (id.startsWith('camp_')) return 'camp'; if (id.startsWith('noel_')) return 'noel';
+  if (id.startsWith('ev_alb_')) return 'alb'; if (id.startsWith('ev_season') || id.startsWith('s1_') || id === 'saison0' || t.cat === 'saison') return 'season';
+  return t.cat === 'evenements' ? 'defis' : t.cat;
+};
+const NGRP = { modes: 'Modes de jeu', exploits: 'Exploits et collection', alb: 'Albums éphémères', defis: 'Défis et objectifs', season: 'Saisons', noel: 'Noël au Pôle Nord', plan: 'Événement communiste · Plan quinquennal', camp: 'Camp du Goulag' };
+/** Famille d'un badge, déduite de son code (le serveur ne l'envoie pas). */
+const nuBadgeGroup = a => /^pack/.test(a.k) ? 'Paquets' : /^uni/.test(a.k) ? 'Collection' : /^(rare|super|ultra|legend|shiny)/.test(a.k) ? 'Raretés' : /^win/.test(a.k) ? 'Combats' : /^(sold|won)/.test(a.k) ? 'Marché' : /^fr/.test(a.k) ? 'Social' : /^coin/.test(a.k) ? 'Économie' : 'Autres';
+const NBADGE_ORDER = ['Paquets', 'Collection', 'Raretés', 'Combats', 'Marché', 'Social', 'Économie'];
+const NTHEME_GROUPS = [['Classiques', ['dark', 'midnight', 'ocean', 'forest', 'violet', 'light', 'beige', 'auto']], ['Événements', ['urss', 'siberie', 'or']]];
+const nuGrp = (title, done, total, inner, open = false) => `<details class="nu-grp" ${open ? 'open' : ''}><summary><b>${esc(title)}</b><i class="nu-cnt">${done} / ${total}</i>${ico('chev', 'nu-ch')}</summary>${inner}</details>`;
+views.perso = async v => {
+  const [T, Ach, frm, camp, cm] = await Promise.all([api('/titles'), api('/achievements').catch(() => ({ achievements: [] })), api('/me/frame').catch(() => null), api('/camp').catch(() => null), loadCommu(true).catch(() => null)]);
+  await loadCosmetics(true);
+  const perks = [...(camp?.perks || []), ...(cm?.perks || [])], th = ussrUiOn() ? 'urss' : pref('wm_theme', 'dark'), tx = pref('wm_text', 'm'), cur = T.current;
+  const curT = T.titles.find(t => t.id === cur);
+  v.innerHTML = `${pageHead('Personnaliser', 'Profil, titres, badges et apparence')}
+    <div class="seg nu-seg" id="pe-seg">${[['profil', 'Profil'], ['titres', 'Titres'], ['badges', 'Badges'], ['theme', 'Apparence']].map(([k, l]) => `<button data-pe="${k}" class="${k === persoSec ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div id="pe-body"></div><input type="file" id="av-file" accept="image/*" hidden>`;
+  const body = $('#pe-body');
+  const titleRow = t => `<button class="nu-title ${t.unlocked ? 'ok' : ''} ${cur === t.id ? 'on' : ''}" data-ti="${t.id}" ${t.unlocked ? '' : 'disabled'}><span class="nu-tx"><b>${esc(frTypo(stripEmoji(t.label)))}</b><small>${t.season && !t.unlocked ? 'Saison 1 · bientôt' : esc(frTypo(t.desc))}</small>${!t.unlocked && t.prog ? `<span class="nu-bar"><i style="width:${Math.min(100, Math.round(t.prog[0] / t.prog[1] * 100))}%"></i></span>` : ''}</span><i class="nu-chip ${cur === t.id ? 'hot' : ''}">${cur === t.id ? 'Équipé' : t.unlocked ? 'Équiper' : t.prog ? `${fmt(Math.min(t.prog[0], t.prog[1]))} / ${fmt(t.prog[1])}` : 'Verrouillé'}</i></button>`;
+  const drawers = {
+    profil: () => `<div class="nu-profile"><span class="nu-avbig">${avatar(me.name)}</span><span class="nu-tx"><b>${esc(me.name)}</b><small>${curT ? esc(frTypo(stripEmoji(curT.label))) : 'Aucun titre équipé'}</small></span></div>
+      <div class="nu-two"><button class="nu-ghost" id="av-pick">${me.av ? 'Changer la photo' : 'Ajouter une photo'}</button>${me.av ? '<button class="nu-ghost" id="av-del">Retirer la photo</button>' : '<button class="nu-ghost" id="pf-view">Voir ma page</button>'}</div>
+      <div class="nu-one"><button class="nu-ghost" data-pego="titres">${curT ? 'Changer de titre' : 'Choisir un titre'}</button></div>
+      ${me.av ? '<div class="nu-one"><button class="nu-ghost" id="pf-view">Voir ma page</button></div>' : ''}
+      ${frm && frm.owned.length ? nuSec('Cadre de la photo', `<div class="nu-opts">${[['auto', 'Automatique', 'Le plus prestigieux de ceux que tu as gagnés'], ['none', 'Aucun cadre', 'Photo sans contour'], ...frm.owned.map(f => [f.id, f.name, ({ gold_outline: 'Cadre du gagnant', frame_gold: 'Anneau doré', frame_hammer: 'Anneau rouge et or', frame_star: 'Anneau rouge' })[f.id]])].map(([k, l, d]) => { const cl = k === 'none' ? '' : 'fr-' + (k === 'auto' ? frm.owned[0].id : k); return `<button class="nu-opt ${k === frm.choice ? 'on' : ''}" data-fr="${k}"><span class="av ${me.av ? 'hasph' : ''} ${cl}" style="--avc:${avColor(me.name)}">${me.av ? `<img src="/api/avatar/${me.id}?v=${me.av}" alt="" onerror="this.remove()">` : ''}${esc(String(me.name)[0]?.toUpperCase() || '?')}</span><span class="nu-tx"><b>${esc(l)}</b><small>${esc(d)}</small></span></button>`; }).join('')}</div>`) : ''}`,
+    titres: () => {
+      const groups = {}; T.titles.forEach(t => (groups[nuTitleGroup(t)] ||= []).push(t));
+      const order = [...Object.keys(NGRP), ...Object.keys(groups).filter(k => !NGRP[k])].filter(k => groups[k]);
+      const n = T.titles.filter(t => t.unlocked).length;
+      return `<div class="nu-summary"><span><b>${n}</b> / ${T.titles.length} titres débloqués</span>${cur ? '<button class="nu-link" id="ti-none">Ne plus afficher de titre</button>' : ''}</div>
+        ${order.map(k => { const g = groups[k]; return nuGrp(NGRP[k] || T.cats?.[k] || k, g.filter(t => t.unlocked).length, g.length, `<div class="nu-list">${g.map(titleRow).join('')}</div>`, g.some(t => t.id === cur)); }).join('')}`;
+    },
+    badges: () => {
+      const list = Ach.achievements || [], groups = {};
+      list.forEach(a => (groups[nuBadgeGroup(a)] ||= []).push(a));
+      const order = [...NBADGE_ORDER, ...Object.keys(groups).filter(k => !NBADGE_ORDER.includes(k))].filter(k => groups[k]);
+      const tile = a => `<div class="nu-badge ${a.done ? 'done' : ''}"><span class="nu-medal">${ico(a.done ? 'trophy' : 'shield')}</span><b>${esc(frTypo(a.t))}</b><small>${esc(frTypo(a.d))}</small>${a.done ? `<i class="nu-chip hot">${ico('coin')}${fmt(a.r)}</i>` : `<span class="nu-bar"><i style="width:${Math.round(a.value / a.n * 100)}%"></i></span><i class="nu-prog">${fmt(a.value)} / ${fmt(a.n)}</i>`}</div>`;
+      return `<div class="nu-summary"><span><b>${list.filter(a => a.done).length}</b> / ${list.length} badges débloqués</span></div>
+        ${order.map((k, i) => nuGrp(k, groups[k].filter(a => a.done).length, groups[k].length, `<div class="nu-badges">${groups[k].map(tile).join('')}</div>`, i === 0)).join('')}`;
+    },
+    theme: () => `${ussrUiOn() ? '<p class="nu-note">Pendant l\'événement, le thème rouge est imposé. Ton thème habituel revient quand tu quittes le mode communiste.</p>' : ''}
+      ${NTHEME_GROUPS.map(([gl, ids]) => nuSec(gl, `<div class="nu-themes ${ussrUiOn() ? 'locked' : ''}">${ids.map(id => THEME_LIST.find(t => t[0] === id)).filter(Boolean).map(([k, l, bg, ac, d, perk]) => { const lock = perk && !perks.includes(perk) && th !== k; return `<button class="nu-theme ${k === th ? 'on' : ''}" data-th="${k}" ${lock ? 'disabled' : ''}><span class="nu-prev" style="--pb:${bg.startsWith('linear') ? '#07070b' : bg};--pa:${ac};${bg.startsWith('linear') ? 'background:' + bg : ''}"><i></i><i></i><i></i></span><span class="nu-tx"><b>${esc(l)}</b><small>${lock ? 'Verrouillé · ' + esc(d.split('· ')[1] || 'à débloquer') : esc(d.split(' · ')[0])}</small></span></button>`; }).join('')}</div>`)).join('')}
+      ${nuSec('Taille du texte', `<div class="seg nu-seg" id="tx-seg">${[['s', 'Petit'], ['m', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button data-tx="${k}" class="${k === tx ? 'on' : ''}">${l}</button>`).join('')}</div>`)}`,
+  };
+  const draw = () => {
+    body.innerHTML = drawers[persoSec]();
+    body.querySelectorAll('[data-pego]').forEach(b => { b.onclick = () => { persoSec = b.dataset.pego; $('#pe-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.pe === persoSec)); draw(); }; });
+    $('#av-pick')?.addEventListener('click', () => $('#av-file').click());
+    $('#av-del')?.addEventListener('click', safe(async () => { await api('/me/avatar', { data: null }); await refreshMe(); await loadCosmetics(true); toast('Photo retirée'); render(); }));
+    $('#pf-view')?.addEventListener('click', () => playerSheet(me.id));
+    $('#ti-none')?.addEventListener('click', safe(async () => { await api('/me/title', { id: null }); await refreshMe(); await loadCosmetics(true); render(); }));
+    body.querySelectorAll('[data-ti]').forEach(b => { b.onclick = safe(async () => { await api('/me/title', { id: b.dataset.ti }); await refreshMe(); await loadCosmetics(true); toast('Titre équipé'); render(); }); });
+    body.querySelectorAll('[data-fr]').forEach(b => { b.onclick = safe(async () => { await api('/me/frame', { frame: b.dataset.fr }); await loadCosmetics(true); await refreshMe(); toast('Cadre enregistré'); render(); }); });
+    body.querySelectorAll('[data-th]').forEach(b => { b.onclick = async () => { if (ussrUiOn()) return toast('Le thème rouge est imposé pendant l\'événement'); setPref('wm_theme', b.dataset.th); body.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b)); await syncUssrUi(); render(); }; });   // même enchaînement que l'ancien écran : applique le thème et, pour un thème d'événement, ses textes
+    const tg = $('#tx-seg'); if (tg) tg.onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; setPref('wm_text', b.dataset.tx); tg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+  };
+  $('#av-file').onchange = e => { const f = e.target.files[0]; if (f) cropSheet(f); e.target.value = ''; };
+  $('#pe-seg').onclick = e => { const b = e.target.closest('[data-pe]'); if (!b) return; persoSec = b.dataset.pe; $('#pe-seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); draw(); };
+  draw();
+};
+
 /** Menu : liste en groupes (ouvre une feuille). */
 function nuMenu() {
   const m = $('#modal'), close = () => { m.hidden = true; m.innerHTML = ''; };
@@ -3183,7 +3266,7 @@ function nuMenu() {
     <div class="mhead">${avatar(me.name)}<div><b>${esc(me.name)}</b><small>${fmt(me.coins)} pièces · ${me.test ? '∞' : me.packs} paquet${me.packs > 1 ? 's' : ''}</small></div><button class="plain mx" id="mo-x" aria-label="Fermer">✕</button></div>
     ${me.daily ? nuSec('À récupérer', nuList([row('daily', 'spark', 'Récompense du jour', 'À récupérer', 1)])) : ''}
     ${nuSec('Communauté', nuList([row('feed', 'feed', 'Fil', 'Légendaires et réactions'), row('msg', 'chat', 'Messages', 'Écrire à un joueur', me.dm || 0), row('friends', 'friends', 'Amis', 'QR code, demandes', me.badge || 0), row('rank', 'trophy', 'Classement', 'Les meilleurs joueurs')]))}
-    ${nuSec('Mon compte', nuList([row('profile', 'user', 'Mon profil', 'Vitrine et statistiques'), row('ach', 'medal', 'Succès', 'Objectifs et primes'), row('customize', 'heart', 'Personnaliser', 'Photo, titres, cadres'), row('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')]))}
+    ${nuSec('Mon compte', nuList([row('profile', 'user', 'Mon profil', 'Vitrine et statistiques'), row('ach', 'medal', 'Succès', 'Objectifs et primes'), row('perso', 'heart', 'Personnaliser', 'Profil, titres, badges, apparence'), row('settings', 'gear', 'Réglages', 'Thèmes, sons, notifications')]))}
     ${me.admin ? nuSec('Administration', nuList([row('admin', 'shield', 'Administration', 'Tableau de bord')])) : ''}</div>`;
   $('#mo-x').onclick = close; m.onclick = e => { if (e.target === m) close(); };
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {

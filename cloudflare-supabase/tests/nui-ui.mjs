@@ -36,38 +36,13 @@ const th = p => p.evaluate(() => document.documentElement.dataset.theme);
 
 await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
 await call(A, 'POST', '/api/noel/set', { on: true, scope: 'admin' });
-// audit de mise en forme exécuté dans la page : renvoie la liste des défauts trouvés
-const AUDIT = () => {
-  const issues = [], W = innerWidth, de = document.documentElement, root = document.querySelector('.nu-sheet') || document.querySelector('#view');
-  if (de.scrollWidth > W + 1) { const cul = [...document.querySelectorAll('body *')].filter(e => e.tagName !== 'SCRIPT' && e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().right > W + 1).slice(0, 3).map(e => `${e.tagName}.${String(e.className?.baseVal ?? e.className).slice(0, 24)}`); issues.push(`débordement horizontal de la page (${de.scrollWidth} > ${W}) : ${cul.join(', ')}`); }
-  const q = s => [...root.querySelectorAll(s)].filter(e => e.getBoundingClientRect().width > 0);
-  for (const e of q('.nu-hello,.nu-hero,.nu-tile,.nu-row,.nu-feat,.nu-sec,.nu-list,.nu-tiles,.nu-search,.nu-btn,.nu-ghost,.nu-link,.nu-back,.nu-evts,.nu-tx,.nu-ft,.pagehead')) {
-    const r = e.getBoundingClientRect(), pr = e.parentElement.getBoundingClientRect();
-    if (r.left < -0.5 || r.right > W + 0.5) issues.push(`hors écran : ${e.className}`);
-    if (r.left < pr.left - 1 || r.right > pr.right + 1) issues.push(`déborde de son conteneur : ${e.className} ${e.textContent.trim().slice(0, 24)}`);
-  }
-  for (const e of q('.nu-tile b,.nu-tile small,.nu-tx b,.nu-tx small,.nu-ft b,.nu-ft i,.nu-ft small,.nu-ghost,.nu-btn,.nu-hello h2,.pagehead h1,.nu-sec>h3 span'))
-    if (e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1) issues.push(`texte coupé : ${e.className || e.tagName} « ${e.textContent.trim().slice(0, 30)} »`);
-  const boxes = c => [...c.children].filter(k => { const r = k.getBoundingClientRect(), cs = getComputedStyle(k); return r.width > 0 && r.height > 0 && cs.position !== 'absolute' && cs.position !== 'fixed'; });
-  for (const c of [root, ...q('.nu-tiles,.nu-list,.nu-hero,.nu-evts,.nu-links,.nu-two,.nu-sec,.nu-hello')]) {
-    const k = boxes(c);
-    for (let i = 0; i < k.length; i++) for (let j = i + 1; j < k.length; j++) { const a = k[i].getBoundingClientRect(), b = k[j].getBoundingClientRect(); const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top); if (ox > 1 && oy > 1) issues.push(`recouvrement : ${k[i].className || k[i].tagName} / ${k[j].className || k[j].tagName}`); }
-  }
-  for (const g of q('.nu-tiles,.nu-two')) { const hs = [...g.children].map(k => Math.round(k.getBoundingClientRect().height)); if (Math.max(...hs) - Math.min(...hs) > 1) issues.push(`hauteurs inégales dans une rangée : ${hs}`); }
-  for (const b of q('.nu-tile,.nu-row,.nu-feat,.nu-search,.nu-btn,.nu-ghost,.nu-link,.nu-back')) if (b.getBoundingClientRect().height < 43.5) issues.push(`zone tactile trop petite (${Math.round(b.getBoundingClientRect().height)} px) : ${b.className}`);
-  for (const e of q('.nu-tile b,.nu-tile small,.nu-tx b,.nu-tx small,.nu-ft small,.nu-ft i,.nu-link,.nu-sec>h3')) if (parseFloat(getComputedStyle(e).fontSize) < 10.5) issues.push(`texte trop petit : ${e.className}`);
-  if (W <= 820 && !document.querySelector('.nu-sheet')) {   // en bas de page, le dernier bloc ne passe pas sous la barre du bas
-    scrollTo(0, 1e6); const nav = document.querySelector('aside nav').getBoundingClientRect(), last = [...document.querySelectorAll('#view > *')].filter(e => e.getBoundingClientRect().height > 0 && !e.hidden).pop();
-    if (last && last.getBoundingClientRect().bottom > nav.top + 1) issues.push(`le dernier bloc passe sous la barre du bas (${Math.round(last.getBoundingClientRect().bottom)} > ${Math.round(nav.top)})`); scrollTo(0, 0);
-  }
-  return issues;
-};
+import { AUDIT } from './nui-audit.mjs';
 const WIDTHS = [320, 360, 390, 430, 768, 1100];
 const nuMock = { v: 84 };
 let p = await mkT(A, { wm_nui: '1', wm_ussr_ui: '0' });
 await p.route('**/api/bank', r => r.request().method() === 'GET' ? r.fulfill({ json: { coins: 690, savings: { amount: 0, rate: 0.006, perDay: 0, cap: 5000, lockDays: 7, fee: 0.1, locked: 0, frozen: 0, interest: 0 }, dividends: { daily: 12, cap: 100, raw: 12, maxDays: 7, byRarity: [3, 2, 0, 0, 0, 0], bonus: 0, albums: 0, claimable: nuMock.v, days: 1 } } }) : r.fallback());
 await p.route('**/api/bank/dividends/claim', r => { nuMock.v = 0; return r.fulfill({ json: { got: 84 } }); });
-await p.evaluate(async () => { await refreshMe(); });
+await p.evaluate(async () => { await refreshMe(); const H = 3600000; me.ev = [{ id: 'album:x', kind: 'album', name: 'Album « Coupe du monde »', emoji: '🏆', end: Date.now() + 6 * 24 * H + 4 * H }, { id: 'golden:x', kind: 'golden', name: 'Heure dorée', emoji: '✨', end: Date.now() + 41 * 60000 }]; });
 ok('la nouvelle interface est active pour l\'administrateur', await p.evaluate(() => nuiOn() && document.body.classList.contains('nui')));
 ok('barre du bas : 5 entrées (Accueil, Collection, Jouer, Marché, Menu)', (await p.$$('aside nav button')).length === 5 && /Accueil/.test(await p.textContent('aside nav')) && /Menu/.test(await p.textContent('aside nav')));
 const SCREENS = [['packs', 'accueil'], ['coll', 'collection'], ['jouer', 'jouer'], ['marche', 'marché'], ['bank', 'banque (sous-écran)'], ['dquiz', 'quiz du jour (sous-écran)'], ['albums', 'albums (sous-écran)'], ['settings', 'réglages (sous-écran)']];
@@ -78,6 +53,11 @@ for (const w of WIDTHS) {
     const iss = await p.evaluate(AUDIT);
     ok(`${w} px · ${name} : mise en forme propre`, iss.length === 0, [...new Set(iss)].slice(0, 5).join(' | '));
     if (w === 390 || (w === 320 && t === 'packs')) await p.screenshot({ path: SHT + `nui-${w}-${t}.png` });
+  }
+  for (const sec of ['profil', 'titres', 'badges', 'theme']) {
+    await p.evaluate(async sec => { persoSec = sec; tab = 'perso'; await render(); document.querySelectorAll('details.nu-grp').forEach(d => { d.open = true; }); }, sec); await p.waitForTimeout(600);
+    const is2 = await p.evaluate(AUDIT); ok(`${w} px · personnaliser (${sec}) : mise en forme propre`, is2.length === 0, [...new Set(is2)].slice(0, 5).join(' | '));
+    if (w === 390) await p.screenshot({ path: SHT + `nui-390-perso-${sec}.png` });
   }
   await p.evaluate(() => nuMenu()); await p.waitForTimeout(400);
   const iss = await p.evaluate(AUDIT); ok(`${w} px · menu : mise en forme propre`, iss.length === 0, [...new Set(iss)].slice(0, 5).join(' | '));

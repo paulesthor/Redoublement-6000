@@ -61,13 +61,45 @@
     [/prochain dans/, 'prochain colis dans'], [/^(\d+) victoires?$/, (m, n) => `${n} plan${plural(n)} dépassé${plural(n)}`], [/^Possédée ×(\d+)$/, 'Détenue ×$1'], [/^Déjà possédée$/, 'Déjà archivée'],
     [/^Voir les (\d+) commentaires$/, 'Voir les $1 notes au dossier'], [/^Quête(s?)$/, 'Norme$1'],
   ];
-  const SETS = { urss: { exact: EXACT, re: RE }, siberie: { exact: SIBERIE, re: RE_SIB }, or: { exact: OR, re: RE_OR } };
+  // Textes de la nouvelle interface (aperçu administrateur) : même registre que les menus existants. Une entrée déjà présente n'est jamais écrasée.
+  const NUI = {
+    urss: {
+      'Accueil': 'Le Parti', 'Jouer': 'Les Jeux', 'Menu': 'Plan', 'Aujourd\'hui': 'Normes d\'aujourd\'hui', 'En ce moment': 'Décrets en vigueur', 'Affrontements': 'Duels du peuple', 'Défis et mini-jeux': 'Normes et divertissements',
+      'Gagner des pièces': 'Arrondir les fins de mois', 'Communauté': 'Les camarades', 'Mon compte': 'Mon dossier', 'Compléter': 'Compléter les archives', 'Taux de drop': 'Taux de distribution', 'Chercher une carte': 'Rechercher une fiche',
+      'Ma collection': 'Mes archives', 'Place des joueurs': 'Marché noir', 'Défie un joueur, ou parie sur un combat': 'Défie un camarade, ou parie sur un affrontement', 'Gagne des paquets': 'Gagne des colis', 'Enchères, échanges et ventes': 'Ventes du Parti, troc et marché noir',
+      'Légendaires et réactions': 'Les héros du Plan et les réactions des camarades', 'Vitrine et statistiques': 'Dossier et statistiques', 'Profil, titres, badges, apparence': 'Dossier, grades, décorations, tenue', 'Tableau de bord': 'Rapports du Politburo',
+      'Profil': 'Dossier', 'Titres': 'Grades', 'Badges': 'Décorations', 'Apparence': 'Tenue', 'Choisir un titre': 'Choisir un grade', 'Changer de titre': 'Changer de grade', 'Aucun titre équipé': 'Aucun grade porté', 'Équiper': 'Porter', 'Équipé': 'Porté', 'Verrouillé': 'Non accordé',
+      'Voir ma page': 'Voir mon dossier', 'Ne plus afficher de titre': 'Ne plus porter de grade', 'Ajouter une photo': 'Ajouter une photo d\'identité', 'Changer la photo': 'Changer la photo d\'identité', 'Retirer la photo': 'Retirer la photo du dossier',
+      'Modes de jeu': 'Disciplines du Parti', 'Exploits et collection': 'Faits d\'armes et archives', 'Albums éphémères': 'Albums de propagande éphémères', 'Défis et objectifs': 'Normes et objectifs', 'Saisons': 'Plans saisonniers', 'Paquets': 'Colis', 'Social': 'Camaraderie', 'Économie': 'Trésorerie', 'Classiques': 'Tenues ordinaires', 'Taille du texte': 'Corps des textes',
+    },
+    siberie: {
+      'Accueil': 'Camp de base', 'Jouer': 'Épreuves', 'Menu': 'Base', 'Aujourd\'hui': 'Relevés du jour', 'En ce moment': 'Bulletins météo', 'Affrontements': 'Duels de glace', 'Défis et mini-jeux': 'Épreuves et passe-temps',
+      'Gagner des pièces': 'Remplir la caisse', 'Communauté': 'L\'équipage', 'Mon compte': 'Ma fiche', 'Compléter': 'Compléter le registre', 'Taux de drop': 'Taux de largage', 'Chercher une carte': 'Prospecter une fiche',
+      'Ma collection': 'Mon registre', 'Place des joueurs': 'Comptoir de troc', 'Défie un joueur, ou parie sur un combat': 'Défie un équipier, ou parie sur un duel', 'Gagne des paquets': 'Gagne des colis', 'Enchères, échanges et ventes': 'Enchères, troc et ventes au comptoir',
+      'Légendaires et réactions': 'Exploits et réactions de l\'équipe', 'Vitrine et statistiques': 'Fiche et statistiques', 'Profil, titres, badges, apparence': 'Fiche, grades, exploits, équipement', 'Tableau de bord': 'Poste de commandement',
+      'Profil': 'Fiche', 'Titres': 'Grades', 'Badges': 'Exploits', 'Apparence': 'Équipement', 'Choisir un titre': 'Choisir un grade', 'Changer de titre': 'Changer de grade', 'Aucun titre équipé': 'Aucun grade porté', 'Équiper': 'Porter', 'Équipé': 'Porté', 'Verrouillé': 'Gelé',
+      'Quiz du jour': 'Épreuve du jour', 'Quêtes': 'Missions', 'Défis du jour': 'Missions du jour', 'Plus ou moins': 'Monte ou descend ?', 'Quitte ou double': 'Tout ou rien', 'Échanges': 'Trocs', 'Tendances': 'Relevés du marché', 'Paquets du jour': 'Colis du jour', 'Voir ma page': 'Voir ma fiche', 'Ne plus afficher de titre': 'Ne plus porter de grade',
+      'Modes de jeu': 'Disciplines polaires', 'Exploits et collection': 'Exploits et registre', 'Albums éphémères': 'Carnets éphémères', 'Défis et objectifs': 'Épreuves et objectifs', 'Saisons': 'Saisons polaires', 'Paquets': 'Colis', 'Social': 'Équipe', 'Économie': 'Provisions', 'Classiques': 'Équipements courants', 'Taille du texte': 'Taille des relevés',
+    },
+    or: {
+      'Accueil': 'Salon', 'Jouer': 'Joutes', 'Menu': 'Palais', 'Aujourd\'hui': 'Audiences du jour', 'En ce moment': 'Édits en vigueur', 'Affrontements': 'Joutes royales', 'Défis et mini-jeux': 'Défis et divertissements de cour',
+      'Gagner des pièces': 'Remplir le trésor', 'Communauté': 'La Cour', 'Mon compte': 'Mes appartements', 'Compléter': 'Compléter le trésor', 'Taux de drop': 'Taux de tirage', 'Chercher une carte': 'Chercher une pièce du trésor',
+      'Ma collection': 'Mon trésor', 'Place des joueurs': 'Comptoir', 'Défie un joueur, ou parie sur un combat': 'Défie un seigneur, ou parie sur une joute', 'Gagne des paquets': 'Gagne des coffres', 'Enchères, échanges et ventes': 'Enchères, échanges et ventes du comptoir',
+      'Légendaires et réactions': 'Chroniques et réactions de la Cour', 'Vitrine et statistiques': 'Cabinet et statistiques', 'Profil, titres, badges, apparence': 'Cabinet, titres de noblesse, décorations, parure', 'Tableau de bord': 'Registre du royaume',
+      'Profil': 'Cabinet', 'Titres': 'Noblesse', 'Badges': 'Décorations', 'Apparence': 'Parure', 'Choisir un titre': 'Choisir un titre de noblesse', 'Changer de titre': 'Changer de titre de noblesse', 'Aucun titre équipé': 'Aucun titre porté', 'Équiper': 'Porter', 'Équipé': 'Porté', 'Verrouillé': 'Réservé',
+      'Quiz du jour': 'Leçon du jour', 'Quêtes': 'Missions', 'Défis du jour': 'Missions du jour', 'Tournois': 'Tournois royaux', 'Plus ou moins': 'Plus ou moins, Sire', 'Quitte ou double': 'Quitte ou double, Sire', 'Échanges': 'Trocs de cour', 'Tendances': 'Cours du royaume', 'Paquets du jour': 'Coffres du jour', 'Voir ma page': 'Voir mon cabinet', 'Ne plus afficher de titre': 'Ne plus porter de titre',
+      'Modes de jeu': 'Arts de la joute', 'Exploits et collection': 'Exploits et trésor', 'Albums éphémères': 'Albums éphémères de la Cour', 'Défis et objectifs': 'Défis et ambitions', 'Saisons': 'Saisons de la Cour', 'Paquets': 'Coffres', 'Social': 'Courtisans', 'Économie': 'Finances', 'Classiques': 'Parures classiques', 'Taille du texte': 'Taille des écritures',
+    },
+  };
+  const NUI_RE = { urss: [/^(Bonjour|Bonsoir) (.+)$/, 'Salut, camarade $2'], siberie: [/^(Bonjour|Bonsoir) (.+)$/, 'Bienvenue au camp, $2'], or: [/^(Bonjour|Bonsoir) (.+)$/, 'Salutations, $2'] };
+  const SETS = { urss: { exact: EXACT, re: RE, nui: new Map(Object.entries(NUI.urss)), nuiRe: NUI_RE.urss }, siberie: { exact: SIBERIE, re: RE_SIB, nui: new Map(Object.entries(NUI.siberie)), nuiRe: NUI_RE.siberie }, or: { exact: OR, re: RE_OR, nui: new Map(Object.entries(NUI.or)), nuiRe: NUI_RE.or } };
   let cur = SETS.urss;                                                 // jeu de textes en cours
   const orig = new WeakMap(), changed = new Set();                    // texte d'origine de chaque nœud modifié : on peut tout restaurer
   const skinText = (n) => {
     const raw = n.nodeValue; if (!raw) return; const t = raw.trim(); if (!t) return;
     let out = cur.exact.get(t);
     if (out === undefined) for (const [re, rep] of cur.re) if (re.test(t)) { out = t.replace(re, rep); break; }
+    if (out === undefined && cur.nui && document.body.classList.contains('nui')) { out = cur.nui.get(t); if (out === undefined && cur.nuiRe[0].test(t)) out = t.replace(cur.nuiRe[0], cur.nuiRe[1]); }   // textes de la nouvelle interface (aperçu administrateur), jamais appliqués à l'ancienne
     if (out !== undefined && out !== t) { if (!orig.has(n)) { orig.set(n, raw); changed.add(new WeakRef(n)); } n.nodeValue = raw.replace(t, out); }
   };
   const skinAttrs = el => { for (const a of ['placeholder', 'aria-label', 'title']) { const v = el.getAttribute?.(a); if (v && cur.exact.has(v.trim()) && !Array.isArray(cur.exact.get(v.trim()))) el.setAttribute(a, cur.exact.get(v.trim())); } };
