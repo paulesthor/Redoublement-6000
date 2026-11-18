@@ -1089,7 +1089,7 @@ const ctx_enrich = (env, ids) => enrich(env, ids).catch(() => {});
 installCamp({ route, bad, one, run, st, now, ensureGameSchema, grantTitle, canPlay: async (env, user) => { await commu.access(env, user, { play: true }); return true; } });   // pendant l'événement, les joueurs inscrits ont accès au camp
 const guard = installPackGuard({ st, run, all, now, ensureGameSchema, randomHex });
 const commu = installPlan({ route, bad, one, all, run, st, ensureGameSchema, grantTitle, assetJson, addCard, dayKey, msToMidnight, hash, now, guard });
-const noel = installNoel({ route, bad, one, all, run, st, ensureGameSchema, now });   // événement de Noël : calendrier de l'avent
+const noel = installNoel({ route, bad, one, all, run, st, ensureGameSchema, now, addCard, stats });   // événement de Noël : calendrier de l'avent
 const feed = installFeed({ route, bad, one, all, run, st, now, ensureGameSchema, notify, cardRows, placeholders, enrich });
 const seasonZero = installSeasonZero({ all, one, run, st, now, ensureGameSchema, CFG, RARITIES, entryAt, getMeta, insertCard, stats, addCard, assetOrigin: ASSET_ORIGIN, uniqueRefresh: refreshUnique,
   afterReset: () => { statsCache.clear(); profileCache.clear(); auctionsCache.t = 0; lbCache.t = 0; } });
@@ -1119,9 +1119,17 @@ async function albumsAll(env, origin) {
   const e = (await events.activeNow(env)).find(x => x.kind === 'album'), a = (await eventAlbums(env, origin)).find(x => x.id === m.album);
   return a && e ? [{ ...a, ev: { until: e.end } }, ...base] : base;
 }
+/** Albums du joueur : les albums du jeu, plus l'album de Noël quand l'événement est ouvert pour lui. */
+async function albumsFor(env, origin, user) {
+  const base = await albumsAll(env, origin);
+  if (!(await noel.isOn(env, user))) return base;
+  await noel.ensureCards(env);
+  const a = noel.album(), imgs = new Map((await all(env, `SELECT id, image FROM cards WHERE id IN (${placeholders(a.cards.length)})`, ...a.cards.map(c => c.id))).map(r => [+r.id, r.image]));
+  return [{ ...a, cards: a.cards.map(c => ({ ...c, img: imgs.get(c.id) ?? null })) }, ...base];
+}
 route('GET', '/api/albums', async ({ env, user, origin }) => {
   await ensureGameSchema(env);
-  const albums = await albumsAll(env, origin), ids = [...new Set(albums.flatMap(a => a.cards.map(c => c.id)))];
+  const albums = await albumsFor(env, origin, user), ids = [...new Set(albums.flatMap(a => a.cards.map(c => c.id)))];
   if (!ids.length) return { albums: [] };
   if (now() - albumImgs.t > 600000) {                                     // photos des cartes déjà connues du jeu : partagées entre joueurs, relues toutes les 10 min
     const rows = await all(env, `SELECT id, image FROM cards WHERE image IS NOT NULL AND id IN (${placeholders(ids.length)})`, ...ids);
@@ -1134,11 +1142,11 @@ route('GET', '/api/albums', async ({ env, user, origin }) => {
   const have = new Set(own.map(r => (r.card_id >= SHINY_OFFSET ? r.card_id - SHINY_OFFSET : r.card_id))), done = new Set(claimed.map(r => r.album));
   const haveNorm = new Set(own.filter(r => r.card_id < SHINY_OFFSET).map(r => r.card_id)), haveShiny = new Set(own.filter(r => r.card_id >= SHINY_OFFSET).map(r => r.card_id - SHINY_OFFSET));
   return { albums: albums.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, blurb: a.blurb, reward: albumReward(a), claimed: done.has(a.id), ...(a.ev ? { until: a.ev.until } : {}),
-    cards: a.cards.map(c => ({ id: c.id, t: c.t, own: have.has(c.id), shiny: haveShiny.has(c.id), pick: haveNorm.has(c.id) && !haveShiny.has(c.id), img: have.has(c.id) ? albumImgs.m.get(c.id) ?? null : null })) })) };
+    cards: a.cards.map(c => ({ id: c.id, t: c.t, own: have.has(c.id), shiny: haveShiny.has(c.id), pick: haveNorm.has(c.id) && !haveShiny.has(c.id), img: have.has(c.id) ? albumImgs.m.get(c.id) ?? c.img ?? null : null })) })) };
 });
 route('POST', '/api/albums/:id/claim', async ({ env, ctx, user, params, body, origin }) => {
   await ensureGameSchema(env);
-  const a = (await albumsAll(env, origin)).find(x => x.id === params.id);
+  const a = (await albumsFor(env, origin, user)).find(x => x.id === params.id);
   if (!a) bad(params.id && EVENT_ALBUMS.some(x => x.id === params.id) ? 'Cet album éphémère n\'est plus disponible' : 'Album inconnu', 404);
   const ids = a.cards.map(c => c.id);
   const inv = await all(env, `SELECT card_id FROM inventory WHERE user_id = ? AND (card_id IN (${placeholders(ids.length)}) OR card_id IN (${placeholders(ids.length)}))`, user.id, ...ids, ...ids.map(i => i + SHINY_OFFSET));

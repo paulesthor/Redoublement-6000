@@ -5,6 +5,7 @@ import { dayKey } from './game.js';
 import './snowphys.js';
 import './elfsim.js';
 import { HEADS } from './noel-heads.js';
+import { installNoelCards } from './noel-cards.js';
 
 export const NOEL = { START: Date.parse('2026-12-01T00:00:00+01:00'), END: Date.parse('2026-12-25T18:00:00+01:00'), DOORS: 24 };
 // Récompenses PROVISOIRES (à équilibrer avec le reste de l'événement) : wikibidou du jeu normal et paquets du jeu normal.
@@ -36,7 +37,17 @@ const TEXTS = [
   'Veille de la veille. Le Père Noël répète son discours. Il est très court : « Livrez. »',
   'La grande porte. Le Père Noël t\'adresse un remerciement sincère. Il a demandé un tampon pour le prouver.',
 ];
-export const DOORS = COINS.map((coins, i) => ({ n: i + 1, coins, packs: PACKS[i], text: TEXTS[i] }));
+/** Les 24 cadeaux sont les mêmes, mais leur jour est tiré au hasard (graine fixe : identique pour tous les joueurs). Les textes restent liés au jour. Le gros lot tombe toujours entre le 18 et le 24. */
+function giftOrder() {
+  let a = 20261201 >>> 0; const rnd = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const perm = COINS.map((_, i) => i);
+  for (let i = perm.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+  const jack = COINS.length - 1, at = perm.indexOf(jack);
+  if (at < 17) { const to = 17 + Math.floor(rnd() * 7); [perm[at], perm[to]] = [perm[to], perm[at]]; }
+  return perm;
+}
+const ORDER = giftOrder();
+export const DOORS = TEXTS.map((text, i) => ({ n: i + 1, coins: COINS[ORDER[i]], packs: PACKS[ORDER[i]], text }));
 
 /** Numéro de la dernière porte ouvrable à cet instant (0 avant le 1er décembre, 24 à partir du 24). */
 export function doorToday(t = Date.now()) {
@@ -47,7 +58,7 @@ export function doorToday(t = Date.now()) {
 }
 
 export function installNoel(d) {
-  const { route, bad, one, run, st, ensureGameSchema, now } = d;
+  const { route, bad, one, run, st, ensureGameSchema, now } = d;   // d.all, d.addCard et d.stats servent aux cartes de Noël
   const setting = async (env, k) => (await one(env, 'SELECT value FROM settings WHERE key = ?', k))?.value ?? null;
   const putSetting = (env, k, v) => run(env, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?', k, String(v), String(v));
   /** Événement ouvert POUR CE JOUEUR : en test seul l'administrateur le voit ; ouvert à tous, tout le monde. */
@@ -175,5 +186,6 @@ export function installNoel(d) {
     await putSetting(env, 'noel_on', body.on ? '1' : '0'); await putSetting(env, 'noel_scope', body.scope === 'all' ? 'all' : 'admin');
     return state(env, user, doorToday());
   });
-  return { isOn };
+  const nc = installNoelCards(d, { isOn, setting, putSetting, prog });
+  return { isOn, album: nc.album, ensureCards: nc.ensureCards };
 }

@@ -1946,3 +1946,33 @@ body.nui.ussr-ui .nu-hello h2{font-family:Impact,'Arial Narrow Bold','Arial Narr
 html[data-theme=light] .nu-prev,html[data-theme=beige] .nu-prev{filter:invert(1) hue-rotate(180deg)}
 /* grand écran : plus de colonnes pour les thèmes et les badges */
 @media(min-width:900px){.nu-themes{grid-template-columns:repeat(4,minmax(0,1fr))}.nu-badges{grid-template-columns:repeat(4,minmax(0,1fr))}.nu-tiles.n2{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* ---------- Noël : hotte, ma carte, animation du 25, écran administrateur ---------- */
+.nc-block{margin-top:10px}.nc-btns{display:flex;gap:8px;flex:none}.nl-game .nc-btns .ic-go{padding:10px 14px}
+.nc-fl{margin:6px 16px 10px;font-size:12.5px}
+.nc-mine{margin:12px 16px;background:#143a24;border:1px solid #e8c35a66;color:#f4ead0}.nc-mine h3{margin:0 0 6px;color:#e8c35a;letter-spacing:.06em;text-transform:uppercase;font-size:13px}.nc-mine .mut{color:#f4ead0cc}
+.nc-consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.4;margin:10px 0}.nc-consent input{margin-top:3px;flex:none}
+.nc-file{flex:1;text-align:center;cursor:pointer}
+.nc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:10px;margin:12px 0}
+.nc-card{display:flex;flex-direction:column;gap:6px;text-align:center;font-size:12px;min-width:0}.nc-card b{overflow-wrap:anywhere}.nc-card i{color:#e8c35a;font-style:normal;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.nc-img{aspect-ratio:3/4;border-radius:6px;background-size:cover;background-position:center;border:1px solid #e8c35a66}.nc-img.noimg{display:grid;place-items:center;background:#0e2a1a;color:#e8c35a;font-size:28px;font-weight:700}
+.nc-one{max-width:140px}
+.nc-gift{position:fixed;inset:0;z-index:9999;background:#02040a;color:#f4ead0;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:24px 20px calc(24px + env(safe-area-inset-bottom));text-align:center}
+.nc-sky{position:absolute;inset:0;background:linear-gradient(#02040a,#0b1a33 58%,#1b2f55)}
+.nc-stars{position:absolute;inset:0;background-image:radial-gradient(1.5px 1.5px at 12% 14%,#fff,transparent),radial-gradient(1px 1px at 78% 9%,#fff,transparent),radial-gradient(1.5px 1.5px at 40% 26%,#fff,transparent),radial-gradient(1px 1px at 90% 34%,#fff,transparent),radial-gradient(1.5px 1.5px at 24% 42%,#fff,transparent),radial-gradient(1px 1px at 64% 18%,#fff,transparent);animation:ncTw 3s ease-in-out infinite alternate}
+.nc-beam{position:absolute;top:-6%;left:50%;width:min(70vw,320px);height:82%;transform:translateX(-50%);background:linear-gradient(#fff6cfcc,#fff6cf00);clip-path:polygon(38% 0,62% 0,100% 100%,0 100%);opacity:0;animation:ncBeam 2.8s ease-out .3s forwards}
+.nc-descent{position:absolute;top:0;left:50%;width:min(50vw,190px);transform:translate(-50%,-130%);animation:ncDown 3.4s cubic-bezier(.2,.7,.2,1) .7s forwards;display:flex;flex-direction:column;align-items:center}
+.nc-halo{position:absolute;inset:-46px;border-radius:50%;background:radial-gradient(#ffe9a866,transparent 70%)}
+.nc-gcard{position:relative;width:100%;box-sizing:border-box;border:2px solid #e8c35a;border-radius:10px;background:#0e2a1a;padding:8px;display:flex;flex-direction:column;gap:8px;font-size:13px}.nc-gcard b{color:#e8c35a;overflow-wrap:anywhere}.nc-gcard i{font-style:normal;color:#f4ead0cc;font-size:11px;letter-spacing:.06em;text-transform:uppercase}.nc-gcard .nc-img{width:100%}
+.nc-copy{position:relative;z-index:2;max-width:420px;opacity:0;animation:ncFade 1.2s ease 3.1s forwards}.nc-copy small{display:block;color:#e8c35a;letter-spacing:.14em;font-size:10.5px;font-weight:700}.nc-copy h2{margin:6px 0;font-size:26px;color:#fff}.nc-copy p{margin:0;font-size:14px;line-height:1.5;color:#f4ead0dd}
+.nc-take{position:relative;z-index:2;margin-top:16px;width:100%;max-width:420px}
+.nc-gift.calm .nc-descent{transform:translate(-50%,10vh);animation:none}.nc-gift.calm .nc-beam{opacity:.6;animation:none}.nc-gift.calm .nc-copy{opacity:1;animation:none}.nc-gift.calm .nc-stars{animation:none}
+@keyframes ncDown{to{transform:translate(-50%,10vh)}}@keyframes ncBeam{to{opacity:.85}}@keyframes ncFade{to{opacity:1}}@keyframes ncTw{from{opacity:.55}to{opacity:1}}
+.nc-h{margin:16px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold2)}
+.nc-base{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.nc-b{display:flex;flex-direction:column;gap:2px;padding:10px;border:1px solid var(--line2);border-radius:8px;cursor:pointer;min-width:0}.nc-b span{overflow-wrap:anywhere}.nc-b.ok{border-color:#e8c35a99}
+.nc-prow{border:1px solid var(--line2);border-radius:8px;padding:10px;margin-bottom:10px}.nc-phead{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.nc-pbody{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;margin-top:8px}.nc-thumb{font-size:12px;color:var(--gold2)}.nc-thumb img{width:96px;border-radius:6px;display:block}.nc-pform input,.nc-pform textarea{width:100%;box-sizing:border-box;margin-bottom:8px}
+@media(max-width:380px){.nc-pbody{grid-template-columns:1fr}}
+.nc-mine .mut{font-size:13px;line-height:1.5;margin:0 0 10px}
+.nc-mine .plain{background:transparent;border:1px solid #e8c35a99;color:#f4ead0;border-radius:8px;padding:12px;min-height:44px;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.nc-mine .nc-one{margin:0 0 10px}

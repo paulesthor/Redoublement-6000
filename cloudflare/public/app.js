@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.99';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '11.00';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -1448,6 +1448,8 @@ views.admin = async v => {
       $('#nl-off').onclick = safe(async () => { if (!(await ask('Fermer l\'événement de Noël ?', [], { ok: 'Fermer' }))) return; await set(false, 'admin', 'Noël fermé'); });
       $('#nl-day').onchange = e => { const v = e.target.value.trim(); try { v === '' ? localStorage.removeItem('wm_noel_day') : localStorage.setItem('wm_noel_day', String(Math.max(0, Math.min(24, +v || 0)))); } catch { /* stockage indisponible */ } };
       $('#nl-see').onclick = () => { tab = 'noelcal'; render(); };
+      box.insertAdjacentHTML('beforeend', '<div id="nc-admin" style="margin-top:12px"></div>');
+      try { if (!window.NoelCards) await loadScript('/noelcards.js'); await window.NoelCards.admin($('#nc-admin'), ncCtx()); } catch (e) { $('#nc-admin').innerHTML = '<p class="mut">Cartes de Noël indisponibles : ' + esc(e.message) + '</p>'; }
     } else if (adminTab === 'event') {
       const c = await loadCommu(true), st = await api('/commu/standings').catch(() => ({ players: 0, pot: 0 }));
       const state = c.done ? 'Terminé' : c.paused ? 'EN PAUSE' : c.on ? (c.scope === 'all' ? 'En cours, ouvert à tous' : 'Ouvert pour toi seul (test)') : 'Fermé';
@@ -2725,6 +2727,8 @@ views.commustart = async v => {
 // ---------- Noël : calendrier de l'avent ----------
 const noelBanner = () => me?.noel ? '<button class="commu-banner noel-banner" id="noel-open"><b>Calendrier de l\'Avent</b><span>Le Père Noël a une porte pour toi. Il en a aussi pour le reste de l\'équipe.</span></button>' : '';
 const NOEL_MONTH = 'déc.';
+/** Outils de l'appli confiés à noelcards.js (hotte, photos, animation du 25, écran administrateur). */
+const ncCtx = () => ({ api, toast, safe, ask, fmt, token: () => token, render, refreshMe, go: t => { tab = t; render(); } });
 views.noelcal = async v => {
   const sim = me.admin ? prefOf('wm_noel_day') : null, q = sim !== null && sim !== '' ? '?day=' + sim : '';
   let n; try { n = await api('/noel' + q); } catch (e) { toast(e.message); tab = 'packs'; return render(); }
@@ -2736,7 +2740,9 @@ views.noelcal = async v => {
     <div class="nl-grid">${n.doors.map(d => `<button class="nl-door ${d.opened ? 'open' : d.openable ? (d.n === n.today ? 'today' : 'late') : d.missed ? 'miss' : 'lock'}" data-n="${d.n}" ${d.opened || d.openable ? '' : 'disabled'} aria-label="Porte ${d.n}${d.opened ? ' ouverte' : d.openable ? ' à ouvrir' : d.missed ? ' manquée' : ' fermée'}">
       <span class="nl-n">${d.n}</span><span class="nl-knob"></span>${d.opened ? `<span class="nl-got">${d.coins ? '+' + d.coins : ''}${d.packs ? ' · ' + d.packs + ' pq' : ''}</span>` : d.openable ? `<span class="nl-tag">${d.n === n.today ? 'Aujourd\'hui' : 'Dernier jour'}</span>` : d.missed ? '<span class="nl-tag">Manquée</span>' : `<span class="nl-tag">${d.n} ${NOEL_MONTH}</span>`}</button>`).join('')}</div>
     ${n.today >= 1 ? `<div class="nl-game"><div><b>Tir au patron</b><span>Niveau ${n.today} : cinq boules de neige, des cibles qui ne l'ont pas volé. Des flocons à la clé.</span></div><button class="ic-go" id="sg-open">Jouer</button></div><div class="nl-game"><div><b>L'Atelier des lutins</b><span>Deux lutins, un tapis roulant, des cadeaux à la chaîne. Le sifflet accélère la cadence, et la rancœur aussi.</span></div><button class="ic-go" id="el-open">Jouer</button></div>` : ''}
+    <div id="nl-extra"></div>
     <p class="mut" style="text-align:center;font-size:12.5px;padding:10px 16px">Une porte s'ouvre le jour même, ou le lendemain au plus tard. Passé ce délai, elle reste fermée pour de bon : le Père Noël ne fait pas de rattrapage.</p>`;
+  (async () => { try { if (!window.NoelCards) await loadScript('/noelcards.js'); await window.NoelCards.mount($('#nl-extra'), ncCtx()); } catch { /* les blocs de cartes sont facultatifs */ } })();
   $('#sg-open')?.addEventListener('click', safe(async () => { if (!window.SnowGame) { await loadScript('/snowphys.js'); await loadScript('/snowgame.js'); } await window.SnowGame.open({ n: n.today, day: sim || undefined, api, toast, onClose: () => render() }); }));
   $('#el-open')?.addEventListener('click', safe(async () => { if (!window.ElfGame) { await loadScript('/elfsim.js'); await loadScript('/elfgame.js'); } await window.ElfGame.open({ n: n.today, day: sim || undefined, api, toast, onClose: () => render() }); }));
   const reveal = r => {
@@ -3359,7 +3365,9 @@ async function start() {
   if (pending) addByCode(pending);
   setTimeout(pushStartup, 2500);
   setTimeout(() => {                                                                  // à l'ouverture : nouveautés de la mise à jour, puis récompense du jour
-    const daily = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
+    const daily0 = () => { if (me.daily && $('#modal').hidden && !game) dailyModal(); };
+    // à partir du 25 décembre : la visite du Petit Jésus (une seule fois par joueur), avant la récompense du jour
+    const daily = () => { if (Date.now() < Date.parse('2026-12-25T00:00:00+01:00') || game) return daily0(); api('/noel/gift').then(async g => { if (g.available && !g.claimed && $('#modal').hidden) { if (!window.NoelCards) await loadScript('/noelcards.js'); await window.NoelCards.gift(ncCtx()); } daily0(); }).catch(daily0); };
     const next = () => { if (!recapScreen(daily) && !resetScreen(daily) && !seasonReveal(daily) && !newsScreen(daily)) daily(); };
     if (!game && !sanctionScreen(next)) next();
   }, 900);
