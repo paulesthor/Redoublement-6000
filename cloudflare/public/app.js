@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '10.93';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '10.94';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -3122,9 +3122,17 @@ const nuRow = (go, icon, label, sub, badge = 0, meta = '') => `<button class="nu
 const nuList = rows => `<div class="nu-list">${rows.join('')}</div>`;
 const nuSec = (title, inner, note = '') => `<section class="nu-sec"><h3><span>${title}</span>${note ? `<em>${note}</em>` : ''}</h3>${inner}</section>`;
 const nuFeat = (go, kicker, title, sub, cls = '') => `<button class="nu-feat ${cls}" data-nugo="${go}"><span class="nu-ft"><small>${kicker}</small><b>${title}</b><i>${sub}</i></span>${ico('chev', 'nu-ch')}</button>`;
+/** Tuiles d'« Aujourd'hui » : les choses à faire passent en premier ; dès qu'une est faite, la suivante prend sa place (trois tuiles, toujours). */
 function nuTiles() {
-  const quiz = me.dq === 'done' ? 'Terminé · à demain' : me.dq === 'run' ? 'En cours' : 'Nouveau';
-  return `<div class="nu-tiles n${nuDv > 0 ? 3 : 2}">${nuTile('dquiz', 'book', 'Quiz du jour', quiz, me.dq === 'new')}${nuTile('quests', 'medal', 'Quêtes', me.qc > 0 ? `${me.qc} à réclamer` : 'Défis du jour', me.qc > 0)}${nuDv > 0 ? nuTile('', 'building', 'Banque', `+${fmt(nuDv)} à récupérer`, true, 'nu-bank') : ''}</div>`;
+  const quiz = me.dq === 'run' ? 'En cours' : 'Nouveau', ready = me.ex || 0, out = me.exo || 0;
+  const todo = [
+    me.dq !== 'done' && nuTile('dquiz', 'book', 'Quiz du jour', quiz, true),
+    ready > 0 && nuTile('expeditions', 'pin', 'Expéditions', `${ready} de retour`, true),
+    nuDv > 0 && nuTile('', 'building', 'Banque', `+${fmt(nuDv)} à récupérer`, true, 'nu-bank'),
+    ready === 0 && out === 0 && nuTile('expeditions', 'pin', 'Expéditions', 'Aucune en cours'),
+  ].filter(Boolean);
+  const more = [nuTile('hilo', 'spark', 'Plus ou moins', 'Tente ta chance'), nuTile('duel', 'swap', 'Combats', 'Défie un joueur'), nuTile('albums', 'album', 'Albums', 'Complète une série'), nuTile('market', 'market', 'Marché', 'Cartes des joueurs')];
+  return `<div class="nu-tiles n3">${[...todo, ...more].slice(0, 3).join('')}</div>`;
 }
 /** Avis qui restent dans la barre du haut (états du compte ou du jeu) ; les autres événements sont listés dans « En ce moment ». */
 const NEV_SYSTEM = new Set(['freeze', 'reset', 'seasonend']);

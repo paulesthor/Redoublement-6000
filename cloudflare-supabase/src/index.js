@@ -692,15 +692,16 @@ route('POST', '/api/me/password', async ({ env, req, user, body }) => {
 async function gameBadges(env, uid) {
   await ensureGameSchema(env);
   const day = dayKey();
-  const [d, q, z, ex] = await Promise.all([
+  const [d, q, z, ex, exo] = await Promise.all([
     one(env, 'SELECT daily_day, daily_streak FROM users WHERE id = ?', uid),
     all(env, 'SELECT qid, progress, claimed FROM quests WHERE user_id = ? AND day = ?', uid, day),
     one(env, 'SELECT finished FROM daily_quiz_runs WHERE user_id = ? AND day = ?', uid, day),
     one(env, "SELECT COUNT(*) n FROM expeditions WHERE user_id = ? AND status = 'out' AND ends <= ?", uid, now()),
+    one(env, "SELECT COUNT(*) n FROM expeditions WHERE user_id = ? AND status = 'out'", uid),
   ]);
   const ds = dailyState(d ?? {}), ids = questsFor(uid, day);
   const qc = q.filter(r => ids.includes(r.qid) && !r.claimed && r.progress >= QUEST[r.qid].goal).length;
-  return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new', ex: +(ex?.n || 0) };
+  return { daily: ds.available ? { streak: ds.streak, next: ds.next, index: ds.index, rewards: DAILY } : null, qc, dq: z ? (z.finished ? 'done' : 'run') : 'new', ex: +(ex?.n || 0), exo: +(exo?.n || 0) };
 }
 const lastRepair = new Map();
 route('GET', '/api/me', async ({ env, ctx, user, req }) => {

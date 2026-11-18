@@ -68,11 +68,19 @@ await p.setViewportSize({ width: 390, height: 844 });
 // parcours
 nuMock.v = 84;
 await p.evaluate(async () => { tab = 'packs'; await render(); }); await p.waitForTimeout(900);
-ok('accueil : trois tuiles (Quiz, Quêtes, Banque) quand des dividendes attendent', (await p.$$('.nu-tiles .nu-tile')).length === 3 && /\+84/.test(await p.textContent('#nu-bank')), await p.textContent('#nu-today'));
+const tl = async () => (await p.$$eval('.nu-tiles .nu-tile b', e => e.map(x => x.textContent))).join(' | ');
+ok('aujourd\'hui : quiz non fait, dividendes à récupérer, aucune expédition : Quiz | Banque | Expéditions', (await p.$$('.nu-tiles .nu-tile')).length === 3 && /\+84/.test(await p.textContent('#nu-bank')) && (await tl()) === 'Quiz du jour | Banque | Expéditions', await tl());
+ok('aujourd\'hui : plus de tuile Quêtes', !/Quêtes/.test(await p.textContent('#nu-today')));
 ok('accueil : l\'événement de Noël est présenté', /Calendrier de l'Avent/.test(await p.textContent('#view')));
 ok('accueil : plus de tuile « Récompense »', !/Récompense/.test(await p.textContent('#nu-today')));
 await p.click('#nu-bank'); await p.waitForTimeout(1500);
-ok('toucher la tuile Banque récupère les dividendes (puis la tuile disparaît)', (await p.$$('.nu-tiles .nu-tile')).length === 2 && !(await p.$('#nu-bank')));
+ok('toucher la tuile Banque récupère les dividendes : la tuile disparaît, une autre prend sa place (toujours trois)', (await p.$$('.nu-tiles .nu-tile')).length === 3 && !(await p.$('#nu-bank')), await tl());
+const setMe = async o => { await p.evaluate(async o => { Object.assign(me, o); tab = 'packs'; await render(); }, o); await p.waitForTimeout(700); };
+await setMe({ dq: 'done', ex: 0, exo: 0 }); ok('quiz fait : il laisse sa place (expédition à lancer, puis autre chose)', !/Quiz du jour/.test(await tl()) && /Expéditions/.test(await tl()) && (await p.$$('.nu-tiles .nu-tile')).length === 3, await tl());
+await setMe({ dq: 'done', ex: 2, exo: 2 }); ok('expéditions de retour : tuile « 2 de retour » en tête', /^Expéditions/.test(await tl()) && /2 de retour/.test(await p.textContent('#nu-today')), await tl());
+await setMe({ dq: 'done', ex: 0, exo: 1 }); ok('expédition en cours, rien à récupérer : plus de tuile Expéditions, on propose un jeu', !/Expéditions/.test(await tl()) && /Plus ou moins/.test(await tl()), await tl());
+await setMe({ dq: 'new', ex: 0, exo: 0 });
+{ const iss = await p.evaluate(AUDIT); ok('aujourd\'hui (nouvelles tuiles) : mise en forme propre', iss.length === 0, iss.slice(0, 3).join(' | ')); }
 await p.screenshot({ path: SHT + 'nui-390-accueil-sans-banque.png' });
 await p.click('aside nav [data-tab=coll]'); await p.waitForSelector('.nu-search'); ok('barre : Collection ouvre le hub', /Chercher une carte/.test(await p.textContent('#view')));
 await p.click('.nu-row[data-nugo=albums]'); await p.waitForTimeout(700);
