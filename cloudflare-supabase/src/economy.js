@@ -245,6 +245,23 @@ export function installEconomy(d) {
     const frozen = await savingsFrozen?.(env, user) || 0;
     return { coins: user.coins, savings: { frozen, amount: s.amount, interest: s.interest, locked: s.locked, rate: BANK.rate, cap: BANK.cap, lockDays: BANK.lockDays, fee: BANK.fee, perDay: Math.floor(s.amount * BANK.rate) }, dividends: dv, divRates: DIV.rate, divLvl: DIV.lvl };
   });
+  /** Administrateur : répartition des « scores de collection » (valeur des dividendes sans plafond) pour régler une future banque indexée sur la collection. Lecture seule. */
+  route('GET', '/api/admin/bank-sim', async ({ env, user }) => {
+    if (!user.is_admin) bad('Réservé à l’administrateur', 403);
+    await ensureGameSchema(env);
+    const [inv, alb, sav, users] = await Promise.all([
+      all(env, 'SELECT i.user_id, i.rar, i.sh, COUNT(*) n, COALESCE(SUM(i.lvl), 0) l FROM inventory i JOIN users u ON u.id = i.user_id WHERE u.is_bot = 0 GROUP BY i.user_id, i.rar, i.sh'),
+      all(env, 'SELECT user_id, COUNT(*) n FROM album_claims GROUP BY user_id'),
+      all(env, 'SELECT user_id, amount FROM savings'),
+      all(env, 'SELECT id, name FROM users WHERE is_bot = 0'),
+    ]);
+    const score = new Map(), cards = new Map(), albums = new Map(alb.map(r => [r.user_id, r.n])), savings = new Map(sav.map(r => [r.user_id, r.amount]));
+    for (const r of inv) { score.set(r.user_id, (score.get(r.user_id) || 0) + (r.n + r.l * DIV.lvl) * DIV.rate[r.rar] * (r.sh ? DIV.shiny : 1)); cards.set(r.user_id, (cards.get(r.user_id) || 0) + r.n); }
+    const list = users.map(u => { const sc = Math.floor((score.get(u.id) || 0) + (albums.get(u.id) || 0) * DIV.album); return { name: u.name, score: sc, cards: cards.get(u.id) || 0, albums: albums.get(u.id) || 0, savings: savings.get(u.id) || 0, today: Math.min(DIV.cap, sc) }; }).sort((a, b) => b.score - a.score);
+    const q = f => { const v = list.map(x => x.score).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(f * v.length))] : 0; };
+    const tiers = [['Débutant', 0, 20], ['Régulier', 20, 100], ['Confirmé', 100, 400], ['Vétéran', 400, Infinity]].map(([name, lo, hi]) => ({ name, lo, hi: hi === Infinity ? null : hi, n: list.filter(x => x.score >= lo && x.score < hi).length }));
+    return { players: list.length, cap: DIV.cap, atCap: list.filter(x => x.score >= DIV.cap).length, perDayNow: list.reduce((t, x) => t + x.today, 0), perDayUncapped: list.reduce((t, x) => t + x.score, 0), q: { min: q(0), p25: q(0.25), med: q(0.5), p75: q(0.75), p90: q(0.9), max: q(1) }, tiers, top: list.slice(0, 10), savingsTotal: list.reduce((t, x) => t + x.savings, 0), savers: list.filter(x => x.savings > 0).length };
+  });
   const frozenMsg = async (env, user) => { const u = await savingsFrozen?.(env, user); if (u) bad(`Ton épargne est gelée jusqu'au ${new Date(u).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' })}.`, 403); };
   route('POST', '/api/bank/deposit', async ({ env, user, body }) => {
     await frozenMsg(env, user);

@@ -167,5 +167,9 @@ const x0 = await coins(alice); [s, r] = await call(A, 'POST', `/api/expeditions/
   [s, r] = await call(A, 'GET', '/api/leaderboard'); ok('classement sans pièces', s === 200 && r.players.every(p => p.coins === undefined), J(r.players?.[0])); }
 [s, r] = await call(A, 'POST', '/api/clientlog', { where: 'x10 /packs/open', status: 503, msg: 'test' }); ok('rapport d\'incident de l\'appli accepté', s === 200 && r.ok === true, J([s, r]));
 [s] = await call(null, 'POST', '/api/clientlog', { msg: 'x' }); ok('rapport : connexion requise', s === 401);
+[s, r] = await call(B, 'GET', '/api/admin/bank-sim'); ok('simulation banque : refusée à un joueur ordinaire', s === 403, J([s, r]));
+await DB.prepare('UPDATE users SET is_admin = 1 WHERE name = ?').bind('Alice').run();
+[s, r] = await call(A, 'GET', '/api/admin/bank-sim'); ok('simulation banque : l\'administrateur voit scores, paliers et pièces par jour', s === 200 && r.players >= 2 && r.tiers.length === 4 && r.tiers.reduce((t, x) => t + x.n, 0) === r.players && r.perDayUncapped >= r.perDayNow && r.q.max >= r.q.min, J([s, r]));
+await DB.prepare('UPDATE users SET is_admin = 0 WHERE name = ?').bind('Alice').run();
 Date.now = realNow;
 done();
