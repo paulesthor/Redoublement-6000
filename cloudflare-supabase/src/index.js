@@ -5,7 +5,7 @@ import { withDb } from './pg.js';
 import { handleMigrate } from './migrate.js';
 import { secure } from './secure.js';
 import { installEconomy } from './economy.js';
-import { installEvents } from './events.js';
+import { installEvents, eventsIn } from './events.js';
 import { installReset, RESET_AT } from './reset.js';
 import { installMarket, MARKET } from './market.js';
 import { installSeasonZero } from './seasonzero.js';
@@ -2054,6 +2054,18 @@ route('POST', '/api/admin/take-card', admin(async ({ env, body }) => {
     st(env, 'DELETE FROM favorites WHERE user_id = ? AND card_id = ? AND NOT EXISTS (SELECT 1 FROM inventory WHERE user_id = ? AND card_id = ?)', uid, cid, uid, cid)]);
   statsCache.delete(uid);
   return { ok: true, removed: n, left: row.qty - n };
+}));
+/** Administrateur : légendaires possédées par plusieurs joueurs (ou en plusieurs exemplaires), avec la raison probable : carte d'album (jamais unique), obtenue pendant une heure collective, ou anormale. Lecture seule. */
+route('GET', '/api/admin/legend-dupes', admin(async ({ env, origin, query }) => {
+  const q = String(query.get('q') || '').trim().toLowerCase().slice(0, 60);
+  const rows = await all(env, `SELECT i.card_id, i.user_id, i.qty, i.acquired, u.name, u.is_bot, c.title FROM inventory i JOIN cards c ON c.id = i.card_id JOIN users u ON u.id = i.user_id WHERE i.rar = 5 AND i.card_id < 90000000 AND i.card_id IN (SELECT card_id FROM inventory WHERE rar = 5 AND card_id < 90000000 GROUP BY card_id HAVING COUNT(DISTINCT user_id) > 1 OR SUM(qty) > 1)${q ? ' AND lower(c.title) LIKE ?' : ''} ORDER BY i.card_id, i.acquired`, ...(q ? ['%' + q.replace(/[%_\\]/g, '') + '%'] : []));
+  const albumIds = await albumCardIds(env, origin), by = new Map();
+  for (const r of rows) { if (!by.has(r.card_id)) by.set(r.card_id, { id: +r.card_id, title: r.title, shiny: +r.card_id >= SHINY_OFFSET, holders: [] }); by.get(r.card_id).holders.push({ name: r.name, qty: +r.qty, at: +r.acquired || 0 }); }
+  const times = rows.map(r => +r.acquired || 0).filter(Boolean), secret = await events.getSecret(env);
+  const coll = times.length ? eventsIn(secret, Math.min(...times) - 3600000, Math.max(...times) + 1).filter(e => e.kind === 'nounique') : [];
+  const inColl = t => coll.some(e => t >= e.start && t < e.end + 60000);
+  const groups = [...by.values()].map(g => { const base = g.shiny ? g.id - SHINY_OFFSET : g.id; const album = albumIds.has(base), collective = g.holders.some(h => inColl(h.at)); return { ...g, reason: album ? 'album' : collective ? 'collective' : 'anormal' }; });
+  return { unique: await uniqueOn(env), total: groups.length, byReason: { album: groups.filter(g => g.reason === 'album').length, collective: groups.filter(g => g.reason === 'collective').length, anormal: groups.filter(g => g.reason === 'anormal').length }, groups: groups.sort((a, b) => (a.reason === 'anormal' ? 0 : 1) - (b.reason === 'anormal' ? 0 : 1) || a.title.localeCompare(b.title)).slice(0, 60), shown: Math.min(60, groups.length) };
 }));
 // ---- enchères « truquées » par l'admin : vendues sous le pseudo d'un joueur simulé ----
 route('GET', '/api/admin/market', admin(async ({ env }) => {

@@ -102,5 +102,25 @@ ok('aucun joueur simulé n\'enchérit sur une légendaire', (await q('SELECT COU
   CFG.GODPACK_CHANCE = 1; CFG.SHINY_CHANCE = 0; let real = []; for (let i = 0; i < 12; i++) real.push(await draw(10, CFG.DROP, null, null, i % 2 ? alice : bob)); CFG.GODPACK_CHANCE = 0;
   ok('vrais godpacks : au moins 3 légendaires et jamais en dessous d\'ultra rare', real.every(pk => pk.every(c => c.rarity === 'legendary' || c.rarity === 'ultra') && pk.filter(c => c.rarity === 'legendary').length >= 3), J(real.map(pk => pk.filter(c => c.rarity === 'legendary').length)));
 }
+// 8) outil de l'administrateur : légendaires en double et leur raison
+{ const { eventsIn } = await import('../src/events.js'), secret = await __testHooks.events.getSecret(env);
+  const t0 = Date.now() - 30 * 86400000, coll = eventsIn(secret, t0, t0 + 120 * 86400000).find(e => e.kind === 'nounique');
+  await q('DELETE FROM inventory WHERE rar = 5'); await q('UPDATE users SET is_admin = 1 WHERE id = ?', alice);
+  const card = async (id, title, rarity = 'legendary') => q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', id, title, 1000, rarity, 9, 9, 0, 'u');
+  const give = (uid, id, at) => q('INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk, fav) VALUES (?,?,1,?,5,0,5000001000,?,0) ON CONFLICT DO NOTHING', uid, id, at, 'x');
+  await card(102642, 'Dalida'); await card(1696582, 'Adolf Hitler'); await card(555001, 'Carte normale unique'); await card(555002, 'Carte de l\'heure collective');
+  await give(alice, 102642, Date.now() - 5000); await give(bob, 102642, Date.now() - 3000);          // même carte, deux joueurs, hors album, hors heure collective : anormal
+  await give(alice, 1696582, Date.now() - 5000); await give(bob, 1696582, Date.now() - 3000);        // carte d'album : normal
+  await give(alice, 555001, Date.now() - 5000);                                                       // un seul propriétaire : absent de la liste
+  await give(alice, 555002, coll.start + 120000); await give(bob, 555002, coll.start + 600000);        // obtenues pendant une heure collective
+  [s, r] = await call(B, 'GET', '/api/admin/legend-dupes'); ok('outil des doubles : refusé à un joueur ordinaire', s === 403);
+  [s, r] = await call(A, 'GET', '/api/admin/legend-dupes'); const by = Object.fromEntries((r.groups || []).map(g => [g.id, g]));
+  ok('doubles : seules les cartes à plusieurs propriétaires sont listées', s === 200 && r.total === 3 && !by[555001], J(r));
+  ok('doubles : Dalida (hors album, hors heure collective) est signalée ANORMALE avec ses deux propriétaires', by[102642]?.reason === 'anormal' && by[102642].holders.length === 2 && r.byReason.anormal === 1, J(by[102642]));
+  ok('doubles : une carte d\'album est classée « album »', by[1696582]?.reason === 'album', J(by[1696582]));
+  ok('doubles : une carte obtenue pendant une heure collective est classée « collective »', by[555002]?.reason === 'collective', J(by[555002]));
+  ok('doubles : les anormales passent en premier, l\'état de l\'unicité est indiqué', r.groups[0].reason === 'anormal' && r.unique === true);
+  [s, r] = await call(A, 'GET', '/api/admin/legend-dupes?q=dalid'); ok('doubles : recherche par nom', r.groups.length === 1 && r.groups[0].title === 'Dalida', J(r.groups.map(g => g.title)));
+  await q('UPDATE users SET is_admin = 0 WHERE id = ?', alice); await q('DELETE FROM inventory WHERE rar = 5'); }
 CFG.DROP.legendary = saveL; CFG.GODPACK_CHANCE = saveG; CFG.SHINY_CHANCE = saveS;
 done();
