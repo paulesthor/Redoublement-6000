@@ -185,6 +185,21 @@ ok('album éphémère listé en tête avec sa date de fin et la même récompens
 for (const c of al.cards) { await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', c.id, c.t, 100, 'rare', 900, 900, 0, 'u'); await q("INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,2,0,2000000000,'x') ON CONFLICT DO NOTHING", alice, c.id); }
 const ac = await coins(alice), ap = await packs(alice);
 [s, r] = await call(A, 'POST', `/api/albums/${ae.album}/claim`, { card_id: al.cards[0].id }); ok('album éphémère complété : 5 000 pièces + titre exclusif (ni paquet, ni shiny)', s === 200 && (await coins(alice)) - ac === 5000 && !(await q('SELECT sh FROM inventory WHERE user_id = ? AND card_id = ?', alice, al.cards[0].id + 100000000)).length && (await packs(alice)) - ap === 0 && await hasTitle(alice, 'ev_alb_' + ae.album), J([s, r]));
+// album terminé : le taux redevient normal (sinon que des doublons)
+{ const sv = Math.random; Math.random = () => 0.0001;   // force le tirage « carte de l'album » à chaque appel
+  const mA = await __testHooks.events.drawMods(env, origin, alice), mB = await __testHooks.events.drawMods(env, origin, bob), mN = await __testHooks.events.drawMods(env, origin, null);
+  ok('album récupéré : plus de bonus de cartes de l\'album pour ce joueur', !mA.album, J(mA.album?.length));
+  ok('un joueur qui ne l\'a pas fini garde le bonus (et sans identifiant, comme avant)', !!mB.album && !!mN.album && mB.album.length === al.cards.length, J([mB.album?.length, mN.album?.length]));
+  for (const c of al.cards) await q('INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,2,0,2000000100,?) ON CONFLICT DO NOTHING', bob, c.id, 'x');
+  const mB2 = await __testHooks.events.drawMods(env, origin, bob);
+  ok('album complet dans la collection (récompense pas encore prise) : bonus aussi coupé', !mB2.album, J(mB2.album?.length));
+  await q('DELETE FROM inventory WHERE user_id = ? AND card_id IN (' + al.cards.map(() => '?').join(',') + ')', bob, ...al.cards.map(c => c.id));
+  await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', al.cards[0].id + 100000000, al.cards[0].t, 100, 'rare', 900, 900, 1, 'u');
+  await q('INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,2,1,2000000100,?) ON CONFLICT DO NOTHING', bob, al.cards[0].id + 100000000, 'x');
+  const mB3 = await __testHooks.events.drawMods(env, origin, bob);
+  ok('une seule carte (même shiny) ne suffit pas : bonus gardé', !!mB3.album, J(mB3.album?.length));
+  await q('DELETE FROM inventory WHERE user_id = ? AND card_id = ?', bob, al.cards[0].id + 100000000);
+  Math.random = sv; }
 at(ae.end + 3600000); [s, r] = await call(A, 'GET', '/api/albums'); const still = evs(ae.end + 3600000, ae.end + 3600001).some(e => e.kind === 'album' && e.album === ae.album);
 ok('après l\'événement : l\'album disparaît de la liste', still || !r.albums.some(a => a.id === ae.album));
 if (!still) { [s, r] = await call(B, 'POST', `/api/albums/${ae.album}/claim`, {}); ok('album terminé : plus récupérable', s === 404 && /éphémère/.test(r.error), J([s, r])); }

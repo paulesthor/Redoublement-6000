@@ -4,6 +4,7 @@
 import { grantTitle, syncTitles, TITLE, onTrack } from './game.js';
 import { EVENT_ALBUMS, WEEKLY_BY, WEEKLY } from './events-data.js';
 import { uniqueOn, claimLegend, releaseLegends } from './unique.js';
+import { SHINY_OFFSET } from './util.js';
 
 const DAY = 86400000, HOUR = 3600000;
 export const WEEK_ANCHOR = '2026-01-05';      // un lundi : les semaines, week-ends et blocs sont comptés à partir de là
@@ -207,11 +208,20 @@ export function installEvents(d) {
     return card;
   }
   /** Modificateurs de tirage pour UN paquet : effets continus (heure dorée, shiny, festival) + tirages au sort de l'album éphémère et de la carte recherchée. */
-  async function drawMods(env, origin) {
+  /** Le joueur a-t-il terminé cet album éphémère ? (récompense récupérée, ou toutes les cartes déjà dans sa collection, normales ou shiny) */
+  async function albumDone(env, uid, a) {
+    await ensureGameSchema(env);
+    if (await one(env, 'SELECT 1 x FROM album_claims WHERE user_id = ? AND album = ?', uid, a.id)) return true;
+    const ids = a.cards.map(c => c.id), ph = ids.map(() => '?').join(',');
+    const r = await one(env, `SELECT COUNT(DISTINCT CASE WHEN card_id >= ${SHINY_OFFSET} THEN card_id - ${SHINY_OFFSET} ELSE card_id END) n FROM inventory WHERE user_id = ? AND (card_id IN (${ph}) OR card_id IN (${ph}))`, uid, ...ids, ...ids.map(i => i + SHINY_OFFSET));
+    return +r.n >= ids.length;
+  }
+  async function drawMods(env, origin, uid = null) {
     if (env.EVENTS === '0') return { legend: 1, ultra: 1, shiny: 1, themeGuarantee: false, themePrice: null, direct: false };
     const m = await mods(env), out = { legend: m.legend, ultra: m.ultra, shiny: m.shiny, themeGuarantee: m.themeGuarantee, themePrice: m.themePrice, noUnique: !!m.noUnique };
     try {
-      if (m.album && Math.random() < EV.albumChance) { const a = (await eventAlbums(env, origin)).find(x => x.id === m.album); if (a) out.album = a.cards; }
+      // album éphémère : ses cartes sortent plus souvent, SAUF pour un joueur qui l'a déjà terminé (sinon il n'aurait que des doublons) : son taux redevient normal
+      if (m.album && Math.random() < EV.albumChance) { const a = (await eventAlbums(env, origin)).find(x => x.id === m.album); if (a && !(uid && await albumDone(env, uid, a))) out.album = a.cards; }
       if (Math.random() < EV.huntChance) { const h = await huntCard(env, origin); if (h) out.hunt = h; }
     } catch (e) { console.error('drawMods', e); }
     out.direct = out.legend > 1 || out.ultra > 1 || out.shiny > 1 || out.noUnique || !!out.album || !!out.hunt;     // un paquet préparé d'avance ne peut pas en profiter : tirage direct

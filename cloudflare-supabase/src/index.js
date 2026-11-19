@@ -912,7 +912,7 @@ route('POST', '/api/packs/open', async ({ env, ctx, user, origin }) => {
   }
   let drawn = null;
   try {
-    const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+    const fake = await fakeGod(env, u), evm = fake ? { allCommon: true } : await events.drawMods(env, origin, u.id);
     drawn = (!fake && !evm.direct && await takePrepared(env, u.id, weightKey(u))) || await drawCards(env, origin, PACK_SIZE, userWeights(u), null, evm, u.id);
     // la préparation du paquet suivant ne se fait PLUS ici : le plan gratuit compte tout le travail de la requête (même après la réponse) dans sa limite de calcul, et l'ouverture était coupée (« Worker exceeded resource limits »).
     // Elle se fait dans la requête séparée /api/packs/next, que l'appli envoie juste après l'ouverture.
@@ -940,7 +940,7 @@ route('POST', '/api/packs/buy', async ({ env, ctx, user, origin }) => {
   const guardKey = paid.key;
   let drawn = null;
   try {
-    const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin);
+    const fake = await fakeGod(env, user), evm = fake ? { allCommon: true } : await events.drawMods(env, origin, user.id);
     drawn = (!fake && !evm.direct && await takePrepared(env, user.id, weightKey(user))) || await drawCards(env, origin, PACK_SIZE, userWeights(user), null, evm, user.id);
     const out = await finishPack(env, ctx, user, drawn, CFG.PACK_PRICE, fake);
     await guard.release(env, user.id, guardKey);
