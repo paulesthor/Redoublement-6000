@@ -19,7 +19,7 @@ const store = {
     document.cookie = 'wm_token=; max-age=0; path=/';
   },
 };
-const BUILD = '11.07';   // numéro de build de l'interface (affiché en bas du profil)
+const BUILD = '11.08';   // numéro de build de l'interface (affiché en bas du profil)
 // journal discret (40 derniers évènements) : sert à comprendre un écran blanc ou un rechargement ; visible en touchant 5 fois la ligne « Build » du profil
 const LOADED = new Date();
 const hms = d => d.toLocaleTimeString('fr-FR');
@@ -3028,7 +3028,7 @@ function resetScreen(then, force = false) {
         <h3>Ton point de départ</h3><p><b>500 wikibidou</b> et <b>10 paquets</b>, plus ta <b>carte fondateur</b> (voir plus bas).</p></div>
       <div class="rsbox"><h3>Nouvelles règles</h3><ul>
         <li><b>Chaque carte légendaire est unique.</b> Il n'en existera qu'un seul exemplaire normal et un seul exemplaire shiny dans tout le jeu : pour l'avoir, il faudra la tirer, l'acheter aux enchères ou l'échanger.</li>
-        <li><b>Un marché plus vivant :</b> chaque jour, 2 cartes légendaires tirées au hasard sont vendues aux enchères pendant 12 h.</li>
+        <li><b>Un marché plus vivant :</b> chaque jour, 6 cartes légendaires tirées au hasard sont vendues aux enchères pendant 6 h.</li>
         <li><b>Saisons à thème mystère :</b> chaque saison a un objectif différent. À la fin, le vainqueur remporte une légendaire secrète parmi les 1 000 pages les plus vues de Wikipédia, révélée en direct.</li>
         <li><b>Paquets du jour :</b> 10 par jour au maximum.</li>
         <li><b>Plus ou moins :</b> mise maximale de 50 wikibidou.</li>

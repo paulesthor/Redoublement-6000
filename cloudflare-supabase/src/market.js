@@ -1,9 +1,9 @@
-// Marché animé : chaque jour, deux cartes légendaires tirées au hasard (parmi celles qui n'existent pas encore) sont vendues aux enchères pendant 12 h par le « Marché ».
+// Marché animé : chaque jour, six cartes légendaires tirées au hasard (parmi celles qui n'existent pas encore) sont vendues aux enchères pendant 6 h par le « Marché ».
 // L'argent payé disparaît du jeu (le Marché ne touche rien) ; une légendaire invendue retourne dans la réserve. Actif seulement avec les légendaires uniques.
 import { claimLegend, uniqueOn } from './unique.js';
 import { parisTs } from './events.js';
 
-export const MARKET = { seller: 'Marché', hours: 12, slots: [9, 21], start: 300 };   // lots à 9 h et 21 h (Paris), 12 h chacun : un lot est toujours ouvert
+export const MARKET = { seller: 'Marché', hours: 6, slots: [6, 9, 12, 15, 18, 21], start: 300 };   // six lots par jour, toutes les 3 h (heure de Paris), 6 h chacun : deux lots sont ouverts en même temps
 
 export function installMarket(d) {
   const { one, all, run, st, now, dayKey, getMeta, entryAt, insertCard, stats, enrich, notify, ensureGameSchema, assetOrigin } = d;

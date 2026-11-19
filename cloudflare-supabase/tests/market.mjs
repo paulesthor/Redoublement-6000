@@ -1,8 +1,10 @@
-// Marché animé : 2 légendaires par jour tirées au hasard, vendues aux enchères pendant 12 h par le « Marché ».
+// Marché animé : 6 légendaires par jour tirées au hasard, vendues aux enchères pendant 6 h par le « Marché » (les premières vérifications utilisent l'ancien rythme, 2 lots de 12 h).
 import './api.mjs';
 const { call, settle, ok, DB, J, done, env, ctx } = globalThis.__T;
 const { parisTs } = await import('../src/events.js');
 const { MARKET } = await import('../src/market.js');
+const DEFAUT = { ...MARKET, slots: [...MARKET.slots] };   // réglage réel ; les vérifications historiques ci-dessous se font avec l'ancien rythme (2 lots de 12 h), les nouveautés à la fin
+Object.assign(MARKET, { slots: [9, 21], hours: 12 });
 const { __testHooks } = await import('../src/index.js');
 const { refreshUnique } = await import('../src/unique.js');
 const q = async (sql, ...p) => (await DB.prepare(sql).bind(...p).all()).results;
@@ -36,5 +38,17 @@ ok('21 h : le lot du soir est créé (par la liste des enchères ou le Marché)'
 L = await lots(); const evening = L[1]; ok('deuxième lot : fin à 9 h le lendemain', evening && evening.ends_at === parisTs(dayStr, 21) + 12 * 3600000, J(evening));
 at = evening.ends_at + 60000; for (let i = 0; i < 8; i++) await call(A, 'GET', '/api/auctions'); await settle();
 ok('lot sans offre : expiré, la légendaire retourne dans la réserve', (await lots())[1].status === 'expired' && (await q('SELECT 1 x FROM legend_taken WHERE card_id = ?', evening.card_id)).length === 0);
+Object.assign(MARKET, { slots: DEFAUT.slots, hours: DEFAUT.hours });
+// nouveau rythme : six légendaires par jour, 6 h chacune
+{ ok('réglage du Marché : six lots par jour, toutes les 3 h, 6 h chacun', DEFAUT.slots.length === 6 && DEFAUT.hours === 6 && DEFAUT.slots.every((h, i) => i === 0 || h - DEFAUT.slots[i - 1] === 3));
+  const avant = (await lots()).length;
+  const day3 = new Date(realNow() + 3 * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }); let made = 0;
+  for (const h of DEFAUT.slots) { at = parisTs(day3, h) + 60000; made += await mk().tick(env, ctx, 'http://x'); }
+  const L3 = (await lots()).slice(avant); const ids = new Set(L3.map(x => x.card_id));
+  ok('une journée de passages : six lots créés, six cartes différentes', made === 6 && L3.length === 6 && ids.size === 6, J([made, L3.length, ids.size]));
+  ok('chaque lot dure 6 h, part à 300 et est légendaire', L3.every((x, i) => x.rarity === 'legendary' && x.start_price === 300 && x.ends_at === parisTs(day3, DEFAUT.slots[i]) + 6 * 3600000), J(L3.map(x => x.ends_at)));
+  at = parisTs(day3, 10); const open = L3.filter(x => x.ends_at > at && parisTs(day3, DEFAUT.slots[L3.indexOf(x)]) <= at).length;
+  ok('à un instant donné, deux lots sont ouverts en même temps', open === 2, open);
+  ok('toutes les cartes sont réservées (uniques)', (await q(`SELECT COUNT(*) n FROM legend_taken WHERE card_id IN (${L3.map(() => '?').join(',')})`, ...L3.map(x => x.card_id)))[0].n == 6); }
 Date.now = realNow;
 done();
