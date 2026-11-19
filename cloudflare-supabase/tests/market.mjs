@@ -50,5 +50,7 @@ Object.assign(MARKET, { slots: DEFAUT.slots, hours: DEFAUT.hours });
   at = parisTs(day3, 10); const open = L3.filter(x => x.ends_at > at && parisTs(day3, DEFAUT.slots[L3.indexOf(x)]) <= at).length;
   ok('à un instant donné, deux lots sont ouverts en même temps', open === 2, open);
   ok('toutes les cartes sont réservées (uniques)', (await q(`SELECT COUNT(*) n FROM legend_taken WHERE card_id IN (${L3.map(() => '?').join(',')})`, ...L3.map(x => x.card_id)))[0].n == 6); }
+{ const src = (await import('node:fs')).readFileSync(new URL('../src/index.js', import.meta.url), 'utf8'), i = src.indexOf("await market.tick(env, ctx)"), w = src.indexOf('pvStart(9)'), r = src.indexOf('await refillReserve(env, 60)');
+  ok('tâche planifiée : le Marché est traité une seule fois, avant Wikimedia et la réserve (tâches lentes)', src.split('await market.tick(env, ctx)').length === 2 && i > 0 && i < w && i < r, J([i, w, r])); }
 Date.now = realNow;
 done();

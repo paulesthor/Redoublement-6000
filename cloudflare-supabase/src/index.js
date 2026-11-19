@@ -2276,6 +2276,7 @@ export default {
       await maintenance(withDb(env0)).catch(e => console.error('entretien', e));
       await commu.autoFinish(env).catch(e => console.error('clôture automatique de l\'événement', e));   // à l'heure prévue, sans intervention
       await guard.repair(env).catch(e => console.error('rattrapage des ouvertures', e));   // paquets pris par une ouverture abandonnée : rendus   // en PREMIER : léger, et jamais privé de son budget d'appels par les tâches lourdes qui suivent (c'est pourquoi le journal ne se purgeait plus)
+      await market.tick(env, ctx).catch(e => console.error('market', e));   // les lots de légendaires du Marché : léger et attendu par les joueurs, donc AVANT les tâches lentes (Wikimedia, réserve) qui peuvent épuiser le budget d'appels du passage
       // les marchés (bourse, marché noir) sont construits ICI, une fois pour tout le monde, puis rangés en base : les joueurs ne font que les lire (et plus aucune visite ne relance Wikimedia)
       pvStart(9);   // au plus 9 demandes à Wikimedia par passage, espacées de 13 s (leur limite : environ 5 par minute) : le reste attend le passage suivant
       try {
@@ -2292,7 +2293,6 @@ export default {
       await economy.capExpeditionsOnce(env).catch(e => console.error('expéditions', e));
       await economy.finishExpeditionsOnce(env, ctx).catch(e => console.error('expéditions', e));
       await sanctions.lift(env).catch(e => console.error('sanctions', e));
-      await market.tick(env, ctx).catch(e => console.error('market', e));
       await sanctions.tick(env).catch(e => console.error('sanctions', e));          // pose / libère les sanctions de pièces            // annonce les événements qui viennent de commencer
       logEvent({ level: e1 || e2 ? 'error' : 'info', kind: 'cron', route: 'tâche planifiée', ms: Date.now() - t0, detail: e1 || e2 ? String((e1 || e2).message).slice(0, 300) : 'marché animé, réserve remplie' });
       await flushAll(withDb(env0));
