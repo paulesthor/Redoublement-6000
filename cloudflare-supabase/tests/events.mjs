@@ -182,6 +182,9 @@ const ae = nextOf('album', T0), al = evAl.find(a => a.id === ae.album);
 at(ae.start + 3600000);
 [s, r] = await call(A, 'GET', '/api/albums'); const ea = r.albums.find(a => a.id === ae.album);
 ok('album éphémère listé en tête avec sa date de fin et la même récompense que les autres (5 000 pièces seulement)', ea && ea.until === ae.end && r.albums[0].id === ae.album && ea.reward.p === 0 && ea.reward.c === 5000, J(ea).slice(0, 200));
+{ const { EV } = await import('../src/events.js'); ok('album éphémère : 2 % des paquets seulement contiennent une carte de l\'album (et non 8 %)', EV.albumChance === 0.02);
+  let hits = 0; const N = 1500; for (let i = 0; i < N; i++) { const m = await __testHooks.events.drawMods(env, origin, null); if (m.album) hits++; }
+  ok('album éphémère : taux mesuré sur 1 500 tirages proche de 2 %', hits >= 10 && hits <= 60, hits + ' / ' + N); }
 [s] = await call(A, 'POST', `/api/albums/${ae.album}/claim`, {}); ok('album incomplet : refusé', s === 400);
 for (const c of al.cards) { await q('INSERT INTO cards (id, title, views, rarity, atk, def, shiny, url) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', c.id, c.t, 100, 'rare', 900, 900, 0, 'u'); await q("INSERT INTO inventory (user_id, card_id, qty, acquired, rar, sh, skey, nk) VALUES (?,?,1,1,2,0,2000000000,'x') ON CONFLICT DO NOTHING", alice, c.id); }
 const ac = await coins(alice), ap = await packs(alice);

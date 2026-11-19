@@ -14,7 +14,7 @@ export const SEASON_DAYS = 14;
 /** Réglages des événements (taux, récompenses). */
 export const EV = {
   goldenLegend: 3, goldenUltra: 1.5, shinyMult: 3, themePrice: 90,
-  albumChance: 0.08, huntChance: 0.007,                                        // part des paquets qui contiennent une carte de l'album éphémère / la carte recherchée du jour
+  albumChance: 0.02, huntChance: 0.007,                                        // part des paquets qui contiennent une carte de l'album éphémère / la carte recherchée du jour
   goldenPerDay: 38,                                                          // chance (en %) qu'une heure dorée tombe un jour donné
   noUniquePerDay: 38,                                                        // même fréquence pour l'heure sans original (unicité des légendaires suspendue)
   weekly: { c: 400, p: 2, titleAfter: 4 },
@@ -46,7 +46,7 @@ export const KINDS = {
   nounique: { name: 'Heure collective', emoji: '★', desc: 'Pendant 1 heure, la propriété privée des légendaires est abolie : tu peux tirer une légendaire que quelqu\'un possède déjà. Ces cartes restent des cartes normales, échangeables.' },
   shiny: { name: 'Week-end shiny', emoji: '💎', desc: `Les légendaires ont ${EV.shinyMult} fois plus de chances d'être shiny, jusqu'à lundi 9 h.` },
   theme: { name: 'Festival des catégories', emoji: '🎪', desc: `Les paquets thématiques coûtent ${EV.themePrice} pièces et contiennent une légendaire garantie, jusqu'à lundi 9 h.` },
-  album: { name: 'Album éphémère', emoji: '🎁', desc: 'Une série de cartes à compléter en 7 jours, avec récompense et titre exclusifs. Elles tombent bien plus souvent dans les paquets.' },
+  album: { name: 'Album éphémère', emoji: '🎁', desc: 'Une série de cartes à compléter en 7 jours, avec récompense et titre exclusifs. Elles tombent un peu plus souvent dans les paquets.' },
   goal: { name: 'Objectif collectif', emoji: '🎯', desc: 'Tous les joueurs ouvrent des paquets ensemble : si l\'objectif est atteint avant la fin, tous ceux qui ont participé sont récompensés.' },
   weekly: { name: 'Défi de la semaine', emoji: '🏅', desc: '' },
   hunt: { name: 'Carte recherchée', emoji: '🔎', desc: '' },
