@@ -122,7 +122,7 @@ export function eventsIn(secret, t0, t1) {
   const b0 = Math.floor((a - A0) / 28) - 1, b1 = Math.floor((b - A0) / 28) + 1;
   for (let bk = b0; bk <= b1; bk++) {
     const start = dstr(A0 + bk * 28 + H(secret, 'albd', bk) % 21), month = +start.slice(5, 7);
-    const pool = EVENT_ALBUMS.flatMap(a => (a.months?.includes(month) ? [a, a, a] : a.months ? [] : [a])), album = pool[H(secret, 'alb', bk) % pool.length];
+    const pool = EVENT_ALBUMS.filter(a => !a.off).flatMap(a => (a.months?.includes(month) ? [a, a, a] : a.months ? [] : [a])), album = pool[H(secret, 'alb', bk) % pool.length];
     push({ id: 'album:' + start, kind: 'album', start: parisTs(start, 10), end: parisTs(dstr(dnum(start) + 7), 10), album: album.id, day: start });
   }
   const s0 = Math.floor((a - S0) / SEASON_DAYS) - 1, s1 = Math.floor((b - S0) / SEASON_DAYS) + 1;

@@ -20,6 +20,7 @@ console.log('— calendrier (pur calcul)');
 {
   const t0 = Date.parse('2026-10-12T00:00:00Z'), ev = eventsIn(SECRET, t0, t0 + 365 * DAY), by = k => ev.filter(e => e.kind === k && e.start >= t0 && e.start < t0 + 365 * DAY);
   ok('heures dorées : environ 38 % des jours (110 à 170 sur un an)', by('golden').length > 110 && by('golden').length < 170, by('golden').length);
+  ok('album « Coupe du monde » : jamais au calendrier (retiré), les autres albums continuent', by('album').length > 8 && by('album').every(e => e.album !== 'monde') && new Set(by('album').map(e => e.album)).size >= 5, [...new Set(by('album').map(e => e.album))].join());
   ok('heures collectives : environ 38 % des jours, comme les heures dorées (110 à 170 sur un an)', by('nounique').length > 110 && by('nounique').length < 170, by('nounique').length);
   ok('heures collectives : 1 h, entre 12 h et 22 h (heure de Paris)', by('nounique').every(e => e.end - e.start === 3600000 && parisHour(e.start) >= 12 && parisHour(e.start) <= 22), by('nounique').length);
   ok('heures collectives : jamais en même temps qu\'une heure dorée', by('nounique').every(n => !by('golden').some(g => n.start < g.end && g.start < n.end)));

@@ -6,7 +6,7 @@ export const EVENT_ALBUMS = [
     titles: ['Dracula', 'Frankenstein', 'Stephen King', 'Zombie', 'Vampire', 'Sorcière', 'Fantôme', 'Loup-garou', 'Halloween', 'Freddy Krueger', 'Michael Myers', 'Jason Voorhees', 'Squelette', 'Citrouille', 'Momie'] },
   { id: 'noel', months: [12, 1], name: 'Magie de Noël', emoji: '🎄', blurb: 'Traditions et douceurs de fin d\'année.',
     titles: ['Noël', 'Père Noël', 'Sapin de Noël', 'Bûche de Noël', 'Dinde', 'Saint-Nicolas', 'Cadeau', 'Neige', 'Hiver', 'Réveillon', 'Calendrier de l\'Avent', 'Rudolph', 'Épiphanie', 'Foie gras', 'Marché de Noël'] },
-  { id: 'monde', months: [6, 7, 11, 12], name: 'Coupe du monde', emoji: '🏆', blurb: 'Les légendes du plus grand tournoi de football.',
+  { id: 'monde', off: true, months: [6, 7, 11, 12], name: 'Coupe du monde', emoji: '🏆', blurb: 'Les légendes du plus grand tournoi de football.',
     titles: ['Coupe du monde de football', 'Pelé', 'Diego Maradona', 'Zinédine Zidane', 'Kylian Mbappé', 'Lionel Messi', 'Cristiano Ronaldo', 'Équipe de France de football', 'Brésil', 'Argentine', 'Allemagne', 'Ronaldo', 'Michel Platini', 'Franz Beckenbauer', 'Johan Cruyff'] },
   { id: 'ete', months: [6, 7, 8], name: 'Plein été', emoji: '🏖️', blurb: 'Soleil, plage et vacances.',
     titles: ['Plage', 'Soleil', 'Vacances', 'Surf', 'Mer Méditerranée', 'Tour de France', 'Camping', 'Glace (dessert)', 'Crème glacée', 'Bikini', 'Piscine', 'Volley-ball de plage', 'Festival', 'Bronzage', 'Coup de soleil'] },
