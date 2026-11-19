@@ -278,6 +278,18 @@ export function installEconomy(d) {
     const tiers = [['Débutant', 0, 20], ['Régulier', 20, 100], ['Confirmé', 100, 400], ['Vétéran', 400, Infinity]].map(([name, lo, hi]) => ({ name, lo, hi: hi === Infinity ? null : hi, n: list.filter(x => x.score >= lo && x.score < hi).length }));
     return { players: list.length, cap: DIV.cap, atCap: list.filter(x => x.score >= DIV.cap).length, perDayNow: list.reduce((t, x) => t + x.today, 0), perDayUncapped: list.reduce((t, x) => t + x.score, 0), perDayCurve: list.reduce((t, x) => t + x.curve, 0), mode: await curveMode(env), legMode: await legMode(env), maxCurve: DIV.cap + DIV.extra, q: { min: q(0), p25: q(0.25), med: q(0.5), p75: q(0.75), p90: q(0.9), max: q(1) }, tiers, top: list.slice(0, 10), savingsTotal: list.reduce((t, x) => t + x.savings, 0), savers: list.filter(x => x.savings > 0).length };
   });
+  /** Administrateur : état des paris de bourse en attente (pourquoi ils ne sont pas réglés). Lecture seule. */
+  route('GET', '/api/admin/bourse-status', async ({ env, user }) => {
+    if (!user.is_admin) bad('Réservé à l’administrateur', 403);
+    await ensureGameSchema(env);
+    const [pending, markets, rest] = await Promise.all([
+      all(env, "SELECT b.day, m.status, COUNT(*) n, COUNT(DISTINCT b.user_id) users, COALESCE(SUM(b.stake), 0) stake FROM bourse_bets b LEFT JOIN bourse_market m ON m.day = b.day AND m.slot = b.slot WHERE b.settled = 0 AND b.slot < 100 GROUP BY b.day, m.status ORDER BY b.day"),
+      all(env, "SELECT m.day, m.slot, m.title, m.status, (SELECT COUNT(*) FROM bourse_bets b WHERE b.day = m.day AND b.slot = m.slot AND b.settled = 0) pend FROM bourse_market m WHERE m.slot < 100 AND m.status = 'open' AND m.day < ? ORDER BY m.day, m.slot LIMIT 40", dayKey()),
+      pvRest(env),
+    ]);
+    const today = dayKey(), age = d => Math.round((Date.parse(today + 'T12:00:00Z') - Date.parse(d + 'T12:00:00Z')) / DAY);
+    return { today, total: pending.reduce((t, r) => t + +r.n, 0), stake: pending.reduce((t, r) => t + +r.stake, 0), groups: pending.map(r => ({ day: r.day, age: age(r.day), status: r.status || 'inconnu', n: +r.n, users: +r.users, stake: +r.stake })), waiting: markets.map(m => ({ day: m.day, age: age(m.day), title: m.title, pend: +m.pend })), wikimedia: { restUntil: rest || null, code: viewsError.code ?? null, msg: viewsError.msg || null }, voidAfterDays: 4 };
+  });
   route('POST', '/api/admin/bank-leg', async ({ env, user, body }) => {
     if (!user.is_admin) bad('Réservé à l’administrateur', 403);
     const mode = ['off', 'admin', 'all'].includes(body.mode) ? body.mode : 'off';

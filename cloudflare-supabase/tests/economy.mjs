@@ -228,5 +228,19 @@ console.log('— légendaires de paquet : taux et plafond de la banque');
   await q('UPDATE users SET is_admin = 0 WHERE id = ?', ua);
   const tx = (await q("SELECT 1 x FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'leg_pulled'").catch(() => [{ x: 1 }])); ok('banque : colonne du compteur créée', tx.length === 1);
 }
+console.log('— bourse : paris en attente (diagnostic administrateur)');
+{ const day = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10), ua = (await q("SELECT id FROM users WHERE name = 'Alice'"))[0].id, ub = (await q("SELECT id FROM users WHERE name = 'Bob'"))[0].id;
+  await q('DELETE FROM bourse_bets'); await q('DELETE FROM bourse_market');
+  await q("INSERT INTO bourse_market (day, slot, id, title, series, ref, status) VALUES (?,?,?,?,?,?,'open'), (?,?,?,?,?,?,'done'), (?,?,?,?,?,?,'open')", day(3), 0, 1, 'France', 's', 100, day(2), 0, 2, 'Paris', 's', 100, day(1), 0, 3, 'Lyon', 's', 100);
+  await q('UPDATE bourse_market SET actual = 120 WHERE day = ? AND slot = 0', day(2));
+  await q('INSERT INTO bourse_bets (user_id, day, slot, dir, stake) VALUES (?,?,?,?,?), (?,?,?,?,?), (?,?,?,?,?)', ua, day(3), 0, 'up', 50, ub, day(3), 0, 'down', 70, ua, day(2), 0, 'up', 30);
+  [s, r] = await call(B, 'GET', '/api/admin/bourse-status'); ok('diagnostic bourse : refusé à un joueur ordinaire', s === 403);
+  await DB.prepare('UPDATE users SET is_admin = 1 WHERE name = ?').bind('Alice').run();
+  [s, r] = await call(A, 'GET', '/api/admin/bourse-status');
+  ok('diagnostic bourse : total des paris et des mises en attente', s === 200 && r.total === 3 && r.stake === 150, J(r));
+  ok('diagnostic bourse : regroupés par jour avec l\'état du marché (ouvert / réglé) et l\'ancienneté', r.groups.length === 2 && r.groups.find(g => g.status === 'open' && g.n === 2 && g.users === 2 && g.stake === 120 && g.age === 3) && r.groups.find(g => g.status === 'done' && g.n === 1 && g.age === 2), J(r.groups));
+  ok('diagnostic bourse : marchés d\'attente listés (jours passés non réglés)', r.waiting.length === 2 && r.waiting[0].title === 'France' && r.waiting[0].pend === 2 && r.waiting.every(m => m.age >= 1), J(r.waiting));
+  ok('diagnostic bourse : pause de Wikimedia et délai d\'annulation indiqués', r.wikimedia && 'restUntil' in r.wikimedia && r.voidAfterDays === 4, J(r.wikimedia));
+  await DB.prepare('UPDATE users SET is_admin = 0 WHERE name = ?').bind('Alice').run(); await q('DELETE FROM bourse_bets'); await q('DELETE FROM bourse_market'); }
 Date.now = realNow;
 done();
